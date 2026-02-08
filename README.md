@@ -10,19 +10,19 @@ Below are a few screenshots showing the StockLens app UI. The images are referen
 
 - Welcome Screen
 
-<img src="assets/screenshots/splash.png" alt="Welcome chart view" style="max-height: 400px;" />
+<img src="assets/screenshots/splash.png" alt="Welcome chart view" width="300" />
 
 - Empty state / onboarding
 
-<img src="assets/screenshots/home.png" alt="Empty state onboarding" style="max-height: 400px;" />
+<img src="assets/screenshots/home.png" alt="Empty state onboarding" width="300" />
 
 - Dashboard overview
 
-<img src="assets/screenshots/home2.png" alt="Dashboard overview" style="max-height: 400px;" />
+<img src="assets/screenshots/home2.png" alt="Dashboard overview" width="300" />
 
 - Receipt Details Screen
 
-<img src="assets/screenshots/receiptDetails.png" alt="Receipt Details" style="max-height: 400px;" />
+<img src="assets/screenshots/receiptDetails.png" alt="Receipt Details" width="300" />
 
 ## How to Run
 
