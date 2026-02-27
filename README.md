@@ -1,95 +1,79 @@
-# StockLens
+# StockLens 📱
 
-Scan Your Spending, See Your Missed Investing
+> Scan Your Spending. See Your Missed Investing.
 
-StockLens is a mobile application built with React Native and Expo that helps users analyze their spending habits by scanning receipts using OCR (Optical Character Recognition) technology. The app identifies potential investment opportunities based on the user's spending patterns and provides insights into how small changes in daily expenses can lead to significant investment growth over time.
+A full-stack mobile app that helps users understand how their daily spending habits translate into missed investment opportunities. Built with React Native and Expo, StockLens uses OCR to scan physical receipts, structures the data, and shows users what that money could have grown to if invested instead.
 
-## Screenshots
+## 📸 Screenshots
 
-Below are a few screenshots showing the StockLens app UI. The images are referenced from `assets/screenshots/` — add the actual image files there (for example `screen1.png`, `screen2.png`, etc.) so they display on GitHub.
+| Welcome | Dashboard | Receipt Details |
+|---|---|---|
+| <img src="assets/screenshots/splash.png" width="200"/> | <img src="assets/screenshots/home2.png" width="200"/> | <img src="assets/screenshots/receiptDetails.png" width="200"/> |
 
-- Welcome Screen
+## 🧠 Tech Stack
 
-<img src="assets/screenshots/splash.png" alt="Welcome chart view" width="300" />
+- **React Native (Expo)** — Cross-platform mobile app (iOS & Android)
+- **TypeScript** — Strongly typed throughout for reliability and maintainability
+- **Firebase** — Authentication (email/password) and Firestore real-time database
+- **OCR** — Receipt scanning and text extraction pipeline
+- **Expo Camera / Image Picker** — Camera integration for receipt capture
 
-- Empty state / onboarding
+## ✨ Features
 
-<img src="assets/screenshots/home.png" alt="Empty state onboarding" width="300" />
+- **Receipt Scanning** — Point your camera at any receipt; the OCR pipeline extracts, parses, and structures the data automatically
+- **Investment Projections** — See what your spending could have grown to if invested in stocks or index funds over time
+- **Dashboard** — Visual overview of spending trends and missed investment potential
+- **Secure Auth** — Firebase email/password authentication with persistent sessions
+- **Real-time Sync** — All receipt and financial data syncs across devices via Firestore
+- **Clean Architecture** — Strict separation between data, business logic, and UI layers throughout the TypeScript codebase
 
-- Dashboard overview
+## 📁 Project Structure
 
-<img src="assets/screenshots/home2.png" alt="Dashboard overview" width="300" />
+```
+stocklens/
+├── src/
+│   ├── __tests__/          # Unit and integration test suites
+│   │   ├── fixtures/       # Mock data (receipts, users, OCR responses)
+│   │   ├── hooks/          # Custom hook tests
+│   │   ├── screens/        # Screen and workflow tests
+│   │   └── services/       # OCR, projections, and database logic tests
+│   ├── components/         # Reusable UI components
+│   ├── screens/            # App screens
+│   ├── services/           # OCR processing, investment logic, Firebase
+│   ├── hooks/              # Custom React hooks
+│   └── utils/              # Formatters and helpers
+├── assets/
+│   └── screenshots/        # App screenshots
+├── app.json                # Expo configuration
+└── package.json
+```
 
-- Receipt Details Screen
+## 🧪 How to Run
 
-<img src="assets/screenshots/receiptDetails.png" alt="Receipt Details" width="300" />
+### Prerequisites
+- Node.js (LTS, e.g. Node 18+)
+- npm or Yarn
+- Android/iOS emulator or the Expo Go app on your phone
 
-## How to Run
+### Steps
 
-Prequisites:
+```bash
+git clone https://github.com/AhmedIkram05/StockLens.git
+cd StockLens
+npm install
+npm update
+npm start
+```
 
-- Node.js (LTS recommended, e.g. Node 18+)
-- npm (bundled with Node) or Yarn
-- An Android/iOS emulator OR the Expo Go app on your phone
+Then:
+- Press `i` for iOS simulator
+- Press `a` for Android emulator
+- Scan the QR code with Expo Go for a physical device
 
-To run the StockLens app locally, follow these steps:
+### Running Tests
 
-1. Clone the repository
-2. Install dependencies (you may need to update them)
-
-    ```bash
-    npm install
-    npm update
-    ```
-
-3. Launch the Expo server
-
-    ```bash
-    npm start
-    ```
-
-4. Run the app
-
-   - For iOS simulator: Press `i` in the terminal
-   - For Android emulator: Press `a` in the terminal
-   - For physical device: Scan the QR code with the Expo Go app to launch the app
-
-## Testing
-
-To run the test suite for StockLens, follow these steps:
-
-1. Ensure all dependencies are installed by running:
-
-    ```bash
-    npm install
-    ```
-
-2. Run the tests using the following command:
-
-    ```bash
-    npm test
-    ```
-
-3. To run only unit tests, use:
-
-    ```bash
-    npm test unit
-    ```
-
-4. To run only integration tests, use:
-
-    ```bash
-    npm test integration
-    ```
-
-## Test Suite Structure
-
-The test suite is organized within the `src/__tests__/` directory, which contains the following subdirectories:
-
-- `fixtures/`: Contains mock data used across multiple tests, such as sample receipts, user data, OCR responses, and stock data.
-- `contexts/`: Tests for context providers like authentication and theming.
-- `hooks/`: Tests for custom React hooks used in the application.
-- `screens/`: Tests for user interface screens and workflows, including login, scanning, and dashboard functionalities.
-- `services/`: Tests for business logic components, including OCR processing, investment projections, and database interactions.
-- `utils/`: Tests for utility functions such as data formatters and helpers.
-Each test file is named according to the component or functionality it tests, making it easy to locate and understand the purpose of each test. The tests utilize Jest's features, including mocking and assertions, to validate the behavior of the app's components and services.
+```bash
+npm test              # Full test suite
+npm test unit         # Unit tests only
+npm test integration  # Integration tests only
+```
