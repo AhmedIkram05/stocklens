@@ -14,27 +14,27 @@
 
 **[→ Design Proposal](https://github.com/AhmedIkram05/stocklens/blob/docs/README.md/assets/Design%20Proposal.pdf)**
 
-**[→ Project Report](https://github.com/AhmedIkram05/stocklens/blob/docs/README.md/assets/Project%20Report.pdf)**
+**[→ Project Report](https://github.com/AhmedIkram05/stocklens/blob/docs/assets/Project%20Report.pdf)**
 
 ---
 
 ## Demonstration
 
-| Splash | Login | Sign Up |
+| Landing | Login | Sign Up |
 |---|---|---|
-| <img src="assets/wireframes/splash.png" width="200"/> | <img src="assets/wireframes/login.png" width="200"/> | <img src="assets/wireframes/sign up.png" width="200"/> |
+| <img src="Wireframes" width="200"/> | <img src="assets/Wireframes/login.png" width="200"/> | <img src="assets/Wireframes/sign up.png" width="200"/> |
 
 | Dashboard (Empty) | Dashboard (Populated) | Scan Receipt |
 |---|---|---|
-| <img src="assets/wireframes/dashboard empty 1.png" width="200"/> | <img src="assets/wireframes/dashboard.png" width="200"/> | <img src="assets/wireframes/scan.png" width="200"/> |
+| <img src="assets/Wireframes/dashboard empty 1.png" width="200"/> | <img src="assets/Wireframes/dashboard.png" width="200"/> | <img src="assets/Wireframes/scan.png" width="200"/> |
 
 | Receipt Details | Results | Summary |
 |---|---|---|
-| <img src="assets/wireframes/receipt details 1.png" width="200"/> | <img src="assets/wireframes/result 1.png" width="200"/> | <img src="assets/wireframes/summary 1.png" width="200"/> |
+| <img src="assets/Wireframes/receipt details 1.png" width="200"/> | <img src="assets/Wireframes/result 1.png" width="200"/> | <img src="assets/Wireframes/summary 1.png" width="200"/> |
 
 | Summary (cont.) | Settings |
 |---|---|
-| <img src="assets/wireframes/summary 2.png" width="200"/> | <img src="assets/wireframes/settings.png" width="200"/> |
+| <img src="assets/Wireframes/summary 2.png" width="200"/> | <img src="assets/Wireframes/settings.png" width="200"/> |
 
 ---
 
