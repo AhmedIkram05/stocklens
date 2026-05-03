@@ -1,8 +1,6 @@
 # StockLens
 
-> Scan your spending. See your missed investing.
-
-Full-stack mobile FinTech app that transforms physical receipts into investment opportunity analysis — OCR pipeline extracts receipt totals, Alpha Vantage maps spending to stock tickers, and ARIMA + Linear Regression projects historical and future portfolio growth. Built in React Native/TypeScript with biometric auth, AES-256 encryption, and 78 Jest tests.
+> Full-stack mobile FinTech app that transforms physical receipts into investment opportunity analysis - OCR pipeline extracts receipt totals, Alpha Vantage API maps spending to stock tickers, and ARIMA + Linear Regression projects historical and future portfolio growth. Built in React Native/TypeScript with biometric auth, AES-256 encryption, and 78 Jest tests.
 
 <p align="center">
   <img src="https://img.shields.io/badge/React_Native-61DAFB?style=for-the-badge&labelColor=000000&logo=react">
@@ -12,25 +10,31 @@ Full-stack mobile FinTech app that transforms physical receipts into investment 
   <img src="https://img.shields.io/badge/Jest-C21325?style=for-the-badge&labelColor=000000&logo=jest">
 </p>
 
+## Documentation
+
+**[→ Design Proposal](https://github.com/AhmedIkram05/stocklens/blob/docs/README.md/assets/Design%20Proposal.pdf)**
+
+**[→ Project Report](https://github.com/AhmedIkram05/stocklens/blob/docs/README.md/assets/Project%20Report.pdf)**
+
 ---
 
-## Screenshots
+## Demonstration
 
 | Splash | Login | Sign Up |
 |---|---|---|
-| <img src="assets/screenshots/splash.png" width="200"/> | <img src="assets/screenshots/login.png" width="200"/> | <img src="assets/screenshots/sign up.png" width="200"/> |
+| <img src="assets/wireframes/splash.png" width="200"/> | <img src="assets/wireframes/login.png" width="200"/> | <img src="assets/wireframes/sign up.png" width="200"/> |
 
 | Dashboard (Empty) | Dashboard (Populated) | Scan Receipt |
 |---|---|---|
-| <img src="assets/screenshots/dashboard empty 1.png" width="200"/> | <img src="assets/screenshots/dashboard.png" width="200"/> | <img src="assets/screenshots/scan.png" width="200"/> |
+| <img src="assets/wireframes/dashboard empty 1.png" width="200"/> | <img src="assets/wireframes/dashboard.png" width="200"/> | <img src="assets/wireframes/scan.png" width="200"/> |
 
 | Receipt Details | Results | Summary |
 |---|---|---|
-| <img src="assets/screenshots/receipt details 1.png" width="200"/> | <img src="assets/screenshots/result 1.png" width="200"/> | <img src="assets/screenshots/summary 1.png" width="200"/> |
+| <img src="assets/wireframes/receipt details 1.png" width="200"/> | <img src="assets/wireframes/result 1.png" width="200"/> | <img src="assets/wireframes/summary 1.png" width="200"/> |
 
 | Summary (cont.) | Settings |
 |---|---|
-| <img src="assets/screenshots/summary 2.png" width="200"/> | <img src="assets/screenshots/settings.png" width="200"/> |
+| <img src="assets/wireframes/summary 2.png" width="200"/> | <img src="assets/wireframes/settings.png" width="200"/> |
 
 ---
 
@@ -102,42 +106,53 @@ Tests are organised by concern — not by file. OCR fallback logic, API caching 
 
 ---
 
-## Core User Flow
+## New User Flow
 
+```mermaid
+flowchart LR
+    A["Splash Screen"] --> B["Welcome / Onboarding"]
+    B --> C["Sign Up"]
+    C --> D["Face ID Prompt"]
+    D --> E["Dashboard (Empty)"]
+    E --> F["Scan Tab"]
+    F --> G["Camera Screen"]
+    G --> H["OCR Processing"]
+    H --> I{"OCR Success?"}
+    I -- Yes --> J["Confirm Amount"]
+    I -- No --> K["Manual Entry"]
+    K --> J
+    J --> L["Results Screen"]
+    L --> M["Save Result"]
+    M --> N["Return to Dashboard"]
 ```
-New User                          Returning User
-    │                                   │
-Splash Screen                    Splash Screen
-    │                                   │
-Welcome/Onboarding              Login Method?
-    │                            ┌──────┴──────┐
-Sign Up                       Manual        Face ID
-    │                            └──────┬──────┘
-Face ID prompt                         │
-    │                            Dashboard (Populated)
-Dashboard (Empty)                      │
-    │                      ┌───────────┼──────────────┐
-    ▼                   Tap receipt  Scan tab      Analytics tab
-Scan Tab                    │            │               │
-    │                  Receipt Details  Camera      Summary Screen
-Camera Screen               │            │
-    │                  Delete?      OCR Processing
-OCR Processing              │            │
-    │                  Dashboard    OCR Success?
-OCR Success?                         ┌───┴───┐
- ┌──┴──┐                            Yes      No
-Yes    No                            │        │
- │     │                        Confirm   Manual Entry
- │   Manual Entry                Amount        │
- │     │                            └────┬─────┘
- └──┬──┘                                │
-Confirm Amount                    Results Screen
-    │                                   │
-Results Screen                     Save Result
-    │                                   │
-Save Result                      Return to Dashboard
-    │
-Return to Dashboard
+
+## Returning User Flow
+
+```mermaid
+flowchart LR
+    A["Splash Screen"] --> B{"Login Method?"}
+    B -- Manual --> C["Dashboard (Populated)"]
+    B -- Face ID --> C
+
+    C --> D["Tap Receipt"]
+    D --> E["Receipt Details"]
+    E --> F{"Delete?"}
+    F -- Yes --> C
+    F -- No --> G["Scan Tab"]
+
+    C --> G
+    G --> H["Camera Screen"]
+    H --> I["OCR Processing"]
+    I --> J{"OCR Success?"}
+    J -- Yes --> K["Confirm Amount"]
+    J -- No --> L["Manual Entry"]
+    L --> K
+    K --> M["Results Screen"]
+    M --> N["Save Result"]
+    N --> O["Return to Dashboard"]
+
+    C --> P["Analytics Tab"]
+    P --> Q["Summary Screen"]
 ```
 
 ---
@@ -214,6 +229,7 @@ npm test integration  # Integration tests only
 ## Getting Started
 
 ### Prerequisites
+
 - Node.js 18+ (LTS)
 - npm or Yarn
 - Expo Go app (physical device) or iOS Simulator / Android Emulator
