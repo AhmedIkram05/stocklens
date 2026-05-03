@@ -22,7 +22,7 @@
 
 | Landing | Login | Sign Up |
 |---|---|---|
-| <img src="Wireframes" width="200"/> | <img src="assets/Wireframes/login.png" width="200"/> | <img src="assets/Wireframes/sign up.png" width="200"/> |
+| <img src="assets/Wireframes/splash.png" width="200"/> | <img src="assets/Wireframes/login.png" width="200"/> | <img src="assets/Wireframes/sign up.png" width="200"/> |
 
 | Dashboard (Empty) | Dashboard (Populated) | Scan Receipt |
 |---|---|---|
