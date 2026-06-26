@@ -14,10 +14,10 @@ module.exports = function (api) {
         {
           extensions: ['.ts', '.tsx', '.js', '.jsx', '.json'],
           alias: {
-            '@': './src'
-          }
-        }
-      ]
-    ]
+            '@': './src',
+          },
+        },
+      ],
+    ],
   };
 };
