@@ -14,20 +14,20 @@
 
 ### Step Tracker
 
-| #   | Step                                          | Agent                    | Status     | Key Files Built | Validation | Notes |
-| --- | --------------------------------------------- | ------------------------ | ---------- | --------------- | ---------- | ----- |
-| 1   | Project Scaffold & Docker Compose             | code-architect / general | ⬜ Pending | —               | —          | —     |
-| 2   | Database Schema & Migrations (Alembic)        | code-architect / general | ⬜ Pending | —               | —          | —     |
-| 3   | Auth Module (JWT + Redis + Rate Limiting)     | general                  | ⬜ Pending | —               | —          | —     |
-| 4   | Portfolio CRUD                                | general                  | ⬜ Pending | —               | —          | —     |
-| 5   | Holdings CRUD                                 | general                  | ⬜ Pending | —               | —          | —     |
-| 6   | Transactions CRUD                             | general                  | ⬜ Pending | —               | —          | —     |
-| 7   | Spending Categories & Merchant Mapping        | general                  | ⬜ Pending | —               | —          | —     |
-| 8   | OCR Pipeline (OpenCV + pytesseract)           | general                  | ⬜ Pending | —               | —          | —     |
-| 9   | Receipt CRUD + OCR Integration                | general                  | ⬜ Pending | —               | —          | —     |
-| 10  | React Native Migration                        | general (TS)             | ⬜ Pending | —               | —          | —     |
-| 11  | Terraform Provisioning (VPC + RDS + S3 + ECR) | general                  | ⬜ Pending | —               | —          | —     |
-| 12  | Test Suite                                    | general / code-reviewer  | ⬜ Pending | —               | —          | —     |
+| #   | Step                                                            | Agent                    | Status     | Key Files Built | Validation | Notes |
+| --- | --------------------------------------------------------------- | ------------------------ | ---------- | --------------- | ---------- | ----- |
+| 1   | Project Scaffold & Docker Compose                               | code-architect / general | ⬜ Pending | —               | —          | —     |
+| 2   | Database Schema & Migrations (Alembic)                          | code-architect / general | ⬜ Pending | —               | —          | —     |
+| 3   | Auth Module (JWT + Redis + Rate Limiting)                       | general                  | ⬜ Pending | —               | —          | —     |
+| 4   | Portfolio CRUD                                                  | general                  | ⬜ Pending | —               | —          | —     |
+| 5   | Holdings CRUD                                                   | general                  | ⬜ Pending | —               | —          | —     |
+| 6   | Transactions CRUD                                               | general                  | ⬜ Pending | —               | —          | —     |
+| 7   | Spending Categories & Merchant Mapping                          | general                  | ⬜ Pending | —               | —          | —     |
+| 8   | OCR Pipeline (OpenCV + pytesseract)                             | general                  | ⬜ Pending | —               | —          | —     |
+| 9   | Receipt CRUD + OCR Integration                                  | general                  | ⬜ Pending | —               | —          | —     |
+| 10  | React Native Migration                                          | general (TS)             | ⬜ Pending | —               | —          | —     |
+| 11  | Terraform Provisioning (VPC + RDS + S3 + ECR + Secrets Manager) | general                  | ⬜ Pending | —               | —          | —     |
+| 12  | Test Suite                                                      | general / code-reviewer  | ⬜ Pending | —               | —          | —     |
 
 ### Deviations from Plan
 
@@ -48,6 +48,8 @@
 - [ ] ESLint — zero errors
 - [ ] `npx tsc --noEmit` — zero errors
 - [ ] `terraform plan -var="environment=dev"` exits 0
+- [ ] IaC security scan passes: `checkov --config-file checkov.yml -d terraform/` and `tfsec terraform/` — zero critical/high
+- [ ] Secrets Manager: 4 secrets created and accessible by intended IAM roles
 - [ ] Python test coverage ≥80%
 
 ### Security Checklist
@@ -62,6 +64,8 @@
 - [ ] Rate limiting: slowapi + Redis sliding window (20/min auth, 100/min other)
 - [ ] CORS: restricted to `http://localhost:8081` (Expo dev)
 - [ ] RDS: `storage_encrypted = true`, security group restricted to VPC CIDR
+- [ ] Secrets: all production secrets stored in AWS Secrets Manager, never in `.env` files or code
+- [ ] IaC security: checkov + tfsec run in CI, critical/high findings block PRs
 
 ---
 

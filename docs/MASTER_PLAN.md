@@ -34,9 +34,9 @@ StockLens scans receipts via OCR, maps merchants to stock tickers, tracks portfo
 1. **No Firebase.** The entire backend is FastAPI + PostgreSQL. Firebase is eliminated completely.
 2. **No Node.js middleware.** The backend is Python end-to-end.
 3. **RDS storage encryption (AES-256).** EBS volume-level encryption for all data at rest. Application-layer encryption is not required — the backend threat model (server in owned AWS account) differs from the original mobile-first app (device theft risk).
-4. **Everything runs locally in Docker Compose for development.** AWS infra provisioned via Terraform for production/staging.
-5. **Agents write the code.** These documents are designed for AI coding agents to execute with minimal ambiguity.
-6. **Every claim on the CV must be provably true.** No overstated or aspirational bullets.
+4. **Secrets are never hardcoded.** All secrets (JWT key, database credentials, API keys) stored in AWS Secrets Manager with least-privilege IAM policies. No `.env` files in production.
+5. **Everything runs locally in Docker Compose for development.** AWS infra provisioned via Terraform for production/staging.
+6. **Agents write the code.** These documents are designed for AI coding agents to execute with minimal ambiguity.
 
 ---
 
@@ -70,11 +70,12 @@ StockLens scans receipts via OCR, maps merchants to stock tickers, tracks portfo
 │  ohlcv_prices, model_registry, agent_conversations        │
 └─────────────────────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────┐
-│                    AWS (Terraform)                        │
-│  RDS (PostgreSQL) │ S3 (receipts, drift reports) │ ECR   │
-│  SageMaker (LSTM endpoint) │ ECS Fargate (API) │ ALB    │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    AWS (Terraform)                            │
+│  RDS (PostgreSQL) │ S3 (receipts, drift reports) │ ECR       │
+│  Secrets Manager │ CloudWatch (logs, metrics, dashboards)    │
+│  SageMaker (LSTM endpoint) │ ECS Fargate (API) │ ALB │ WAF  │
+└──────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
 │                    MLOps (Phase 4)                        │
@@ -87,32 +88,38 @@ StockLens scans receipts via OCR, maps merchants to stock tickers, tracks portfo
 
 ## Technology Stack
 
-| Layer               | Technology                                | Version / Notes                                             |
-| ------------------- | ----------------------------------------- | ----------------------------------------------------------- |
-| Mobile              | React Native (Expo)                       | SDK 56, RN 0.85, React 19.2                                 |
-| Mobile language     | TypeScript                                | 5.6+, strict mode                                           |
-| Backend             | FastAPI                                   | 0.138.x                                                     |
-| Backend language    | Python                                    | 3.14                                                        |
-| Async runtime       | asyncpg                                   | 0.30.x (connection pool for PostgreSQL)                     |
-| Package manager     | uv                                        | 0.11.x (Rust-based, fast resolver)                          |
-| Database            | PostgreSQL                                | 18 (local Docker `18-alpine` + RDS)                         |
-| Cache               | Redis                                     | 8.8 (`8.8-alpine`)                                          |
-| Auth                | JWT (Authorization header)                | HS256, bcrypt 5.x                                           |
-| Rate limiting       | slowapi                                   | Sliding window via Redis                                    |
-| Migration tool      | Alembic                                   | SQL-based migrations via `op.execute()` (no ORM dependency) |
-| OCR                 | pytesseract                               | 0.3.13                                                      |
-| OCR preprocessing   | opencv-python-headless                    | 4.10.x (adaptive threshold, denoise)                        |
-| OCR LLM fallback    | AWS Bedrock Claude Haiku                  | Via langchain-aws / boto3 1.43+                             |
-| Market data         | yfinance                                  | Free Yahoo Finance API                                      |
-| ML framework        | PyTorch                                   | 2.12.x                                                      |
-| Experiment tracking | MLflow                                    | 3.14.x (custom Docker image)                                |
-| Model registry      | MLflow Model Registry                     | Alias-based (champion/challenger)                           |
-| Orchestration       | Airflow                                   | Docker Compose on EC2 t3.small                              |
-| Drift detection     | Evidently AI                              | HTML reports → S3                                           |
-| IaC                 | Terraform                                 | 1.15.x, AWS provider                                        |
-| CI/CD               | GitHub Actions                            | OIDC federation, ruff → pytest → build → deploy             |
-| Agent framework     | LangChain                                 | 1.3.x, ReAct with 5 tools                                   |
-| Container runtime   | Docker Compose (dev) / ECS Fargate (prod) |                                                             |
+| Layer               | Technology                                | Version / Notes                                                                   |
+| ------------------- | ----------------------------------------- | --------------------------------------------------------------------------------- |
+| Mobile              | React Native (Expo)                       | SDK 56, RN 0.85, React 19.2                                                       |
+| Mobile language     | TypeScript                                | 5.6+, strict mode                                                                 |
+| Backend             | FastAPI                                   | 0.138.x                                                                           |
+| Backend language    | Python                                    | 3.14                                                                              |
+| Async runtime       | asyncpg                                   | 0.30.x (connection pool for PostgreSQL)                                           |
+| Package manager     | uv                                        | 0.11.x (Rust-based, fast resolver)                                                |
+| Database            | PostgreSQL                                | 18 (local Docker `18-alpine` + RDS)                                               |
+| Cache               | Redis                                     | 8.8 (`8.8-alpine`)                                                                |
+| Auth                | JWT (Authorization header)                | HS256, bcrypt 5.x                                                                 |
+| Rate limiting       | slowapi                                   | Sliding window via Redis                                                          |
+| Migration tool      | Alembic                                   | SQL-based migrations via `op.execute()` (no ORM dependency)                       |
+| OCR                 | pytesseract                               | 0.3.13                                                                            |
+| OCR preprocessing   | opencv-python-headless                    | 4.10.x (adaptive threshold, denoise)                                              |
+| OCR LLM fallback    | AWS Bedrock Claude Haiku                  | Via langchain-aws / boto3 1.43+                                                   |
+| Market data         | yfinance                                  | Free Yahoo Finance API                                                            |
+| ML framework        | PyTorch                                   | 2.12.x                                                                            |
+| Experiment tracking | MLflow                                    | 3.14.x (custom Docker image)                                                      |
+| Model registry      | MLflow Model Registry                     | Alias-based (champion/challenger)                                                 |
+| Orchestration       | Airflow                                   | Docker Compose on EC2 t3.small                                                    |
+| Drift detection     | Evidently AI                              | HTML reports → S3                                                                 |
+| IaC                 | Terraform                                 | 1.15.x, AWS provider, IaC scanning (checkov + tfsec)                              |
+| CI/CD               | GitHub Actions                            | OIDC federation, ruff → pytest → IaC scan → build → deploy                        |
+| Secrets management  | AWS Secrets Manager                       | 4+ secrets: JWT key, DB URL, Bedrock key, Redis password                          |
+| Observability       | structlog + CloudWatch                    | Structured JSON logging, p50/p95/p99 dashboards, metric alarms                    |
+| IaC security        | checkov + tfsec                           | 40+ rules enforced in CI (pre-apply)                                              |
+| WAF                 | AWS WAF                                   | Rate-based rules (200/min per IP), SQL injection + XSS protection attached to ALB |
+| Cost management     | AWS Budgets + Cost Anomaly Detection      | $50 monthly budget alert, anomaly detection on RDS + ECS                          |
+| Container scaling   | ECS Service Auto Scaling                  | Target tracking on CPU + request count per target                                 |
+| Agent framework     | LangChain                                 | 1.3.x, ReAct with 5 tools                                                         |
+| Container runtime   | Docker Compose (dev) / ECS Fargate (prod) |                                                                                   |
 
 > ⚠️ **Version audit (2026-06-26):** All versions above verified against current PyPI/GitHub releases. Python 3.14.6 is latest stable (released June 10). Expo SDK 56 shipped May 21 with RN 0.85. PostgreSQL 18.4 is latest stable (19 beta 1 out June 4). Redis 8.8.0 GA released May 25. MLflow 3.14.0 released June 17. Re-verify before executing each phase.
 
@@ -311,9 +318,10 @@ Applied to `users`, `portfolios`, `holdings` via `CREATE TRIGGER ... BEFORE UPDA
 - Full CRUD: portfolios, holdings, transactions
 - OCR pipeline: pytesseract (OpenCV preprocessing) + merchant keyword mapping + Bedrock Claude Haiku fallback
 - Pytest suite: 70–85 tests
-- Terraform: VPC, RDS + S3 + ECR (provisioned, but dev uses Docker Compose)
+- Terraform: VPC, RDS + S3 + ECR + Secrets Manager (provisioned, but dev uses Docker Compose)
 - React Native: swap Firebase SDK calls for FastAPI HTTP calls
 - Alembic: declarative migration framework for all schema changes across 6 phases
+- Structured JSON logging via structlog (stdout, collected by CloudWatch in production)
 
 **Dependencies:** None (greenfield backend)
 
@@ -372,14 +380,19 @@ Applied to `users`, `portfolios`, `holdings` via `CREATE TRIGGER ... BEFORE UPDA
 
 ### Phase 5 — FastAPI Serving + Full AWS Deployment
 
-**Goal:** Production deployment with Terraform, OIDC CI/CD, and SageMaker.
+**Goal:** Production deployment with Terraform, OIDC CI/CD, and SageMaker. Full observability, secrets management, and IaC security.
 
 **Key deliverables:**
 
 - `/predict` endpoint: loads champion LSTM from MLflow, cached in Redis (6h TTL)
 - SageMaker serverless inference as optional serving path
-- Terraform: ECS Fargate, ALB, ACM, IAM (least privilege) — VPC already provisioned in Phase 1
-- GitHub Actions CI/CD: ruff → pytest → docker build → ECR → ECS deploy (OIDC auth)
+- Terraform: ECS Fargate, ALB + WAF, ACM, IAM (least privilege), CloudWatch log groups + metric alarms — VPC already provisioned in Phase 1
+- **ECS Service Auto Scaling:** target tracking on CPU + request count per target. Handles traffic spikes without manual scaling.
+- **WAF:** rate-based rules (200 req/min per IP), SQL injection + XSS protection on ALB. FinTech security posture.
+- **AWS Budgets + Cost Anomaly Detection:** monthly budget alert at $50, anomaly detection on RDS + ECS spend. Cost-aware operations.
+- Secrets Manager: production-grade secrets injected into ECS task definition (DATABASE_URL, JWT_SECRET_KEY, BEDROCK_API_KEY, REDIS_PASSWORD). No `.env` files in production.
+- CloudWatch dashboard: p50/p95/p99 latency, error rate, RDS connections, ECS CPU/memory
+- GitHub Actions CI/CD: ruff → pytest → checkov + tfsec → docker build → ECR → ECS deploy (OIDC auth)
 
 **Depends on:** Phase 3 (model to serve). Terraform provisioning can begin in parallel with Phase 3.
 
@@ -444,28 +457,35 @@ Applied to `users`, `portfolios`, `holdings` via `CREATE TRIGGER ... BEFORE UPDA
 ### Phase 1–4 (Development)
 
 - Docker Compose for local development
-- GitHub Actions: lint + typecheck + unit tests only
+- GitHub Actions: lint + typecheck + unit tests
+- IaC security scan (checkov + tfsec) runs on every PR touching `terraform/`
 - Terraform: plan-only in PRs (no apply)
 
 ### Phase 5+ (Production)
 
-- GitHub Actions CI/CD: ruff → pytest → docker build → push to ECR → ECS Fargate rolling deploy
+- GitHub Actions CI/CD: ruff → pytest → checkov + tfsec → docker build → push to ECR → ECS Fargate rolling deploy
 - OIDC federation — no static AWS credentials
-- Deployment blocked if any pytest fails
-- Terraform apply via GitHub Actions (with manual approval gate)
+- Deployment blocked if any pytest fails or IaC scan finds critical/high findings
+- Secrets Manager: ECS task definition injects secrets as environment variables at container start (DevSync pattern via `jq` or Terraform `aws_ecs_task_definition` secrets block)
+- CloudWatch: structured JSON logs from structlog collected via `awslogs` driver, custom dashboard with p50/p95/p99 latency, RDS connections, ECS CPU/memory, error rate
+- AWS Budgets alarm at $50/month with cost anomaly detection — alerts on unexpected RDS/ECS spend
+- Manual approval gate before Terraform apply in production
 
 ### AWS Resources (provisioned over phases)
 
-| Resource                     | Phase   | Size                                           |
-| ---------------------------- | ------- | ---------------------------------------------- |
-| S3 (receipts, drift reports) | Phase 1 |                                                |
-| ECR                          | Phase 1 |                                                |
-| VPC + networking             | Phase 1 | /16 with public/private subnets (LAAD pattern) |
-| RDS (PostgreSQL 18)          | Phase 1 | db.t3.micro, in VPC private subnet             |
-| ECS Fargate (API)            | Phase 5 |                                                |
-| ALB + ACM                    | Phase 5 |                                                |
-| SageMaker serverless         | Phase 5 |                                                |
-| EC2 (Airflow)                | Phase 4 | t3.medium                                      |
+| Resource                     | Phase   | Size / Notes                                                                 |
+| ---------------------------- | ------- | ---------------------------------------------------------------------------- |
+| S3 (receipts, drift reports) | Phase 1 | 3 buckets, SSE-AES256, block public access                                   |
+| ECR                          | Phase 1 | Scan on push, keep 25 images                                                 |
+| VPC + networking             | Phase 1 | /16 with public/private subnets (LAAD pattern)                               |
+| RDS (PostgreSQL 18)          | Phase 1 | db.t3.micro → Multi-AZ in Phase 5, 20GB gp3, encrypted                       |
+| Secrets Manager              | Phase 1 | 4 secrets: DB URL, JWT key, Bedrock key, Redis password                      |
+| ECS Fargate (API)            | Phase 5 | Auto-scaling (CPU + request count), secrets injection, CloudWatch log driver |
+| ALB + ACM + WAF              | Phase 5 | HTTPS, rate-based rules (200/min per IP), SQLi/XSS protection                |
+| CloudWatch                   | Phase 5 | Log groups, custom dashboard (p50/p95/p99), metric alarms                    |
+| SageMaker serverless         | Phase 5 | Optional LSTM serving path                                                   |
+| AWS Budgets + Cost Anomaly   | Phase 5 | $50 monthly budget alert, anomaly detection on RDS + ECS                     |
+| EC2 (Airflow)                | Phase 4 | t3.medium, Docker Compose, weekly retraining DAG                             |
 
 ---
 
@@ -473,11 +493,11 @@ Applied to `users`, `portfolios`, `holdings` via `CREATE TRIGGER ... BEFORE UPDA
 
 After all six phases, every StockLens CV bullet is replaced with provably true claims:
 
-| Before                                                              | After                                                                                                              |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| "ARIMA forecasting and Linear Regression for portfolio projections" | "PyTorch LSTM directional classifier (up/flat/down) with 30-day feature window, trained on 50+ S&P 500 components" |
-| "Per-category OCR with 78 tests"                                    | "Full-stack Python OCR pipeline with pytesseract + Bedrock Claude Haiku fallback, 80+ pytest suite"                |
-| "78 tests covering ML flows"                                        | "LSTM evaluated by directional accuracy, per-class F1, and simulated Sharpe ratio"                                 |
-| _(no infra claim)_                                                  | "Terraform-provisioned AWS stack: RDS, ECS Fargate, SageMaker serverless, S3, ALB with OIDC CI/CD"                 |
-| _(no agent claim)_                                                  | "LangChain ReAct agent with 5 financial tools, 15-question golden evaluation set"                                  |
-| _(no MLOps claim)_                                                  | "Airflow weekly retraining pipeline with Evidently drift detection, champion/challenger model promotion"           |
+| Before                                                              | After                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "ARIMA forecasting and Linear Regression for portfolio projections" | "PyTorch LSTM directional classifier (up/flat/down) with 30-day feature window, trained on 50+ S&P 500 components"                                                                                                                                  |
+| "Per-category OCR with 78 tests"                                    | "Full-stack Python OCR pipeline with pytesseract + Bedrock Claude Haiku fallback, 80+ pytest suite"                                                                                                                                                 |
+| "78 tests covering ML flows"                                        | "LSTM evaluated by directional accuracy, per-class F1, and simulated Sharpe ratio"                                                                                                                                                                  |
+| _(no infra claim)_                                                  | "Terraform-provisioned AWS stack: RDS (Multi-AZ, PITR), ECS Fargate (auto-scaling), WAF (rate-based + SQLi/XSS), Secrets Manager (4+ secrets), CloudWatch observability (p50/p95/p99 dashboards), AWS Budgets + cost anomaly detection, OIDC CI/CD" |
+| _(no agent claim)_                                                  | "LangChain ReAct agent with 5 financial tools, 15-question golden evaluation set"                                                                                                                                                                   |
+| _(no MLOps claim)_                                                  | "Airflow weekly retraining pipeline with Evidently drift detection, champion/challenger model promotion"                                                                                                                                            |

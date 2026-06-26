@@ -41,7 +41,7 @@
 - OCR pipeline: pytesseract for text extraction + merchant detection + Bedrock Claude Haiku fallback for ambiguous merchants
 - Receipt CRUD integrated with OCR output
 - 60–80 pytest tests (auth, CRUD, OCR, categories, caching)
-- Terraform: RDS db.t3.micro + S3 bucket + ECR repository
+- Terraform: RDS (db.t3.micro, Multi-AZ, 7-day backups, PITR) + S3 buckets (3) + ECR repository + Secrets Manager (4 secrets: JWT key, DB URL, Bedrock key, Redis password)
 - React Native: Firebase SDK replaced with FastAPI HTTP client
 - All existing Jest tests preserved
 - AES-256 encryption for financial data at rest
@@ -57,21 +57,21 @@
 
 ### Tech Decisions
 
-| Decision               | Choice                                               | Rationale                                                                                                            |
-| ---------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| OCR library            | pytesseract                                          | Clean receipts (controlled capture). Simpler than PaddleOCR.                                                         |
-| OCR preprocessing      | opencv-python-headless                               | Adaptive thresholding + denoising for real-world receipts with shadows/angle. CV narrative alignment.                |
-| OCR LLM fallback       | AWS Bedrock Claude Haiku                             | Better CV signal than local Ollama. Haiku is fast/cheap for structured classification. Complements AWS-native stack. |
-| Python package manager | uv                                                   | Faster than pip, modern resolver, same project uses it.                                                              |
-| Async DB driver        | asyncpg                                              | Native async PostgreSQL driver. All endpoints `async def` — no event loop blocking.                                  |
-| ORM / SQL              | Raw SQL via asyncpg                                  | No ORM overhead. SQL is explicit and auditable.                                                                      |
-| Migration tool         | Alembic                                              | Industry-standard schema migrations. Hand-written SQL via `op.execute()`. No SQLAlchemy ORM dependency.              |
-| Test DB pattern        | Separate `postgres_test` container in Docker Compose | LAAD pattern. Isolated test database.                                                                                |
-| Per-test isolation     | Transaction rollback                                 | Fast, clean, industry-standard pattern for asyncpg + pytest.                                                         |
-| Redis usage            | JWT blacklist + rate limiting (sliding window)       | Same pattern as LAAD. Redis is lightweight and well-understood.                                                      |
-| Rate limiting          | slowapi + sliding window                             | Fairer than fixed window, ~30 lines of code with Redis sorted sets.                                                  |
-| Terraform scope        | VPC + RDS + S3 + ECR in Phase 1                      | VPC provisioned alongside storage infra from day one. LAAD VPC module reused. Avoids default-VPC risk.               |
-| HEIC handling          | iOS-side conversion (Expo ImagePicker)               | Simpler than server-side pillow-heif. Existing app already converts via expo-image-picker.                           |
+| Decision               | Choice                                                           | Rationale                                                                                                                                   |
+| ---------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| OCR library            | pytesseract                                                      | Clean receipts (controlled capture). Simpler than PaddleOCR.                                                                                |
+| OCR preprocessing      | opencv-python-headless                                           | Adaptive thresholding + denoising for real-world receipts with shadows/angle. CV narrative alignment.                                       |
+| OCR LLM fallback       | AWS Bedrock Claude Haiku                                         | Better CV signal than local Ollama. Haiku is fast/cheap for structured classification. Complements AWS-native stack.                        |
+| Python package manager | uv                                                               | Faster than pip, modern resolver, same project uses it.                                                                                     |
+| Async DB driver        | asyncpg                                                          | Native async PostgreSQL driver. All endpoints `async def` — no event loop blocking.                                                         |
+| ORM / SQL              | Raw SQL via asyncpg                                              | No ORM overhead. SQL is explicit and auditable.                                                                                             |
+| Migration tool         | Alembic                                                          | Industry-standard schema migrations. Hand-written SQL via `op.execute()`. No SQLAlchemy ORM dependency.                                     |
+| Test DB pattern        | Separate `postgres_test` container in Docker Compose             | LAAD pattern. Isolated test database.                                                                                                       |
+| Per-test isolation     | Transaction rollback                                             | Fast, clean, industry-standard pattern for asyncpg + pytest.                                                                                |
+| Redis usage            | JWT blacklist + rate limiting (sliding window)                   | Same pattern as LAAD. Redis is lightweight and well-understood.                                                                             |
+| Rate limiting          | slowapi + sliding window                                         | Fairer than fixed window, ~30 lines of code with Redis sorted sets.                                                                         |
+| Terraform scope        | VPC + RDS + S3 + ECR + Secrets Manager + IaC scanning in Phase 1 | VPC provisioned alongside storage infra from day one. Secrets Manager for production-grade secret storage. checkov + tfsec run on every PR. |
+| HEIC handling          | iOS-side conversion (Expo ImagePicker)                           | Simpler than server-side pillow-heif. Existing app already converts via expo-image-picker.                                                  |
 
 ---
 
@@ -144,9 +144,14 @@ backend/
 terraform/
 ├── provider.tf
 ├── variables.tf
-├── main.tf                        # module calls: rds, s3, ecr
+├── main.tf                        # module calls: secrets, rds, s3, ecr
 ├── outputs.tf
+├── checkov.yml                    # IaC security scan config (checkov)
 └── modules/
+    ├── secrets/
+    │   ├── main.tf                 # AWS Secrets Manager: JWT key, DB URL, Bedrock key, Redis password
+    │   ├── variables.tf
+    │   └── outputs.tf
     ├── rds/
     │   ├── main.tf
     │   ├── variables.tf
@@ -156,6 +161,14 @@ terraform/
     │   ├── variables.tf
     │   └── outputs.tf
     └── ecr/
+        ├── main.tf
+        ├── variables.tf
+        └── outputs.tf
+    └── waf/                           # Phase 5 — module created now, provisioned in Phase 5
+        ├── main.tf
+        ├── variables.tf
+        └── outputs.tf
+    └── monitoring/                    # Phase 5 — CloudWatch dashboards + Budgets alarms
         ├── main.tf
         ├── variables.tf
         └── outputs.tf
@@ -206,6 +219,7 @@ terraform/
 - `pytest-cov>=6.0.0`
 - `pytest-mock>=3.14.0`
 - `python-dotenv>=1.0.0`
+- `structlog>=24.4.0` (structured JSON logging)
 
 > **Version note (2026-06-26):** Pins above verified against current PyPI. Use `uv add` to install — it resolves the latest compatible versions automatically.
 
@@ -222,6 +236,33 @@ terraform/
 - `OCR_TESSERACT_CMD` — optional, for Windows compat
 - `RATE_LIMIT_LOGIN` — default `20/minute`
 - `RATE_LIMIT_DEFAULT` — default `100/minute`
+- `STRUCTLOG_LOG_LEVEL` — default `INFO`
+- `ENVIRONMENT` — default `development` (set to `production` in ECS)
+
+**Logging configuration (main.py lifespan):** Configure structlog early in app startup:
+
+```python
+import structlog
+
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        structlog.processors.JSONRenderer()  # JSON output for CloudWatch log insight
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    cache_logger_on_first_use=True,
+)
+```
+
+The JSON log lines flow to stdout, captured by Docker's json-file driver locally and by CloudWatch `awslogs` driver in ECS.
 
 **Docker health checks:**
 
@@ -908,14 +949,66 @@ Store both access and refresh tokens in `expo-secure-store` (already a dependenc
 - Scan on push: enabled
 - Lifecycle: keep 25 most recent images (same as LAAD)
 
+**`modules/secrets/main.tf`** (new — adapted from LAAD's `modules/secrets/`):
+
+Creates 4 secrets in AWS Secrets Manager:
+
+| Secret Name                           | Purpose                           | Value Source                              |
+| ------------------------------------- | --------------------------------- | ----------------------------------------- |
+| `stocklens/{environment}/jwt-secret`  | JWT signing key (HS256, ≥256-bit) | `random_password` resource                |
+| `stocklens/{environment}/db-url`      | Full DATABASE_URL connection str  | Built from RDS endpoint + master password |
+| `stocklens/{environment}/bedrock-key` | AWS Bedrock access + secret key   | Variable (provided at apply time)         |
+| `stocklens/{environment}/redis-pass`  | Redis AUTH password               | `random_password` resource                |
+
+- Each secret: `aws_secretsmanager_secret` + `aws_secretsmanager_secret_version`
+- IAM policy (attached to ECS task role in Phase 5): `secretsmanager:GetSecretValue` scoped to `arn:aws:secretsmanager:*:*:secret:stocklens/${var.environment}/*`
+- checkov skip annotations for automatic rotation (manual rotation acceptable for dev)
+
+**`modules/rds/main.tf` update — backup, Multi-AZ, and Secrets Manager integration:**
+
+Add to the existing RDS module:
+
+- `backup_retention_period = 7` (7-day automated backups with PITR)
+- `backup_window = "03:00-04:00"` (UTC)
+- `multi_az = var.environment == "prod" ? true : false` (enable Multi-AZ for prod)
+- `copy_tags_to_snapshot = true`
+- Master password sourced from `random_password` (local) in dev, from Secrets Manager `data.aws_secretsmanager_secret_version.db_master` in prod
+- Output: `rds_endpoint` (used by secrets module to build DATABASE_URL)
+
+**IaC security scanning (`checkov.yml`):**
+
+```yaml
+# terraform/checkov.yml — IaC security policy
+compact: true
+framework: terraform
+skip-check:
+  - CKV_AWS_149 # Secrets Manager KMS key (dev)
+  - CKV2_AWS_57 # Secrets Manager rotation (dev)
+  - CKV_AWS_117 # VPC flow logs (added in Tier 2)
+```
+
+- CI runs `checkov --config-file checkov.yml -d .` and `tfsec .` on every PR touching `terraform/`
+- Critical/high findings block the PR from merging
+
 **`main.tf`:**
 
 ```hcl
-module "vpc" { source = "./modules/vpc" ... }
-module "rds" { source = "./modules/rds" vpc_id = module.vpc.vpc_id private_subnet_ids = module.vpc.private_subnet_ids ... }
-module "s3"  { source = "./modules/s3"  ... }
-module "ecr" { source = "./modules/ecr" ... }
+module "vpc"     { source = "./modules/vpc"     ... }
+module "secrets" { source = "./modules/secrets" ... }
+module "rds"     { source = "./modules/rds"     vpc_id = module.vpc.vpc_id private_subnet_ids = module.vpc.private_subnet_ids ... }
+module "s3"      { source = "./modules/s3"      ... }
+module "ecr"     { source = "./modules/ecr"     ... }
 ```
+
+**Phase 5 preparation — module stubs created now, provisioned later:**
+
+To keep Phase 1 lean, the `waf/` and `monitoring/` module directories are created with skeleton files now (so the Terraform directory structure is ready), but they are **not called from `main.tf`** until Phase 5.
+
+| Module                       | Phase | What it provisions                                                                                                                                                                                            | CV narrative                                                           |
+| ---------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `modules/waf/main.tf`        | 5     | `aws_wafv2_web_acl` with rate-based rule (200 req/min per IP), SQL injection + XSS match statements, associated with ALB                                                                                      | "WAF rate limiting + SQLi/XSS protection on ALB"                       |
+| `modules/monitoring/main.tf` | 5     | `aws_cloudwatch_dashboard` (p50/p95/p99 latency, error rate, RDS connections, ECS CPU/memory), `aws_budgets_budget` ($50 monthly), `aws_cloudwatch_metric_alarm` for ECS + RDS health, Cost Anomaly Detection | "CloudWatch dashboards + AWS Budgets with cost anomaly detection"      |
+| ECS Service Auto Scaling     | 5     | `aws_appautoscaling_target` + `aws_appautoscaling_policy` for ECS service — target tracking on CPU (75%) + request count per target (1000/ALB)                                                                | "ECS Service Auto Scaling with target tracking on CPU + request count" |
 
 **Usage:**
 
@@ -923,8 +1016,10 @@ module "ecr" { source = "./modules/ecr" ... }
 cd terraform
 terraform init
 terraform plan -var="environment=dev"
+# IaC security scan (separate CI step):
+pip install checkov tfsec && checkov --config-file checkov.yml -d . && tfsec .
 terraform apply -var="environment=dev"
-# Outputs: VPC ID, RDS endpoint, S3 bucket names, ECR repository URL
+# Outputs: VPC ID, RDS endpoint, S3 bucket names, ECR repository URL, Secret ARNs
 ```
 
 ---
@@ -1059,6 +1154,8 @@ Phase 1 is complete when ALL of the following are true:
 - [ ] ESLint passes with zero errors
 - [ ] TypeScript type check passes: `npx tsc --noEmit`
 - [ ] Terraform plan succeeds: `terraform plan -var="environment=dev"` exits 0
+- [ ] IaC security scan passes: `checkov --config-file checkov.yml -d terraform/` and `tfsec terraform/` — zero critical/high findings
+- [ ] Secrets Manager secrets created: `aws secretsmanager list-secrets` shows stocklens secrets
 - [ ] No Firebase SDK calls remain in the React Native app
 - [ ] Receipt images are never stored on device after processing
 - [ ] Passwords are bcrypt-hashed with work factor ≥12, never stored in plaintext
@@ -1159,20 +1256,23 @@ npx expo start
 
 These files in `/Users/ahmedikram/GitHub Repos/laad` provide direct reference implementations:
 
-| Pattern                            | LAAD File                                                                             |
-| ---------------------------------- | ------------------------------------------------------------------------------------- |
-| Docker Compose structure           | `docker-compose.yml`                                                                  |
-| PostgreSQL connection pool (async) | `backend/src/database/connection.py` — adapt for asyncpg                              |
-| DB init with Alembic               | LAAD uses raw SQL; adapt to Alembic async pattern                                     |
-| JWT auth router                    | `backend/src/auth/auth_router.py` — structure, adapt for async + refresh_tokens table |
-| Redis client                       | `backend/src/cache/redis_client.py`                                                   |
-| FastAPI main with lifespan         | `backend/src/api/server.py`                                                           |
-| Backend Dockerfile                 | `backend/Dockerfile`                                                                  |
-| Terraform VPC module               | `terraform/modules/vpc/main.tf` — directly reusable                                   |
-| Terraform RDS module               | `terraform/modules/rds/main.tf` — directly reusable                                   |
-| Terraform ECR module               | `terraform/modules/ecr/main.tf` — directly reusable                                   |
-| Terraform root module              | `terraform/main.tf` — structure                                                       |
-| MLflow custom image                | `mlflow/Dockerfile`                                                                   |
+| Pattern                            | LAAD File                                                                               |
+| ---------------------------------- | --------------------------------------------------------------------------------------- |
+| Docker Compose structure           | `docker-compose.yml`                                                                    |
+| PostgreSQL connection pool (async) | `backend/src/database/connection.py` — adapt for asyncpg                                |
+| DB init with Alembic               | LAAD uses raw SQL; adapt to Alembic async pattern                                       |
+| JWT auth router                    | `backend/src/auth/auth_router.py` — structure, adapt for async + refresh_tokens table   |
+| Redis client                       | `backend/src/cache/redis_client.py`                                                     |
+| FastAPI main with lifespan         | `backend/src/api/server.py`                                                             |
+| Backend Dockerfile                 | `backend/Dockerfile`                                                                    |
+| Terraform VPC module               | `terraform/modules/vpc/main.tf` — directly reusable                                     |
+| Terraform RDS module               | `terraform/modules/rds/main.tf` — directly reusable                                     |
+| Terraform ECR module               | `terraform/modules/ecr/main.tf` — directly reusable                                     |
+| Terraform root module              | `terraform/main.tf` — structure                                                         |
+| MLflow custom image                | `mlflow/Dockerfile`                                                                     |
+| Secrets Manager module             | `terraform/modules/secrets/main.tf` — 7+ secrets pattern, adapt for 4 StockLens secrets |
+| Monitoring / CloudWatch module     | `terraform/modules/monitoring/main.tf` — metric alarms for RDS, ECS, SageMaker          |
+| IAM least-privilege policies       | `terraform/modules/iam/main.tf` — secrets read + CloudWatch write policies              |
 
 ## Appendix B: Security Requirements
 
@@ -1187,4 +1287,6 @@ These files in `/Users/ahmedikram/GitHub Repos/laad` provide direct reference im
 - [ ] Redis blacklist checked on every authenticated request
 - [ ] Rate limiting: sliding window via slowapi + Redis — 20 requests/min for `/auth/login` + `/auth/register`, 100/min for other endpoints
 - [ ] CORS: restricted to `http://localhost:8081` in dev (Expo dev server)
+- [ ] Secrets: all production secrets stored in AWS Secrets Manager, never in `.env` files or code
+- [ ] IaC security: checkov + tfsec run in CI, critical/high findings block PRs
 - [ ] RDS: `storage_encrypted = true` (AES-256 at volume level), security group restricted to VPC CIDR
