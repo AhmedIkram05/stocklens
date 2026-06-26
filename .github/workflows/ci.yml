@@ -1,7 +1,8 @@
 # CI
 #
 # Runs in parallel across four concerns: linting, type checking, testing
-# with coverage, and security auditing. Every check must pass before merge.
+# with coverage, and security auditing. Jobs are selectively skipped
+# based on which files changed (see changes job) to avoid unnecessary runs.
 name: CI
 
 on:
@@ -18,8 +19,48 @@ env:
   NODE_ENV: test
 
 jobs:
+  # ---------------------------------------------------------------
+  # Detect which paths changed — downstream jobs use these outputs.
+  # ---------------------------------------------------------------
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      source: ${{ steps.filter.outputs.source }}
+      deps: ${{ steps.filter.outputs.deps }}
+      config: ${{ steps.filter.outputs.config }}
+      tests: ${{ steps.filter.outputs.tests }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            source:
+              - 'src/**/*.ts'
+              - 'src/**/*.tsx'
+            deps:
+              - 'package.json'
+              - 'package-lock.json'
+            config:
+              - 'tsconfig.json'
+              - 'eslint.config.js'
+              - '.prettierrc'
+              - '.github/workflows/ci.yml'
+            tests:
+              - 'src/__tests__/**'
+              - 'jest.config.*'
+              - 'jest-setup.*'
+
+  # ---------------------------------------------------------------
+  # Always runs — fast (~30s) and catches formatting/code-style
+  # regressions even when only docs or config change.
+  # ---------------------------------------------------------------
   lint:
     name: Lint & Format
+    needs: [changes]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -34,8 +75,14 @@ jobs:
           node node_modules/prettier/bin/prettier.cjs --check .
       - run: ./node_modules/.bin/eslint src/
 
+  # ---------------------------------------------------------------
+  # Always runs (needed for required status checks), but only
+  # executes tsc when relevant source/config files change.
+  # ---------------------------------------------------------------
   typecheck:
     name: TypeScript
+    needs: [changes]
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -44,10 +91,19 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npx tsc --noEmit
+      - if: needs.changes.outputs.source == 'true' || needs.changes.outputs.config == 'true'
+        run: npx tsc --noEmit
+      - if: needs.changes.outputs.source != 'true' && needs.changes.outputs.config != 'true'
+        run: echo "Skipped — no source/config changes"
 
+  # ---------------------------------------------------------------
+  # Always runs, but only runs tests when code/test/deps change.
+  # Reports to Codecov only on pushes to main.
+  # ---------------------------------------------------------------
   test:
     name: Tests & Coverage
+    needs: [changes]
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -56,15 +112,24 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npm test -- --coverage
-      - uses: codecov/codecov-action@v6
+      - if: needs.changes.outputs.source == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.deps == 'true'
+        run: npm test -- --coverage
+      - if: needs.changes.outputs.source != 'true' && needs.changes.outputs.tests != 'true' && needs.changes.outputs.deps != 'true'
+        run: echo "Skipped — no source/test/deps changes"
+      - if: (needs.changes.outputs.source == 'true' || needs.changes.outputs.tests == 'true' || needs.changes.outputs.deps == 'true') && github.ref == 'refs/heads/main'
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/lcov.info
           fail_ci_if_error: true
 
+  # ---------------------------------------------------------------
+  # Always runs, but only runs npm audit when deps change.
+  # ---------------------------------------------------------------
   security:
     name: Security Audit
+    needs: [changes]
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -72,6 +137,10 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
+      - if: needs.changes.outputs.deps == 'true'
+        run: npm ci
       - name: npm audit
+        if: needs.changes.outputs.deps == 'true'
         run: npm audit --omit=dev || true
+      - if: needs.changes.outputs.deps != 'true'
+        run: echo "Skipped — no dependency changes"
