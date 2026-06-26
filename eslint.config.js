@@ -12,13 +12,10 @@ const native = require('eslint-config-universe/flat/native');
 module.exports = [
   ...native,
   {
+    // TypeScript-specific rules — scoped to .ts/.tsx to avoid
+    // crashing on .js config files (eslint.config.js, jest.config.js, etc.)
+    files: ['**/*.ts', '**/*.tsx'],
     rules: {
-      // ── Overly strict rules disabled to avoid invasive reformatting ──
-      'import/order': 'off',
-      'import/no-duplicates': 'off',
-      'import/no-named-as-default-member': 'off',
-      'import/first': 'off',
-      'react/jsx-curly-brace-presence': 'off',
       '@typescript-eslint/array-type': 'off',
 
       // ── Unused vars — keep as error, but allow unused catch params ──
@@ -29,6 +26,17 @@ module.exports = [
           caughtErrors: 'none',
         },
       ],
+    },
+  },
+  {
+    // Global rules applied to all files
+    rules: {
+      // ── Overly strict rules disabled to avoid invasive reformatting ──
+      'import/order': 'off',
+      'import/no-duplicates': 'off',
+      'import/no-named-as-default-member': 'off',
+      'import/first': 'off',
+      'react/jsx-curly-brace-presence': 'off',
 
       // ── React Native ──
       'react-native/no-raw-text': 'off',
