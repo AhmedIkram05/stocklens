@@ -9,7 +9,13 @@ import { render, RenderOptions } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthContext, AuthContextType } from '@/contexts/AuthContext';
-import { ThemeContext, ThemeContextType, ThemeMode, darkTheme, lightTheme } from '@/contexts/ThemeContext';
+import {
+  ThemeContext,
+  ThemeContextType,
+  ThemeMode,
+  darkTheme,
+  lightTheme,
+} from '@/contexts/ThemeContext';
 
 export type ProviderOverrides = {
   withNavigation?: boolean;
@@ -18,7 +24,10 @@ export type ProviderOverrides = {
   authValue?: Partial<AuthContextType>;
 };
 
-const createThemeValue = (mode: ThemeMode = 'light', overrides?: Partial<ThemeContextType>): ThemeContextType => {
+const createThemeValue = (
+  mode: ThemeMode = 'light',
+  overrides?: Partial<ThemeContextType>,
+): ThemeContextType => {
   const resolvedMode = overrides?.mode ?? mode;
   const resolvedTheme = overrides?.theme ?? (resolvedMode === 'dark' ? darkTheme : lightTheme);
 
@@ -43,10 +52,21 @@ const createAuthValue = (overrides?: Partial<AuthContextType>): AuthContextType 
   ...overrides,
 });
 
-const TestProviders = ({ children, overrides }: { children: ReactNode; overrides?: ProviderOverrides }) => {
+const TestProviders = ({
+  children,
+  overrides,
+}: {
+  children: ReactNode;
+  overrides?: ProviderOverrides;
+}) => {
   const themeValue = createThemeValue(overrides?.themeMode, overrides?.themeValue);
   const authValue = createAuthValue(overrides?.authValue);
-  const content = overrides?.withNavigation === false ? children : <NavigationContainer>{children}</NavigationContainer>;
+  const content =
+    overrides?.withNavigation === false ? (
+      children
+    ) : (
+      <NavigationContainer>{children}</NavigationContainer>
+    );
 
   return (
     <ThemeContext.Provider value={themeValue}>

@@ -43,10 +43,7 @@ export default function ExpandableCard({
   const { theme } = useTheme();
 
   return (
-    <Pressable
-      onPress={onToggle}
-      style={[styles.card, { backgroundColor: theme.surface }, style]}
-    >
+    <Pressable onPress={onToggle} style={[styles.card, { backgroundColor: theme.surface }, style]}>
       <Ionicons name={icon} size={22} color={iconColor} style={styles.icon} />
       <View style={styles.content}>
         <View style={styles.header}>
@@ -57,7 +54,9 @@ export default function ExpandableCard({
             color={theme.textSecondary}
           />
         </View>
-        <AppText style={[styles.description, { color: theme.textSecondary }]}>{description}</AppText>
+        <AppText style={[styles.description, { color: theme.textSecondary }]}>
+          {description}
+        </AppText>
 
         {isExpanded && expandedContent && (
           <View style={styles.expandedContent}>{expandedContent}</View>

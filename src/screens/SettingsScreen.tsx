@@ -6,7 +6,6 @@
 
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Alert, Switch, ScrollView } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import ScreenContainer from '../components/ScreenContainer';
 import PageHeader from '../components/PageHeader';
 import SettingRow from '../components/SettingRow';
@@ -14,35 +13,31 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import * as deviceAuth from '../hooks/useDeviceAuth';
 import { receiptService } from '../services/dataService';
-import { radii, spacing, typography, sizes } from '../styles/theme';
+import { spacing, typography } from '../styles/theme';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 
 /** Settings screen. */
 export default function SettingsScreen() {
   const { signOutUser, userProfile } = useAuth();
-  const { mode, setMode, isDark, theme } = useTheme();
+  const { setMode, isDark, theme } = useTheme();
   const [deviceAuthEnabled, setDeviceAuthEnabled] = useState(false);
   const { isSmallPhone, isTablet } = useBreakpoint();
 
   const handleSignOut = async () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await signOutUser();
-            } catch (error) {
-              Alert.alert('Error', 'Failed to sign out');
-            }
-          },
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await signOutUser();
+          } catch (error) {
+            Alert.alert('Error', 'Failed to sign out');
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   React.useEffect(() => {
@@ -51,14 +46,14 @@ export default function SettingsScreen() {
       try {
         // First check if device authentication is available on the device
         const available = await deviceAuth.isDeviceAuthAvailable();
-        
+
         if (!available) {
           // If device auth not available, ensure toggle is OFF and disable the setting
           if (mounted) setDeviceAuthEnabled(false);
           await deviceAuth.setDeviceEnabled(false);
           return;
         }
-        
+
         // If available, load the saved preference
         const enabled = await deviceAuth.isDeviceEnabled();
         if (mounted) setDeviceAuthEnabled(enabled);
@@ -66,7 +61,9 @@ export default function SettingsScreen() {
         if (mounted) setDeviceAuthEnabled(false);
       }
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const handleToggleDeviceAuth = async (val: boolean) => {
@@ -76,8 +73,7 @@ export default function SettingsScreen() {
       try {
         await deviceAuth.setDeviceEnabled(false);
         await deviceAuth.clearDeviceCredentials();
-      } catch (err) {
-      }
+      } catch (err) {}
       return;
     }
 
@@ -88,19 +84,22 @@ export default function SettingsScreen() {
         Alert.alert(
           'Device authentication unavailable',
           'Device authentication is not available or not configured. Ensure a device passcode or biometrics are set up in system settings.',
-          [{ text: 'OK', onPress: () => setDeviceAuthEnabled(false) }]
+          [{ text: 'OK', onPress: () => setDeviceAuthEnabled(false) }],
         );
         setDeviceAuthEnabled(false);
         return;
       }
 
       // Verify with native device auth prompt
-      const { success, error } = await deviceAuth.authenticateDevice('Authenticate to enable device passcode login');
+      const { success, error } = await deviceAuth.authenticateDevice(
+        'Authenticate to enable device passcode login',
+      );
       if (!success) {
         Alert.alert(
           'Authentication failed',
-          error || 'Could not verify your identity. Try again or check your device security settings.',
-          [{ text: 'OK', onPress: () => setDeviceAuthEnabled(false) }]
+          error ||
+            'Could not verify your identity. Try again or check your device security settings.',
+          [{ text: 'OK', onPress: () => setDeviceAuthEnabled(false) }],
         );
         setDeviceAuthEnabled(false);
         return;
@@ -109,7 +108,10 @@ export default function SettingsScreen() {
       // Successfully authenticated - enable device login
       await deviceAuth.setDeviceEnabled(true);
       setDeviceAuthEnabled(true);
-      Alert.alert('Enabled', 'Device passcode login enabled. You can now unlock the app with your device credentials.');
+      Alert.alert(
+        'Enabled',
+        'Device passcode login enabled. You can now unlock the app with your device credentials.',
+      );
     } catch (err) {
       Alert.alert('Error', 'Failed to enable device login. Please try again.');
       setDeviceAuthEnabled(false);
@@ -133,34 +135,58 @@ export default function SettingsScreen() {
             try {
               const uid = userProfile?.uid;
               await receiptService.deleteAll(uid);
-              Alert.alert('Data cleared', 'All scanned receipts stored on this device have been permanently deleted.');
+              Alert.alert(
+                'Data cleared',
+                'All scanned receipts stored on this device have been permanently deleted.',
+              );
             } catch (err: any) {
-              Alert.alert('Error', err?.message || 'Failed to clear scanned data. Please try again later.');
+              Alert.alert(
+                'Error',
+                err?.message || 'Failed to clear scanned data. Please try again later.',
+              );
             }
           },
         },
-      ]
+      ],
     );
   };
   return (
     <ScreenContainer>
-      <ScrollView contentContainerStyle={[styles.scrollContent]} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent]}
+        showsVerticalScrollIndicator={false}
+      >
         <PageHeader>
           <View>
             <Text style={[styles.title, { color: theme.text }]}>Settings</Text>
           </View>
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Manage your preferences and security</Text>
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+            Manage your preferences and security
+          </Text>
         </PageHeader>
 
-        <View style={[styles.section, isSmallPhone && styles.sectionCompact, isTablet && styles.sectionWide]}>
+        <View
+          style={[
+            styles.section,
+            isSmallPhone && styles.sectionCompact,
+            isTablet && styles.sectionWide,
+          ]}
+        >
           <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Security</Text>
 
           <SettingRow
-            icon={deviceAuthEnabled ? "lock-closed" : "lock-open"}
+            icon={deviceAuthEnabled ? 'lock-closed' : 'lock-open'}
             iconBgColor={theme.secondary}
             title="Device Passcode Unlock"
             subtitle="Secure login with your device credentials"
-            right={<Switch value={deviceAuthEnabled} onValueChange={handleToggleDeviceAuth} trackColor={{ false: theme.border, true: theme.primary }} thumbColor="#ffffff" />}
+            right={
+              <Switch
+                value={deviceAuthEnabled}
+                onValueChange={handleToggleDeviceAuth}
+                trackColor={{ false: theme.border, true: theme.primary }}
+                thumbColor="#ffffff"
+              />
+            }
           />
 
           <SettingRow
@@ -171,19 +197,38 @@ export default function SettingsScreen() {
           />
         </View>
 
-        <View style={[styles.section, isSmallPhone && styles.sectionCompact, isTablet && styles.sectionWide]}>
+        <View
+          style={[
+            styles.section,
+            isSmallPhone && styles.sectionCompact,
+            isTablet && styles.sectionWide,
+          ]}
+        >
           <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Preferences</Text>
 
           <SettingRow
-            icon={"moon"}
+            icon={'moon'}
             iconBgColor={theme.secondary}
             title="Dark Mode"
             subtitle="Reduce glare & save battery"
-            right={<Switch value={isDark} onValueChange={handleToggleDarkMode} trackColor={{ false: theme.border, true: theme.primary }} thumbColor="#ffffff" />}
+            right={
+              <Switch
+                value={isDark}
+                onValueChange={handleToggleDarkMode}
+                trackColor={{ false: theme.border, true: theme.primary }}
+                thumbColor="#ffffff"
+              />
+            }
           />
         </View>
 
-        <View style={[styles.section, isSmallPhone && styles.sectionCompact, isTablet && styles.sectionWide]}>
+        <View
+          style={[
+            styles.section,
+            isSmallPhone && styles.sectionCompact,
+            isTablet && styles.sectionWide,
+          ]}
+        >
           <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Account</Text>
 
           <SettingRow
@@ -197,7 +242,13 @@ export default function SettingsScreen() {
           />
         </View>
 
-        <View style={[styles.section, isSmallPhone && styles.sectionCompact, isTablet && styles.sectionWide]}>
+        <View
+          style={[
+            styles.section,
+            isSmallPhone && styles.sectionCompact,
+            isTablet && styles.sectionWide,
+          ]}
+        >
           <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>Data Management</Text>
 
           <SettingRow

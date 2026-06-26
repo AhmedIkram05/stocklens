@@ -41,9 +41,7 @@ export function useBreakpoint(): BreakpointInfo {
     const isLargePhone = width >= breakpoints.largePhone && width < breakpoints.tablet;
     const isSmallPhone = width <= breakpoints.smallPhone;
 
-    const contentHorizontalPadding = isTablet
-      ? spacing.xxl
-      : spacing.md;
+    const contentHorizontalPadding = isTablet ? spacing.xxl : spacing.md;
 
     const sectionVerticalSpacing = isTablet ? spacing.xxl : spacing.xl;
     const cardsPerRow = isTablet ? 3 : 2;

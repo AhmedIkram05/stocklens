@@ -49,13 +49,19 @@ describe('SignUpScreen', () => {
     alertSpy.mockClear();
     navigateSpy = jest.fn();
     goBackSpy = jest.fn();
-    mockedUseNavigation.mockReturnValue({ navigate: navigateSpy, goBack: goBackSpy, canGoBack: () => true } as any);
+    mockedUseNavigation.mockReturnValue({
+      navigate: navigateSpy,
+      goBack: goBackSpy,
+      canGoBack: () => true,
+    } as any);
     mockedSignUp.mockResolvedValue({} as any);
     mockedPrompt.mockResolvedValue(true as any);
   });
 
   it('shows validation alert when email format is invalid', () => {
-    const { getByPlaceholderText, getByText } = renderWithProviders(<SignUpScreen />, { providerOverrides: { withNavigation: false } });
+    const { getByPlaceholderText, getByText } = renderWithProviders(<SignUpScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
 
     fireEvent.changeText(getByPlaceholderText('First Name'), 'Jane');
     fireEvent.changeText(getByPlaceholderText('Email'), 'invalid-email');
@@ -85,7 +91,11 @@ describe('SignUpScreen', () => {
     fireEvent.press(getByText('Create Account'));
 
     await waitFor(() => {
-      expect(mockedSignUp).toHaveBeenCalledWith({ firstName: 'Jane', email: 'jane@example.com', password: 'secret1' });
+      expect(mockedSignUp).toHaveBeenCalledWith({
+        firstName: 'Jane',
+        email: 'jane@example.com',
+        password: 'secret1',
+      });
     });
 
     expect(startLockGrace).toHaveBeenCalled();
@@ -93,7 +103,9 @@ describe('SignUpScreen', () => {
   });
 
   it('navigates back to login from footer CTA', () => {
-    const { getByText } = renderWithProviders(<SignUpScreen />, { providerOverrides: { withNavigation: false } });
+    const { getByText } = renderWithProviders(<SignUpScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
 
     fireEvent.press(getByText('Login'));
 

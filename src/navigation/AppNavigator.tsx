@@ -5,7 +5,7 @@
  */
 
 import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator, CardStyleInterpolators, TransitionPresets } from '@react-navigation/stack';
+import { createStackNavigator, CardStyleInterpolators } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -68,7 +68,7 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 
 /**
  * MainTabNavigator
- * 
+ *
  * Bottom tab bar with 4 tabs: Dashboard, Scan, Summary, Settings.
  * Uses Ionicons for tab icons (filled when active, outlined when inactive).
  * Features:
@@ -133,13 +133,15 @@ function MainTabNavigator() {
           title: 'Dashboard',
           tabBarLabel: 'Dashboard',
           headerShown: false,
-          tabBarIcon: ({ focused, color, size }: { focused: boolean; color: string; size: number }) => (
-            <Ionicons
-              name={focused ? 'grid' : 'grid-outline'}
-              size={size}
-              color={color}
-            />
-          ),
+          tabBarIcon: ({
+            focused,
+            color,
+            size,
+          }: {
+            focused: boolean;
+            color: string;
+            size: number;
+          }) => <Ionicons name={focused ? 'grid' : 'grid-outline'} size={size} color={color} />,
         }}
       />
       <Tab.Screen
@@ -149,13 +151,15 @@ function MainTabNavigator() {
           title: 'Scan Receipt',
           tabBarLabel: 'Scan',
           headerShown: false,
-          tabBarIcon: ({ focused, color, size }: { focused: boolean; color: string; size: number }) => (
-            <Ionicons
-              name={focused ? 'camera' : 'camera-outline'}
-              size={size}
-              color={color}
-            />
-          ),
+          tabBarIcon: ({
+            focused,
+            color,
+            size,
+          }: {
+            focused: boolean;
+            color: string;
+            size: number;
+          }) => <Ionicons name={focused ? 'camera' : 'camera-outline'} size={size} color={color} />,
         }}
       />
       <Tab.Screen
@@ -165,7 +169,15 @@ function MainTabNavigator() {
           title: 'Summary',
           tabBarLabel: 'Summary',
           headerShown: false,
-          tabBarIcon: ({ focused, color, size }: { focused: boolean; color: string; size: number }) => (
+          tabBarIcon: ({
+            focused,
+            color,
+            size,
+          }: {
+            focused: boolean;
+            color: string;
+            size: number;
+          }) => (
             <Ionicons
               name={focused ? 'bar-chart' : 'bar-chart-outline'}
               size={size}
@@ -181,12 +193,16 @@ function MainTabNavigator() {
           title: 'Settings',
           tabBarLabel: 'Settings',
           headerShown: false,
-          tabBarIcon: ({ focused, color, size }: { focused: boolean; color: string; size: number }) => (
-            <Ionicons
-              name={focused ? 'settings' : 'settings-outline'}
-              size={size}
-              color={color}
-            />
+          tabBarIcon: ({
+            focused,
+            color,
+            size,
+          }: {
+            focused: boolean;
+            color: string;
+            size: number;
+          }) => (
+            <Ionicons name={focused ? 'settings' : 'settings-outline'} size={size} color={color} />
           ),
         }}
       />
@@ -196,18 +212,18 @@ function MainTabNavigator() {
 
 /**
  * AppNavigator (Root Navigator)
- * 
+ *
  * Main navigation component wrapped in NavigationContainer.
  * Handles authentication state and conditional rendering:
  * - Loading: Shows ActivityIndicator
  * - Unauthenticated: Shows Splash → Login/SignUp flow
  * - Authenticated & Locked: Shows LockScreen (device passcode gate)
  * - Authenticated & Unlocked: Shows MainTabs + ReceiptDetails modal
- * 
+ *
  * Auto-unlock behavior:
  * - When user is authenticated but locked, automatically attempts a device-auth unlock
  * - Uses useEffect to trigger unlock on mount if conditions are met
- * 
+ *
  * Transition animations:
  * - Horizontal iOS-style slide transitions
  * - 200ms duration for smooth navigation
@@ -217,16 +233,13 @@ export default function AppNavigator() {
   const { theme } = useTheme();
 
   React.useEffect(() => {
-    let mounted = true;
     (async () => {
       try {
         if (!loading && user && locked) {
           unlockWithDeviceAuth();
         }
-      } catch (err) {
-      }
+      } catch (err) {}
     })();
-    return () => { mounted = false; };
   }, [loading, user, locked]);
 
   if (loading) {
@@ -238,8 +251,8 @@ export default function AppNavigator() {
   }
   return (
     <NavigationContainer>
-      <Stack.Navigator 
-        screenOptions={{ 
+      <Stack.Navigator
+        screenOptions={{
           headerShown: false,
           cardStyleInterpolator: CardStyleInterpolators.forHorizontalIOS,
           transitionSpec: {

@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { Pressable, StyleSheet, StyleProp, ViewStyle, TextStyle, Platform } from 'react-native';
+import { Pressable, StyleSheet, StyleProp, ViewStyle, TextStyle } from 'react-native';
 import AppText from './AppText';
 import { brandColors } from '../contexts/ThemeContext';
 import { radii, spacing, typography, shadows } from '../styles/theme';
@@ -31,9 +31,16 @@ type Props = {
  * Text color automatically switches between white (light mode) and black (dark mode).
  * Uses Pressable with platform-specific press feedback for native feel.
  */
-export default function PrimaryButton({ onPress, children, style, textStyle, disabled, accessibilityLabel }: Props) {
-  const { theme, isDark } = useTheme();
-  
+export default function PrimaryButton({
+  onPress,
+  children,
+  style,
+  textStyle,
+  disabled,
+  accessibilityLabel,
+}: Props) {
+  const { isDark } = useTheme();
+
   return (
     <Pressable
       onPress={onPress}
@@ -41,13 +48,17 @@ export default function PrimaryButton({ onPress, children, style, textStyle, dis
         styles.button,
         disabled && styles.disabled,
         pressed && { opacity: 0.6 },
-        style
+        style,
       ]}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
     >
-      <AppText style={[styles.text, { color: isDark ? brandColors.black : brandColors.white }, textStyle]}>{children}</AppText>
+      <AppText
+        style={[styles.text, { color: isDark ? brandColors.black : brandColors.white }, textStyle]}
+      >
+        {children}
+      </AppText>
     </Pressable>
   );
 }

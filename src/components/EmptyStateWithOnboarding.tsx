@@ -35,7 +35,7 @@ export const EmptyStateWithOnboarding: React.FC<EmptyStateWithOnboardingProps> =
 }) => {
   const { theme } = useTheme();
   const { isTablet } = useBreakpoint();
-  
+
   const circleSize = isTablet ? sizes.controlLg : sizes.controlMd;
 
   return (
@@ -50,45 +50,53 @@ export const EmptyStateWithOnboarding: React.FC<EmptyStateWithOnboardingProps> =
 
       <View style={styles.onboardingCards}>
         <View style={[styles.onboardingCard, { backgroundColor: theme.surface }]}>
-          <View style={[
-            styles.numberCircle,
-            { backgroundColor: theme.primary, width: circleSize, height: circleSize }
-          ]}>
+          <View
+            style={[
+              styles.numberCircle,
+              { backgroundColor: theme.primary, width: circleSize, height: circleSize },
+            ]}
+          >
             <AppText style={[styles.numberText, { color: brandColors.white }]}>1</AppText>
           </View>
           <View style={styles.cardContent}>
             <AppText style={[styles.cardTitle, { color: theme.text }]}>Scan Your Receipts</AppText>
-            <AppText style={[styles.cardSubtitle, { color: theme.textSecondary }]}> 
+            <AppText style={[styles.cardSubtitle, { color: theme.textSecondary }]}>
               Take photos of your spending to track expenses
             </AppText>
           </View>
         </View>
 
         <View style={[styles.onboardingCard, { backgroundColor: theme.surface }]}>
-          <View style={[
-            styles.numberCircle,
-            { backgroundColor: theme.primary, width: circleSize, height: circleSize }
-          ]}>
+          <View
+            style={[
+              styles.numberCircle,
+              { backgroundColor: theme.primary, width: circleSize, height: circleSize },
+            ]}
+          >
             <AppText style={[styles.numberText, { color: brandColors.white }]}>2</AppText>
           </View>
           <View style={styles.cardContent}>
-            <AppText style={[styles.cardTitle, { color: theme.text }]}>See Investment Potential</AppText>
-            <AppText style={[styles.cardSubtitle, { color: theme.textSecondary }]}> 
+            <AppText style={[styles.cardTitle, { color: theme.text }]}>
+              See Investment Potential
+            </AppText>
+            <AppText style={[styles.cardSubtitle, { color: theme.textSecondary }]}>
               Discover what your spending could be worth if invested
             </AppText>
           </View>
         </View>
 
         <View style={[styles.onboardingCard, { backgroundColor: theme.surface }]}>
-          <View style={[
-            styles.numberCircle,
-            { backgroundColor: theme.primary, width: circleSize, height: circleSize }
-          ]}>
+          <View
+            style={[
+              styles.numberCircle,
+              { backgroundColor: theme.primary, width: circleSize, height: circleSize },
+            ]}
+          >
             <AppText style={[styles.numberText, { color: brandColors.white }]}>3</AppText>
           </View>
           <View style={styles.cardContent}>
             <AppText style={[styles.cardTitle, { color: theme.text }]}>Track Your Progress</AppText>
-            <AppText style={[styles.cardSubtitle, { color: theme.textSecondary }]}> 
+            <AppText style={[styles.cardSubtitle, { color: theme.textSecondary }]}>
               Monitor your spending patterns and missed investment opportunities
             </AppText>
           </View>

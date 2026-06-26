@@ -22,11 +22,16 @@ export default function ResponsiveContainer({ children, maxWidth = 960, style }:
   const insets = useSafeAreaInsets();
   const { width, contentHorizontalPadding } = useBreakpoint();
 
-  const horizontalReserved = (contentHorizontalPadding || 0) * 2 + (insets.left || 0) + (insets.right || 0);
+  const horizontalReserved =
+    (contentHorizontalPadding || 0) * 2 + (insets.left || 0) + (insets.right || 0);
   const available = Math.max(0, width - horizontalReserved);
   const contentWidth = Math.min(available, maxWidth);
 
-  return <View style={[{ width: contentWidth, alignSelf: 'center' }, styles.container, style]}>{children}</View>;
+  return (
+    <View style={[{ width: contentWidth, alignSelf: 'center' }, styles.container, style]}>
+      {children}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

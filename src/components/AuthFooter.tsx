@@ -24,11 +24,17 @@ type Props = {
 
 export default function AuthFooter({ prompt = '', actionText, onPress, style }: Props) {
   const { theme } = useTheme();
-  
+
   return (
     <View style={[styles.container, style]}>
-      {prompt ? <AppText style={[styles.prompt, { color: theme.textSecondary }]}>{prompt}</AppText> : null}
-      <TouchableOpacity style={[styles.button, { backgroundColor: theme.surface, borderColor: brandColors.green }]} onPress={onPress} accessibilityRole="button">
+      {prompt ? (
+        <AppText style={[styles.prompt, { color: theme.textSecondary }]}>{prompt}</AppText>
+      ) : null}
+      <TouchableOpacity
+        style={[styles.button, { backgroundColor: theme.surface, borderColor: brandColors.green }]}
+        onPress={onPress}
+        accessibilityRole="button"
+      >
         <AppText style={styles.buttonText}>{actionText}</AppText>
       </TouchableOpacity>
     </View>

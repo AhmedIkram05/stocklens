@@ -13,16 +13,19 @@ const fetchMock = require('jest-fetch-mock');
 fetchMock.enableMocks();
 
 process.env.EXPO_PUBLIC_API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? 'test-api-key';
-process.env.EXPO_PUBLIC_AUTH_DOMAIN = process.env.EXPO_PUBLIC_AUTH_DOMAIN ?? 'test-auth.firebaseapp.com';
+process.env.EXPO_PUBLIC_AUTH_DOMAIN =
+  process.env.EXPO_PUBLIC_AUTH_DOMAIN ?? 'test-auth.firebaseapp.com';
 process.env.EXPO_PUBLIC_PROJECT_ID = process.env.EXPO_PUBLIC_PROJECT_ID ?? 'test-project';
-process.env.EXPO_PUBLIC_STORAGE_BUCKET = process.env.EXPO_PUBLIC_STORAGE_BUCKET ?? 'test.appspot.com';
-process.env.EXPO_PUBLIC_MESSAGING_SENDER_ID = process.env.EXPO_PUBLIC_MESSAGING_SENDER_ID ?? '1234567890';
+process.env.EXPO_PUBLIC_STORAGE_BUCKET =
+  process.env.EXPO_PUBLIC_STORAGE_BUCKET ?? 'test.appspot.com';
+process.env.EXPO_PUBLIC_MESSAGING_SENDER_ID =
+  process.env.EXPO_PUBLIC_MESSAGING_SENDER_ID ?? '1234567890';
 process.env.EXPO_PUBLIC_APP_ID = process.env.EXPO_PUBLIC_APP_ID ?? '1:1234567890:web:abcdef123456';
 process.env.EXPO_PUBLIC_MEASUREMENT_ID = process.env.EXPO_PUBLIC_MEASUREMENT_ID ?? 'G-TEST123';
 
 jest.mock('expo-constants', () => ({
   manifest: { extra: {} },
-  expoConfig: { extra: {} }
+  expoConfig: { extra: {} },
 }));
 
 jest.mock('expo-haptics', () => ({
@@ -30,40 +33,37 @@ jest.mock('expo-haptics', () => ({
   ImpactFeedbackStyle: {
     Light: 'light',
     Medium: 'medium',
-    Heavy: 'heavy'
-  }
+    Heavy: 'heavy',
+  },
 }));
 
 jest.mock('expo-status-bar', () => ({
-  StatusBar: () => null
+  StatusBar: () => null,
 }));
 
 jest.mock('expo-blur', () => ({
-  BlurView: ({ children }: { children?: React.ReactNode }) => children ?? null
+  BlurView: ({ children }: { children?: React.ReactNode }) => children ?? null,
 }));
 
 jest.mock('expo-linear-gradient', () => ({
-  LinearGradient: ({ children }: { children?: React.ReactNode }) => children ?? null
+  LinearGradient: ({ children }: { children?: React.ReactNode }) => children ?? null,
 }));
 
 jest.mock('expo-camera', () => ({
   CameraView: jest.fn(() => null),
   CameraType: {
     back: 'back',
-    front: 'front'
+    front: 'front',
   },
-  useCameraPermissions: jest.fn(() => [
-    { status: 'granted', granted: true },
-    jest.fn()
-  ]),
-  requestCameraPermissionsAsync: jest.fn(async () => ({ granted: true, status: 'granted' }))
+  useCameraPermissions: jest.fn(() => [{ status: 'granted', granted: true }, jest.fn()]),
+  requestCameraPermissionsAsync: jest.fn(async () => ({ granted: true, status: 'granted' })),
 }));
 
 jest.mock('expo-local-authentication', () => ({
   authenticateAsync: jest.fn(async () => ({ success: true })),
   hasHardwareAsync: jest.fn(async () => true),
   isEnrolledAsync: jest.fn(async () => true),
-  supportedAuthenticationTypesAsync: jest.fn(async () => [])
+  supportedAuthenticationTypesAsync: jest.fn(async () => []),
 }));
 
 jest.mock('expo-secure-store', () => {
@@ -76,24 +76,26 @@ jest.mock('expo-secure-store', () => {
     getItemAsync: jest.fn(async (key: string) => secureStoreData.get(key) ?? null),
     deleteItemAsync: jest.fn(async (key: string) => {
       secureStoreData.delete(key);
-    })
+    }),
   };
 });
 
 jest.mock('expo-sqlite', () => {
-  const executeSql = jest.fn((statement: string, params: unknown[] = [], success?: Function, error?: Function) => {
-    if (success) {
-      success({
-        rows: { _array: [], length: 0 },
-        rowsAffected: 0,
-        insertId: undefined
-      });
-    }
+  const executeSql = jest.fn(
+    (statement: string, _params: unknown[] = [], success?: Function, error?: Function) => {
+      if (success) {
+        success({
+          rows: { _array: [], length: 0 },
+          rowsAffected: 0,
+          insertId: undefined,
+        });
+      }
 
-    if (error) {
-      error(null);
-    }
-  });
+      if (error) {
+        error(null);
+      }
+    },
+  );
 
   const transaction = jest.fn((callback: (tx: { executeSql: typeof executeSql }) => void) => {
     const tx = { executeSql };
@@ -109,7 +111,7 @@ jest.mock('expo-sqlite', () => {
 
   return {
     openDatabase: jest.fn(() => mockDb),
-    openDatabaseSync: jest.fn(() => mockDb)
+    openDatabaseSync: jest.fn(() => mockDb),
   };
 });
 
@@ -131,7 +133,7 @@ try {
       withTiming: (value: number) => value,
       Easing: { cubic: jest.fn() },
     }),
-    { virtual: true }
+    { virtual: true },
   );
 }
 

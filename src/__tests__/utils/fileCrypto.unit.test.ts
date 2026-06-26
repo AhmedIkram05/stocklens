@@ -8,7 +8,13 @@ jest.mock('expo-file-system/legacy', () => ({
 }));
 
 jest.mock('@/services/keyManager', () => ({ getOrCreateKey: jest.fn(async () => 'test-key') }));
-jest.mock('@/utils/crypto', () => ({ encryptString: jest.fn(async (s: string) => `enc:${s}`), decryptString: jest.fn(async (s: string) => (typeof s === 'string' && s.startsWith('enc:')) ? s.slice(4) : s), isEncryptedPayload: jest.fn((s: any) => typeof s === 'string' && s.startsWith('enc:')) }));
+jest.mock('@/utils/crypto', () => ({
+  encryptString: jest.fn(async (s: string) => `enc:${s}`),
+  decryptString: jest.fn(async (s: string) =>
+    typeof s === 'string' && s.startsWith('enc:') ? s.slice(4) : s,
+  ),
+  isEncryptedPayload: jest.fn((s: any) => typeof s === 'string' && s.startsWith('enc:')),
+}));
 
 import * as FS from 'expo-file-system/legacy';
 import fileCrypto from '@/utils/fileCrypto';

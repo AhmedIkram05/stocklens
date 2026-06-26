@@ -16,7 +16,7 @@ import { authService, SignUpData } from '../services/authService';
 import { promptEnableDeviceAuth } from '../utils/deviceAuthPrompt';
 import { useAuth } from '../contexts/AuthContext';
 import { brandColors } from '../contexts/ThemeContext';
-import { radii, spacing, typography, sizes } from '../styles/theme';
+import { radii, spacing, typography } from '../styles/theme';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -58,13 +58,12 @@ export default function SignUpScreen() {
     try {
       const signUpData: SignUpData = { firstName, email, password };
       await authService.signUp(signUpData);
-      
+
       startLockGrace();
-      
+
       try {
         await promptEnableDeviceAuth(email, password);
-      } catch (e) {
-      }
+      } catch (e) {}
     } catch (error: any) {
       let errorMessage = 'An error occurred during sign up';
       if (error.code === 'auth/email-already-in-use') {
@@ -91,14 +90,16 @@ export default function SignUpScreen() {
   };
 
   return (
-    <ScreenContainer contentStyle={{ paddingHorizontal: contentHorizontalPadding, paddingVertical: sectionVerticalSpacing }}>
+    <ScreenContainer
+      contentStyle={{
+        paddingHorizontal: contentHorizontalPadding,
+        paddingVertical: sectionVerticalSpacing,
+      }}
+    >
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[
-          styles.content,
-          { paddingBottom: sectionVerticalSpacing },
-        ]}
+        contentContainerStyle={[styles.content, { paddingBottom: sectionVerticalSpacing }]}
       >
         <View style={[styles.headerRow, isSmallPhone && styles.headerRowCompact]}>
           <IconButton name="chevron-back" onPress={handleBack} accessibilityLabel="Go back" />
@@ -111,7 +112,7 @@ export default function SignUpScreen() {
           </Text>
         </View>
 
-  <View style={[styles.formContainer, isSmallPhone && styles.formContainerCompact]}>
+        <View style={[styles.formContainer, isSmallPhone && styles.formContainerCompact]}>
           <FormInput
             placeholder="First Name"
             value={firstName}
@@ -158,7 +159,12 @@ export default function SignUpScreen() {
             Create Account
           </PrimaryButton>
 
-          <AuthFooter prompt="Already have an account?" actionText="Login" onPress={handleLogin} style={styles.loginContainer} />
+          <AuthFooter
+            prompt="Already have an account?"
+            actionText="Login"
+            onPress={handleLogin}
+            style={styles.loginContainer}
+          />
         </View>
       </ScrollView>
     </ScreenContainer>

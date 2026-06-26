@@ -9,7 +9,7 @@ describe('eventBus', () => {
   beforeEach(() => {
     // Clear all listeners between tests by accessing internal state
     const listeners = (subscribe as any).listeners || {};
-    Object.keys(listeners).forEach(key => delete listeners[key]);
+    Object.keys(listeners).forEach((key) => delete listeners[key]);
   });
 
   it('subscribes to events and receives payloads', () => {

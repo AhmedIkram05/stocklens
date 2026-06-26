@@ -5,15 +5,15 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import ScreenContainer from '../components/ScreenContainer';
 import PageHeader from '../components/PageHeader';
 import { brandColors, useTheme } from '../contexts/ThemeContext';
-import { radii, shadows, spacing, typography, sizes } from '../styles/theme';
+import { radii, spacing, typography } from '../styles/theme';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useEffect, useState } from 'react';
 import { ScrollView } from 'react-native';
-import { ensureHistoricalPrefetch, PREFETCH_TICKERS } from '../services/dataService';
+import { ensureHistoricalPrefetch } from '../services/dataService';
 import { subscribe } from '../services/eventBus';
 import useReceipts, { ReceiptShape } from '../hooks/useReceipts';
 import { ActivityIndicator } from 'react-native';
@@ -57,7 +57,7 @@ export default function SummaryScreen() {
 
         if (r.length > 0) {
           const counts: Record<string, number> = {};
-          r.forEach(rr => {
+          r.forEach((rr) => {
             const d = rr.date ? new Date(rr.date) : new Date();
             const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
             counts[key] = (counts[key] || 0) + 1;
@@ -66,26 +66,27 @@ export default function SummaryScreen() {
           if (sortedMonths.length > 0) {
             const top = sortedMonths[0];
             const [y, m] = top.split('-');
-            const monthName = new Date(Number(y), Number(m) - 1, 1).toLocaleString('en-GB', { month: 'short', year: 'numeric' });
+            const monthName = new Date(Number(y), Number(m) - 1, 1).toLocaleString('en-GB', {
+              month: 'short',
+              year: 'numeric',
+            });
             setMostActiveMonth(monthName);
           }
         }
-
-        const tickers = PREFETCH_TICKERS;
-        const perTicker = total / Math.max(1, tickers.length);
-      } catch (err) {
-      }
+      } catch (err) {}
     }
 
     ensureHistoricalPrefetch().catch(() => {});
 
-  loadTotals();
+    loadTotals();
     const unsubHist = subscribe('historical-updated', () => {
       loadTotals().catch(() => {});
     });
     return () => {
       mounted = false;
-      try { unsubHist(); } catch (e) {}
+      try {
+        unsubHist();
+      } catch (e) {}
     };
   }, [user?.uid, receipts]);
 
@@ -93,7 +94,7 @@ export default function SummaryScreen() {
 
   const getDynamicInsights = () => {
     const dynamicInsights = [];
-    
+
     if (totalMoneySpent > 0) {
       dynamicInsights.push({
         icon: 'wallet-outline',
@@ -101,7 +102,7 @@ export default function SummaryScreen() {
         description: `You've spent ${formatCurrency(totalMoneySpent)} that could be working for you`,
       });
     }
-    
+
     // Lower thresholds so insights appear quickly for small test datasets
     if (totalMoneySpent > 1) {
       dynamicInsights.push({
@@ -131,13 +132,13 @@ export default function SummaryScreen() {
       title: 'Time is Your Superpower',
       description: 'Every year you wait costs exponentially more',
     });
-    
+
     dynamicInsights.push({
       icon: 'pulse-outline',
       title: 'Inflation is Eating Your Cash',
       description: 'Cash loses purchasing power—investments can beat inflation',
     });
-    
+
     return dynamicInsights;
   };
 
@@ -211,7 +212,7 @@ export default function SummaryScreen() {
         'High earners who invest aggressively often retire 10-15 years earlier',
         'Consider automatic transfers to investment accounts before spending',
       ],
-      example: `${formatCurrency(totalMoneySpent * 0.2)} invested monthly at 8% for 20 years = ${formatCurrency((totalMoneySpent * 0.2) * (Math.pow(1.08, 20) - 1) / 0.08)}.`,
+      example: `${formatCurrency(totalMoneySpent * 0.2)} invested monthly at 8% for 20 years = ${formatCurrency((totalMoneySpent * 0.2 * (Math.pow(1.08, 20) - 1)) / 0.08)}.`,
     },
     'Small Purchases Add Up': {
       bullets: [
@@ -219,7 +220,7 @@ export default function SummaryScreen() {
         'Small frequent expenses are the #1 wealth killer',
         'Cutting just 30% of these could fund a retirement account',
       ],
-      example: `Reducing spending by 30% saves ${formatCurrency(totalMoneySpent * 0.3)}/year. Over 25 years at 7%, that's ${formatCurrency((totalMoneySpent * 0.3) * (Math.pow(1.07, 25) - 1) / 0.07)}.`,
+      example: `Reducing spending by 30% saves ${formatCurrency(totalMoneySpent * 0.3)}/year. Over 25 years at 7%, that's ${formatCurrency((totalMoneySpent * 0.3 * (Math.pow(1.07, 25) - 1)) / 0.07)}.`,
     },
     'Consistent Spending Pattern': {
       bullets: [
@@ -227,16 +228,16 @@ export default function SummaryScreen() {
         'Set up automatic investments during consistent periods',
         'Awareness is the first step to financial optimization',
       ],
-      example: `With consistent spending of ${formatCurrency(avgPerReceipt)} per purchase, redirecting 25% monthly (${formatCurrency(avgPerReceipt * 0.25 * receiptsScanned / 12)}) for 20 years at 7% = ${formatCurrency((avgPerReceipt * 0.25 * receiptsScanned / 12) * 12 * (Math.pow(1.07, 20) - 1) / 0.07)}.`,
+      example: `With consistent spending of ${formatCurrency(avgPerReceipt)} per purchase, redirecting 25% monthly (${formatCurrency((avgPerReceipt * 0.25 * receiptsScanned) / 12)}) for 20 years at 7% = ${formatCurrency((((avgPerReceipt * 0.25 * receiptsScanned) / 12) * 12 * (Math.pow(1.07, 20) - 1)) / 0.07)}.`,
     },
-    
+
     'Time is Your Superpower': {
       bullets: [
         'Starting at 25 vs 35 can mean 2-3x more wealth by retirement',
         'A 25-year-old investing £200/month reaches £500k+ by 65',
         'The same £200/month starting at 35 only reaches £250k',
       ],
-      example: `Starting today with ${formatCurrency(avgPerReceipt)}/month vs waiting 5 years could mean ${formatCurrency(avgPerReceipt * 12 * (Math.pow(1.08, 25) - Math.pow(1.08, 20)) / 0.08)} more wealth.`,
+      example: `Starting today with ${formatCurrency(avgPerReceipt)}/month vs waiting 5 years could mean ${formatCurrency((avgPerReceipt * 12 * (Math.pow(1.08, 25) - Math.pow(1.08, 20))) / 0.08)} more wealth.`,
     },
     'Inflation is Eating Your Cash': {
       bullets: [
@@ -250,53 +251,76 @@ export default function SummaryScreen() {
 
   const definitionDetails: Record<string, { explanation: string; example: string }> = {
     'Compound Interest': {
-      explanation: 'Compound interest is when you earn interest not just on your initial investment, but also on the interest you\'ve already earned. This creates exponential growth over time, often called the "snowball effect".',
-      example: 'If you invest £1,000 at 10% annually: Year 1 = £1,100, Year 2 = £1,210 (not £1,200), Year 10 = £2,594. The extra £94 in year 10 comes from compounding.',
+      explanation:
+        'Compound interest is when you earn interest not just on your initial investment, but also on the interest you\'ve already earned. This creates exponential growth over time, often called the "snowball effect".',
+      example:
+        'If you invest £1,000 at 10% annually: Year 1 = £1,100, Year 2 = £1,210 (not £1,200), Year 10 = £2,594. The extra £94 in year 10 comes from compounding.',
     },
-    'CAGR': {
-      explanation: 'CAGR (Compound Annual Growth Rate) smooths out year-to-year volatility to show the average rate at which an investment grows annually. It\'s more accurate than simple averages for long-term returns.',
-      example: 'If an investment goes from £1,000 to £2,000 in 5 years, the CAGR is 14.87%, not 20% (which would be the simple average).',
+    CAGR: {
+      explanation:
+        "CAGR (Compound Annual Growth Rate) smooths out year-to-year volatility to show the average rate at which an investment grows annually. It's more accurate than simple averages for long-term returns.",
+      example:
+        'If an investment goes from £1,000 to £2,000 in 5 years, the CAGR is 14.87%, not 20% (which would be the simple average).',
     },
-    'Diversification': {
-      explanation: 'Diversification means not putting all your eggs in one basket. By spreading investments across different companies, sectors, and asset types, you reduce the risk that one poor performer will hurt your entire portfolio.',
-      example: 'If you invest £1,000 across 5 sectors and one drops 50%, you only lose £100 total. If all £1,000 was in that one sector, you\'d lose £500.',
+    Diversification: {
+      explanation:
+        'Diversification means not putting all your eggs in one basket. By spreading investments across different companies, sectors, and asset types, you reduce the risk that one poor performer will hurt your entire portfolio.',
+      example:
+        "If you invest £1,000 across 5 sectors and one drops 50%, you only lose £100 total. If all £1,000 was in that one sector, you'd lose £500.",
     },
-    'Portfolio': {
-      explanation: 'A portfolio is your complete collection of investments. It can include stocks, bonds, ETFs, mutual funds, and other assets. A well-balanced portfolio matches your risk tolerance and financial goals.',
-      example: 'A moderate portfolio might be: 60% stocks (growth), 30% bonds (stability), 10% cash (liquidity).',
+    Portfolio: {
+      explanation:
+        'A portfolio is your complete collection of investments. It can include stocks, bonds, ETFs, mutual funds, and other assets. A well-balanced portfolio matches your risk tolerance and financial goals.',
+      example:
+        'A moderate portfolio might be: 60% stocks (growth), 30% bonds (stability), 10% cash (liquidity).',
     },
     'Risk Tolerance': {
-      explanation: 'Risk tolerance is your psychological and financial ability to handle investment losses without panicking. It depends on your age, income stability, financial goals, and personality. Higher risk tolerance allows for more aggressive (growth-focused) investments.',
-      example: 'Conservative investor: Loses sleep over 5% drops, prefers bonds. Aggressive investor: Comfortable with 20% swings, invests heavily in stocks.',
+      explanation:
+        'Risk tolerance is your psychological and financial ability to handle investment losses without panicking. It depends on your age, income stability, financial goals, and personality. Higher risk tolerance allows for more aggressive (growth-focused) investments.',
+      example:
+        'Conservative investor: Loses sleep over 5% drops, prefers bonds. Aggressive investor: Comfortable with 20% swings, invests heavily in stocks.',
     },
     'Asset Allocation': {
-      explanation: 'Asset allocation is the strategy of dividing your portfolio among different asset categories (stocks, bonds, cash, real estate, etc.). It\'s the most important factor affecting portfolio risk and return. Your allocation should match your goals and timeline.',
-      example: 'Young investor (30+ years to retirement): 80% stocks, 15% bonds, 5% cash. Near retiree: 40% stocks, 50% bonds, 10% cash.',
+      explanation:
+        "Asset allocation is the strategy of dividing your portfolio among different asset categories (stocks, bonds, cash, real estate, etc.). It's the most important factor affecting portfolio risk and return. Your allocation should match your goals and timeline.",
+      example:
+        'Young investor (30+ years to retirement): 80% stocks, 15% bonds, 5% cash. Near retiree: 40% stocks, 50% bonds, 10% cash.',
     },
-    'ETF': {
-      explanation: 'An Exchange-Traded Fund (ETF) holds many stocks or bonds in one package, trading on exchanges like individual stocks. ETFs offer instant diversification, low fees, and flexibility. They\'re ideal for beginners wanting broad market exposure.',
-      example: 'Vanguard S&P 500 ETF (VUSA) holds all 500 companies in the S&P 500. Buying one share gives you tiny pieces of Apple, Microsoft, Amazon, and 497 others.',
+    ETF: {
+      explanation:
+        "An Exchange-Traded Fund (ETF) holds many stocks or bonds in one package, trading on exchanges like individual stocks. ETFs offer instant diversification, low fees, and flexibility. They're ideal for beginners wanting broad market exposure.",
+      example:
+        'Vanguard S&P 500 ETF (VUSA) holds all 500 companies in the S&P 500. Buying one share gives you tiny pieces of Apple, Microsoft, Amazon, and 497 others.',
     },
-    'Dividend': {
-      explanation: 'A dividend is a cash payment companies make to shareholders from profits. Dividend-paying stocks provide regular income plus potential growth. Reinvesting dividends accelerates compounding. Dividend yield = annual dividend ÷ stock price.',
-      example: 'If a £100 stock pays £4/year in dividends, the yield is 4%. Owning 100 shares = £400/year passive income. Reinvested over 20 years, this dramatically boosts returns.',
+    Dividend: {
+      explanation:
+        'A dividend is a cash payment companies make to shareholders from profits. Dividend-paying stocks provide regular income plus potential growth. Reinvesting dividends accelerates compounding. Dividend yield = annual dividend ÷ stock price.',
+      example:
+        'If a £100 stock pays £4/year in dividends, the yield is 4%. Owning 100 shares = £400/year passive income. Reinvested over 20 years, this dramatically boosts returns.',
     },
     'Bull vs Bear Market': {
-      explanation: 'Bull markets are prolonged periods of rising prices (typically 20%+ gains), driven by optimism and economic growth. Bear markets are extended declines (20%+ drops), triggered by pessimism or recession. Both are normal cycles.',
-      example: 'Bull: 2009-2020 (stocks tripled after financial crisis). Bear: 2022 (stocks fell 25% due to inflation fears). Long-term investors buy during bears, hold through bulls.',
+      explanation:
+        'Bull markets are prolonged periods of rising prices (typically 20%+ gains), driven by optimism and economic growth. Bear markets are extended declines (20%+ drops), triggered by pessimism or recession. Both are normal cycles.',
+      example:
+        'Bull: 2009-2020 (stocks tripled after financial crisis). Bear: 2022 (stocks fell 25% due to inflation fears). Long-term investors buy during bears, hold through bulls.',
     },
     'Index Fund': {
-      explanation: 'An index fund passively tracks a market index (like FTSE 100 or S&P 500) by holding the same stocks in the same proportions. They offer instant diversification, minimal fees, and historically beat 90% of actively managed funds over 15+ years.',
-      example: 'Instead of picking individual stocks, invest £1,000 in a FTSE 100 index fund. You own pieces of the UK\'s 100 largest companies automatically rebalanced.',
+      explanation:
+        'An index fund passively tracks a market index (like FTSE 100 or S&P 500) by holding the same stocks in the same proportions. They offer instant diversification, minimal fees, and historically beat 90% of actively managed funds over 15+ years.',
+      example:
+        "Instead of picking individual stocks, invest £1,000 in a FTSE 100 index fund. You own pieces of the UK's 100 largest companies automatically rebalanced.",
     },
   };
 
-  const { contentHorizontalPadding, cardsPerRow, width: screenWidth, isTablet, sectionVerticalSpacing } = useBreakpoint();
+  const {
+    contentHorizontalPadding,
+    cardsPerRow,
+    width: screenWidth,
+    isTablet,
+    sectionVerticalSpacing,
+  } = useBreakpoint();
   const cardsGap = cardsPerRow === 3 ? spacing.xl : spacing.md;
-  const cardsGridStyle = React.useMemo(
-    () => ({ marginHorizontal: -(cardsGap / 2) }),
-    [cardsGap]
-  );
+  const cardsGridStyle = React.useMemo(() => ({ marginHorizontal: -(cardsGap / 2) }), [cardsGap]);
   const cardWidth = React.useMemo(() => {
     const containerWidth = Math.max(screenWidth - contentHorizontalPadding * 2, 240);
     const totalGap = cardsGap * (cardsPerRow - 1);
@@ -308,7 +332,7 @@ export default function SummaryScreen() {
   }, [cardsPerRow, cardsGap, contentHorizontalPadding, isTablet, screenWidth]);
   const cardLayoutStyle = React.useMemo(
     () => ({ width: cardWidth, marginHorizontal: cardsGap / 2 }),
-    [cardWidth, cardsGap]
+    [cardWidth, cardsGap],
   );
   const navigation = useNavigation();
 
@@ -316,19 +340,25 @@ export default function SummaryScreen() {
     if (!r) return 'No receipts yet';
     try {
       const d = r.date ? new Date(r.date) : null;
-      if (d) return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+      if (d)
+        return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
     } catch (e) {}
     return 'Receipt';
   };
 
   return (
     <ScreenContainer contentStyle={{ paddingVertical: sectionVerticalSpacing }}>
-      <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+      >
         <PageHeader>
           <View>
             <Text style={[styles.title, { color: theme.text }]}>Summary</Text>
           </View>
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Your investment insights at a glance</Text>
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+            Your investment insights at a glance
+          </Text>
         </PageHeader>
 
         {receiptsLoading ? (
@@ -349,185 +379,228 @@ export default function SummaryScreen() {
           </ResponsiveContainer>
         ) : (
           <>
-  <ResponsiveContainer maxWidth={screenWidth - contentHorizontalPadding * 2}>
-
-        {/* Full-width 20-year projection card */}
-        <StatCard
-          value={
-            <IconValue
-              iconName="trending-up"
-              iconSize={28}
-              iconColor={theme.primary}
-              value={formatCurrency(totalMoneySpent * Math.pow(1.10, 20))}
-              valueStyle={[styles.projectionValue, { color: theme.text }]}
-            />
-          }
-          label="20-Year Portfolio Projection"
-          subtitle={`If your total spending of ${formatCurrency(totalMoneySpent)} grew at 10% per year`}
-          variant="white"
-          style={{ width: '100%', marginBottom: spacing.md, marginHorizontal: 0 }}
-        />
-
-        {/* Two cards from Dashboard */}
-        <View style={[styles.cardsGrid, cardsGridStyle, styles.statsRow]}>
-          <StatCard
-            value={
-              <IconValue
-                iconName="cash-outline"
-                iconSize={28}
-                iconColor={brandColors.white}
-                value={formatCurrency(totalMoneySpent)}
-                valueStyle={[styles.projectionValue, { color: brandColors.white, fontSize: 28 }]}
-              />
-            }
-            label="Total Money Spent"
-            subtitle="Across all scanned receipts"
-            variant="green"
-            style={cardLayoutStyle}
-          />
-          <StatCard
-            value={
-              <IconValue
-                iconName="document-text-outline"
-                iconSize={28}
-                iconColor={brandColors.white}
-                value={receiptsScanned}
-                valueStyle={[styles.projectionValue, { color: brandColors.white, fontSize: 28 }]}
-              />
-            }
-            label="Receipts Scanned"
-            variant="blue"
-            style={cardLayoutStyle}
-          />
-        </View>
-
-        <View style={[styles.cardsGrid, cardsGridStyle]}>
-          <StatCard
-            value={
-              <IconValue
-                iconName="receipt-outline"
-                iconSize={22}
-                iconColor={brandColors.white}
-                value={highestImpactReceipt?.amount ? formatCurrency(highestImpactReceipt.amount) : '—'}
-                valueStyle={[styles.cardValueText, { color: brandColors.white }]}
-              />
-            }
-            label="Highest value receipt"
-            subtitle={highestImpactReceipt ? getReceiptSubtitle(highestImpactReceipt) : 'No receipts yet'}
-            variant="green"
-            style={cardLayoutStyle}
-          />
-
-          <StatCard
-            value={
-              <IconValue
-                iconName="calculator-outline"
-                iconSize={22}
-                iconColor={brandColors.white}
-                value={formatCurrency(avgPerReceipt || 0)}
-                valueStyle={[styles.cardValueText, { color: brandColors.white }]}
-              />
-            }
-            label="Average per receipt"
-            variant="blue"
-            style={cardLayoutStyle}
-          />
-
-          <StatCard
-            value={
-              <IconValue
-                iconName="calendar-outline"
-                iconSize={22}
-                iconColor={brandColors.white}
-                value={mostActiveMonth ?? '—'}
-                valueStyle={[styles.cardValueText, { color: brandColors.white }]}
-              />
-            }
-            label="Most active month"
-            variant="green"
-            style={cardLayoutStyle}
-          />
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Investment Insights</Text>
-        </View>
-
-        <View>
-          {insights.map(item => {
-            const isExpanded = expandedInsight === item.title;
-            const details = insightDetails[item.title];
-            return (
-              <ExpandableCard
-                key={item.title}
-                icon={item.icon as any}
-                iconColor={theme.primary}
-                title={item.title}
-                description={item.description}
-                isExpanded={isExpanded}
-                onToggle={() => setExpandedInsight(isExpanded ? null : item.title)}
-                expandedContent={
-                  details ? (
-                    <>
-                      {details.bullets.map((bullet, index) => (
-                        <Text key={index} style={[styles.bulletPoint, { color: theme.textSecondary }]}>
-                          • {bullet}
-                        </Text>
-                      ))}
-                      <View style={[styles.exampleBox, { backgroundColor: isDark ? '#1a1a1a' : '#f9f9f9' }]}>
-                        <Text style={[styles.exampleLabel, { color: theme.text }]}>Example</Text>
-                        <Text style={[styles.exampleText, { color: theme.textSecondary }]}>{details.example}</Text>
-                      </View>
-                    </>
-                  ) : undefined
+            <ResponsiveContainer maxWidth={screenWidth - contentHorizontalPadding * 2}>
+              {/* Full-width 20-year projection card */}
+              <StatCard
+                value={
+                  <IconValue
+                    iconName="trending-up"
+                    iconSize={28}
+                    iconColor={theme.primary}
+                    value={formatCurrency(totalMoneySpent * Math.pow(1.1, 20))}
+                    valueStyle={[styles.projectionValue, { color: theme.text }]}
+                  />
                 }
+                label="20-Year Portfolio Projection"
+                subtitle={`If your total spending of ${formatCurrency(totalMoneySpent)} grew at 10% per year`}
+                variant="white"
+                style={{ width: '100%', marginBottom: spacing.md, marginHorizontal: 0 }}
               />
-            );
-          })}
-        </View>
 
-        <View style={[styles.warningBox, { backgroundColor: theme.surface }]}>
-          <Ionicons name="warning" size={28} color={brandColors.red} style={styles.warningIcon} />
-          <Text style={[styles.warningText, { color: theme.text }]}>
-            This is not financial advice. If you are considering investing, please consult a qualified financial advisor for professional guidance.
-          </Text>
-        </View>
+              {/* Two cards from Dashboard */}
+              <View style={[styles.cardsGrid, cardsGridStyle, styles.statsRow]}>
+                <StatCard
+                  value={
+                    <IconValue
+                      iconName="cash-outline"
+                      iconSize={28}
+                      iconColor={brandColors.white}
+                      value={formatCurrency(totalMoneySpent)}
+                      valueStyle={[
+                        styles.projectionValue,
+                        { color: brandColors.white, fontSize: 28 },
+                      ]}
+                    />
+                  }
+                  label="Total Money Spent"
+                  subtitle="Across all scanned receipts"
+                  variant="green"
+                  style={cardLayoutStyle}
+                />
+                <StatCard
+                  value={
+                    <IconValue
+                      iconName="document-text-outline"
+                      iconSize={28}
+                      iconColor={brandColors.white}
+                      value={receiptsScanned}
+                      valueStyle={[
+                        styles.projectionValue,
+                        { color: brandColors.white, fontSize: 28 },
+                      ]}
+                    />
+                  }
+                  label="Receipts Scanned"
+                  variant="blue"
+                  style={cardLayoutStyle}
+                />
+              </View>
 
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Key Definitions</Text>
-        </View>
+              <View style={[styles.cardsGrid, cardsGridStyle]}>
+                <StatCard
+                  value={
+                    <IconValue
+                      iconName="receipt-outline"
+                      iconSize={22}
+                      iconColor={brandColors.white}
+                      value={
+                        highestImpactReceipt?.amount
+                          ? formatCurrency(highestImpactReceipt.amount)
+                          : '—'
+                      }
+                      valueStyle={[styles.cardValueText, { color: brandColors.white }]}
+                    />
+                  }
+                  label="Highest value receipt"
+                  subtitle={
+                    highestImpactReceipt
+                      ? getReceiptSubtitle(highestImpactReceipt)
+                      : 'No receipts yet'
+                  }
+                  variant="green"
+                  style={cardLayoutStyle}
+                />
 
-        <View style={styles.definitionsList}>
-          {definitions.map(item => {
-            const isExpanded = expandedDefinition === item.term;
-            const details = definitionDetails[item.term];
-            return (
-              <ExpandableCard
-                key={item.term}
-                icon={item.icon as any}
-                iconColor={theme.secondary}
-                title={item.term}
-                description={item.shortDescription}
-                isExpanded={isExpanded}
-                onToggle={() => setExpandedDefinition(isExpanded ? null : item.term)}
-                expandedContent={
-                  details ? (
-                    <>
-                      <Text style={[styles.definitionExplanation, { color: theme.text }]}>{details.explanation}</Text>
-                      <View style={[styles.exampleBox, { backgroundColor: isDark ? '#1a1a1a' : '#f9f9f9' }]}>
-                        <Text style={[styles.exampleLabel, { color: theme.text }]}>Example</Text>
-                        <Text style={[styles.exampleText, { color: theme.textSecondary }]}>{details.example}</Text>
-                      </View>
-                    </>
-                  ) : undefined
-                }
-              />
-            );
-          })}
-        </View>
+                <StatCard
+                  value={
+                    <IconValue
+                      iconName="calculator-outline"
+                      iconSize={22}
+                      iconColor={brandColors.white}
+                      value={formatCurrency(avgPerReceipt || 0)}
+                      valueStyle={[styles.cardValueText, { color: brandColors.white }]}
+                    />
+                  }
+                  label="Average per receipt"
+                  variant="blue"
+                  style={cardLayoutStyle}
+                />
 
-        </ResponsiveContainer>
-        </>
+                <StatCard
+                  value={
+                    <IconValue
+                      iconName="calendar-outline"
+                      iconSize={22}
+                      iconColor={brandColors.white}
+                      value={mostActiveMonth ?? '—'}
+                      valueStyle={[styles.cardValueText, { color: brandColors.white }]}
+                    />
+                  }
+                  label="Most active month"
+                  variant="green"
+                  style={cardLayoutStyle}
+                />
+              </View>
+
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                  Investment Insights
+                </Text>
+              </View>
+
+              <View>
+                {insights.map((item) => {
+                  const isExpanded = expandedInsight === item.title;
+                  const details = insightDetails[item.title];
+                  return (
+                    <ExpandableCard
+                      key={item.title}
+                      icon={item.icon as any}
+                      iconColor={theme.primary}
+                      title={item.title}
+                      description={item.description}
+                      isExpanded={isExpanded}
+                      onToggle={() => setExpandedInsight(isExpanded ? null : item.title)}
+                      expandedContent={
+                        details ? (
+                          <>
+                            {details.bullets.map((bullet, index) => (
+                              <Text
+                                key={index}
+                                style={[styles.bulletPoint, { color: theme.textSecondary }]}
+                              >
+                                • {bullet}
+                              </Text>
+                            ))}
+                            <View
+                              style={[
+                                styles.exampleBox,
+                                { backgroundColor: isDark ? '#1a1a1a' : '#f9f9f9' },
+                              ]}
+                            >
+                              <Text style={[styles.exampleLabel, { color: theme.text }]}>
+                                Example
+                              </Text>
+                              <Text style={[styles.exampleText, { color: theme.textSecondary }]}>
+                                {details.example}
+                              </Text>
+                            </View>
+                          </>
+                        ) : undefined
+                      }
+                    />
+                  );
+                })}
+              </View>
+
+              <View style={[styles.warningBox, { backgroundColor: theme.surface }]}>
+                <Ionicons
+                  name="warning"
+                  size={28}
+                  color={brandColors.red}
+                  style={styles.warningIcon}
+                />
+                <Text style={[styles.warningText, { color: theme.text }]}>
+                  This is not financial advice. If you are considering investing, please consult a
+                  qualified financial advisor for professional guidance.
+                </Text>
+              </View>
+
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Key Definitions</Text>
+              </View>
+
+              <View style={styles.definitionsList}>
+                {definitions.map((item) => {
+                  const isExpanded = expandedDefinition === item.term;
+                  const details = definitionDetails[item.term];
+                  return (
+                    <ExpandableCard
+                      key={item.term}
+                      icon={item.icon as any}
+                      iconColor={theme.secondary}
+                      title={item.term}
+                      description={item.shortDescription}
+                      isExpanded={isExpanded}
+                      onToggle={() => setExpandedDefinition(isExpanded ? null : item.term)}
+                      expandedContent={
+                        details ? (
+                          <>
+                            <Text style={[styles.definitionExplanation, { color: theme.text }]}>
+                              {details.explanation}
+                            </Text>
+                            <View
+                              style={[
+                                styles.exampleBox,
+                                { backgroundColor: isDark ? '#1a1a1a' : '#f9f9f9' },
+                              ]}
+                            >
+                              <Text style={[styles.exampleLabel, { color: theme.text }]}>
+                                Example
+                              </Text>
+                              <Text style={[styles.exampleText, { color: theme.textSecondary }]}>
+                                {details.example}
+                              </Text>
+                            </View>
+                          </>
+                        ) : undefined
+                      }
+                    />
+                  );
+                })}
+              </View>
+            </ResponsiveContainer>
+          </>
         )}
       </ScrollView>
     </ScreenContainer>
@@ -615,5 +688,4 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'left',
   },
-  
 });

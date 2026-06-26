@@ -38,7 +38,9 @@ export async function getOrCreateKey(): Promise<string> {
   // Generate and attempt to persist
   const newKey = generateKeyBase64();
   try {
-    await SecureStore.setItemAsync(KEY_NAME, newKey as string, { keychainAccessible: SecureStore.ALWAYS_THIS_DEVICE_ONLY });
+    await SecureStore.setItemAsync(KEY_NAME, newKey as string, {
+      keychainAccessible: SecureStore.ALWAYS_THIS_DEVICE_ONLY,
+    });
   } catch (e) {
     // ignore store errors; continue with in-memory key
   }
@@ -53,8 +55,12 @@ export async function getOrCreateKey(): Promise<string> {
  * removed, previously encrypted data cannot be decrypted unless a backup exists.
  */
 export async function clearKey(): Promise<void> {
-  try { await SecureStore.deleteItemAsync(KEY_NAME); } catch (e) {}
-  try { delete (getOrCreateKey as any)._cachedKey; } catch (e) {}
+  try {
+    await SecureStore.deleteItemAsync(KEY_NAME);
+  } catch (e) {}
+  try {
+    delete (getOrCreateKey as any)._cachedKey;
+  } catch (e) {}
 }
 
 export default { getOrCreateKey, clearKey };

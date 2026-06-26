@@ -147,7 +147,14 @@ describe('ScanScreen', () => {
 
     fireEvent.press(screen.getByTestId('manual-confirm-button'));
 
-    await waitFor(() => expect(hook.actions.saveAndNavigate).toHaveBeenCalledWith(45.67, 99, 'Total £45.67', 'file://manual.jpg'));
+    await waitFor(() =>
+      expect(hook.actions.saveAndNavigate).toHaveBeenCalledWith(
+        45.67,
+        99,
+        'Total £45.67',
+        'file://manual.jpg',
+      ),
+    );
     expect(hook.actions.setManualModalVisible).toHaveBeenCalledWith(false);
   });
 });

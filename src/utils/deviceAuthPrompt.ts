@@ -18,23 +18,25 @@ export async function promptEnableDeviceAuth(email: string, password: string): P
         'Enable Device Auth?',
         'Use your device passcode or biometrics to sign in faster and securely. Enable now?',
         [
-          { 
-            text: 'No', 
-            style: 'cancel', 
+          {
+            text: 'No',
+            style: 'cancel',
             onPress: async () => {
               try {
                 await deviceAuth.clearDeviceCredentials();
-              } catch (err) {
-              }
+              } catch (err) {}
               resolve(false);
-            }
+            },
           },
           {
             text: 'Yes',
-                onPress: async () => {
+            onPress: async () => {
               try {
                 await deviceAuth.saveDeviceCredentials(email, password);
-                Alert.alert('Enabled', 'Device passcode login enabled. You can now unlock the app with your device credentials.');
+                Alert.alert(
+                  'Enabled',
+                  'Device passcode login enabled. You can now unlock the app with your device credentials.',
+                );
                 resolve(true);
               } catch (err) {
                 resolve(false);
@@ -42,7 +44,7 @@ export async function promptEnableDeviceAuth(email: string, password: string): P
             },
           },
         ],
-        { cancelable: true }
+        { cancelable: true },
       );
     });
   } catch (e) {

@@ -49,7 +49,12 @@ describe('useReceipts', () => {
     });
 
     // Initial response returned by mocked service
-    const receipt1 = createReceipt({ id: 7, total_amount: 42.5, date_scanned: '2025-01-01T10:00:00Z', image_uri: 'uri://1' });
+    const receipt1 = createReceipt({
+      id: 7,
+      total_amount: 42.5,
+      date_scanned: '2025-01-01T10:00:00Z',
+      image_uri: 'uri://1',
+    });
     mockedReceiptService.getByUserId.mockResolvedValueOnce([receipt1] as any);
 
     const { result, unmount } = renderHook(() => useReceipts('user-123'));
@@ -71,7 +76,11 @@ describe('useReceipts', () => {
     ]);
 
     // Simulate event bus telling hook to refresh; mock next service response
-    const receipt2 = createReceipt({ id: 8, total_amount: 99.99, date_scanned: '2025-01-05T12:00:00Z' });
+    const receipt2 = createReceipt({
+      id: 8,
+      total_amount: 99.99,
+      date_scanned: '2025-01-05T12:00:00Z',
+    });
     mockedReceiptService.getByUserId.mockResolvedValueOnce([receipt2] as any);
 
     await act(async () => {

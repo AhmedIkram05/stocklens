@@ -22,11 +22,13 @@ export function parseAmountFromOcrText(text: string): number | null {
   if (!text) return null;
 
   // Token-aware normalization: only replace common letter/number confusions inside tokens that contain digits
-  const rawLines = String(text).split(/\r?\n/).map(l => l.trim());
-  const normLines = rawLines.map(line => {
+  const rawLines = String(text)
+    .split(/\r?\n/)
+    .map((l) => l.trim());
+  const normLines = rawLines.map((line) => {
     return line
       .split(/(\s+)/) // keep whitespace so joins are consistent
-      .map(tok => {
+      .map((tok) => {
         if (/[0-9]/.test(tok)) {
           return tok.replace(/[Oo]/g, '0').replace(/[lI]/g, '1');
         }
@@ -37,11 +39,21 @@ export function parseAmountFromOcrText(text: string): number | null {
 
   if (normLines.length === 0) return null;
 
-  const keywordRegex = /\b(total|amount|amt|amount due|grand total|total payable|balance due|subtotal|net total|sum)\b/i;
+  const keywordRegex =
+    /\b(total|amount|amt|amount due|grand total|total payable|balance due|subtotal|net total|sum)\b/i;
   const changeRegex = /\b(change|cash change)\b/i;
-  const moneyTokenRegex = /([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{1,2})|[0-9]+[.,][0-9]+|[0-9]+)/g;
+  const moneyTokenRegex =
+    /([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{1,2})|[0-9]+[.,][0-9]+|[0-9]+)/g;
 
-  type Candidate = { value: number; line: string; lineIndex: number; currency: boolean; score: number; token?: string; hadDecimal?: boolean };
+  type Candidate = {
+    value: number;
+    line: string;
+    lineIndex: number;
+    currency: boolean;
+    score: number;
+    token?: string;
+    hadDecimal?: boolean;
+  };
   const candidates: Candidate[] = [];
 
   // High-confidence pass: if a line contains a total-like keyword, extract the right-most numeric token on that line
@@ -85,7 +97,8 @@ export function parseAmountFromOcrText(text: string): number | null {
   }
   // Bottom-scan pass: prefer the right-most numeric token in the last few non-footer lines
   // This addresses receipts that list the total near the bottom without explicit 'total' keyword.
-  const footerRegex = /\b(thank you|thank|cash|change|balance|card|approval|barcode|visa|mastercard|amex|payment method|tel:|phone:|address:)\b/i;
+  const footerRegex =
+    /\b(thank you|thank|cash|change|balance|card|approval|barcode|visa|mastercard|amex|payment method|tel:|phone:|address:)\b/i;
   const bottomSlice = normLines.slice(Math.max(0, normLines.length - 8));
   for (let bi = bottomSlice.length - 1; bi >= 0; bi--) {
     const line = bottomSlice[bi];
@@ -131,13 +144,21 @@ export function parseAmountFromOcrText(text: string): number | null {
       if (changeRegex.test(line)) score -= 40;
       score += Math.min(5, Math.floor(Math.log10(v + 1)));
 
-      candidates.push({ value: v, line, lineIndex: i, currency: hasCurrency, score, token: m[1], hadDecimal });
+      candidates.push({
+        value: v,
+        line,
+        lineIndex: i,
+        currency: hasCurrency,
+        score,
+        token: m[1],
+        hadDecimal,
+      });
     }
   }
 
   if (candidates.length === 0) return null;
 
-  const maxValue = Math.max(...candidates.map(c => c.value));
+  const maxValue = Math.max(...candidates.map((c) => c.value));
   for (const c of candidates) {
     if (c.value === maxValue) c.score += 5;
   }

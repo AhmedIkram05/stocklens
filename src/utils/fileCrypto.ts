@@ -14,7 +14,7 @@ const ENCRYPTED_DIR = `${FS.documentDirectory}encrypted_images/`;
 // Lightweight UUIDv4 generator (avoid importing 'uuid' to keep Jest/node happy)
 function generateUuidV4() {
   // from https://stackoverflow.com/a/2117523/404792
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
     const r = (Math.random() * 16) | 0;
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
@@ -23,7 +23,9 @@ function generateUuidV4() {
 
 /** Ensure encrypted images directory exists. */
 async function ensureDir() {
-  try { await FS.makeDirectoryAsync(ENCRYPTED_DIR, { intermediates: true }); } catch (e) {}
+  try {
+    await FS.makeDirectoryAsync(ENCRYPTED_DIR, { intermediates: true });
+  } catch (e) {}
 }
 
 /** Encrypt an image file and return encrypted .enc URI (falls back to original on error). */

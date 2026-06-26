@@ -10,6 +10,11 @@
   <img src="https://img.shields.io/badge/Jest-C21325?style=for-the-badge&labelColor=000000&logo=jest">
 </p>
 
+<p align="center">
+  <a href="https://github.com/AhmedIkram05/stocklens/actions/workflows/ci.yml"><img src="https://github.com/AhmedIkram05/stocklens/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://codecov.io/gh/AhmedIkram05/stocklens"><img src="https://codecov.io/gh/AhmedIkram05/stocklens/branch/main/graph/badge.svg"></a>
+</p>
+
 ## Documentation
 
 **[→ Design Proposal](https://github.com/AhmedIkram05/stocklens/blob/docs/README.md/assets/Design%20Proposal.pdf)**
@@ -20,29 +25,29 @@
 
 ## Demonstration
 
-| Landing | Login | Sign Up |
-|---|---|---|
+| Landing                                               | Login                                                | Sign Up                                                |
+| ----------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------ |
 | <img src="assets/Wireframes/splash.png" width="200"/> | <img src="assets/Wireframes/login.png" width="200"/> | <img src="assets/Wireframes/sign up.png" width="200"/> |
 
-| Dashboard (Empty) | Dashboard (Populated) | Scan Receipt |
-|---|---|---|
+| Dashboard (Empty)                                                | Dashboard (Populated)                                    | Scan Receipt                                        |
+| ---------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------- |
 | <img src="assets/Wireframes/dashboard empty 1.png" width="200"/> | <img src="assets/Wireframes/dashboard.png" width="200"/> | <img src="assets/Wireframes/scan.png" width="200"/> |
 
-| Receipt Details | Results | Summary |
-|---|---|---|
+| Receipt Details                                                  | Results                                                 | Summary                                                  |
+| ---------------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------- |
 | <img src="assets/Wireframes/receipt details 1.png" width="200"/> | <img src="assets/Wireframes/result 1.png" width="200"/> | <img src="assets/Wireframes/summary 1.png" width="200"/> |
 
-| Summary (cont.) | Settings |
-|---|---|
+| Summary (cont.)                                          | Settings                                                |
+| -------------------------------------------------------- | ------------------------------------------------------- |
 | <img src="assets/Wireframes/summary 2.png" width="200"/> | <img src="assets/Wireframes/settings.png" width="200"/> |
 
 ---
 
 ## What StockLens Does
 
-Most finance apps show you what you've spent. StockLens shows you what you *missed*.
+Most finance apps show you what you've spent. StockLens shows you what you _missed_.
 
-Scan any receipt → StockLens extracts the total → queries historical stock data → shows you: *"That £40 takeaway, invested in NVIDIA 5 years ago, would now be worth £240."* Then projects forward: *"Invested today, it could be worth £65 in 5 years."*
+Scan any receipt → StockLens extracts the total → queries historical stock data → shows you: _"That £40 takeaway, invested in NVIDIA 5 years ago, would now be worth £240."_ Then projects forward: _"Invested today, it could be worth £65 in 5 years."_
 
 The goal is making opportunity cost tangible and emotionally engaging — turning abstract financial concepts into l, visual, data-driven insights from a user's own spending history.
 
@@ -67,9 +72,9 @@ stocklens/
 │   │   └── database/           # SQLite local storage + AES-256 encryption
 │   ├── hooks/                  # Custom React hooks (useProjections, useReceiptHistory)
 │   └── utils/                  # Currency formatters, date helpers, validators
-├── assets/                       
+├── assets/
         ├── screenshots/        # Demo of entire app
-│       └── wireframes/         # Custom designs of entire app            
+│       └── wireframes/         # Custom designs of entire app
 ├── app.json                    # Expo configuration
 └── package.json
 ```
@@ -161,12 +166,12 @@ flowchart LR
 
 **4 primary tabs (persistent bottom navigation):**
 
-| Tab | Screens | Purpose |
-|---|---|---|
-| Dashboard | Empty state, Populated list, Receipt Details | Receipt history and individual projections |
-| Scan | Camera, OCR Processing, Confirmation, Results, Error State, Manual Entry | Core scan-to-projection flow |
-| Analytics | Summary Screen (stats, top stocks, insights) | Aggregate spending and opportunity analysis |
-| Settings | Settings, Log Out Confirmation, Clear Data Warning | Account management and privacy controls |
+| Tab       | Screens                                                                  | Purpose                                     |
+| --------- | ------------------------------------------------------------------------ | ------------------------------------------- |
+| Dashboard | Empty state, Populated list, Receipt Details                             | Receipt history and individual projections  |
+| Scan      | Camera, OCR Processing, Confirmation, Results, Error State, Manual Entry | Core scan-to-projection flow                |
+| Analytics | Summary Screen (stats, top stocks, insights)                             | Aggregate spending and opportunity analysis |
+| Settings  | Settings, Log Out Confirmation, Clear Data Warning                       | Account management and privacy controls     |
 
 Max 3 taps deep from any tab. Core scan function always 1 tap away. Tab bar always visible — context preserved when switching sections.
 
@@ -174,36 +179,36 @@ Max 3 taps deep from any tab. Core scan function always 1 tap away. Tab bar alwa
 
 ## MVP Features
 
-| Feature | Implementation |
-|---|---|
-| Sign Up / Login | Firebase Authentication — email/password + biometric |
-| Receipt Scanning | OCR Space API via Expo Camera — guide overlay, instant extraction |
-| Manual Entry Fallback | Modal input when OCR fails or thermal paper unreadable |
-| Confirmation Screen | Review extracted amount before running projections |
-| Investment Projections | Alpha Vantage historical data + CAGR + ARIMA + Linear Regression |
-| Results Screen | Historical (what you missed) + forward (what you could gain) — 1Y/3Y/5Y/10Y/20Y |
-| Save Receipt | Encrypted SQLite local storage — no cloud required |
-| Receipt Details | Individual projection view with delete option |
-| Dashboard | Cumulative missed opportunity total, purchases scanned, recent scan list |
-| Summary / Analytics | Total spent, total missed opportunity, top performing stocks, investment insights |
-| Settings | Face ID toggle, dark mode, log out with confirmation, clear all data with warning |
-| Offline Functionality | Cached stock data — core flow works without internet |
-| Error Handling | OCR failure → manual entry, API failure → cached data + disclaimer, network error → queue |
+| Feature                | Implementation                                                                            |
+| ---------------------- | ----------------------------------------------------------------------------------------- |
+| Sign Up / Login        | Firebase Authentication — email/password + biometric                                      |
+| Receipt Scanning       | OCR Space API via Expo Camera — guide overlay, instant extraction                         |
+| Manual Entry Fallback  | Modal input when OCR fails or thermal paper unreadable                                    |
+| Confirmation Screen    | Review extracted amount before running projections                                        |
+| Investment Projections | Alpha Vantage historical data + CAGR + ARIMA + Linear Regression                          |
+| Results Screen         | Historical (what you missed) + forward (what you could gain) — 1Y/3Y/5Y/10Y/20Y           |
+| Save Receipt           | Encrypted SQLite local storage — no cloud required                                        |
+| Receipt Details        | Individual projection view with delete option                                             |
+| Dashboard              | Cumulative missed opportunity total, purchases scanned, recent scan list                  |
+| Summary / Analytics    | Total spent, total missed opportunity, top performing stocks, investment insights         |
+| Settings               | Face ID toggle, dark mode, log out with confirmation, clear all data with warning         |
+| Offline Functionality  | Cached stock data — core flow works without internet                                      |
+| Error Handling         | OCR failure → manual entry, API failure → cached data + disclaimer, network error → queue |
 
 ---
 
 ## Security & Privacy
 
-| Concern | Implementation |
-|---|---|
-| Data storage | AES-256 encrypted SQLite — local only, no cloud sync in MVP |
-| Authentication | Firebase Auth (bcrypt hashing) + Face ID/Touch ID via platform-native APIs |
-| Receipt images | Processed via OCR over HTTPS, immediately discarded — never stored |
-| Stock API keys | Environment-secured, never exposed in client code |
-| Financial calculations | Performed locally using cached data — minimises external dependencies |
-| GDPR compliance | No personal data transmitted externally; all processing on-device |
+| Concern                | Implementation                                                                                      |
+| ---------------------- | --------------------------------------------------------------------------------------------------- |
+| Data storage           | AES-256 encrypted SQLite — local only, no cloud sync in MVP                                         |
+| Authentication         | Firebase Auth (bcrypt hashing) + Face ID/Touch ID via platform-native APIs                          |
+| Receipt images         | Processed via OCR over HTTPS, immediately discarded — never stored                                  |
+| Stock API keys         | Environment-secured, never exposed in client code                                                   |
+| Financial calculations | Performed locally using cached data — minimises external dependencies                               |
+| GDPR compliance        | No personal data transmitted externally; all processing on-device                                   |
 | Projections disclaimer | "Hypothetical educational tool — not FCA-regulated investment advice" shown on every results screen |
-| Destructive actions | Log out and clear data both require confirmation modals — no accidental data loss |
+| Destructive actions    | Log out and clear data both require confirmation modals — no accidental data loss                   |
 
 ---
 
@@ -211,12 +216,12 @@ Max 3 taps deep from any tab. Core scan function always 1 tap away. Tab bar alwa
 
 78 Jest tests across 4 concern layers:
 
-| Layer | Coverage |
-|---|---|
-| OCR service | Successful extraction, fallback on failure, amount parsing edge cases |
-| Stock/projection service | API caching, CAGR calculation, ARIMA output validation, cache TTL expiry |
-| Crypto service | AES-256 encryption roundtrips, key derivation, decryption failure handling |
-| Auth flows | Login, signup, biometric prompt, session persistence, logout |
+| Layer                    | Coverage                                                                   |
+| ------------------------ | -------------------------------------------------------------------------- |
+| OCR service              | Successful extraction, fallback on failure, amount parsing edge cases      |
+| Stock/projection service | API caching, CAGR calculation, ARIMA output validation, cache TTL expiry   |
+| Crypto service           | AES-256 encryption roundtrips, key derivation, decryption failure handling |
+| Auth flows               | Login, signup, biometric prompt, session persistence, logout               |
 
 ```bash
 npm test              # Full test suite (78 tests)
@@ -268,17 +273,17 @@ npm start
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Framework | React Native (Expo) — iOS & Android |
-| Language | TypeScript — strict mode throughout |
-| Auth | Firebase Authentication + Face ID/Touch ID |
-| Database | SQLite (local, AES-256 encrypted) |
-| OCR | OCR Space API |
-| Stock data | Alpha Vantage API (historical prices, CAGR) |
+| Layer            | Technology                                                             |
+| ---------------- | ---------------------------------------------------------------------- |
+| Framework        | React Native (Expo) — iOS & Android                                    |
+| Language         | TypeScript — strict mode throughout                                    |
+| Auth             | Firebase Authentication + Face ID/Touch ID                             |
+| Database         | SQLite (local, AES-256 encrypted)                                      |
+| OCR              | OCR Space API                                                          |
+| Stock data       | Alpha Vantage API (historical prices, CAGR)                            |
 | ML / Projections | ARIMA (spending forecasting), Linear Regression (portfolio projection) |
-| Camera | Expo Camera / Image Picker |
-| Testing | Jest — 78 tests across OCR, crypto, stocks, auth |
+| Camera           | Expo Camera / Image Picker                                             |
+| Testing          | Jest — 78 tests across OCR, crypto, stocks, auth                       |
 
 ---
 

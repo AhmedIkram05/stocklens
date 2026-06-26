@@ -21,7 +21,7 @@ import { useTheme } from '../contexts/ThemeContext';
 /** Lock screen for device/passcode unlock. */
 export default function LockScreen() {
   const { unlockWithDeviceAuth, unlockWithCredentials, user, userProfile } = useAuth();
-  const { contentHorizontalPadding, sectionVerticalSpacing, isSmallPhone } = useBreakpoint();
+  const { contentHorizontalPadding, sectionVerticalSpacing } = useBreakpoint();
   const { theme } = useTheme();
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -30,26 +30,42 @@ export default function LockScreen() {
   const handleForgotFromLock = async () => {
     if (forgotDisabled) return;
     if (!accountEmail) {
-      Alert.alert('No Account', 'No account email available. Please sign in again from the Sign In screen.');
+      Alert.alert(
+        'No Account',
+        'No account email available. Please sign in again from the Sign In screen.',
+      );
       return;
     }
     Alert.alert('Send Reset Link?', `Send a password reset link to ${accountEmail}?`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Send', onPress: async () => {
-        setForgotDisabled(true);
-        try {
-          const mod = await import('../services/authService');
-          if (!mod || !mod.authService || typeof mod.authService.sendPasswordReset !== 'function') {
-            throw new Error('authService.sendPasswordReset is not available');
+      {
+        text: 'Send',
+        onPress: async () => {
+          setForgotDisabled(true);
+          try {
+            const mod = await import('../services/authService');
+            if (
+              !mod ||
+              !mod.authService ||
+              typeof mod.authService.sendPasswordReset !== 'function'
+            ) {
+              throw new Error('authService.sendPasswordReset is not available');
+            }
+            await mod.authService.sendPasswordReset(accountEmail);
+            Alert.alert(
+              'Password Reset',
+              "If an account exists for that email, we'll send a reset link. Check your inbox and spam folder.",
+            );
+          } catch (err: any) {
+            Alert.alert(
+              'Error',
+              `Could not send reset email. ${err?.code || ''} ${err?.message || 'Try again later.'}`,
+            );
+          } finally {
+            setTimeout(() => setForgotDisabled(false), 30000);
           }
-          await mod.authService.sendPasswordReset(accountEmail);
-          Alert.alert('Password Reset', "If an account exists for that email, we'll send a reset link. Check your inbox and spam folder.");
-        } catch (err: any) {
-          Alert.alert('Error', `Could not send reset email. ${err?.code || ''} ${err?.message || 'Try again later.'}`);
-        } finally {
-          setTimeout(() => setForgotDisabled(false), 30000);
-        }
-      } }
+        },
+      },
     ]);
   };
 
@@ -58,7 +74,10 @@ export default function LockScreen() {
     try {
       const ok = await unlockWithDeviceAuth();
       if (!ok) {
-        Alert.alert('Unlock Failed', 'Could not unlock using your device credentials. Please try again or use your password.');
+        Alert.alert(
+          'Unlock Failed',
+          'Could not unlock using your device credentials. Please try again or use your password.',
+        );
       }
     } catch (err) {
       Alert.alert('Error', 'Device authentication failed. Please use your password.');
@@ -70,7 +89,10 @@ export default function LockScreen() {
   const handleManual = async () => {
     const emailAddr = user?.email || userProfile?.email;
     if (!emailAddr) {
-      Alert.alert('No Account', 'No account email available. Please sign in again from the Sign In screen.');
+      Alert.alert(
+        'No Account',
+        'No account email available. Please sign in again from the Sign In screen.',
+      );
       return;
     }
     if (!password) {
@@ -86,8 +108,13 @@ export default function LockScreen() {
   };
 
   return (
-    <ScreenContainer contentStyle={{ paddingHorizontal: contentHorizontalPadding, paddingVertical: sectionVerticalSpacing }}>
-      <View style={[styles.inner, { paddingHorizontal: 0 }]}> 
+    <ScreenContainer
+      contentStyle={{
+        paddingHorizontal: contentHorizontalPadding,
+        paddingVertical: sectionVerticalSpacing,
+      }}
+    >
+      <View style={[styles.inner, { paddingHorizontal: 0 }]}>
         <View style={styles.logoContainer}>
           <Logo />
         </View>
@@ -96,7 +123,11 @@ export default function LockScreen() {
           <Text style={[styles.title, { color: theme.text }]}>Locked</Text>
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Unlock to continue</Text>
           {accountEmail ? (
-            <Text style={[styles.accountEmail, { color: theme.textSecondary }]} numberOfLines={1} ellipsizeMode="middle">
+            <Text
+              style={[styles.accountEmail, { color: theme.textSecondary }]}
+              numberOfLines={1}
+              ellipsizeMode="middle"
+            >
               {accountEmail}
             </Text>
           ) : null}
@@ -112,15 +143,35 @@ export default function LockScreen() {
           {loading ? 'Unlocking…' : 'Unlock with Device Passcode'}
         </SecondaryButton>
 
-        <Text style={[styles.or, { color: theme.textSecondary }]}>Or enter your account password</Text>
+        <Text style={[styles.or, { color: theme.textSecondary }]}>
+          Or enter your account password
+        </Text>
 
-        <FormInput placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" />
+        <FormInput
+          placeholder="Password"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          autoCapitalize="none"
+        />
 
-        <PrimaryButton style={styles.unlockButton} onPress={handleManual} disabled={loading} accessibilityLabel="Unlock with password">
+        <PrimaryButton
+          style={styles.unlockButton}
+          onPress={handleManual}
+          disabled={loading}
+          accessibilityLabel="Unlock with password"
+        >
           Unlock
         </PrimaryButton>
-        <TouchableOpacity onPress={handleForgotFromLock} disabled={forgotDisabled} style={styles.forgotContainer} accessibilityLabel="Forgot password">
-          <Text style={[styles.forgotText, forgotDisabled && { opacity: 0.5 }]}>Forgot password?</Text>
+        <TouchableOpacity
+          onPress={handleForgotFromLock}
+          disabled={forgotDisabled}
+          style={styles.forgotContainer}
+          accessibilityLabel="Forgot password"
+        >
+          <Text style={[styles.forgotText, forgotDisabled && { opacity: 0.5 }]}>
+            Forgot password?
+          </Text>
         </TouchableOpacity>
       </View>
     </ScreenContainer>
@@ -136,9 +187,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.md,
   },
-  deviceButton: { backgroundColor: brandColors.green, padding: spacing.md, borderRadius: radii.md, alignItems: 'center', marginBottom: spacing.md },
+  deviceButton: {
+    backgroundColor: brandColors.green,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
   or: { textAlign: 'center', marginVertical: spacing.md },
-  unlockButton: { backgroundColor: brandColors.blue, padding: spacing.md, borderRadius: radii.md, alignItems: 'center' },
+  unlockButton: {
+    backgroundColor: brandColors.blue,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    alignItems: 'center',
+  },
   forgotContainer: { alignItems: 'center', marginTop: spacing.sm, marginBottom: spacing.md },
   forgotText: { ...typography.body, color: brandColors.blue },
   accountEmail: { ...typography.body, marginTop: spacing.xs, textAlign: 'center' },

@@ -38,7 +38,9 @@ jest.mock('@react-navigation/native', () => {
 });
 
 const mockedUseReceipts = useReceipts as jest.MockedFunction<typeof useReceipts>;
-const mockedEnsurePrefetch = ensureHistoricalPrefetch as jest.MockedFunction<typeof ensureHistoricalPrefetch>;
+const mockedEnsurePrefetch = ensureHistoricalPrefetch as jest.MockedFunction<
+  typeof ensureHistoricalPrefetch
+>;
 const mockedSubscribe = subscribe as jest.MockedFunction<typeof subscribe>;
 const mockedUseNavigation = useNavigation as jest.MockedFunction<typeof useNavigation>;
 
@@ -59,7 +61,9 @@ describe('SummaryScreen', () => {
   });
 
   it('shows onboarding empty state when no receipts exist and navigates to Scan on CTA press', () => {
-    const { getByText } = renderWithProviders(<SummaryScreen />, { providerOverrides: { withNavigation: false } });
+    const { getByText } = renderWithProviders(<SummaryScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
 
     expect(getByText('No Data Yet')).toBeTruthy();
 
@@ -72,13 +76,42 @@ describe('SummaryScreen', () => {
 
   it('renders spending stats and expands dynamic insight content', async () => {
     const receipts: ReceiptShape[] = [
-      { id: '1', label: '2 weeks ago', amount: 120, date: createReceipt({ total_amount: 120, date_scanned: '2024-02-10T00:00:00.000Z' }).date_scanned!, time: '', image: createReceipt({ total_amount: 120, date_scanned: '2024-02-10T00:00:00.000Z' }).image_uri! },
-      { id: '2', label: '10 days ago', amount: 45, date: createReceipt({ total_amount: 45, date_scanned: '2024-02-14T00:00:00.000Z' }).date_scanned!, time: '', image: createReceipt({ total_amount: 45, date_scanned: '2024-02-14T00:00:00.000Z' }).image_uri! },
-      { id: '3', label: '6 weeks ago', amount: 35, date: createReceipt({ total_amount: 35, date_scanned: '2024-01-02T00:00:00.000Z' }).date_scanned!, time: '', image: createReceipt({ total_amount: 35, date_scanned: '2024-01-02T00:00:00.000Z' }).image_uri! },
+      {
+        id: '1',
+        label: '2 weeks ago',
+        amount: 120,
+        date: createReceipt({ total_amount: 120, date_scanned: '2024-02-10T00:00:00.000Z' })
+          .date_scanned!,
+        time: '',
+        image: createReceipt({ total_amount: 120, date_scanned: '2024-02-10T00:00:00.000Z' })
+          .image_uri!,
+      },
+      {
+        id: '2',
+        label: '10 days ago',
+        amount: 45,
+        date: createReceipt({ total_amount: 45, date_scanned: '2024-02-14T00:00:00.000Z' })
+          .date_scanned!,
+        time: '',
+        image: createReceipt({ total_amount: 45, date_scanned: '2024-02-14T00:00:00.000Z' })
+          .image_uri!,
+      },
+      {
+        id: '3',
+        label: '6 weeks ago',
+        amount: 35,
+        date: createReceipt({ total_amount: 35, date_scanned: '2024-01-02T00:00:00.000Z' })
+          .date_scanned!,
+        time: '',
+        image: createReceipt({ total_amount: 35, date_scanned: '2024-01-02T00:00:00.000Z' })
+          .image_uri!,
+      },
     ];
     mockedUseReceipts.mockReturnValue({ receipts, loading: false, error: null } as any);
 
-    const { getByText, findByText } = renderWithProviders(<SummaryScreen />, { providerOverrides: { withNavigation: false } });
+    const { getByText, findByText } = renderWithProviders(<SummaryScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
 
     await waitFor(() => {
       expect(getByText('Total Money Spent')).toBeTruthy();

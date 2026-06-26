@@ -4,7 +4,6 @@
  * and enable/disable flag behavior.
  */
 
-import { renderHook } from '@testing-library/react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import {
@@ -74,11 +73,17 @@ describe('useDeviceAuth', () => {
       const result = await authenticateDevice('Test prompt');
 
       expect(result.success).toBe(true);
-      expect(mockedLocalAuth.authenticateAsync).toHaveBeenCalledWith({ promptMessage: 'Test prompt', disableDeviceFallback: false });
+      expect(mockedLocalAuth.authenticateAsync).toHaveBeenCalledWith({
+        promptMessage: 'Test prompt',
+        disableDeviceFallback: false,
+      });
     });
 
     it('returns failure when authentication fails', async () => {
-      mockedLocalAuth.authenticateAsync.mockResolvedValue({ success: false, error: 'User canceled' } as any);
+      mockedLocalAuth.authenticateAsync.mockResolvedValue({
+        success: false,
+        error: 'User canceled',
+      } as any);
 
       const result = await authenticateDevice();
 
@@ -100,12 +105,12 @@ describe('useDeviceAuth', () => {
       expect(mockedSecureStore.setItemAsync).toHaveBeenCalledWith(
         'device_credentials',
         JSON.stringify({ email: 'user@example.com', password: 'pass123' }),
-        { keychainAccessible: SecureStore.ALWAYS_THIS_DEVICE_ONLY }
+        { keychainAccessible: SecureStore.ALWAYS_THIS_DEVICE_ONLY },
       );
 
       // Simulate stored value and verify retrieval parsing
       mockedSecureStore.getItemAsync.mockResolvedValue(
-        JSON.stringify({ email: 'user@example.com', password: 'pass123' })
+        JSON.stringify({ email: 'user@example.com', password: 'pass123' }),
       );
 
       const result = await getDeviceCredentials();
@@ -128,7 +133,11 @@ describe('useDeviceAuth', () => {
   describe('enabled state', () => {
     it('manages device auth enabled flag', async () => {
       await setDeviceEnabled(true);
-      expect(mockedSecureStore.setItemAsync).toHaveBeenCalledWith('device_enabled', '1', expect.any(Object));
+      expect(mockedSecureStore.setItemAsync).toHaveBeenCalledWith(
+        'device_enabled',
+        '1',
+        expect.any(Object),
+      );
 
       mockedSecureStore.getItemAsync.mockResolvedValue('1');
       const result = await isDeviceEnabled();

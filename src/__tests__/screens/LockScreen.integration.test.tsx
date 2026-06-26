@@ -109,11 +109,15 @@ describe('LockScreen', () => {
     fireEvent.press(getByText('Forgot password?'));
 
     await waitFor(() => {
-      expect(alertSpy).toHaveBeenCalledWith('Send Reset Link?', expect.stringContaining('user@test.com'), expect.any(Array));
+      expect(alertSpy).toHaveBeenCalledWith(
+        'Send Reset Link?',
+        expect.stringContaining('user@test.com'),
+        expect.any(Array),
+      );
     });
 
     // Verify the confirmation dialog was shown
-    const alertCall = alertSpy.mock.calls.find(c => c[0] === 'Send Reset Link?');
+    const alertCall = alertSpy.mock.calls.find((c) => c[0] === 'Send Reset Link?');
     expect(alertCall).toBeDefined();
     const buttons = alertCall?.[2];
     expect(buttons).toBeDefined();

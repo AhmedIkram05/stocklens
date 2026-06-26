@@ -5,7 +5,15 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { View, TextInput, StyleSheet, TextInputProps, TextStyle, ViewStyle, TouchableOpacity } from 'react-native';
+import {
+  View,
+  TextInput,
+  StyleSheet,
+  TextInputProps,
+  TextStyle,
+  ViewStyle,
+  TouchableOpacity,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { radii, spacing, typography, shadows } from '../styles/theme';
 import { useTheme } from '../contexts/ThemeContext';
@@ -40,7 +48,7 @@ export default function FormInput({
   }, [secureTextEntry]);
 
   const accessibilityLabel = isSecure ? 'Show password' : 'Hide password';
-  
+
   return (
     <View style={[styles.container, containerStyle]}>
       <View style={styles.inputWrapper}>
@@ -48,7 +56,6 @@ export default function FormInput({
           {...rest}
           secureTextEntry={shouldShowToggle ? isSecure : secureTextEntry}
           allowFontScaling
-          
           accessibilityLabel={rest.accessibilityLabel ?? rest.placeholder}
           style={[
             styles.input,
@@ -61,7 +68,7 @@ export default function FormInput({
         />
         {shouldShowToggle && (
           <TouchableOpacity
-            onPress={() => setIsSecure(prev => !prev)}
+            onPress={() => setIsSecure((prev) => !prev)}
             style={styles.toggleButton}
             accessibilityRole="button"
             accessibilityLabel={accessibilityLabel}

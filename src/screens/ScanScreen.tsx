@@ -22,7 +22,7 @@ import ScreenContainer from '../components/ScreenContainer';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { brandColors, useTheme } from '../contexts/ThemeContext';
-import { radii, spacing, typography, shadows } from '../styles/theme';
+import { radii, spacing, typography } from '../styles/theme';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { receiptService } from '../services/dataService';
 import { emit } from '../services/eventBus';
@@ -37,13 +37,17 @@ export default function ScanScreen() {
   const facing: CameraType = 'back';
   const [permission, requestPermission] = useCameraPermissions();
   const [photo, setPhoto] = useState<string | null>(null);
-  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
+  const [, setPhotoBase64] = useState<string | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(true);
   const clearPhotoPreview = useCallback(() => {
     setPhoto(null);
     setPhotoBase64(null);
   }, []);
-  const capture = useReceiptCapture({ navigation, userUid: userProfile?.uid, onResetCamera: clearPhotoPreview });
+  const capture = useReceiptCapture({
+    navigation,
+    userUid: userProfile?.uid,
+    onResetCamera: clearPhotoPreview,
+  });
   const { processing, ocrRaw, draftReceiptId, manualModalVisible, manualEntryText } = capture.state;
   const {
     setDraftReceiptId,
@@ -55,7 +59,8 @@ export default function ScanScreen() {
     resetWorkflowState,
   } = capture.actions;
   const cameraRef = useRef<CameraView>(null);
-  const { isSmallPhone, isTablet, contentHorizontalPadding, sectionVerticalSpacing, width } = useBreakpoint();
+  const { isSmallPhone, isTablet, contentHorizontalPadding, sectionVerticalSpacing } =
+    useBreakpoint();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
 
@@ -65,7 +70,7 @@ export default function ScanScreen() {
     useCallback(() => {
       setIsCameraActive(true);
       return () => setIsCameraActive(false);
-    }, [])
+    }, []),
   );
 
   if (!permission) {
@@ -84,14 +89,19 @@ export default function ScanScreen() {
             },
           ]}
         >
-          <Text testID="camera-permission-text" style={[styles.permissionText, { color: theme.text }]}> 
+          <Text
+            testID="camera-permission-text"
+            style={[styles.permissionText, { color: theme.text }]}
+          >
             Camera permission is required to scan receipts
           </Text>
           <TouchableOpacity
             style={[styles.permissionButton, { backgroundColor: theme.primary }]}
             onPress={requestPermission}
           >
-            <Text style={[styles.permissionButtonText, { color: brandColors.white }]}>Grant Permission</Text>
+            <Text style={[styles.permissionButtonText, { color: brandColors.white }]}>
+              Grant Permission
+            </Text>
           </TouchableOpacity>
         </View>
       </ScreenContainer>
@@ -119,10 +129,11 @@ export default function ScanScreen() {
           if (createdId && Number(createdId) > 0) {
             createdDraftId = Number(createdId);
             setDraftReceiptId(createdDraftId);
-            try { emit('receipts-changed', { id: createdId, userId: userProfile?.uid }); } catch (e) {}
+            try {
+              emit('receipts-changed', { id: createdId, userId: userProfile?.uid });
+            } catch (e) {}
           }
-        } catch (e) {
-        }
+        } catch (e) {}
 
         await processReceipt({
           photoUri: photo.uri,
@@ -162,7 +173,7 @@ export default function ScanScreen() {
                     value={manualEntryText}
                     onChangeText={setManualEntryText}
                     placeholder="0.00"
-                      placeholderTextColor="#7A7A7A"
+                    placeholderTextColor="#7A7A7A"
                   />
                   <View style={styles.modalRow}>
                     <TouchableOpacity
@@ -172,7 +183,9 @@ export default function ScanScreen() {
                         try {
                           await discardDraft(draftReceiptId);
                         } catch (e) {}
-                        try { resetWorkflowState(); } catch (e) {}
+                        try {
+                          resetWorkflowState();
+                        } catch (e) {}
                         setManualModalVisible(false);
                         clearPhotoPreview();
                       }}
@@ -183,9 +196,14 @@ export default function ScanScreen() {
                       testID="manual-confirm-button"
                       style={[styles.modalBtn, styles.modalConfirm]}
                       onPress={async () => {
-                        const cleaned = String(manualEntryText || '').replace(/[^0-9.,-]/g, '').replace(/,/g, '.');
+                        const cleaned = String(manualEntryText || '')
+                          .replace(/[^0-9.,-]/g, '')
+                          .replace(/,/g, '.');
                         const parsed = Number(cleaned);
-                        if (!Number.isFinite(parsed) || parsed <= 0) { Alert.alert('Invalid amount', 'Enter a valid number'); return; }
+                        if (!Number.isFinite(parsed) || parsed <= 0) {
+                          Alert.alert('Invalid amount', 'Enter a valid number');
+                          return;
+                        }
                         setManualModalVisible(false);
                         const draft = draftReceiptId;
                         await saveAndNavigate(parsed, draft, ocrRaw, photo);
@@ -205,21 +223,13 @@ export default function ScanScreen() {
           )}
         </View>
       </SafeAreaView>
-      );
+    );
   }
-
-  
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: brandColors.black }}>
       <View style={styles.cameraContainer}>
-        {isCameraActive && (
-          <CameraView
-            style={styles.camera}
-            facing={facing}
-            ref={cameraRef}
-          />
-        )}
+        {isCameraActive && <CameraView style={styles.camera} facing={facing} ref={cameraRef} />}
 
         <View
           style={[
@@ -252,7 +262,6 @@ export default function ScanScreen() {
       </View>
     </SafeAreaView>
   );
-
 }
 
 const styles = StyleSheet.create({
@@ -283,7 +292,7 @@ const styles = StyleSheet.create({
   camera: {
     flex: 1,
   },
-  
+
   previewContainer: {
     flex: 1,
     backgroundColor: brandColors.black,

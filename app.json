@@ -21,10 +21,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
-    "plugins": [
-      "expo-sqlite",
-      "expo-secure-store"
-    ],
+    "plugins": ["expo-sqlite", "expo-secure-store"],
     "extra": {
       "OCR_SPACE_API_KEY": "K86345927288957"
     }

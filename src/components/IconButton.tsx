@@ -26,11 +26,19 @@ type Props = {
 };
 
 /** Render a circular icon button. */
-export default function IconButton({ name, size = 20, color = brandColors.white, onPress, style, accessibilityLabel }: Props) {
+export default function IconButton({
+  name,
+  size = 20,
+  color = brandColors.white,
+  onPress,
+  style,
+  accessibilityLabel,
+}: Props) {
   if (__DEV__ && !accessibilityLabel) {
     // Ensure icon-only buttons are reachable by screen readers during development
-    // eslint-disable-next-line no-console
-    console.warn('IconButton missing accessibilityLabel — add accessibilityLabel for screen readers');
+    console.warn(
+      'IconButton missing accessibilityLabel — add accessibilityLabel for screen readers',
+    );
   }
   return (
     <TouchableOpacity

@@ -10,7 +10,7 @@ const db = SQLite.openDatabaseSync('stocklens_v2.db');
 
 /**
  * DB_SCHEMAS - Table creation SQL statements
- * 
+ *
  * Each schema uses CREATE TABLE IF NOT EXISTS for idempotent initialization.
  * Foreign keys are used to maintain referential integrity.
  */
@@ -67,7 +67,7 @@ export const DB_SCHEMAS = {
 
 /**
  * DB_INDEXES - Performance optimization indexes
- * 
+ *
  * Indexes:
  * - idx_receipts_user_id_synced: Speed up queries filtering by user and sync status
  * - idx_receipts_date_scanned: Optimize date-based sorting (most recent first)
@@ -83,15 +83,15 @@ const DB_INDEXES = [
 
 /**
  * Initialize database schema and indexes
- * 
+ *
  * Process:
  * 1. Enables foreign key constraints
  * 2. Creates all tables (users, receipts, alpha_cache, user_settings, auth_state)
  * 3. Creates all indexes for performance
  * 4. Migrates schema if needed (adds ocr_data column if missing)
- * 
+ *
  * @throws Error if database initialization fails
- * 
+ *
  * Note: Safe to call multiple times (uses IF NOT EXISTS)
  */
 export const initDatabase = async (): Promise<void> => {
@@ -107,15 +107,13 @@ export const initDatabase = async (): Promise<void> => {
     }
     try {
       const cols: any[] = await db.getAllAsync("PRAGMA table_info('receipts')");
-      const hasOcr = cols.some(c => c.name === 'ocr_data');
+      const hasOcr = cols.some((c) => c.name === 'ocr_data');
       if (!hasOcr) {
         try {
           await db.execAsync('ALTER TABLE receipts ADD COLUMN ocr_data TEXT;');
-        } catch (e) {
-        }
+        } catch (e) {}
       }
-    } catch (e) {
-    }
+    } catch (e) {}
   } catch (error) {
     throw error;
   }
@@ -123,7 +121,7 @@ export const initDatabase = async (): Promise<void> => {
 
 /**
  * databaseService - Query execution helpers
- * 
+ *
  * Provides two core methods:
  * - executeQuery: For SELECT queries (returns rows)
  * - executeNonQuery: For INSERT/UPDATE/DELETE (returns affected count or last ID)
@@ -132,7 +130,7 @@ export const initDatabase = async (): Promise<void> => {
 export const databaseService = {
   /**
    * Execute a SELECT query and return all matching rows
-   * 
+   *
    * @param query - SQL query string (parameterized with ?)
    * @param params - Parameter values to bind to query
    * @returns Array of result rows
@@ -148,7 +146,7 @@ export const databaseService = {
 
   /**
    * Execute an INSERT/UPDATE/DELETE query
-   * 
+   *
    * @param query - SQL query string (parameterized with ?)
    * @param params - Parameter values to bind to query
    * @returns For INSERT: lastInsertRowId, for UPDATE/DELETE: number of rows changed
@@ -161,25 +159,27 @@ export const databaseService = {
       throw error;
     }
   },
-  
+
   /**
    * Prune old Alpha Vantage cache entries
-   * 
+   *
    * @param days - Delete cache entries older than this many days
-   * 
+   *
    * Process:
    * - Calculates cutoff timestamp (current time - days)
    * - Deletes all alpha_cache rows fetched before cutoff
    * - Best-effort operation (errors are logged but not thrown)
-   * 
+   *
    * Usage: Call periodically to prevent unbounded cache growth
    */
   pruneAlphaCacheOlderThan: async (days: number) => {
     try {
       const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-      await databaseService.executeNonQuery('DELETE FROM alpha_cache WHERE fetched_at IS NOT NULL AND fetched_at < ?', [cutoff]);
-    } catch (e) {
-    }
+      await databaseService.executeNonQuery(
+        'DELETE FROM alpha_cache WHERE fetched_at IS NOT NULL AND fetched_at < ?',
+        [cutoff],
+      );
+    } catch (e) {}
   },
 };
 

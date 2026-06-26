@@ -58,7 +58,7 @@ async function fetchJson(url: string) {
       return json;
     } catch (err: any) {
       lastErr = err;
-      await new Promise(r => setTimeout(r, 250 * Math.pow(2, attempt)));
+      await new Promise((r) => setTimeout(r, 250 * Math.pow(2, attempt)));
     }
   }
   throw lastErr;
@@ -69,7 +69,7 @@ function parseMonthlyAdjusted(json: any): OHLCV[] {
   if (!series) throw new Error('Unexpected AlphaVantage monthly response');
 
   return Object.keys(series)
-    .map(date => {
+    .map((date) => {
       const row = series[date];
       return {
         date,
@@ -85,11 +85,12 @@ function parseMonthlyAdjusted(json: any): OHLCV[] {
 }
 
 function parseDailyAdjusted(json: any): OHLCV[] {
-  const series = json['Time Series (Daily)'] || json['Daily Time Series'] || json['Time Series (Daily)'];
+  const series =
+    json['Time Series (Daily)'] || json['Daily Time Series'] || json['Time Series (Daily)'];
   if (!series) throw new Error('Unexpected AlphaVantage daily response');
 
   return Object.keys(series)
-    .map(date => {
+    .map((date) => {
       const row = series[date];
       return {
         date,
@@ -107,17 +108,17 @@ function parseDailyAdjusted(json: any): OHLCV[] {
 export const alphaVantageService = {
   /** Get monthly adjusted OHLCV data for a stock symbol. */
   getMonthlyAdjusted: async (symbol: string): Promise<OHLCV[]> => {
-  const cacheKey = `av:monthly:${symbol}`;
-  // Try in-memory cache first
-  const now = Date.now();
-  const ttlMs = 30 * 24 * 60 * 60 * 1000; // 30 days for monthly
-  const mem = serviceMemCache.get(cacheKey);
-  if (mem && mem.expiresAt > now) return mem.value;
+    const cacheKey = `av:monthly:${symbol}`;
+    // Try in-memory cache first
+    const now = Date.now();
+    const ttlMs = 30 * 24 * 60 * 60 * 1000; // 30 days for monthly
+    const mem = serviceMemCache.get(cacheKey);
+    if (mem && mem.expiresAt > now) return mem.value;
     // Try reading from persistent alpha_cache table
     try {
       const rows = await databaseService.executeQuery(
         'SELECT raw_json, fetched_at FROM alpha_cache WHERE symbol = ? AND interval = ? AND params = ? LIMIT 1',
-        [symbol, 'monthly', '']
+        [symbol, 'monthly', ''],
       );
       if (rows && rows.length > 0) {
         const row = rows[0];
@@ -126,7 +127,9 @@ export const alphaVantageService = {
           const json = JSON.parse(row.raw_json);
           const parsed = parseMonthlyAdjusted(json);
           serviceMemCache.set(cacheKey, { value: parsed, expiresAt: fetchedAt + ttlMs });
-          try { emit('alpha_cache_hit', { symbol, interval: 'monthly' }); } catch (e) {}
+          try {
+            emit('alpha_cache_hit', { symbol, interval: 'monthly' });
+          } catch (e) {}
           return parsed;
         }
         if (fetchedAt) {
@@ -136,7 +139,9 @@ export const alphaVantageService = {
             // stale: return parsed and trigger background refresh
             backgroundRefreshMonthly(symbol, cacheKey);
             serviceMemCache.set(cacheKey, { value: parsed, expiresAt: fetchedAt + ttlMs });
-            try { emit('alpha_cache_hit', { symbol, interval: 'monthly', stale: true }); } catch (e) {}
+            try {
+              emit('alpha_cache_hit', { symbol, interval: 'monthly', stale: true });
+            } catch (e) {}
             return parsed;
           } catch (e) {
             // fallthrough to fetch
@@ -148,7 +153,10 @@ export const alphaVantageService = {
     }
     // no cache: fetch and store
     const key = getApiKey();
-    if (!key) throw new Error('Alpha Vantage API key not configured. Set ALPHA_VANTAGE_API_KEY in expo extra or environment.');
+    if (!key)
+      throw new Error(
+        'Alpha Vantage API key not configured. Set ALPHA_VANTAGE_API_KEY in expo extra or environment.',
+      );
     const url = `${API_BASE}?function=TIME_SERIES_MONTHLY_ADJUSTED&symbol=${encodeURIComponent(symbol)}&apikey=${encodeURIComponent(key)}`;
     const json = await fetchJson(url);
     const parsed = parseMonthlyAdjusted(json);
@@ -156,7 +164,7 @@ export const alphaVantageService = {
     try {
       await databaseService.executeNonQuery(
         `INSERT OR REPLACE INTO alpha_cache (symbol, interval, params, fetched_at, raw_json) VALUES (?, ?, ?, ?, ?)`,
-        [symbol, 'monthly', '', new Date().toISOString(), JSON.stringify(json)]
+        [symbol, 'monthly', '', new Date().toISOString(), JSON.stringify(json)],
       );
     } catch (e) {
       // best-effort
@@ -170,13 +178,15 @@ export const alphaVantageService = {
     try {
       const rows = await databaseService.executeQuery(
         'SELECT raw_json, fetched_at FROM alpha_cache WHERE symbol = ? AND interval = ? AND params = ? LIMIT 1',
-        [symbol, 'daily', '']
+        [symbol, 'daily', ''],
       );
       if (!rows || rows.length === 0) return null;
       const row = rows[0];
       const json = JSON.parse(row.raw_json);
       const parsed = parseDailyAdjusted(json);
-      try { emit('alpha_cache_hit', { symbol, interval: 'daily' }); } catch (e) {}
+      try {
+        emit('alpha_cache_hit', { symbol, interval: 'daily' });
+      } catch (e) {}
       return parsed;
     } catch (e) {
       return null;
@@ -188,7 +198,7 @@ export const alphaVantageService = {
     try {
       const rows = await databaseService.executeQuery(
         'SELECT raw_json, fetched_at FROM alpha_cache WHERE symbol = ? AND interval = ? AND params = ? LIMIT 1',
-        [symbol, 'monthly', '']
+        [symbol, 'monthly', ''],
       );
       if (!rows || rows.length === 0) return null;
       const row = rows[0];
@@ -212,7 +222,7 @@ export const alphaVantageService = {
     try {
       const rows = await databaseService.executeQuery(
         'SELECT raw_json, fetched_at FROM alpha_cache WHERE symbol = ? AND interval = ? AND params = ? LIMIT 1',
-        [symbol, 'daily', '']
+        [symbol, 'daily', ''],
       );
       if (rows && rows.length > 0) {
         const row = rows[0];
@@ -221,7 +231,9 @@ export const alphaVantageService = {
           const json = JSON.parse(row.raw_json);
           const parsed = parseDailyAdjusted(json);
           serviceMemCache.set(cacheKey, { value: parsed, expiresAt: fetchedAt + ttlMs });
-          try { emit('alpha_cache_hit', { symbol, interval: 'daily' }); } catch (e) {}
+          try {
+            emit('alpha_cache_hit', { symbol, interval: 'daily' });
+          } catch (e) {}
           return parsed;
         }
         if (fetchedAt) {
@@ -230,7 +242,9 @@ export const alphaVantageService = {
             const parsed = parseDailyAdjusted(json);
             backgroundRefreshDaily(symbol, cacheKey);
             serviceMemCache.set(cacheKey, { value: parsed, expiresAt: fetchedAt + ttlMs });
-            try { emit('alpha_cache_hit', { symbol, interval: 'daily', stale: true }); } catch (e) {}
+            try {
+              emit('alpha_cache_hit', { symbol, interval: 'daily', stale: true });
+            } catch (e) {}
             return parsed;
           } catch (e) {
             // fallthrough
@@ -242,14 +256,17 @@ export const alphaVantageService = {
     }
 
     const key = getApiKey();
-    if (!key) throw new Error('Alpha Vantage API key not configured. Set ALPHA_VANTAGE_API_KEY in expo extra or environment.');
+    if (!key)
+      throw new Error(
+        'Alpha Vantage API key not configured. Set ALPHA_VANTAGE_API_KEY in expo extra or environment.',
+      );
     const url = `${API_BASE}?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${encodeURIComponent(symbol)}&outputsize=full&apikey=${encodeURIComponent(key)}`;
     const json = await fetchJson(url);
     const parsed = parseDailyAdjusted(json);
     try {
       await databaseService.executeNonQuery(
         `INSERT OR REPLACE INTO alpha_cache (symbol, interval, params, fetched_at, raw_json) VALUES (?, ?, ?, ?, ?)`,
-        [symbol, 'daily', '', new Date().toISOString(), JSON.stringify(json)]
+        [symbol, 'daily', '', new Date().toISOString(), JSON.stringify(json)],
       );
     } catch (e) {
       // best-effort
@@ -261,7 +278,10 @@ export const alphaVantageService = {
   /** Get near-real-time stock quote (short TTL). */
   getQuote: async (symbol: string): Promise<{ price: number; timestamp?: string }> => {
     const key = getApiKey();
-    if (!key) throw new Error('Alpha Vantage API key not configured. Set ALPHA_VANTAGE_KEY in expo extra or environment.');
+    if (!key)
+      throw new Error(
+        'Alpha Vantage API key not configured. Set ALPHA_VANTAGE_KEY in expo extra or environment.',
+      );
     const cacheKey = `av:quote:${symbol}`;
     const now = Date.now();
     const ttlMs = 5 * 60 * 1000; // 5 minutes
@@ -271,7 +291,7 @@ export const alphaVantageService = {
     try {
       const rows = await databaseService.executeQuery(
         'SELECT raw_json, fetched_at FROM alpha_cache WHERE symbol = ? AND interval = ? AND params = ? LIMIT 1',
-        [symbol, 'quote', '']
+        [symbol, 'quote', ''],
       );
       if (rows && rows.length > 0) {
         const row = rows[0];
@@ -280,7 +300,9 @@ export const alphaVantageService = {
           const json = JSON.parse(row.raw_json);
           const quote = json['Global Quote'] || json['01. symbol'] ? json : null;
           if (quote && (quote['05. price'] || quote['price'])) {
-            const price = quote['05. price'] ? parseFloat(quote['05. price']) : parseFloat(quote['price']);
+            const price = quote['05. price']
+              ? parseFloat(quote['05. price'])
+              : parseFloat(quote['price']);
             const timestamp = quote['07. latest trading day'] || undefined;
             const result = { price, timestamp };
             serviceMemCache.set(cacheKey, { value: result, expiresAt: fetchedAt + ttlMs });
@@ -297,17 +319,21 @@ export const alphaVantageService = {
                 // persist raw JSON
                 try {
                   await databaseService.executeNonQuery(
-                    `INSERT OR REPLACE INTO alpha_cache (symbol, interval, params, fetched_at, raw_json) VALUES (?, ?, ?, ?, ?)` ,
-                    [symbol, 'quote', '', new Date().toISOString(), JSON.stringify(fetched)]
+                    `INSERT OR REPLACE INTO alpha_cache (symbol, interval, params, fetched_at, raw_json) VALUES (?, ?, ?, ?, ?)`,
+                    [symbol, 'quote', '', new Date().toISOString(), JSON.stringify(fetched)],
                   );
-                } catch (e) { /* ignore */ }
+                } catch (e) {
+                  /* ignore */
+                }
               } catch (e) {
                 // ignore
               }
             })();
             const quote = json['Global Quote'] || json['01. symbol'] ? json : null;
             if (quote && (quote['05. price'] || quote['price'])) {
-              const price = quote['05. price'] ? parseFloat(quote['05. price']) : parseFloat(quote['price']);
+              const price = quote['05. price']
+                ? parseFloat(quote['05. price'])
+                : parseFloat(quote['price']);
               const timestamp = quote['07. latest trading day'] || undefined;
               const result = { price, timestamp };
               serviceMemCache.set(cacheKey, { value: result, expiresAt: fetchedAt + ttlMs });
@@ -325,9 +351,9 @@ export const alphaVantageService = {
     const url = `${API_BASE}?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${encodeURIComponent(key)}`;
     const json = await fetchJson(url);
     const quote = json['Global Quote'] || json['01. symbol'] ? json : null;
-    if (!quote || !quote['05. price'] && !quote['price']) {
+    if (!quote || (!quote['05. price'] && !quote['price'])) {
       // Some variants may return different shapes
-      const firstKey = Object.keys(json).find(k => k.startsWith('Global Quote'));
+      const firstKey = Object.keys(json).find((k) => k.startsWith('Global Quote'));
       if (firstKey) {
         const q = json[firstKey];
         return { price: parseFloat(q['05. price']), timestamp: q['07. latest trading day'] };
@@ -336,13 +362,14 @@ export const alphaVantageService = {
     }
 
     const price = quote['05. price'] ? parseFloat(quote['05. price']) : parseFloat(quote['price']);
-    const timestamp = quote['07. latest trading day'] || quote['07. latest trading day'] || undefined;
+    const timestamp =
+      quote['07. latest trading day'] || quote['07. latest trading day'] || undefined;
     const result = { price, timestamp };
     // persist raw JSON
     try {
       await databaseService.executeNonQuery(
         `INSERT OR REPLACE INTO alpha_cache (symbol, interval, params, fetched_at, raw_json) VALUES (?, ?, ?, ?, ?)`,
-        [symbol, 'quote', '', new Date().toISOString(), JSON.stringify(json)]
+        [symbol, 'quote', '', new Date().toISOString(), JSON.stringify(json)],
       );
     } catch (e) {
       // best-effort
@@ -357,22 +384,25 @@ async function backgroundRefreshMonthly(symbol: string, cacheKey: string) {
   try {
     if (inFlightRefresh[cacheKey]) return inFlightRefresh[cacheKey];
     inFlightRefresh[cacheKey] = (async () => {
-    const key = getApiKey();
-    const url = `${API_BASE}?function=TIME_SERIES_MONTHLY_ADJUSTED&symbol=${encodeURIComponent(symbol)}&apikey=${encodeURIComponent(key)}`;
-    const json = await fetchJson(url);
-    const parsed = parseMonthlyAdjusted(json);
-    // persist raw JSON
-    try {
-      await databaseService.executeNonQuery(
-        `INSERT OR REPLACE INTO alpha_cache (symbol, interval, params, fetched_at, raw_json) VALUES (?, ?, ?, ?, ?)`,
-        [symbol, 'monthly', '', new Date().toISOString(), JSON.stringify(json)]
-      );
-    } catch (e) {
-      // ignore
-    }
-  serviceMemCache.set(cacheKey, { value: parsed, expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 });
-    emit('historical-updated', { symbol, interval: 'monthly' });
-    delete inFlightRefresh[cacheKey];
+      const key = getApiKey();
+      const url = `${API_BASE}?function=TIME_SERIES_MONTHLY_ADJUSTED&symbol=${encodeURIComponent(symbol)}&apikey=${encodeURIComponent(key)}`;
+      const json = await fetchJson(url);
+      const parsed = parseMonthlyAdjusted(json);
+      // persist raw JSON
+      try {
+        await databaseService.executeNonQuery(
+          `INSERT OR REPLACE INTO alpha_cache (symbol, interval, params, fetched_at, raw_json) VALUES (?, ?, ?, ?, ?)`,
+          [symbol, 'monthly', '', new Date().toISOString(), JSON.stringify(json)],
+        );
+      } catch (e) {
+        // ignore
+      }
+      serviceMemCache.set(cacheKey, {
+        value: parsed,
+        expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      });
+      emit('historical-updated', { symbol, interval: 'monthly' });
+      delete inFlightRefresh[cacheKey];
     })();
     return inFlightRefresh[cacheKey];
   } catch (e) {
@@ -386,22 +416,22 @@ async function backgroundRefreshDaily(symbol: string, cacheKey: string) {
   try {
     if (inFlightRefresh[cacheKey]) return inFlightRefresh[cacheKey];
     inFlightRefresh[cacheKey] = (async () => {
-    const key = getApiKey();
-    const url = `${API_BASE}?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${encodeURIComponent(symbol)}&outputsize=full&apikey=${encodeURIComponent(key)}`;
-    const json = await fetchJson(url);
-    const parsed = parseDailyAdjusted(json);
-    // persist raw JSON
-    try {
-      await databaseService.executeNonQuery(
-        `INSERT OR REPLACE INTO alpha_cache (symbol, interval, params, fetched_at, raw_json) VALUES (?, ?, ?, ?, ?)`,
-        [symbol, 'daily', '', new Date().toISOString(), JSON.stringify(json)]
-      );
-    } catch (e) {
-      // ignore
-    }
-  serviceMemCache.set(cacheKey, { value: parsed, expiresAt: Date.now() + 24 * 60 * 60 * 1000 });
-    emit('historical-updated', { symbol, interval: 'daily' });
-    delete inFlightRefresh[cacheKey];
+      const key = getApiKey();
+      const url = `${API_BASE}?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${encodeURIComponent(symbol)}&outputsize=full&apikey=${encodeURIComponent(key)}`;
+      const json = await fetchJson(url);
+      const parsed = parseDailyAdjusted(json);
+      // persist raw JSON
+      try {
+        await databaseService.executeNonQuery(
+          `INSERT OR REPLACE INTO alpha_cache (symbol, interval, params, fetched_at, raw_json) VALUES (?, ?, ?, ?, ?)`,
+          [symbol, 'daily', '', new Date().toISOString(), JSON.stringify(json)],
+        );
+      } catch (e) {
+        // ignore
+      }
+      serviceMemCache.set(cacheKey, { value: parsed, expiresAt: Date.now() + 24 * 60 * 60 * 1000 });
+      emit('historical-updated', { symbol, interval: 'daily' });
+      delete inFlightRefresh[cacheKey];
     })();
     return inFlightRefresh[cacheKey];
   } catch (e) {
@@ -416,7 +446,8 @@ async function backgroundRefreshDaily(symbol: string, cacheKey: string) {
   const url = `${API_BASE}?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${encodeURIComponent(key)}`;
   const json = await fetchJson(url);
   const quote = json['Global Quote'] || json['01. symbol'] ? json : null;
-  if (!quote || (!quote['05. price'] && !quote['price'])) throw new Error('Unexpected Global Quote response');
+  if (!quote || (!quote['05. price'] && !quote['price']))
+    throw new Error('Unexpected Global Quote response');
   const price = quote['05. price'] ? parseFloat(quote['05. price']) : parseFloat(quote['price']);
   const timestamp = quote['07. latest trading day'] || undefined;
   return { price, timestamp };

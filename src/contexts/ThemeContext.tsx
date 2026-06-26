@@ -27,20 +27,20 @@ export const brandColors = {
  */
 export interface ThemeColors {
   // Brand colors (consistent across modes)
-  primary: string;           // Green - primary actions, branding
-  secondary: string;         // Blue - accents, links
-  error: string;             // Red - errors, destructive actions
-  
+  primary: string; // Green - primary actions, branding
+  secondary: string; // Blue - accents, links
+  error: string; // Red - errors, destructive actions
+
   // Backgrounds (mode-specific)
-  background: string;        // Page/screen background
-  surface: string;           // Cards, modals, default elevation
-  
+  background: string; // Page/screen background
+  surface: string; // Cards, modals, default elevation
+
   // Text (mode-specific)
-  text: string;              // Primary text
-  textSecondary: string;     // Secondary/muted text
-  
+  text: string; // Primary text
+  textSecondary: string; // Secondary/muted text
+
   // Borders (mode-specific)
-  border: string;            // Default borders, dividers
+  border: string; // Default borders, dividers
 }
 
 const THEMES: Record<ThemeMode, ThemeColors> = {
@@ -98,8 +98,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         if (savedMode === 'light' || savedMode === 'dark') {
           setModeState(savedMode);
         }
-      } catch (error) {
-      }
+      } catch (error) {}
     };
     loadTheme();
   }, []);
@@ -109,8 +108,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setModeState(newMode);
     try {
       await SecureStore.setItemAsync(THEME_STORAGE_KEY, newMode);
-    } catch (error) {
-    }
+    } catch (error) {}
   };
 
   const theme = useMemo(() => THEMES[mode], [mode]);
@@ -125,7 +123,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
 /**
  * useTheme Hook - Access theme from any component
- * 
+ *
  * @example
  * const { theme, isDark, setMode } = useTheme();
  * <View style={{ backgroundColor: theme.background }}>

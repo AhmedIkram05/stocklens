@@ -23,10 +23,11 @@ export const createReceipt = (overrides: Partial<Receipt> = {}): Receipt => {
 
 export const buildReceiptList = (
   count = 3,
-  overrides?: (index: number) => Partial<Receipt>
-): Receipt[] => Array.from({ length: count }, (_unused, index) => createReceipt(overrides?.(index)));
+  overrides?: (index: number) => Partial<Receipt>,
+): Receipt[] =>
+  Array.from({ length: count }, (_unused, index) => createReceipt(overrides?.(index)));
 
-export const sampleReceipts: Receipt[] = buildReceiptList(5, index => ({
+export const sampleReceipts: Receipt[] = buildReceiptList(5, (index) => ({
   total_amount: 25 + index * 7,
   date_scanned: new Date(Date.now() - index * 86400000).toISOString(),
 }));

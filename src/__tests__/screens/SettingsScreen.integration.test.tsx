@@ -40,7 +40,10 @@ describe('SettingsScreen', () => {
   });
 
   const renderScreen = (overrides?: Parameters<typeof renderWithProviders>[1]) =>
-    renderWithProviders(<SettingsScreen />, overrides ?? { providerOverrides: { withNavigation: false } });
+    renderWithProviders(
+      <SettingsScreen />,
+      overrides ?? { providerOverrides: { withNavigation: false } },
+    );
 
   const renderAndAwaitSwitches = async (overrides?: Parameters<typeof renderWithProviders>[1]) => {
     const utils = renderScreen(overrides);
@@ -51,7 +54,9 @@ describe('SettingsScreen', () => {
 
   const findAlertButtons = (title: string) => {
     const matchingCall = [...alertSpy.mock.calls].reverse().find(([t]) => t === title);
-    return matchingCall ? (matchingCall[2] as Array<{ text?: string; onPress?: () => void }>) : undefined;
+    return matchingCall
+      ? (matchingCall[2] as Array<{ text?: string; onPress?: () => void }>)
+      : undefined;
   };
 
   it('toggles dark mode using ThemeContext', async () => {
@@ -77,7 +82,10 @@ describe('SettingsScreen', () => {
 
     await waitFor(() => expect(deviceAuth.authenticateDevice).toHaveBeenCalled());
     expect(deviceAuth.setDeviceEnabled).toHaveBeenCalledWith(true);
-    expect(alertSpy).toHaveBeenCalledWith('Enabled', expect.stringContaining('Device passcode login enabled'));
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Enabled',
+      expect.stringContaining('Device passcode login enabled'),
+    );
   });
 
   it('confirms sign out before calling AuthContext', async () => {
@@ -94,7 +102,7 @@ describe('SettingsScreen', () => {
     const buttons = findAlertButtons('Sign Out');
     expect(buttons).toBeDefined();
 
-    const confirm = buttons?.find(button => button.text === 'Sign Out');
+    const confirm = buttons?.find((button) => button.text === 'Sign Out');
     await act(async () => {
       await confirm?.onPress?.();
     });
@@ -115,7 +123,7 @@ describe('SettingsScreen', () => {
     const buttons = findAlertButtons('Clear All Data');
     expect(buttons).toBeDefined();
 
-    const destructive = buttons?.find(button => button.text === 'Delete');
+    const destructive = buttons?.find((button) => button.text === 'Delete');
     await act(async () => {
       await destructive?.onPress?.();
     });
