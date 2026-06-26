@@ -5,7 +5,16 @@
  */
 
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Alert,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import ScreenContainer from '../components/ScreenContainer';
 import PageHeader from '../components/PageHeader';
@@ -24,7 +33,8 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 /** Login screen. */
 export default function LoginScreen() {
   const navigation = useNavigation();
-  const { contentHorizontalPadding, isSmallPhone, sectionVerticalSpacing, isTablet, orientation } = useBreakpoint();
+  const { contentHorizontalPadding, isSmallPhone, sectionVerticalSpacing, isTablet, orientation } =
+    useBreakpoint();
   const { startLockGrace } = useAuth();
   const { theme } = useTheme();
   const [email, setEmail] = useState('');
@@ -39,13 +49,12 @@ export default function LoginScreen() {
     try {
       const signInData: SignInData = { email, password };
       await authService.signIn(signInData);
-      
+
       startLockGrace();
-      
+
       try {
         await promptEnableDeviceAuth(email, password);
-      } catch (e) {
-      }
+      } catch (e) {}
     } catch (error: any) {
       let errorMessage = 'An error occurred signing in. Please try again.';
       if (error.code === 'auth/user-not-found') {
@@ -59,7 +68,7 @@ export default function LoginScreen() {
     }
   };
 
-  const handleSignUp = () => { 
+  const handleSignUp = () => {
     navigation.navigate('SignUp' as never);
   };
 
@@ -68,7 +77,10 @@ export default function LoginScreen() {
     if (forgotDisabled) return;
     const target = email.trim();
     if (!target) {
-      Alert.alert('Email required', 'Enter the email address for your account to receive a password reset link.');
+      Alert.alert(
+        'Email required',
+        'Enter the email address for your account to receive a password reset link.',
+      );
       return;
     }
     setForgotDisabled(true);
@@ -77,18 +89,32 @@ export default function LoginScreen() {
       if (!mod || !mod.authService || typeof mod.authService.sendPasswordReset !== 'function') {
         throw new Error('authService.sendPasswordReset is not available');
       }
-  await mod.authService.sendPasswordReset(target);
-  Alert.alert('Password reset', "If an account exists for that email, we'll send a reset link. Check your inbox (and spam) for the message.");
+      await mod.authService.sendPasswordReset(target);
+      Alert.alert(
+        'Password reset',
+        "If an account exists for that email, we'll send a reset link. Check your inbox (and spam) for the message.",
+      );
     } catch (err: any) {
-      Alert.alert('Error', `Could not send reset email. ${err?.code || ''} ${err?.message || 'Try again later.'}`);
+      Alert.alert(
+        'Error',
+        `Could not send reset email. ${err?.code || ''} ${err?.message || 'Try again later.'}`,
+      );
     } finally {
       setTimeout(() => setForgotDisabled(false), 30000);
     }
   };
 
   return (
-    <ScreenContainer contentStyle={{ paddingHorizontal: contentHorizontalPadding, paddingVertical: sectionVerticalSpacing }}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <ScreenContainer
+      contentStyle={{
+        paddingHorizontal: contentHorizontalPadding,
+        paddingVertical: sectionVerticalSpacing,
+      }}
+    >
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         <ScrollView
           contentContainerStyle={{ flexGrow: 1 }}
           keyboardShouldPersistTaps="handled"
@@ -106,20 +132,35 @@ export default function LoginScreen() {
                   const titleMarginTop = isSmallPhone
                     ? spacing.lg
                     : isTablet
-                    ? orientation === 'landscape'
-                      ? spacing.md
-                      : spacing.lg
-                    : spacing.xl;
-                  const titleMarginBottom = isSmallPhone ? spacing.xs : isTablet ? spacing.sm : spacing.md;
+                      ? orientation === 'landscape'
+                        ? spacing.md
+                        : spacing.lg
+                      : spacing.xl;
+                  const titleMarginBottom = isSmallPhone
+                    ? spacing.xs
+                    : isTablet
+                      ? spacing.sm
+                      : spacing.md;
                   return (
-                    <Text style={[styles.title, { color: theme.text, marginTop: titleMarginTop, marginBottom: titleMarginBottom }]}> 
+                    <Text
+                      style={[
+                        styles.title,
+                        {
+                          color: theme.text,
+                          marginTop: titleMarginTop,
+                          marginBottom: titleMarginBottom,
+                        },
+                      ]}
+                    >
                       Welcome to Stock
                       <Text style={[styles.titleLens, { color: theme.primary }]}>Lens</Text>
                     </Text>
                   );
                 })()}
               </View>
-              <Text style={[styles.subtitle, { color: theme.textSecondary }]}>Scan your spending{'\n'}See your missed investing</Text>
+              <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+                Scan your spending{'\n'}See your missed investing
+              </Text>
             </PageHeader>
 
             <View
@@ -127,7 +168,9 @@ export default function LoginScreen() {
                 styles.formContainer,
                 isSmallPhone && styles.formContainerCompact,
                 // On tablet landscape, push form content down so inputs sit lower on screen
-                isTablet && orientation === 'landscape' ? { justifyContent: 'flex-start', paddingTop: spacing.xl } : undefined,
+                isTablet && orientation === 'landscape'
+                  ? { justifyContent: 'flex-start', paddingTop: spacing.xl }
+                  : undefined,
               ]}
             >
               <FormInput
@@ -149,15 +192,32 @@ export default function LoginScreen() {
                 showPasswordToggle
               />
 
-              <PrimaryButton onPress={handleLogin} style={styles.loginButton} textStyle={styles.loginButtonText} accessibilityLabel="Login">
+              <PrimaryButton
+                onPress={handleLogin}
+                style={styles.loginButton}
+                textStyle={styles.loginButtonText}
+                accessibilityLabel="Login"
+              >
                 Login
               </PrimaryButton>
 
-              <TouchableOpacity onPress={handleForgot} disabled={forgotDisabled} style={styles.forgotContainer} accessibilityLabel="Forgot password">
-                <Text style={[styles.forgotText, forgotDisabled && { opacity: 0.5 }]}>Forgot password?</Text>
+              <TouchableOpacity
+                onPress={handleForgot}
+                disabled={forgotDisabled}
+                style={styles.forgotContainer}
+                accessibilityLabel="Forgot password"
+              >
+                <Text style={[styles.forgotText, forgotDisabled && { opacity: 0.5 }]}>
+                  Forgot password?
+                </Text>
               </TouchableOpacity>
 
-              <AuthFooter prompt={"Don't have an account?"} actionText="Sign Up" onPress={handleSignUp} style={styles.signUpContainer} />
+              <AuthFooter
+                prompt={"Don't have an account?"}
+                actionText="Sign Up"
+                onPress={handleSignUp}
+                style={styles.signUpContainer}
+              />
             </View>
           </View>
         </ScrollView>

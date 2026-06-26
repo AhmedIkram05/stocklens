@@ -13,13 +13,17 @@ jest.mock('@/services/eventBus', () => ({
 jest.mock('@/utils/crypto', () => ({
   isEncryptedPayload: jest.fn((s: any) => typeof s === 'string' && s.startsWith('enc:')),
   encryptString: jest.fn(async (s: string) => `enc:${s}`),
-  decryptString: jest.fn(async (s: string) => (typeof s === 'string' && s.startsWith('enc:')) ? s.slice(4) : s),
+  decryptString: jest.fn(async (s: string) =>
+    typeof s === 'string' && s.startsWith('enc:') ? s.slice(4) : s,
+  ),
 }));
 
 // Mock file-level encryption to avoid touching filesystem
 jest.mock('@/utils/fileCrypto', () => ({
   encryptImageFile: jest.fn(async (uri: string) => `enc-${uri}`),
-  decryptImageToTemp: jest.fn(async (uri: string) => (typeof uri === 'string' && uri.startsWith('enc-')) ? uri.replace('enc-','tmp-') : uri),
+  decryptImageToTemp: jest.fn(async (uri: string) =>
+    typeof uri === 'string' && uri.startsWith('enc-') ? uri.replace('enc-', 'tmp-') : uri,
+  ),
 }));
 
 // Mock key manager to return a stable key
@@ -49,7 +53,12 @@ describe('receiptService', () => {
   it('creates receipts with default values and returns insert id', async () => {
     mockedDb.executeNonQuery.mockResolvedValueOnce(42);
 
-    const receiptData = createReceipt({ user_id: 'uid-123', image_uri: 'file:///foo.jpg', total_amount: 12.5, ocr_data: '£12.50' });
+    const receiptData = createReceipt({
+      user_id: 'uid-123',
+      image_uri: 'file:///foo.jpg',
+      total_amount: 12.5,
+      ocr_data: '£12.50',
+    });
 
     const id = await receiptService.create({
       user_id: receiptData.user_id,
@@ -59,17 +68,26 @@ describe('receiptService', () => {
     });
 
     expect(id).toBe(42);
-    expect(mockedDb.executeNonQuery).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO receipts'), expect.arrayContaining(['uid-123']));
+    expect(mockedDb.executeNonQuery).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO receipts'),
+      expect.arrayContaining(['uid-123']),
+    );
   });
 
   it('updates only provided fields', async () => {
     await receiptService.update(7, { total_amount: 99.9 });
-    expect(mockedDb.executeNonQuery).toHaveBeenCalledWith(expect.stringContaining('UPDATE receipts SET total_amount = ?'), ['enc:99.9', 7]);
+    expect(mockedDb.executeNonQuery).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE receipts SET total_amount = ?'),
+      ['enc:99.9', 7],
+    );
   });
 
   it('deletes all receipts for a user and emits event', async () => {
     await receiptService.deleteAll('uid-abc');
-    expect(mockedDb.executeNonQuery).toHaveBeenCalledWith('DELETE FROM receipts WHERE user_id = ?', ['uid-abc']);
+    expect(mockedDb.executeNonQuery).toHaveBeenCalledWith(
+      'DELETE FROM receipts WHERE user_id = ?',
+      ['uid-abc'],
+    );
     expect(mockedEmit).toHaveBeenCalledWith('receipts-changed', { userId: 'uid-abc' });
   });
 });
@@ -83,7 +101,7 @@ describe('settingsService', () => {
     await settingsService.upsert({ user_id: 'uid-settings' } as any);
     expect(mockedDb.executeNonQuery).toHaveBeenCalledWith(
       expect.stringContaining('INSERT OR REPLACE INTO user_settings'),
-      ['uid-settings', 'enc:light', 0]
+      ['uid-settings', 'enc:light', 0],
     );
   });
 });
@@ -106,10 +124,16 @@ describe('userService', () => {
   });
 
   it('handles UNIQUE email conflicts by updating existing rows', async () => {
-    mockedDb.executeNonQuery.mockRejectedValueOnce(new Error('UNIQUE constraint failed: users.email'));
+    mockedDb.executeNonQuery.mockRejectedValueOnce(
+      new Error('UNIQUE constraint failed: users.email'),
+    );
     mockedDb.executeNonQuery.mockResolvedValueOnce(2);
 
-    const user = createUserProfile({ uid: 'uid-new', first_name: 'Bob', email: 'duplicate@example.com' });
+    const user = createUserProfile({
+      uid: 'uid-new',
+      first_name: 'Bob',
+      email: 'duplicate@example.com',
+    });
 
     const result = await userService.upsert(user.uid, user.first_name!, user.email!);
 

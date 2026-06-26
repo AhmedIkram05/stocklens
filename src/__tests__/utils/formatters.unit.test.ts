@@ -38,7 +38,11 @@ describe('formatRelativeDate', () => {
 
   it('falls back to locale date strings for older events', () => {
     const date = '2024-01-15T00:00:00Z';
-    const expected = new Date(date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    const expected = new Date(date).toLocaleDateString(undefined, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
 
     expect(formatRelativeDate(date)).toBe(expected);
   });

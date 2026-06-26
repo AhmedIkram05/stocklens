@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { Pressable, StyleSheet, View, StyleProp, ViewStyle, TextStyle, Platform } from 'react-native';
+import { Pressable, StyleSheet, StyleProp, ViewStyle, TextStyle } from 'react-native';
 import AppText from './AppText';
 import { brandColors } from '../contexts/ThemeContext';
 import { radii, spacing, typography, shadows } from '../styles/theme';
@@ -28,15 +28,17 @@ type Props = {
  * Always displays white text on red background for maximum contrast and visibility.
  * Uses Pressable with platform-specific press feedback for native feel.
  */
-export default function DangerButton({ onPress, children, style, textStyle, accessibilityLabel }: Props) {
+export default function DangerButton({
+  onPress,
+  children,
+  style,
+  textStyle,
+  accessibilityLabel,
+}: Props) {
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.button,
-        pressed && { opacity: 0.6 },
-        style
-      ]}
+      style={({ pressed }) => [styles.button, pressed && { opacity: 0.6 }, style]}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
     >

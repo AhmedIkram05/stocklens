@@ -22,18 +22,18 @@ export const spacing = {
 
 /**
  * sizes - Common UI element dimensions
- * 
+ *
  * Values use moderateScale() for balanced sizing across devices
- * 
+ *
  * Controls:
  * - controlSm (36px): Small buttons, compact inputs
  * - controlMd (44px): Standard touch targets (iOS/Android guideline)
  * - controlLg (56px): Large primary actions
- * 
+ *
  * Avatars:
  * - avatarSm (40px): List item avatars
  * - avatarMd (56px): Profile avatars
- * 
+ *
  * Usage:
  * height: sizes.controlMd, width: sizes.avatarSm
  */
@@ -47,16 +47,16 @@ export const sizes = {
 
 /**
  * radii - Border radius scale
- * 
+ *
  * Values use moderateScale() with minimum thresholds for small devices
- * 
+ *
  * Scale:
  * - sm (6-8px): Subtle rounding, buttons, inputs
  * - md (8-12px): Default card rounding
  * - lg (12-16px): Large cards, modals
  * - xl (16-24px): Hero elements, featured cards
  * - pill (999px): Fully rounded (badges, pills)
- * 
+ *
  * Usage:
  * borderRadius: radii.md, borderRadius: radii.pill
  */
@@ -70,14 +70,14 @@ export const radii = {
 
 /**
  * breakpoints - Device width breakpoints
- * 
+ *
  * Used by useBreakpoint hook for responsive layouts
- * 
+ *
  * Breakpoints:
  * - smallPhone (360px): Small Android devices (e.g., older budget phones)
  * - largePhone (414px): Large phones (e.g., iPhone Pro Max)
  * - tablet (768px): Tablets and iPad Mini
- * 
+ *
  * Usage:
  * const { isTablet } = useBreakpoint(); // checks if width >= 768
  */
@@ -89,9 +89,9 @@ export const breakpoints = {
 
 /**
  * typography - Text style definitions
- * 
+ *
  * All font sizes use moderateScale() for balanced text scaling
- * 
+ *
  * Text Hierarchy:
  * - display (48px): Hero text, splash screens
  * - pageTitle (34px): Screen titles
@@ -106,7 +106,7 @@ export const breakpoints = {
  * - captionStrong (14px): Emphasized captions
  * - button (16px): Button text
  * - overline (12px): Labels, tags (all caps with letter spacing)
- * 
+ *
  * Usage:
  * ...typography.body, fontSize: typography.pageTitle.fontSize
  */

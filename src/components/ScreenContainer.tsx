@@ -6,10 +6,9 @@
 
 import React from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { View, StyleSheet, ViewStyle } from 'react-native';
+import { View, ViewStyle } from 'react-native';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useTheme } from '../contexts/ThemeContext';
-import { spacing } from '../styles/theme';
 
 type Props = {
   /** Screen content to render within the safe area */
@@ -23,7 +22,7 @@ type Props = {
 };
 
 export default function ScreenContainer({ children, style, contentStyle, noPadding }: Props) {
-  const { contentHorizontalPadding, sectionVerticalSpacing, isTablet } = useBreakpoint();
+  const { contentHorizontalPadding, sectionVerticalSpacing } = useBreakpoint();
   const { theme } = useTheme();
 
   const baseInnerStyle: ViewStyle = {
@@ -33,7 +32,11 @@ export default function ScreenContainer({ children, style, contentStyle, noPaddi
 
   const horizontalPadding = noPadding ? 0 : contentHorizontalPadding;
 
-  const paddedStyle: ViewStyle = { ...baseInnerStyle, paddingHorizontal: horizontalPadding, paddingVertical: sectionVerticalSpacing };
+  const paddedStyle: ViewStyle = {
+    ...baseInnerStyle,
+    paddingHorizontal: horizontalPadding,
+    paddingVertical: sectionVerticalSpacing,
+  };
 
   const containerStyle = {
     flex: 1,

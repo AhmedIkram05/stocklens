@@ -22,7 +22,7 @@ import IconValue from '../components/IconValue';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import useReceipts from '../hooks/useReceipts';
 import { ActivityIndicator } from 'react-native';
-import { formatRelativeDate, formatCurrencyRounded } from '../utils/formatters';
+import { formatCurrencyRounded } from '../utils/formatters';
 import { useAuth } from '../contexts/AuthContext';
 import type { MainTabParamList, RootStackParamList } from '../navigation/AppNavigator';
 import ReceiptsSorter, { SortBy, SortDirection } from '../components/ReceiptsSorter';
@@ -74,8 +74,6 @@ export default function HomeScreen() {
     return sorted;
   }, [allScans, sortBy, sortDirection]);
 
-  const formatReceiptLabel = (iso?: string) => formatRelativeDate(iso);
-
   return (
     <ScreenContainer contentStyle={{ paddingVertical: sectionVerticalSpacing }}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -92,92 +90,101 @@ export default function HomeScreen() {
                   <Text style={[styles.titleStock, { color: theme.text }]}>Stock</Text>
                   <Text style={[styles.titleLens, { color: theme.primary }]}>Lens</Text>
                 </View>
-                <Text style={[styles.subtitle, { color: theme.textSecondary }]}>What if you invested instead?</Text>
+                <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+                  What if you invested instead?
+                </Text>
               </PageHeader>
 
-            <View style={styles.statsContainer}>
-              <StatCard
-                value={
-                  <IconValue
-                    iconName="cash-outline"
-                    iconSize={28}
-                    iconColor={brandColors.white}
-                    value={formatAmount(totalMoneySpentDerived)}
-                    valueStyle={{ color: brandColors.white, fontSize: 28, fontWeight: '700' }}
-                  />
-                }
-                label="Total Money Spent"
-                subtitle="Across all scanned receipts"
-                variant="green"
-              />
-              <StatCard
-                value={
-                  <IconValue
-                    iconName="document-text-outline"
-                    iconSize={28}
-                    iconColor={brandColors.white}
-                    value={allScans.length}
-                    valueStyle={{ color: brandColors.white, fontSize: 28, fontWeight: '700' }}
-                  />
-                }
-                label="Receipts Scanned"
-                variant="blue"
-              />
-            </View>
-
-            <View style={styles.recentScans}>
-              <View style={styles.sectionHeader}>
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>Recent Scans</Text>
+              <View style={styles.statsContainer}>
+                <StatCard
+                  value={
+                    <IconValue
+                      iconName="cash-outline"
+                      iconSize={28}
+                      iconColor={brandColors.white}
+                      value={formatAmount(totalMoneySpentDerived)}
+                      valueStyle={{ color: brandColors.white, fontSize: 28, fontWeight: '700' }}
+                    />
+                  }
+                  label="Total Money Spent"
+                  subtitle="Across all scanned receipts"
+                  variant="green"
+                />
+                <StatCard
+                  value={
+                    <IconValue
+                      iconName="document-text-outline"
+                      iconSize={28}
+                      iconColor={brandColors.white}
+                      value={allScans.length}
+                      valueStyle={{ color: brandColors.white, fontSize: 28, fontWeight: '700' }}
+                    />
+                  }
+                  label="Receipts Scanned"
+                  variant="blue"
+                />
               </View>
 
-              <ReceiptsSorter
-                sortBy={sortBy}
-                sortDirection={sortDirection}
-                onSortChange={(by, dir) => {
-                  setSortBy(by);
-                  setSortDirection(dir);
-                }}
-              />
-              {(() => {
-                const preview = sortedReceipts.slice(0, 3);
-                const list = showAllHistory ? sortedReceipts : preview;
-                const cols = 1;
+              <View style={styles.recentScans}>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, { color: theme.text }]}>Recent Scans</Text>
+                </View>
 
-                return (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                    {list.map((scan) => {
-                      return (
-                        <View
-                          key={scan.id}
-                          style={{ flexBasis: `${100 / cols}%`, paddingHorizontal: spacing.xs } as any}
-                        >
-                          <ReceiptCard
-                            image={scan.image}
-                            amount={formatAmount(scan.amount)}
-                            label={scan.label}
-                            time={scan.time}
-                            onPress={() =>
-                              navigation.navigate('ReceiptDetails', {
-                                receiptId: scan.id,
-                                totalAmount: scan.amount,
-                                date: scan.date,
-                                image: scan.image,
-                              })
+                <ReceiptsSorter
+                  sortBy={sortBy}
+                  sortDirection={sortDirection}
+                  onSortChange={(by, dir) => {
+                    setSortBy(by);
+                    setSortDirection(dir);
+                  }}
+                />
+                {(() => {
+                  const preview = sortedReceipts.slice(0, 3);
+                  const list = showAllHistory ? sortedReceipts : preview;
+                  const cols = 1;
+
+                  return (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                      {list.map((scan) => {
+                        return (
+                          <View
+                            key={scan.id}
+                            style={
+                              { flexBasis: `${100 / cols}%`, paddingHorizontal: spacing.xs } as any
                             }
-                          />
-                        </View>
-                      );
-                    })}
-                  </View>
-                );
-              })()}
+                          >
+                            <ReceiptCard
+                              image={scan.image}
+                              amount={formatAmount(scan.amount)}
+                              label={scan.label}
+                              time={scan.time}
+                              onPress={() =>
+                                navigation.navigate('ReceiptDetails', {
+                                  receiptId: scan.id,
+                                  totalAmount: scan.amount,
+                                  date: scan.date,
+                                  image: scan.image,
+                                })
+                              }
+                            />
+                          </View>
+                        );
+                      })}
+                    </View>
+                  );
+                })()}
 
-              {allScans.length >= 4 && (
-                <TouchableOpacity style={styles.viewAllButton} onPress={() => setShowAllHistory(!showAllHistory)}>
-                  <Text style={[styles.viewAllText, { color: theme.text }]}>{showAllHistory ? 'Show Less' : 'View all receipts'}</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+                {allScans.length >= 4 && (
+                  <TouchableOpacity
+                    style={styles.viewAllButton}
+                    onPress={() => setShowAllHistory(!showAllHistory)}
+                  >
+                    <Text style={[styles.viewAllText, { color: theme.text }]}>
+                      {showAllHistory ? 'Show Less' : 'View all receipts'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </ResponsiveContainer>
           </>
         ) : (
@@ -189,7 +196,9 @@ export default function HomeScreen() {
                   <Text style={[styles.titleStock, { color: theme.text }]}>Stock</Text>
                   <Text style={[styles.titleLens, { color: theme.primary }]}>Lens</Text>
                 </View>
-                <Text style={[styles.subtitle, { color: theme.textSecondary }]}>What if you invested instead?</Text>
+                <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+                  What if you invested instead?
+                </Text>
               </PageHeader>
 
               <View style={styles.emptyStateContainer}>
@@ -262,5 +271,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.md,
   },
-  
 });

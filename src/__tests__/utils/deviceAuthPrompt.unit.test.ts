@@ -38,24 +38,27 @@ describe('deviceAuthPrompt', () => {
 
     const promptPromise = promptEnableDeviceAuth('user@example.com', 'secret');
 
-    await new Promise(resolve => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
 
     expect(alertSpy).toHaveBeenCalledWith(
       'Enable Device Auth?',
       expect.any(String),
       expect.any(Array),
-      expect.any(Object)
+      expect.any(Object),
     );
 
     const alertCall = alertSpy.mock.calls[0];
     const buttons = alertCall[2] as any[];
-    const yesButton = buttons.find(b => b.text === 'Yes');
+    const yesButton = buttons.find((b) => b.text === 'Yes');
 
     await yesButton.onPress();
 
     const result = await promptPromise;
 
-    expect(mockedDeviceAuth.saveDeviceCredentials).toHaveBeenCalledWith('user@example.com', 'secret');
+    expect(mockedDeviceAuth.saveDeviceCredentials).toHaveBeenCalledWith(
+      'user@example.com',
+      'secret',
+    );
     expect(result).toBe(true);
   });
 });

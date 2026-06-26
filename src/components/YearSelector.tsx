@@ -7,7 +7,7 @@
 import React, { useRef, useEffect, useState, Dispatch, SetStateAction } from 'react';
 import { View, TouchableOpacity, Animated, ViewStyle, StyleProp } from 'react-native';
 import AppText from './AppText';
-import { spacing, typography, radii, shadows } from '../styles/theme';
+import { spacing, typography, radii } from '../styles/theme';
 import { brandColors } from '../contexts/ThemeContext';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -24,7 +24,13 @@ type Props<T extends number> = {
   style?: StyleProp<ViewStyle>;
 };
 
-export default function YearSelector<T extends number = number>({ options, value, onChange, compact = false, style }: Props<T>) {
+export default function YearSelector<T extends number = number>({
+  options,
+  value,
+  onChange,
+  compact = false,
+  style,
+}: Props<T>) {
   const { theme } = useTheme();
   const containerWidthRef = useRef<number>(0);
   const containerHeightRef = useRef<number>(0);
@@ -32,7 +38,7 @@ export default function YearSelector<T extends number = number>({ options, value
   const [measured, setMeasured] = useState(false);
 
   useEffect(() => {
-  if (!measured) return;
+    if (!measured) return;
     const width = containerWidthRef.current;
     const pad = spacing.xs;
     const totalMargins = spacing.xs * options.length;
@@ -52,8 +58,17 @@ export default function YearSelector<T extends number = number>({ options, value
 
   return (
     <View
-      style={[{ flexDirection: 'row', borderRadius: radii.pill, backgroundColor: theme.surface, padding: pad, alignItems: 'center' }, style]}
-      onLayout={e => {
+      style={[
+        {
+          flexDirection: 'row',
+          borderRadius: radii.pill,
+          backgroundColor: theme.surface,
+          padding: pad,
+          alignItems: 'center',
+        },
+        style,
+      ]}
+      onLayout={(e) => {
         const { width: w, height: h } = e.nativeEvent.layout;
         containerWidthRef.current = w;
         containerHeightRef.current = h;
@@ -88,16 +103,32 @@ export default function YearSelector<T extends number = number>({ options, value
         }}
       />
 
-      {options.map(o => (
+      {options.map((o) => (
         <TouchableOpacity
           key={o}
           onPress={() => {
             // @ts-ignore
             onChange(o);
           }}
-          style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: segPadVert, marginHorizontal: spacing.xs / 2 }}
+          style={{
+            flex: 1,
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingVertical: segPadVert,
+            marginHorizontal: spacing.xs / 2,
+          }}
         >
-          <AppText style={[typography.captionStrong, { color: o === value ? brandColors.white : theme.text, opacity: o === value ? 1 : 0.8 }]}>{o}Y</AppText>
+          <AppText
+            style={[
+              typography.captionStrong,
+              {
+                color: o === value ? brandColors.white : theme.text,
+                opacity: o === value ? 1 : 0.8,
+              },
+            ]}
+          >
+            {o}Y
+          </AppText>
         </TouchableOpacity>
       ))}
     </View>

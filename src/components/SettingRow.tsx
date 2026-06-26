@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { Pressable, View, StyleSheet, ViewStyle, Platform } from 'react-native';
+import { Pressable, View, StyleSheet, ViewStyle } from 'react-native';
 import AppText from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { radii, spacing, typography, shadows, sizes } from '../styles/theme';
@@ -30,33 +30,46 @@ type Props = {
   style?: ViewStyle;
 };
 
-export default function SettingRow({ icon, iconBgColor, title, subtitle, right, onPress, destructive, style }: Props) {
+export default function SettingRow({
+  icon,
+  iconBgColor,
+  title,
+  subtitle,
+  right,
+  onPress,
+  destructive,
+  style,
+}: Props) {
   const { theme } = useTheme();
 
   const Title = (
-    <AppText style={[styles.title, { color: theme.text }, destructive && { color: theme.error }]}>{title}</AppText>
+    <AppText style={[styles.title, { color: theme.text }, destructive && { color: theme.error }]}>
+      {title}
+    </AppText>
   );
 
   return (
-    <Pressable 
-      onPress={onPress} 
+    <Pressable
+      onPress={onPress}
       style={({ pressed }) => [
-        styles.row, 
+        styles.row,
         { backgroundColor: theme.surface },
         pressed && onPress && { opacity: 0.6 },
-        style
+        style,
       ]}
       disabled={!onPress}
     >
       {icon ? (
-        <View style={[styles.iconContainer, { backgroundColor: iconBgColor }]}> 
+        <View style={[styles.iconContainer, { backgroundColor: iconBgColor }]}>
           <Ionicons name={icon} size={24} color={theme.text} />
         </View>
       ) : null}
 
       <View style={styles.content}>
         {Title}
-        {subtitle ? <AppText style={[styles.subtitle, { color: theme.textSecondary }]}>{subtitle}</AppText> : null}
+        {subtitle ? (
+          <AppText style={[styles.subtitle, { color: theme.textSecondary }]}>{subtitle}</AppText>
+        ) : null}
       </View>
 
       <View style={styles.right}>{right}</View>

@@ -45,12 +45,14 @@ describe('projectionService.projectUsingHistoricalCAGR', () => {
   it('uses fetched CAGR when stock history is available', async () => {
     // Use fixture to generate 60 months of data with 12% growth (1% per month)
     const historicalSeries = buildOHLCVSeries(60, 0.01, 100);
-    
-    mockedStockService.getHistoricalForTicker.mockResolvedValue(historicalSeries.map(ohlcv => ({
-      date: ohlcv.date,
-      adjustedClose: ohlcv.adjustedClose,
-      close: ohlcv.close,
-    })) as any);
+
+    mockedStockService.getHistoricalForTicker.mockResolvedValue(
+      historicalSeries.map((ohlcv) => ({
+        date: ohlcv.date,
+        adjustedClose: ohlcv.adjustedClose,
+        close: ohlcv.close,
+      })) as any,
+    );
 
     const result = await projectionService.projectUsingHistoricalCAGR(1000, 'NVDA', 5);
 

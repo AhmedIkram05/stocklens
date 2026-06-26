@@ -24,11 +24,7 @@ export const createOHLCV = (overrides: Partial<OHLCV> = {}): OHLCV => {
   return { ...base, ...overrides };
 };
 
-export const buildOHLCVSeries = (
-  months = 12,
-  growthRate = 0.01,
-  startingPrice = 100
-): OHLCV[] => {
+export const buildOHLCVSeries = (months = 12, growthRate = 0.01, startingPrice = 100): OHLCV[] => {
   const points: OHLCV[] = [];
   let price = startingPrice;
 
@@ -45,7 +41,7 @@ export const buildOHLCVSeries = (
         close: price,
         adjustedClose: price,
         volume: 500_000 + index * 10_000,
-      })
+      }),
     );
   }
 

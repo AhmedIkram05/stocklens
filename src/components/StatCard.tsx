@@ -27,15 +27,18 @@ type Props = {
 
 export default function StatCard({ value, label, subtitle, variant = 'white', style }: Props) {
   const { theme } = useTheme();
-  
-  const bg = variant === 'green' ? theme.primary : variant === 'blue' ? theme.secondary : theme.surface;
+
+  const bg =
+    variant === 'green' ? theme.primary : variant === 'blue' ? theme.secondary : theme.surface;
   const textColor = variant === 'white' ? theme.text : brandColors.white;
 
   return (
     <View style={[styles.card, { backgroundColor: bg }, style]}>
       <AppText style={[styles.value, { color: textColor }]}>{value}</AppText>
       {label ? <AppText style={[styles.label, { color: textColor }]}>{label}</AppText> : null}
-      {subtitle ? <AppText style={[styles.subtitle, { color: textColor, opacity: 0.85 }]}>{subtitle}</AppText> : null}
+      {subtitle ? (
+        <AppText style={[styles.subtitle, { color: textColor, opacity: 0.85 }]}>{subtitle}</AppText>
+      ) : null}
     </View>
   );
 }

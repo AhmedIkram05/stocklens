@@ -5,7 +5,7 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
-import { Alert, Platform } from 'react-native';
+import { Alert } from 'react-native';
 import Constants from 'expo-constants';
 import { receiptService } from '@/services/dataService';
 import { performOcrWithFallback } from '@/services/ocrService';
@@ -38,13 +38,22 @@ type ProcessReceiptOptions = {
 };
 
 /** Coordinates the photo → OCR → confirmation → save pipeline. */
-export const useReceiptCapture = ({ navigation, userUid, onResetCamera }: UseReceiptCaptureOptions) => {
+export const useReceiptCapture = ({
+  navigation,
+  userUid,
+  onResetCamera,
+}: UseReceiptCaptureOptions) => {
   const [processing, setProcessing] = useState(false);
   const [ocrRaw, setOcrRaw] = useState<string | null>(null);
   const [draftReceiptId, setDraftReceiptId] = useState<number | null>(null);
   const [manualModalVisible, setManualModalVisible] = useState(false);
   const [manualEntryText, setManualEntryText] = useState('');
-  const pendingRef = useRef<PendingReceiptState>({ draftId: null, ocrText: null, photoUri: null, amount: null });
+  const pendingRef = useRef<PendingReceiptState>({
+    draftId: null,
+    ocrText: null,
+    photoUri: null,
+    amount: null,
+  });
 
   /** Reset transient hook state so the camera flow can restart. */
   const resetWorkflowState = useCallback(() => {
@@ -55,164 +64,219 @@ export const useReceiptCapture = ({ navigation, userUid, onResetCamera }: UseRec
   }, []);
 
   /** Delete a draft receipt if it should not persist (rescan/cancel). */
-  const discardDraft = useCallback(async (draftId?: number | null) => {
-    const id = draftId ?? draftReceiptId;
-    if (!id) return;
-    try {
-      await receiptService.delete(Number(id));
-      try { emit('receipts-changed', { id }); } catch (e) {}
-    } catch (e) {}
-  }, [draftReceiptId]);
+  const discardDraft = useCallback(
+    async (draftId?: number | null) => {
+      const id = draftId ?? draftReceiptId;
+      if (!id) return;
+      try {
+        await receiptService.delete(Number(id));
+        try {
+          emit('receipts-changed', { id });
+        } catch (e) {}
+      } catch (e) {}
+    },
+    [draftReceiptId],
+  );
 
   /** Save receipt (update or create) then navigate to details. */
-  const saveAndNavigate = useCallback(async (amount: number, draftId: number | null, ocrText: string | null, photoUri: string | null) => {
-    try {
-      if (draftId) {
-        await receiptService.update(Number(draftId), {
-          total_amount: amount,
-          ocr_data: ocrText || '',
-          synced: 0,
-        });
-        try { emit('receipts-changed', { id: draftId }); } catch (e) {}
-        resetWorkflowState();
-        navigation.navigate('ReceiptDetails' as any, {
-          receiptId: String(draftId),
-          totalAmount: amount,
-          date: new Date().toISOString(),
-          image: photoUri ?? undefined,
-        });
-        onResetCamera?.();
-      } else {
-        const created = await receiptService.create({
-          user_id: userUid || 'anon',
-          image_uri: photoUri ?? undefined,
-          total_amount: amount,
-          ocr_data: ocrText || '',
-          synced: 0,
-        });
-        if (created && Number(created) > 0) {
-          try { emit('receipts-changed', { id: created }); } catch (e) {}
+  const saveAndNavigate = useCallback(
+    async (
+      amount: number,
+      draftId: number | null,
+      ocrText: string | null,
+      photoUri: string | null,
+    ) => {
+      try {
+        if (draftId) {
+          await receiptService.update(Number(draftId), {
+            total_amount: amount,
+            ocr_data: ocrText || '',
+            synced: 0,
+          });
+          try {
+            emit('receipts-changed', { id: draftId });
+          } catch (e) {}
           resetWorkflowState();
           navigation.navigate('ReceiptDetails' as any, {
-            receiptId: String(created),
+            receiptId: String(draftId),
             totalAmount: amount,
             date: new Date().toISOString(),
             image: photoUri ?? undefined,
           });
           onResetCamera?.();
+        } else {
+          const created = await receiptService.create({
+            user_id: userUid || 'anon',
+            image_uri: photoUri ?? undefined,
+            total_amount: amount,
+            ocr_data: ocrText || '',
+            synced: 0,
+          });
+          if (created && Number(created) > 0) {
+            try {
+              emit('receipts-changed', { id: created });
+            } catch (e) {}
+            resetWorkflowState();
+            navigation.navigate('ReceiptDetails' as any, {
+              receiptId: String(created),
+              totalAmount: amount,
+              date: new Date().toISOString(),
+              image: photoUri ?? undefined,
+            });
+            onResetCamera?.();
+          }
         }
+      } catch (e: any) {
+        Alert.alert('Save error', e?.message || 'Failed to save receipt');
       }
-    } catch (e: any) {
-      Alert.alert('Save error', e?.message || 'Failed to save receipt');
-    }
-  }, [navigation, onResetCamera, resetWorkflowState, userUid]);
+    },
+    [navigation, onResetCamera, resetWorkflowState, userUid],
+  );
 
   /** Prompt the user to enter an amount manually (platform modal). */
-    const handleManualEntry = useCallback((prefill?: number | null) => {
+  const handleManualEntry = useCallback(
+    (prefill?: number | null) => {
       const preset = prefill != null ? String(prefill) : '';
       setManualEntryText(preset);
       setManualModalVisible(true);
-    }, [setManualEntryText, setManualModalVisible]);
+    },
+    [setManualEntryText, setManualModalVisible],
+  );
 
   /** Run OCR on a photo, suggest amount, and show confirmation overlay. */
-  const processReceipt = useCallback(async ({ photoUri, photoBase64, draftIdArg, onSuggestion, skipOverlay }: ProcessReceiptOptions) => {
-    if (!photoUri) return;
-    if (!skipOverlay) setProcessing(true);
-    try {
-      const extras = (Constants as any).manifest?.extra || (Constants as any).expoConfig?.extra || {};
-      const apiKey = extras?.OCR_SPACE_API_KEY || process.env.OCR_SPACE_API_KEY || '';
-      if (!apiKey) {
-        if (!skipOverlay) setProcessing(false);
-        Alert.alert('Missing API Key', 'OCR API key not found. Add `OCR_SPACE_API_KEY` to your app config (app.json) or environment configuration.');
-        return;
-      }
-
-      const result = await performOcrWithFallback(photoUri, photoBase64 || null, apiKey);
-      const ocrText = result?.text || '';
-      setOcrRaw(ocrText || null);
-
-      if (!ocrText || !ocrText.trim()) {
-        if (onSuggestion) onSuggestion(null, ocrText || null);
-        const draft = draftIdArg ?? draftReceiptId ?? null;
-        pendingRef.current = { draftId: draft, ocrText: ocrText || null, photoUri: photoUri ?? null, amount: null };
-        if (!skipOverlay) {
-          // For empty OCR results we surface the same confirmation prompt
-          // interface so callers/tests can inspect the handlers (enter manually,
-          // rescan). The confirmation prompt will present options that map to
-          // existing handlers in the flow.
-          showConfirmationPrompt('No amount', {
-            onConfirm: async () => {
-              // Do not save when there is no amount — keep behavior consistent
-              // by simply closing the overlay and leaving the draft as-is.
-              resetWorkflowState();
-              onResetCamera?.();
-            },
-            onEnterManually: () => handleManualEntry(null),
-            onRescan: async () => {
-              await discardDraft(draft);
-              resetWorkflowState();
-              onResetCamera?.();
-            },
-          });
-        }
-        return;
-      }
-
-      const parsed = parseAmountFromOcrText(ocrText);
-      const amount = parsed != null && parsed > 0 ? parsed : null;
-      
-      // Validate extracted amount for realistic values
-      if (amount !== null && !validateAmount(amount)) {
-        // Amount is unrealistic (too high, negative, etc.)
-        if (onSuggestion) onSuggestion(null, ocrText);
-        const draft = draftIdArg ?? draftReceiptId ?? null;
-        pendingRef.current = { draftId: draft, ocrText, photoUri: photoUri ?? null, amount: null };
-        if (!skipOverlay) {
+  const processReceipt = useCallback(
+    async ({
+      photoUri,
+      photoBase64,
+      draftIdArg,
+      onSuggestion,
+      skipOverlay,
+    }: ProcessReceiptOptions) => {
+      if (!photoUri) return;
+      if (!skipOverlay) setProcessing(true);
+      try {
+        const extras =
+          (Constants as any).manifest?.extra || (Constants as any).expoConfig?.extra || {};
+        const apiKey = extras?.OCR_SPACE_API_KEY || process.env.OCR_SPACE_API_KEY || '';
+        if (!apiKey) {
+          if (!skipOverlay) setProcessing(false);
           Alert.alert(
-            'Invalid Amount Detected',
-            `The detected amount (${formatCurrencyGBP(amount)}) seems unrealistic. Please enter the amount manually.`,
-            [
-              {
-                text: 'Enter Manually',
-                onPress: () => handleManualEntry(null),
-              },
-              {
-                text: 'Rescan',
-                onPress: async () => {
-                  await discardDraft(draft);
-                  resetWorkflowState();
-                  onResetCamera?.();
-                },
-              },
-            ]
+            'Missing API Key',
+            'OCR API key not found. Add `OCR_SPACE_API_KEY` to your app config (app.json) or environment configuration.',
           );
+          return;
         }
-        return;
-      }
-      
-      if (onSuggestion) onSuggestion(amount, ocrText);
 
-      const draft = draftIdArg ?? draftReceiptId ?? null;
-      pendingRef.current = { draftId: draft, ocrText, photoUri: photoUri ?? null, amount };
-      const displayAmount = amount != null ? formatCurrencyGBP(amount) : 'No amount detected';
-      showConfirmationPrompt(displayAmount, {
-        onConfirm: async () => {
-          await saveAndNavigate(amount ?? 0, draft, ocrText || null, photoUri || null);
-        },
-        onEnterManually: () => handleManualEntry(amount),
-        onRescan: async () => {
-          await discardDraft(draft);
-          resetWorkflowState();
-          onResetCamera?.();
-        },
-      });
-    } catch (err: any) {
-      if (!skipOverlay) Alert.alert('OCR Error', err?.message || 'Could not process the receipt. Please try again or check your network.');
-      if (onSuggestion) onSuggestion(null, null);
-    } finally {
-      if (!skipOverlay) setProcessing(false);
-    }
-  }, [discardDraft, draftReceiptId, handleManualEntry, onResetCamera, resetWorkflowState, saveAndNavigate]);
+        const result = await performOcrWithFallback(photoUri, photoBase64 || null, apiKey);
+        const ocrText = result?.text || '';
+        setOcrRaw(ocrText || null);
+
+        if (!ocrText || !ocrText.trim()) {
+          if (onSuggestion) onSuggestion(null, ocrText || null);
+          const draft = draftIdArg ?? draftReceiptId ?? null;
+          pendingRef.current = {
+            draftId: draft,
+            ocrText: ocrText || null,
+            photoUri: photoUri ?? null,
+            amount: null,
+          };
+          if (!skipOverlay) {
+            // For empty OCR results we surface the same confirmation prompt
+            // interface so callers/tests can inspect the handlers (enter manually,
+            // rescan). The confirmation prompt will present options that map to
+            // existing handlers in the flow.
+            showConfirmationPrompt('No amount', {
+              onConfirm: async () => {
+                // Do not save when there is no amount — keep behavior consistent
+                // by simply closing the overlay and leaving the draft as-is.
+                resetWorkflowState();
+                onResetCamera?.();
+              },
+              onEnterManually: () => handleManualEntry(null),
+              onRescan: async () => {
+                await discardDraft(draft);
+                resetWorkflowState();
+                onResetCamera?.();
+              },
+            });
+          }
+          return;
+        }
+
+        const parsed = parseAmountFromOcrText(ocrText);
+        const amount = parsed != null && parsed > 0 ? parsed : null;
+
+        // Validate extracted amount for realistic values
+        if (amount !== null && !validateAmount(amount)) {
+          // Amount is unrealistic (too high, negative, etc.)
+          if (onSuggestion) onSuggestion(null, ocrText);
+          const draft = draftIdArg ?? draftReceiptId ?? null;
+          pendingRef.current = {
+            draftId: draft,
+            ocrText,
+            photoUri: photoUri ?? null,
+            amount: null,
+          };
+          if (!skipOverlay) {
+            Alert.alert(
+              'Invalid Amount Detected',
+              `The detected amount (${formatCurrencyGBP(amount)}) seems unrealistic. Please enter the amount manually.`,
+              [
+                {
+                  text: 'Enter Manually',
+                  onPress: () => handleManualEntry(null),
+                },
+                {
+                  text: 'Rescan',
+                  onPress: async () => {
+                    await discardDraft(draft);
+                    resetWorkflowState();
+                    onResetCamera?.();
+                  },
+                },
+              ],
+            );
+          }
+          return;
+        }
+
+        if (onSuggestion) onSuggestion(amount, ocrText);
+
+        const draft = draftIdArg ?? draftReceiptId ?? null;
+        pendingRef.current = { draftId: draft, ocrText, photoUri: photoUri ?? null, amount };
+        const displayAmount = amount != null ? formatCurrencyGBP(amount) : 'No amount detected';
+        showConfirmationPrompt(displayAmount, {
+          onConfirm: async () => {
+            await saveAndNavigate(amount ?? 0, draft, ocrText || null, photoUri || null);
+          },
+          onEnterManually: () => handleManualEntry(amount),
+          onRescan: async () => {
+            await discardDraft(draft);
+            resetWorkflowState();
+            onResetCamera?.();
+          },
+        });
+      } catch (err: any) {
+        if (!skipOverlay)
+          Alert.alert(
+            'OCR Error',
+            err?.message ||
+              'Could not process the receipt. Please try again or check your network.',
+          );
+        if (onSuggestion) onSuggestion(null, null);
+      } finally {
+        if (!skipOverlay) setProcessing(false);
+      }
+    },
+    [
+      discardDraft,
+      draftReceiptId,
+      handleManualEntry,
+      onResetCamera,
+      resetWorkflowState,
+      saveAndNavigate,
+    ],
+  );
 
   return {
     state: {

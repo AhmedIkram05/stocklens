@@ -9,11 +9,11 @@ import { Animated, Easing } from 'react-native';
 import Svg, { Rect, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import { Text, View, StyleSheet } from 'react-native';
+import { Text, View } from 'react-native';
 import ScreenContainer from '../components/ScreenContainer';
 import PageHeader from '../components/PageHeader';
 import PrimaryButton from '../components/PrimaryButton';
-import { radii, spacing, typography } from '../styles/theme';
+import { spacing, typography } from '../styles/theme';
 import { brandColors } from '../contexts/ThemeContext';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../contexts/ThemeContext';
@@ -38,27 +38,29 @@ const makeOHLCSeries = (count: number, start = 100) => {
   for (let i = 0; i < count; i++) {
     const open = prevClose;
     const progress = i / Math.max(1, count - 1);
-    
+
     // Stronger baseline uptrend to guarantee overall rise
     const baselineUp = upwardPerStep + progress * (Math.random() * 4 + 2);
-    
+
     // Reduced major swings for predictability
     const major = Math.sin(progress * Math.PI * majorSwings + phase) * (4 + Math.random() * 4);
-    
+
     // Minimal micro fluctuations
-    const micro = (Math.sin(progress * Math.PI * 2.3) + Math.sin(progress * Math.PI * 4.6) * 0.3) * (2 + Math.random() * 2);
-    
+    const micro =
+      (Math.sin(progress * Math.PI * 2.3) + Math.sin(progress * Math.PI * 4.6) * 0.3) *
+      (2 + Math.random() * 2);
+
     // Slightly more frequent and bigger shocks for added dips, but only in the middle (not first/last 3 candles)
-    const shock = (i >= 3 && i < count - 3 && Math.random() < 0.40) ? -(6 + Math.random() * 8) : 0;
-    
+    const shock = i >= 3 && i < count - 3 && Math.random() < 0.4 ? -(6 + Math.random() * 8) : 0;
+
     const delta = baselineUp * 0.8 + major * 0.5 + micro + shock + (Math.random() - 0.5) * 2;
     const close = Math.max(1, open + delta);
-    
+
     // Ensure some volatility but keep highs/lows reasonable
     const volatility = 3 + Math.random() * 4;
     const high = Math.max(open, close) + Math.random() * volatility;
     const low = Math.min(open, close) - Math.random() * volatility;
-    
+
     res.push({ open, high, low, close });
     prevClose = close;
   }
@@ -75,8 +77,14 @@ const makeOHLCSeries = (count: number, start = 100) => {
 
 export default function OnboardingScreen() {
   const navigation = useNavigation();
-  const { width: screenWidth, isSmallPhone, isTablet, contentHorizontalPadding, sectionVerticalSpacing } = useBreakpoint();
-  const { theme, isDark } = useTheme();
+  const {
+    width: screenWidth,
+    isSmallPhone,
+    isTablet,
+    contentHorizontalPadding,
+    sectionVerticalSpacing,
+  } = useBreakpoint();
+  const { theme } = useTheme();
 
   const handleGetStarted = () => navigation.navigate('Login' as never);
 
@@ -89,7 +97,9 @@ export default function OnboardingScreen() {
 
   const candleCount = 18;
   const data = useMemo(() => makeOHLCSeries(candleCount, 90), [candleCount]);
-  const progresses = useRef<Animated.Value[]>(Array.from({ length: candleCount }, () => new Animated.Value(0))).current;
+  const progresses = useRef<Animated.Value[]>(
+    Array.from({ length: candleCount }, () => new Animated.Value(0)),
+  ).current;
 
   useEffect(() => {
     const animations = progresses.map((p, idx) =>
@@ -99,7 +109,7 @@ export default function OnboardingScreen() {
         delay: idx * 90,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
-      })
+      }),
     );
     Animated.stagger(60, animations).start();
   }, [progresses]);
@@ -141,12 +151,22 @@ export default function OnboardingScreen() {
   return (
     <ScreenContainer contentStyle={{ paddingVertical: sectionVerticalSpacing }}>
       <PageHeader>
-        <Text style={[typography.display, { color: theme.text, fontWeight: '800', marginBottom: spacing.md }]}>Stock
+        <Text
+          style={[
+            typography.display,
+            { color: theme.text, fontWeight: '800', marginBottom: spacing.md },
+          ]}
+        >
+          Stock
           <Text style={{ color: brandColors.green }}>Lens</Text>
         </Text>
         <>
-          <Text style={[typography.pageSubtitle, { color: theme.textSecondary }]}>Scan your Spending</Text>
-          <Text style={[typography.pageSubtitle, { color: theme.textSecondary }]}>See your missed Investing</Text>
+          <Text style={[typography.pageSubtitle, { color: theme.textSecondary }]}>
+            Scan your Spending
+          </Text>
+          <Text style={[typography.pageSubtitle, { color: theme.textSecondary }]}>
+            See your missed Investing
+          </Text>
         </>
       </PageHeader>
 
@@ -169,10 +189,19 @@ export default function OnboardingScreen() {
             const bodyY = Math.min(yOpen, yClose);
             const bodyH = Math.max(1, Math.abs(yClose - yOpen));
 
-            const animY = p.interpolate({ inputRange: [0, 1], outputRange: [pad + usableH, bodyY] }) as any;
+            const animY = p.interpolate({
+              inputRange: [0, 1],
+              outputRange: [pad + usableH, bodyY],
+            }) as any;
             const animH = p.interpolate({ inputRange: [0, 1], outputRange: [0, bodyH] }) as any;
-            const animHigh = p.interpolate({ inputRange: [0, 1], outputRange: [pad + usableH, yHigh] }) as any;
-            const animLow = p.interpolate({ inputRange: [0, 1], outputRange: [pad + usableH, yLow] }) as any;
+            const animHigh = p.interpolate({
+              inputRange: [0, 1],
+              outputRange: [pad + usableH, yHigh],
+            }) as any;
+            const animLow = p.interpolate({
+              inputRange: [0, 1],
+              outputRange: [pad + usableH, yLow],
+            }) as any;
 
             return (
               <React.Fragment key={`c-${i}`}>
@@ -202,11 +231,13 @@ export default function OnboardingScreen() {
         </Svg>
       </View>
 
-      <View style={{ 
-        alignSelf: isSmallPhone ? 'stretch' : 'flex-end', 
-        width: isTablet ? '40%' : isSmallPhone ? '100%' : '60%', 
-        maxWidth: buttonMaxWidth 
-      }}>
+      <View
+        style={{
+          alignSelf: isSmallPhone ? 'stretch' : 'flex-end',
+          width: isTablet ? '40%' : isSmallPhone ? '100%' : '60%',
+          maxWidth: buttonMaxWidth,
+        }}
+      >
         <PrimaryButton onPress={handleGetStarted} accessibilityLabel="Get started">
           Let's Get Started
         </PrimaryButton>

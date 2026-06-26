@@ -6,7 +6,7 @@
 
 /**
  * OcrResult type - Result structure from OCR operations
- * 
+ *
  * @property text - Extracted text from image (empty string if failed)
  * @property raw - Raw API response or error object
  * @property success - Whether OCR succeeded
@@ -21,11 +21,11 @@ export type OcrResult = {
 
 /**
  * Internal helper to send FormData to OCR.Space API
- * 
+ *
  * @param formData - FormData containing image file or base64 string
  * @param apiKey - OCR.Space API key
  * @returns OcrResult with extracted text or error
- * 
+ *
  * Features:
  * - 10-second timeout protection (AbortController)
  * - Error handling for API responses and network failures
@@ -39,7 +39,7 @@ async function doOcrForm(formData: FormData, apiKey: string): Promise<OcrResult>
   try {
     try {
       formData.append('apikey', apiKey as any);
-    } catch (e) {};
+    } catch (e) {}
 
     const resp = await fetch('https://api.ocr.space/parse/image', {
       method: 'POST',
@@ -51,7 +51,12 @@ async function doOcrForm(formData: FormData, apiKey: string): Promise<OcrResult>
 
     if (!resp.ok) {
       const txt = await resp.text();
-      return { text: '', raw: txt, success: false, errorMessage: `OCR.Space request failed: ${resp.status}` };
+      return {
+        text: '',
+        raw: txt,
+        success: false,
+        errorMessage: `OCR.Space request failed: ${resp.status}`,
+      };
     }
     const json = await resp.json();
     const isErrored = json?.IsErroredOnProcessing;
@@ -68,25 +73,30 @@ async function doOcrForm(formData: FormData, apiKey: string): Promise<OcrResult>
   } catch (e: any) {
     clearTimeout(timeout);
     const isAbort = e?.name === 'AbortError' || String(e).toLowerCase().includes('abort');
-    const message = isAbort ? `OCR request timed out after ${TIMEOUT_MS / 1000}s` : (e?.message || String(e));
+    const message = isAbort
+      ? `OCR request timed out after ${TIMEOUT_MS / 1000}s`
+      : e?.message || String(e);
     return { text: '', raw: e, success: false, errorMessage: message };
   }
 }
 
 /**
  * Recognize text from an image URI using OCR.Space (file upload method)
- * 
+ *
  * @param imageUri - Local file URI (e.g., from expo-camera)
  * @param apiKey - OCR.Space API key
  * @returns OcrResult with extracted text or error
- * 
+ *
  * Process:
  * 1. Extracts filename and MIME type from URI
  * 2. Creates FormData with image file
  * 3. Sets OCREngine=2 (best for receipts), language=eng
  * 4. Sends multipart request to OCR.Space
  */
-export async function recognizeImageWithOCRSpace(imageUri: string, apiKey: string): Promise<OcrResult> {
+export async function recognizeImageWithOCRSpace(
+  imageUri: string,
+  apiKey: string,
+): Promise<OcrResult> {
   if (!apiKey) throw new Error('OCR Space API key is required');
   const uri = imageUri;
   const filename = uri.split('/').pop() || 'photo.jpg';
@@ -100,7 +110,9 @@ export async function recognizeImageWithOCRSpace(imageUri: string, apiKey: strin
   formData.append('OCREngine', '2');
   formData.append('language', 'eng');
   formData.append('isOverlayRequired', 'false');
-  try { formData.append('apikey', apiKey as any); } catch (e) {}
+  try {
+    formData.append('apikey', apiKey as any);
+  } catch (e) {}
   return doOcrForm(formData, apiKey);
 }
 
@@ -112,29 +124,31 @@ export const ocrHelpers = {
 
 /**
  * Recognize text from a base64-encoded image string using OCR.Space
- * 
+ *
  * @param base64Data - Base64 image string (with or without data: prefix)
  * @param apiKey - OCR.Space API key
  * @returns OcrResult with extracted text or error
- * 
+ *
  * Process:
  * 1. Ensures base64 string has data:image/jpeg;base64, prefix
  * 2. Creates FormData with base64Image field
  * 3. Sets OCREngine=2, language=eng
  * 4. Sends request to OCR.Space
- * 
+ *
  * Note: Base64 method often has better results than file upload due to
  * preprocessing control (see preprocessImageToBase64).
  */
-export async function recognizeBase64WithOCRSpace(base64Data: string, apiKey: string): Promise<OcrResult> {
+export async function recognizeBase64WithOCRSpace(
+  base64Data: string,
+  apiKey: string,
+): Promise<OcrResult> {
   if (!apiKey) throw new Error('OCR Space API key is required');
   let payload = base64Data;
   if (!payload.startsWith('data:')) payload = `data:image/jpeg;base64,${payload}`;
   const formData = new FormData();
   formData.append('base64Image', payload as any);
-  try { formData.append('apikey', apiKey as any); } catch (e) {}
   try {
-    const len = (payload.split(',')[1] || '').length;
+    formData.append('apikey', apiKey as any);
   } catch (e) {}
   formData.append('OCREngine', '2');
   formData.append('language', 'eng');
@@ -144,25 +158,32 @@ export async function recognizeBase64WithOCRSpace(base64Data: string, apiKey: st
 
 /**
  * Preprocess image to base64 for better OCR quality
- * 
+ *
  * @param uri - Local image URI
  * @param targetWidth - Target width in pixels (default: 2200px)
  * @returns Base64 string (without data: prefix) or null if failed
- * 
+ *
  * Process:
  * 1. Uses expo-image-manipulator to resize image to targetWidth
  * 2. Maintains aspect ratio, compresses as JPEG at 1.0 quality
  * 3. Returns base64 string for OCR submission
- * 
+ *
  * Benefits:
  * - Reduces file size for faster uploads
  * - Normalizes image dimensions for consistent OCR quality
  * - Improves text recognition accuracy for receipts
  */
-export async function preprocessImageToBase64(uri: string, targetWidth = 2200): Promise<string | null> {
+export async function preprocessImageToBase64(
+  uri: string,
+  targetWidth = 2200,
+): Promise<string | null> {
   try {
     const ImageManipulator = await import('expo-image-manipulator');
-    const manip = await ImageManipulator.manipulateAsync(uri, [{ resize: { width: targetWidth } }], { compress: 1.0, format: ImageManipulator.SaveFormat.JPEG, base64: true });
+    const manip = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: targetWidth } }],
+      { compress: 1.0, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+    );
     return manip?.base64 || null;
   } catch (e: any) {
     return null;
@@ -171,27 +192,31 @@ export async function preprocessImageToBase64(uri: string, targetWidth = 2200): 
 
 /**
  * Perform OCR with automatic fallback strategies
- * 
+ *
  * @param imageUri - Local image URI
  * @param base64Data - Optional pre-computed base64 string
  * @param apiKey - OCR.Space API key
  * @returns OcrResult with text or error
- * 
+ *
  * Fallback Strategy (tries in order until success):
  * 1. Base64 upload with 1400px preprocessing (fastest, best quality)
  * 2. Direct file upload if base64 fails or returns empty text
  * 3. Base64 upload with 2000px preprocessing (last resort for poor images)
- * 
+ *
  * Process:
  * - Each strategy is wrapped in try/catch
  * - Continues to next strategy if current returns empty text
  * - Returns first successful result with non-empty text
  * - Returns failure result if all strategies fail
- * 
+ *
  * Usage:
  * This is the recommended entry point for OCR operations.
  */
-export async function performOcrWithFallback(imageUri: string, base64Data: string | null, apiKey: string): Promise<OcrResult> {
+export async function performOcrWithFallback(
+  imageUri: string,
+  base64Data: string | null,
+  apiKey: string,
+): Promise<OcrResult> {
   if (!apiKey) throw new Error('OCR Space API key is required');
   let b64 = base64Data || null;
   let ocrResult: OcrResult | undefined;

@@ -11,9 +11,19 @@ type Props = TextProps & {
  *
  * Small wrapper around React Native `Text` that enables consistent font-scaling.
  */
-export default function AppText({ children, maxFontSizeMultiplier = undefined, style, ...rest }: Props) {
+export default function AppText({
+  children,
+  maxFontSizeMultiplier = undefined,
+  style,
+  ...rest
+}: Props) {
   return (
-    <Text allowFontScaling maxFontSizeMultiplier={maxFontSizeMultiplier ?? undefined} style={style} {...rest}>
+    <Text
+      allowFontScaling
+      maxFontSizeMultiplier={maxFontSizeMultiplier ?? undefined}
+      style={style}
+      {...rest}
+    >
       {children}
     </Text>
   );

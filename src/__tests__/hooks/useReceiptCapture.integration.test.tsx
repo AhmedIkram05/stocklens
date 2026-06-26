@@ -32,8 +32,12 @@ jest.mock('@/services/receiptParser', () => ({
 jest.mock('@/components/ConfirmationPrompt', () => jest.fn());
 
 const mockedReceiptService = receiptService as jest.Mocked<typeof receiptService>;
-const mockedPerformOcr = performOcrWithFallback as jest.MockedFunction<typeof performOcrWithFallback>;
-const mockedParseAmount = parseAmountFromOcrText as jest.MockedFunction<typeof parseAmountFromOcrText>;
+const mockedPerformOcr = performOcrWithFallback as jest.MockedFunction<
+  typeof performOcrWithFallback
+>;
+const mockedParseAmount = parseAmountFromOcrText as jest.MockedFunction<
+  typeof parseAmountFromOcrText
+>;
 const mockedValidateAmount = validateAmount as jest.MockedFunction<typeof validateAmount>;
 const mockedPrompt = showConfirmationPrompt as jest.MockedFunction<typeof showConfirmationPrompt>;
 const alertSpy = jest.spyOn(Alert, 'alert');
@@ -46,7 +50,7 @@ const createHook = () =>
       navigation: { navigate: jest.fn() },
       userUid: 'user-1',
       onResetCamera: jest.fn(),
-    })
+    }),
   );
 
 describe('useReceiptCapture', () => {
@@ -74,7 +78,9 @@ describe('useReceiptCapture', () => {
   it('shows confirmation prompt and saves when OCR succeeds', async () => {
     const navigation = { navigate: jest.fn() };
     const onResetCamera = jest.fn();
-    const { result } = renderHook(() => useReceiptCapture({ navigation, userUid: 'user-1', onResetCamera }));
+    const { result } = renderHook(() =>
+      useReceiptCapture({ navigation, userUid: 'user-1', onResetCamera }),
+    );
 
     await act(async () => {
       await result.current.actions.processReceipt({
@@ -93,7 +99,10 @@ describe('useReceiptCapture', () => {
       await options.onConfirm?.();
     });
 
-    expect(mockedReceiptService.update).toHaveBeenCalledWith(42, expect.objectContaining({ total_amount: 12.34 }));
+    expect(mockedReceiptService.update).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ total_amount: 12.34 }),
+    );
     expect(navigation.navigate).toHaveBeenCalledWith('ReceiptDetails', expect.any(Object));
     expect(onResetCamera).toHaveBeenCalled();
   });
@@ -105,7 +114,10 @@ describe('useReceiptCapture', () => {
     const originalOS = platform.OS;
 
     await act(async () => {
-      await result.current.actions.processReceipt({ photoUri: 'file://receipt.jpg', photoBase64: 'abc' });
+      await result.current.actions.processReceipt({
+        photoUri: 'file://receipt.jpg',
+        photoBase64: 'abc',
+      });
     });
 
     const options = mockedPrompt.mock.calls[0][1];
@@ -123,7 +135,10 @@ describe('useReceiptCapture', () => {
     const { result } = createHook();
 
     await act(async () => {
-      await result.current.actions.processReceipt({ photoUri: 'file://receipt.jpg', photoBase64: 'abc' });
+      await result.current.actions.processReceipt({
+        photoUri: 'file://receipt.jpg',
+        photoBase64: 'abc',
+      });
     });
 
     expect(alertSpy).toHaveBeenCalledWith('Missing API Key', expect.any(String));

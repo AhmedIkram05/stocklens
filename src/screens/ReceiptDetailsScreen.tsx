@@ -5,13 +5,7 @@
  */
 
 import React, { useMemo, useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Alert,
-  ScrollView,
-} from 'react-native';
+import { View, Text, StyleSheet, Alert, ScrollView } from 'react-native';
 import type { TextStyle, ViewStyle } from 'react-native';
 import ScreenContainer from '../components/ScreenContainer';
 import PageHeader from '../components/PageHeader';
@@ -20,19 +14,18 @@ import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { brandColors } from '../contexts/ThemeContext';
-import { radii, shadows, spacing, typography, sizes } from '../styles/theme';
+import { radii, spacing, typography } from '../styles/theme';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import DangerButton from '../components/DangerButton';
 import ResponsiveContainer from '../components/ResponsiveContainer';
 import { receiptService } from '../services/dataService';
-import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 
 // Route prop for receipt details screen
 type ReceiptDetailsRouteProp = RouteProp<RootStackParamList, 'ReceiptDetails'>;
 
 // Preset options for years to project
-const YEAR_OPTIONS = [1, 3, 5, 10, 20] as const;
+type YEAR_OPTIONS = 1 | 3 | 5 | 10 | 20;
 
 import { STOCK_PRESETS } from '../services/stockPresets';
 
@@ -48,29 +41,23 @@ import Carousel from '../components/Carousel';
 export default function ReceiptDetailsScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<ReceiptDetailsRouteProp>();
-  const {
-    receiptId,
-    totalAmount: initialAmount,
-    date,
-    image,
-  } = route.params;
+  const { receiptId, totalAmount: initialAmount, date, image } = route.params;
 
-  const [selectedYears, setSelectedYears] = useState<typeof YEAR_OPTIONS[number]>(5);
-  const [selectedFutureYears, setSelectedFutureYears] = useState<typeof YEAR_OPTIONS[number]>(5);
-  const [amount, setAmount] = useState<number>(initialAmount ?? 0);
+  const [selectedYears, setSelectedYears] = useState<YEAR_OPTIONS>(5);
+  const [selectedFutureYears, setSelectedFutureYears] = useState<YEAR_OPTIONS>(5);
+  const [amount] = useState<number>(initialAmount ?? 0);
 
   const totalAmount = amount;
-  const { userProfile } = useAuth();
-  const { contentHorizontalPadding, sectionVerticalSpacing, isSmallPhone, isTablet, width } = useBreakpoint();
+  const { contentHorizontalPadding, sectionVerticalSpacing, isSmallPhone, isTablet, width } =
+    useBreakpoint();
   const { theme } = useTheme();
 
-
   const investmentOptions = useMemo(() => {
-    return STOCK_PRESETS.map(stock => {
+    return STOCK_PRESETS.map((stock) => {
       // placeholder until live data replaces it asynchronously
       const futureValue = totalAmount * Math.pow(1 + stock.returnRate, selectedYears);
       const gain = futureValue - totalAmount;
-      const percentReturn = ((futureValue / totalAmount) - 1) * 100;
+      const percentReturn = (futureValue / totalAmount - 1) * 100;
 
       return {
         ...stock,
@@ -82,10 +69,10 @@ export default function ReceiptDetailsScreen() {
   }, [selectedYears, totalAmount]);
 
   const futureInvestmentOptions = useMemo(() => {
-    return STOCK_PRESETS.map(stock => {
+    return STOCK_PRESETS.map((stock) => {
       const futureValue = totalAmount * Math.pow(1 + stock.returnRate, selectedFutureYears);
       const gain = futureValue - totalAmount;
-      const percentReturn = ((futureValue / totalAmount) - 1) * 100;
+      const percentReturn = (futureValue / totalAmount - 1) * 100;
 
       return {
         ...stock,
@@ -97,9 +84,11 @@ export default function ReceiptDetailsScreen() {
   }, [selectedFutureYears, totalAmount]);
 
   // historical CAGRs per ticker and years (e.g. { NVDA: {5: 0.18, 3: 0.22} })
-  const [historicalRates, setHistoricalRates] = useState<Record<string, Record<number, number>>>({});
-  const [ratesLoading, setRatesLoading] = useState(false);
-  const [ratesError, setRatesError] = useState<string | null>(null);
+  const [historicalRates, setHistoricalRates] = useState<Record<string, Record<number, number>>>(
+    {},
+  );
+  const [, setRatesLoading] = useState(false);
+  const [, setRatesError] = useState<string | null>(null);
 
   // load historical rates whenever selectedYears changes
   useEffect(() => {
@@ -108,7 +97,7 @@ export default function ReceiptDetailsScreen() {
       setRatesLoading(true);
       setRatesError(null);
       try {
-        const promises = STOCK_PRESETS.map(async s => {
+        const promises = STOCK_PRESETS.map(async (s) => {
           try {
             const cagr = await getHistoricalCAGRFromToday(s.ticker, years);
             return { ticker: s.ticker, total: cagr };
@@ -136,7 +125,7 @@ export default function ReceiptDetailsScreen() {
     const unsub = subscribe('historical-updated', (payload) => {
       // payload may contain symbol/interval; refresh if it's one of our tracked tickers
       const updatedTicker = payload?.symbol as string | undefined;
-      if (!updatedTicker || STOCK_PRESETS.some(s => s.ticker === updatedTicker)) {
+      if (!updatedTicker || STOCK_PRESETS.some((s) => s.ticker === updatedTicker)) {
         loadHistoricalForYears(selectedYears).catch(() => {});
       }
     });
@@ -144,7 +133,6 @@ export default function ReceiptDetailsScreen() {
       mounted = false;
       unsub();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedYears]);
 
   const cardSpacing = isTablet ? spacing.lg : spacing.md;
@@ -157,10 +145,7 @@ export default function ReceiptDetailsScreen() {
     }
     return Math.min(300, Math.max(260, width * 0.6));
   }, [isSmallPhone, isTablet, width]);
-  const stockCardLayout = useMemo(
-    () => ({ width: cardWidth, marginRight: cardSpacing }),
-    [cardSpacing, cardWidth]
-  );
+
   const snapInterval = useMemo(() => cardWidth + cardSpacing, [cardSpacing, cardWidth]);
 
   const formattedAmount = formatCurrencyGBP(totalAmount || 0);
@@ -171,10 +156,10 @@ export default function ReceiptDetailsScreen() {
   const formattedFutureYearsLabel = `${selectedFutureYears} ${selectedFutureYears === 1 ? 'year' : 'years'}`;
 
   const renderStockCard = (
-    investmentValue: typeof investmentOptions[number],
+    investmentValue: (typeof investmentOptions)[number],
     isLastItem: boolean,
     years: number = selectedYears,
-    mode: 'past' | 'future' = 'past'
+    mode: 'past' | 'future' = 'past',
   ) => {
     // Past (historical) uses API-derived total return (last/first - 1) for the selected years when available
     // Future uses preset annual returnRate and the formula amount * (1 + return_rate)^years
@@ -196,24 +181,24 @@ export default function ReceiptDetailsScreen() {
         const rate = investmentValue.returnRate;
         computedFutureValue = totalAmount * Math.pow(1 + rate, years);
         computedGain = computedFutureValue - totalAmount;
-        computedPercentReturn = ((computedFutureValue / totalAmount) - 1) * 100;
+        computedPercentReturn = (computedFutureValue / totalAmount - 1) * 100;
       }
     } else {
       // future mode — use the unified projectionService (but we already precompute historicalRates for past mode)
       const rate = investmentValue.returnRate;
       computedFutureValue = totalAmount * Math.pow(1 + rate, years);
       computedGain = computedFutureValue - totalAmount;
-      computedPercentReturn = ((computedFutureValue / totalAmount) - 1) * 100;
+      computedPercentReturn = (computedFutureValue / totalAmount - 1) * 100;
     }
 
     const futureDisplay = formatCurrencyGBP(computedFutureValue || 0);
 
     const gainDisplay = formatCurrencyGBP(computedGain || 0);
 
-  const percentDisplay = `${computedPercentReturn.toFixed(1)}%`;
+    const percentDisplay = `${computedPercentReturn.toFixed(1)}%`;
 
-  // color: green for positive or zero, red for negative
-  const valueColor = computedPercentReturn >= 0 ? brandColors.green : brandColors.red;
+    // color: green for positive or zero, red for negative
+    const valueColor = computedPercentReturn >= 0 ? brandColors.green : brandColors.red;
 
     // determine badge: show Over/Underperformer for the current mode (past/future)
     let badgeTextToShow: string | undefined = undefined;
@@ -225,7 +210,12 @@ export default function ReceiptDetailsScreen() {
       else if (investmentValue.ticker === worstFutureTicker) badgeTextToShow = 'Underperformer';
     }
 
-    const badgeColorToShow = badgeTextToShow === 'Overperformer' ? brandColors.green : badgeTextToShow === 'Underperformer' ? brandColors.red : undefined;
+    const badgeColorToShow =
+      badgeTextToShow === 'Overperformer'
+        ? brandColors.green
+        : badgeTextToShow === 'Underperformer'
+          ? brandColors.red
+          : undefined;
 
     return (
       <StockCard
@@ -248,11 +238,12 @@ export default function ReceiptDetailsScreen() {
   // Compute best/worst performers for past based on the currently selected years
   const { bestPastTicker, worstPastTicker } = React.useMemo(() => {
     try {
-      const list = investmentOptions.map(it => {
+      const list = investmentOptions.map((it) => {
         const cagr = historicalRates[it.ticker]?.[selectedYears];
-        const percent = cagr !== undefined && cagr !== null
-          ? (Math.pow(1 + cagr, selectedYears) - 1) * 100
-          : it.percentReturn;
+        const percent =
+          cagr !== undefined && cagr !== null
+            ? (Math.pow(1 + cagr, selectedYears) - 1) * 100
+            : it.percentReturn;
         return { ticker: it.ticker, percent };
       });
       if (list.length === 0) return { bestPastTicker: undefined, worstPastTicker: undefined };
@@ -271,7 +262,10 @@ export default function ReceiptDetailsScreen() {
   // Compute best/worst performers for future based on the currently selected future years
   const { bestFutureTicker, worstFutureTicker } = React.useMemo(() => {
     try {
-      const list = futureInvestmentOptions.map(it => ({ ticker: it.ticker, percent: it.percentReturn }));
+      const list = futureInvestmentOptions.map((it) => ({
+        ticker: it.ticker,
+        percent: it.percentReturn,
+      }));
       if (list.length === 0) return { bestFutureTicker: undefined, worstFutureTicker: undefined };
       let best = list[0];
       let worst = list[0];
@@ -289,17 +283,18 @@ export default function ReceiptDetailsScreen() {
   return (
     <ScreenContainer contentStyle={{ paddingVertical: sectionVerticalSpacing }}>
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          isSmallPhone && styles.contentCompact,
-        ]}
+        contentContainerStyle={[styles.content, isSmallPhone && styles.contentCompact]}
         showsVerticalScrollIndicator={false}
       >
         <View style={[styles.headerRow, isSmallPhone && styles.headerRowCompact]}>
-          <IconButton name="chevron-back" onPress={() => navigation.goBack()} accessibilityLabel="Go back" />
+          <IconButton
+            name="chevron-back"
+            onPress={() => navigation.goBack()}
+            accessibilityLabel="Go back"
+          />
         </View>
 
-  <ResponsiveContainer maxWidth={width - contentHorizontalPadding * 2}>
+        <ResponsiveContainer maxWidth={width - contentHorizontalPadding * 2}>
           <>
             <View style={{ width: '100%' }}>
               <ReceiptCard
@@ -313,9 +308,13 @@ export default function ReceiptDetailsScreen() {
 
             <PageHeader>
               <View>
-                <Text style={[styles.projectionTitle, { color: theme.text }]}>Your {formattedAmount} could have been...</Text>
+                <Text style={[styles.projectionTitle, { color: theme.text }]}>
+                  Your {formattedAmount} could have been...
+                </Text>
               </View>
-              <Text style={[styles.projectionSubtitle, { color: theme.textSecondary }]}>If invested {formattedYearsLabel} ago</Text>
+              <Text style={[styles.projectionSubtitle, { color: theme.textSecondary }]}>
+                If invested {formattedYearsLabel} ago
+              </Text>
             </PageHeader>
 
             <YearSelector
@@ -328,7 +327,9 @@ export default function ReceiptDetailsScreen() {
 
             <View style={styles.carouselHeader}>
               <Text style={[styles.carouselTitle, { color: theme.text }]}>Investment Outlook</Text>
-              <Text style={[styles.carouselSubtitle, { color: theme.textSecondary }]}>Swipe to explore different stocks</Text>
+              <Text style={[styles.carouselSubtitle, { color: theme.textSecondary }]}>
+                Swipe to explore different stocks
+              </Text>
             </View>
 
             <Carousel
@@ -345,9 +346,13 @@ export default function ReceiptDetailsScreen() {
 
             <PageHeader>
               <View>
-                <Text style={[styles.futureTitle, { color: theme.text }]}>Your {formattedAmount} could become...</Text>
+                <Text style={[styles.futureTitle, { color: theme.text }]}>
+                  Your {formattedAmount} could become...
+                </Text>
               </View>
-              <Text style={[styles.futureSubtitle, { color: theme.textSecondary }]}>If invested today for {formattedFutureYearsLabel}</Text>
+              <Text style={[styles.futureSubtitle, { color: theme.textSecondary }]}>
+                If invested today for {formattedFutureYearsLabel}
+              </Text>
             </PageHeader>
 
             <YearSelector
@@ -360,7 +365,9 @@ export default function ReceiptDetailsScreen() {
 
             <View style={styles.carouselHeader}>
               <Text style={[styles.carouselTitle, { color: theme.text }]}>Potential Growth</Text>
-              <Text style={[styles.carouselSubtitle, { color: theme.textSecondary }]}>Compare returns if you started now</Text>
+              <Text style={[styles.carouselSubtitle, { color: theme.textSecondary }]}>
+                Compare returns if you started now
+              </Text>
             </View>
 
             <Carousel
@@ -369,7 +376,12 @@ export default function ReceiptDetailsScreen() {
               snapInterval={snapInterval}
               contentContainerStyle={styles.carousel}
               renderItem={({ item, index }) =>
-                renderStockCard(item, index === futureInvestmentOptions.length - 1, selectedFutureYears, 'future')
+                renderStockCard(
+                  item,
+                  index === futureInvestmentOptions.length - 1,
+                  selectedFutureYears,
+                  'future',
+                )
               }
             />
           </>
@@ -378,47 +390,57 @@ export default function ReceiptDetailsScreen() {
         <DangerButton
           accessibilityLabel="Delete receipt"
           onPress={() =>
-            Alert.alert(
-              'Delete receipt',
-              'Are you sure you want to delete this receipt?',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Delete',
-                  style: 'destructive',
-                  onPress: async () => {
-                    try {
-                      if (!receiptId) {
-                        Alert.alert('Cannot delete', 'Receipt has not been saved yet');
-                        return;
-                      }
-                      await receiptService.delete(Number(receiptId));
-                      // notify listeners that receipts changed
-                      try { emit('receipts-changed', { id: Number(receiptId), action: 'deleted' }); } catch (e) {}
-                      Alert.alert('Deleted', 'Receipt deleted');
-                      navigation.navigate('MainTabs' as any);
-                    } catch (e: any) {
-                      Alert.alert('Delete failed', e?.message || 'Failed to delete receipt');
+            Alert.alert('Delete receipt', 'Are you sure you want to delete this receipt?', [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: async () => {
+                  try {
+                    if (!receiptId) {
+                      Alert.alert('Cannot delete', 'Receipt has not been saved yet');
+                      return;
                     }
+                    await receiptService.delete(Number(receiptId));
+                    // notify listeners that receipts changed
+                    try {
+                      emit('receipts-changed', { id: Number(receiptId), action: 'deleted' });
+                    } catch (e) {}
+                    Alert.alert('Deleted', 'Receipt deleted');
+                    navigation.navigate('MainTabs' as any);
+                  } catch (e: any) {
+                    Alert.alert('Delete failed', e?.message || 'Failed to delete receipt');
                   }
                 },
-              ]
-            )
+              },
+            ])
           }
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="trash-outline" size={18} color={brandColors.white} style={{ marginRight: 10 }} />
+            <Ionicons
+              name="trash-outline"
+              size={18}
+              color={brandColors.white}
+              style={{ marginRight: 10 }}
+            />
             <Text style={{ color: brandColors.white, ...typography.button }}>Delete Receipt</Text>
           </View>
         </DangerButton>
 
-        <View style={[styles.warningBox, isSmallPhone && styles.warningBoxCompact, { backgroundColor: theme.surface }]}>
+        <View
+          style={[
+            styles.warningBox,
+            isSmallPhone && styles.warningBoxCompact,
+            { backgroundColor: theme.surface },
+          ]}
+        >
           <Ionicons name="warning" size={28} color={brandColors.red} style={styles.warningIcon} />
           <Text style={[styles.warningText, { color: theme.text }]}>
-            Projections are hypothetical. Past performance does not guarantee future results. All projections are simply made using the CAGR formula.
+            Projections are hypothetical. Past performance does not guarantee future results. All
+            projections are simply made using the CAGR formula.
           </Text>
         </View>
-        </ScrollView>
+      </ScrollView>
     </ScreenContainer>
   );
 }

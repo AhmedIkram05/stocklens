@@ -5,10 +5,9 @@
  */
 
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import AppText from './AppText';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
 import { brandColors } from '../contexts/ThemeContext';
 import { radii, spacing, typography, shadows } from '../styles/theme';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -41,7 +40,20 @@ type Props = {
   badgeColor?: string;
 };
 
-export default function StockCard({ name, ticker, futureDisplay, formattedAmount, percentDisplay, gainDisplay, valueColor = brandColors.green, onPress, isLast, cardWidth, badgeText, badgeColor }: Props) {
+export default function StockCard({
+  name,
+  ticker,
+  futureDisplay,
+  formattedAmount: _formattedAmount,
+  percentDisplay,
+  gainDisplay,
+  valueColor = brandColors.green,
+  onPress,
+  isLast,
+  cardWidth,
+  badgeText,
+  badgeColor,
+}: Props) {
   const { isTablet, width } = useBreakpoint();
   const { theme } = useTheme();
   const pixelWidth = cardWidth ?? Math.max(200, Math.round(isTablet ? width * 0.4 : width * 0.82));
@@ -70,9 +82,17 @@ export default function StockCard({ name, ticker, futureDisplay, formattedAmount
       ) : null}
       <View style={styles.headerRow}>
         <View style={styles.headerLeft}>
-          <AppText style={[styles.name, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">{name}</AppText>
+          <AppText
+            style={[styles.name, { color: theme.text }]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {name}
+          </AppText>
         </View>
-        {ticker ? <AppText style={[styles.ticker, { color: brandColors.blue }]}>{ticker}</AppText> : null}
+        {ticker ? (
+          <AppText style={[styles.ticker, { color: brandColors.blue }]}>{ticker}</AppText>
+        ) : null}
       </View>
 
       <View style={styles.valueContainerCentered}>

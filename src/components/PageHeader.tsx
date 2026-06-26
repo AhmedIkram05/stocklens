@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { View, StyleSheet, ViewStyle, TextStyle } from 'react-native';
+import { View, StyleSheet, ViewStyle } from 'react-native';
 import AppText from './AppText';
 import { typography, spacing } from '../styles/theme';
 import { useTheme } from '../contexts/ThemeContext';
@@ -13,8 +13,6 @@ import { useTheme } from '../contexts/ThemeContext';
 type Props = {
   /** Title content (can be text or custom React elements) */
   children?: React.ReactNode;
-  /** Optional custom styling for the title text */
-  titleStyle?: TextStyle;
   /** Optional subtitle displayed below the title */
   subtitle?: React.ReactNode;
   /** Optional custom styling for the header container */
@@ -23,13 +21,15 @@ type Props = {
   headerRight?: React.ReactNode;
 };
 
-export default function PageHeader({ children, subtitle, titleStyle, style }: Props) {
+export default function PageHeader({ children, subtitle, style }: Props) {
   const { theme } = useTheme();
 
   return (
     <View style={[styles.header, style]}>
       <View style={styles.left}>{children}</View>
-      {subtitle ? <AppText style={[styles.subtitle, { color: theme.text, opacity: 0.7 }]}>{subtitle}</AppText> : null}
+      {subtitle ? (
+        <AppText style={[styles.subtitle, { color: theme.text, opacity: 0.7 }]}>{subtitle}</AppText>
+      ) : null}
     </View>
   );
 }
@@ -38,8 +38,7 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: spacing.sm,
   },
-  left: {
-  },
+  left: {},
   subtitle: {
     marginTop: spacing.xs,
     ...typography.pageSubtitle,

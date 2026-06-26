@@ -7,7 +7,6 @@
 import React from 'react';
 import { act, renderHook } from '@testing-library/react-native';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
-import { createUserProfile } from '../fixtures';
 
 // Mock Firebase auth module to avoid actual authentication calls during tests
 jest.mock('@/services/firebase', () => ({
@@ -75,9 +74,9 @@ describe('AuthContext', () => {
    * This prevents undefined behavior and helps developers catch mistakes early.
    */
   it('throws when useAuth is used outside provider', () => {
-    expect(() => renderHook(() => useAuth(), { wrapper: ({ children }) => <>{children}</> })).toThrow(
-      'useAuth must be used within an AuthProvider'
-    );
+    expect(() =>
+      renderHook(() => useAuth(), { wrapper: ({ children }) => <>{children}</> }),
+    ).toThrow('useAuth must be used within an AuthProvider');
   });
 
   /**
@@ -126,7 +125,7 @@ describe('AuthContext', () => {
   /**
    * Test: Credential-based unlock
    * Validates that users can unlock app by entering email/password.
-  * Fallback mechanism when device authentication fails or isn't available.
+   * Fallback mechanism when device authentication fails or isn't available.
    */
   it('unlockWithCredentials verifies credentials via Firebase', async () => {
     const { result } = renderHook(() => useAuth(), {

@@ -23,9 +23,9 @@ describe('ThemeContext', () => {
    * Prevents undefined behavior if developer forgets to wrap app in provider.
    */
   it('throws when useTheme is used outside provider', () => {
-    expect(() => renderHook(() => useTheme(), { wrapper: ({ children }) => <>{children}</> })).toThrow(
-      'useTheme must be used within a ThemeProvider'
-    );
+    expect(() =>
+      renderHook(() => useTheme(), { wrapper: ({ children }) => <>{children}</> }),
+    ).toThrow('useTheme must be used within a ThemeProvider');
   });
 
   /**
@@ -62,7 +62,7 @@ describe('ThemeContext', () => {
 
     // Verify dark mode is saved to storage
     expect(setItemAsync).toHaveBeenCalledWith('theme_mode', 'dark');
-    
+
     // Verify theme colors updated to dark mode
     await waitFor(() => {
       expect(result.current.mode).toBe('dark');
@@ -86,7 +86,7 @@ describe('ThemeContext', () => {
     const { result } = renderHook(() => useTheme(), {
       wrapper: ThemeProvider,
     });
-    
+
     // Verify dark mode was restored from storage
     await waitFor(() => {
       expect(result.current.mode).toBe('dark');

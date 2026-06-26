@@ -27,7 +27,13 @@ type Props = {
  * Renders an icon and value pair in a horizontal flexbox layout.
  * The icon and value are centered and spaced using theme.spacing.sm.
  */
-export default function IconValue({ iconName, iconSize = 28, iconColor, value, valueStyle }: Props) {
+export default function IconValue({
+  iconName,
+  iconSize = 28,
+  iconColor,
+  value,
+  valueStyle,
+}: Props) {
   return (
     <View style={styles.container}>
       <Ionicons name={iconName} size={iconSize} color={iconColor} />

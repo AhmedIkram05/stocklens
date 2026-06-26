@@ -20,13 +20,21 @@ type Props = {
 };
 
 /** Centered empty-state UI component. */
-export default function EmptyState({ iconName = 'checkmark-circle', title, subtitle, primaryText, onPrimaryPress }: Props) {
+export default function EmptyState({
+  iconName = 'checkmark-circle',
+  title,
+  subtitle,
+  primaryText,
+  onPrimaryPress,
+}: Props) {
   const { theme } = useTheme();
   return (
     <View style={styles.container}>
       <Ionicons name={iconName as any} size={96} color={brandColors.green} />
       <AppText style={[styles.title, { color: theme.text }]}>{title}</AppText>
-      {subtitle ? <AppText style={[styles.subtitle, { color: theme.textSecondary }]}>{subtitle}</AppText> : null}
+      {subtitle ? (
+        <AppText style={[styles.subtitle, { color: theme.textSecondary }]}>{subtitle}</AppText>
+      ) : null}
       {primaryText ? (
         <TouchableOpacity style={styles.button} onPress={onPrimaryPress} accessibilityRole="button">
           <AppText style={styles.buttonText}>{primaryText}</AppText>

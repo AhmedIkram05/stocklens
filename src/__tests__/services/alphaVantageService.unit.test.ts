@@ -4,8 +4,7 @@
  * response parsing, and caching to the local DB.
  */
 
-import { alphaVantageService, OHLCV } from '@/services/alphaVantageService';
-import Constants from 'expo-constants';
+import { alphaVantageService } from '@/services/alphaVantageService';
 import { databaseService } from '@/services/database';
 import { createOHLCV } from '../fixtures';
 
@@ -76,7 +75,15 @@ describe('alphaVantageService', () => {
     });
 
     it('returns cached data when available and fresh', async () => {
-      const cachedOHLCV = createOHLCV({ date: '2024-01-01', open: 100, high: 105, low: 99, close: 104, adjustedClose: 104, volume: 1000000 });
+      const cachedOHLCV = createOHLCV({
+        date: '2024-01-01',
+        open: 100,
+        high: 105,
+        low: 99,
+        close: 104,
+        adjustedClose: 104,
+        volume: 1000000,
+      });
 
       mockedDb.executeQuery.mockResolvedValue([
         {
@@ -102,7 +109,14 @@ describe('alphaVantageService', () => {
     it('caches fetched data to database', async () => {
       const mockApiResponse = {
         'Monthly Adjusted Time Series': {
-          '2024-01-01': { '1. open': '100', '2. high': '105', '3. low': '99', '4. close': '104', '5. adjusted close': '104', '6. volume': '1000000' },
+          '2024-01-01': {
+            '1. open': '100',
+            '2. high': '105',
+            '3. low': '99',
+            '4. close': '104',
+            '5. adjusted close': '104',
+            '6. volume': '1000000',
+          },
         },
       };
 
@@ -115,7 +129,7 @@ describe('alphaVantageService', () => {
 
       expect(mockedDb.executeNonQuery).toHaveBeenCalledWith(
         expect.stringContaining('INSERT OR REPLACE'),
-        expect.arrayContaining(['NVDA', 'monthly'])
+        expect.arrayContaining(['NVDA', 'monthly']),
       );
     });
   });

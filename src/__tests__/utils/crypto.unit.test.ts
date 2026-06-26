@@ -1,4 +1,9 @@
-import { generateKeyBase64, encryptString, decryptString, isEncryptedPayload } from '@/utils/crypto';
+import {
+  generateKeyBase64,
+  encryptString,
+  decryptString,
+  isEncryptedPayload,
+} from '@/utils/crypto';
 
 /**
  * Tests for `crypto` helpers.

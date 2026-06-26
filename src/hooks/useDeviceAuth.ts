@@ -1,7 +1,6 @@
 /** Device auth utilities (biometrics/passcode helpers and secure credential storage). */
 
 import * as LocalAuthentication from 'expo-local-authentication';
-import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
 const DEVICE_ENABLED_KEY = 'device_enabled';
@@ -29,9 +28,14 @@ export async function isDeviceAuthAvailable(): Promise<boolean> {
  * Prompt the native device authentication dialog.
  * @param promptMessage - message shown in the dialog
  */
-export async function authenticateDevice(promptMessage = 'Authenticate'): Promise<{ success: boolean; error?: string }> {
+export async function authenticateDevice(
+  promptMessage = 'Authenticate',
+): Promise<{ success: boolean; error?: string }> {
   try {
-    const res = await LocalAuthentication.authenticateAsync({ promptMessage, disableDeviceFallback: false });
+    const res = await LocalAuthentication.authenticateAsync({
+      promptMessage,
+      disableDeviceFallback: false,
+    });
     if (res.success) return { success: true };
     return { success: false, error: res.error ?? 'Authentication failed, please try again.' };
   } catch (e: any) {

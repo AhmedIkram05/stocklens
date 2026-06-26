@@ -35,31 +35,34 @@ export default function useReceipts(userId?: string) {
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
-  const fetch = useCallback(async (opts: { silent?: boolean } = {}) => {
-    if (!opts.silent) setLoading(true);
-    setError(null);
-    try {
-      if (!userId) {
-        setReceipts([]);
-        return;
+  const fetch = useCallback(
+    async (opts: { silent?: boolean } = {}) => {
+      if (!opts.silent) setLoading(true);
+      setError(null);
+      try {
+        if (!userId) {
+          setReceipts([]);
+          return;
+        }
+        const data = await receiptService.getByUserId(userId);
+        if (!mountedRef.current) return;
+        const mapped = data.map((r: any) => ({
+          id: String(r.id),
+          label: formatRelativeDate(r.date_scanned) || 'Receipt',
+          amount: r.total_amount || 0,
+          date: r.date_scanned || '',
+          time: '',
+          image: r.image_uri || undefined,
+        }));
+        setReceipts(mapped);
+      } catch (err: any) {
+        if (mountedRef.current) setError(err?.message || String(err));
+      } finally {
+        if (mountedRef.current && !opts.silent) setLoading(false);
       }
-      const data = await receiptService.getByUserId(userId);
-      if (!mountedRef.current) return;
-      const mapped = data.map((r: any) => ({
-        id: String(r.id),
-        label: formatRelativeDate(r.date_scanned) || 'Receipt',
-        amount: r.total_amount || 0,
-        date: r.date_scanned || '',
-        time: '',
-        image: r.image_uri || undefined,
-      }));
-      setReceipts(mapped);
-    } catch (err: any) {
-      if (mountedRef.current) setError(err?.message || String(err));
-    } finally {
-      if (mountedRef.current && !opts.silent) setLoading(false);
-    }
-  }, [userId]);
+    },
+    [userId],
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -75,7 +78,9 @@ export default function useReceipts(userId?: string) {
 
     return () => {
       mountedRef.current = false;
-      try { unsub(); } catch (e) {}
+      try {
+        unsub();
+      } catch (e) {}
       clearInterval(id);
     };
   }, [fetch, userId]);

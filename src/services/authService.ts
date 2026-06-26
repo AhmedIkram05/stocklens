@@ -8,7 +8,7 @@ import type { UserCredential } from 'firebase/auth';
 
 /**
  * SignUpData type - User registration data
- * 
+ *
  * @property firstName - User's first name
  * @property email - Email address (used for login)
  * @property password - Password (min 6 chars per Firebase default)
@@ -21,7 +21,7 @@ export interface SignUpData {
 
 /**
  * SignInData type - User login credentials
- * 
+ *
  * @property email - Email address
  * @property password - Password
  */
@@ -64,7 +64,11 @@ export const authService = {
       const auth = await getAuthInstance();
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
 
-      await userService.upsert(userCredential.user.uid, userCredential.user.displayName || null, email);
+      await userService.upsert(
+        userCredential.user.uid,
+        userCredential.user.displayName || null,
+        email,
+      );
 
       return userCredential;
     } catch (error) {

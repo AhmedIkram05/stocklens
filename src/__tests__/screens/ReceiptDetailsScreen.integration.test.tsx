@@ -43,7 +43,9 @@ jest.mock('@react-navigation/native', () => {
 const mockedReceiptService = receiptService as jest.Mocked<typeof receiptService>;
 const mockedEmit = emit as jest.MockedFunction<typeof emit>;
 const mockedSubscribe = subscribe as jest.MockedFunction<typeof subscribe>;
-const mockedGetHistorical = getHistoricalCAGRFromToday as jest.MockedFunction<typeof getHistoricalCAGRFromToday>;
+const mockedGetHistorical = getHistoricalCAGRFromToday as jest.MockedFunction<
+  typeof getHistoricalCAGRFromToday
+>;
 const mockedUseNavigation = useNavigation as jest.MockedFunction<typeof useNavigation>;
 const mockedUseRoute = useRoute as jest.MockedFunction<typeof useRoute>;
 
@@ -76,7 +78,9 @@ describe('ReceiptDetailsScreen', () => {
   });
 
   it('renders projections and updates headers when year selectors change', async () => {
-    const { getByText, getAllByText } = renderWithProviders(<ReceiptDetailsScreen />, { providerOverrides: { withNavigation: false } });
+    const { getByText, getAllByText } = renderWithProviders(<ReceiptDetailsScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
 
     await waitFor(() => {
       expect(getByText('Your £250.00 could have been...')).toBeTruthy();
@@ -104,12 +108,14 @@ describe('ReceiptDetailsScreen', () => {
   it('confirms deletion before calling receiptService and navigation', async () => {
     const alertSpy = jest.spyOn(Alert, 'alert');
 
-    const { getByLabelText } = renderWithProviders(<ReceiptDetailsScreen />, { providerOverrides: { withNavigation: false } });
+    const { getByLabelText } = renderWithProviders(<ReceiptDetailsScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
 
     fireEvent.press(getByLabelText('Delete receipt'));
 
     const confirmButtons = alertSpy.mock.calls[0][2];
-    const destructiveButton = confirmButtons?.find(button => button?.style === 'destructive');
+    const destructiveButton = confirmButtons?.find((button) => button?.style === 'destructive');
 
     await act(async () => {
       await destructiveButton?.onPress?.();

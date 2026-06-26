@@ -28,7 +28,11 @@ const sortOptions: { key: SortBy; label: string }[] = [
   { key: 'amount', label: 'Amount' },
 ];
 
-export default function ReceiptsSorter({ sortBy, sortDirection, onSortChange }: ReceiptsSorterProps) {
+export default function ReceiptsSorter({
+  sortBy,
+  sortDirection,
+  onSortChange,
+}: ReceiptsSorterProps) {
   const { theme } = useTheme();
 
   const handleSortByChange = (newSortBy: SortBy) => {

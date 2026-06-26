@@ -14,7 +14,12 @@ export function isEncryptedPayload(str: string): boolean {
   try {
     const p = JSON.parse(str);
     // Ensure we return a boolean (not the last truthy value which could be a string)
-    return !!(p && typeof p.iv === 'string' && typeof p.ct === 'string' && typeof p.tag === 'string');
+    return !!(
+      p &&
+      typeof p.iv === 'string' &&
+      typeof p.ct === 'string' &&
+      typeof p.tag === 'string'
+    );
   } catch (e) {
     return false;
   }

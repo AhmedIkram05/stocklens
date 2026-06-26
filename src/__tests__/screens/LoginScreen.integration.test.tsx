@@ -75,7 +75,9 @@ describe('LoginScreen', () => {
   });
 
   it('navigates to SignUp screen from footer CTA', () => {
-    const { getByText } = renderWithProviders(<LoginScreen />, { providerOverrides: { withNavigation: false } });
+    const { getByText } = renderWithProviders(<LoginScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
 
     fireEvent.press(getByText('Sign Up'));
 

@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { Pressable, StyleSheet, StyleProp, ViewStyle, TextStyle, Platform } from 'react-native';
+import { Pressable, StyleSheet, StyleProp, ViewStyle, TextStyle } from 'react-native';
 import AppText from './AppText';
 import { brandColors } from '../contexts/ThemeContext';
 import { radii, spacing, typography, shadows } from '../styles/theme';
@@ -30,7 +30,14 @@ type Props = {
  * Used for secondary actions alongside PrimaryButton.
  * Uses Pressable with platform-specific press feedback for native feel.
  */
-export default function SecondaryButton({ onPress, children, style, textStyle, disabled, accessibilityLabel }: Props) {
+export default function SecondaryButton({
+  onPress,
+  children,
+  style,
+  textStyle,
+  disabled,
+  accessibilityLabel,
+}: Props) {
   return (
     <Pressable
       onPress={onPress}
@@ -38,7 +45,7 @@ export default function SecondaryButton({ onPress, children, style, textStyle, d
         styles.button,
         disabled && styles.disabled,
         pressed && { opacity: 0.6 },
-        style
+        style,
       ]}
       disabled={disabled}
       accessibilityRole="button"
