@@ -12,7 +12,12 @@
 
 1. [Scope & Deliverables](#scope--deliverables)
 2. [Directory Structure](#directory-structure)
-3. [Step-by-Step Implementation](#step-by-step-implementation)
+3. [Execution Strategy](#execution-strategy)
+   - [Dependency Graph](#dependency-graph)
+   - [Key Parallelism Insights](#key-parallelism-insights)
+   - [Round-by-Round Execution Plan](#round-by-round-execution-plan)
+   - [File Ownership](#file-ownership)
+4. [Step-by-Step Implementation](#step-by-step-implementation)
    - [Step 1: Project Scaffold & Docker Compose](#step-1-project-scaffold--docker-compose)
    - [Step 2: Database Schema & Initialisation](#step-2-database-schema--initialisation)
    - [Step 3: Auth Module (JWT + Redis)](#step-3-auth-module-jwt--redis)
@@ -25,8 +30,8 @@
    - [Step 10: React Native Migration](#step-10-react-native-migration)
    - [Step 11: Terraform Provisioning](#step-11-terraform-provisioning)
    - [Step 12: Test Suite](#step-12-test-suite)
-4. [Definition of Done](#definition-of-done)
-5. [Verification Checklist](#verification-checklist)
+5. [Definition of Done](#definition-of-done)
+6. [Verification Checklist](#verification-checklist)
 
 ---
 
@@ -176,10 +181,88 @@ terraform/
 
 ---
 
+## Execution Strategy
+
+> How the 12 steps are sequenced to maximise parallelism while respecting dependencies. Read this before reading the individual steps — it explains which agents run when and why.
+
+### Dependency Graph
+
+```
+Step 1  (scaffold, Docker Compose, pyproject.toml, config.py, Makefile)
+ │
+ ├──► Step 2   (database schema, Alembic, connection.py, init_db.py)
+ │    ├──► Step 3   (JWT auth, Redis blacklist, refresh rotation, rate limiting)
+ │    │    └──► Step 4   (portfolio CRUD)
+ │    │         └──► Step 5   (holdings CRUD)
+ │    │         └──► Step 6   (transactions CRUD)
+ │    ├──► Step 7   (spending categories, merchant keyword mapping)
+ │    │    └──► Step 9   (receipt CRUD + OCR integration)
+ │    └──► Step 8   (OCR pipeline — OpenCV + pytesseract) ─── pure Python, no DB
+ │
+ ├──► Step 10  (React Native migration — depends on API contracts, not running backend)
+ │
+ ├──► Step 11  (Terraform provisioning — VPC, RDS, S3, ECR, Secrets Manager)
+ │
+ └──► Step 12  (test suite — depends on everything above)
+```
+
+### Key parallelism insights
+
+| Insight                                          | Why it matters                                                                                                                                                                  |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Step 8 (OCR) needs no database**               | OpenCV + pytesseract pipeline is pure image processing. It only needs `pyproject.toml` from Step 1. Can run in parallel with schema, auth, and CRUD.                            |
+| **Step 11 (Terraform) needs no running backend** | IaC is written from the documented schema, not a live database. Can start as soon as scaffold is done.                                                                          |
+| **Step 10 (RN migration) is contract-driven**    | The RN agent writes HTTP calls against PHASE1_IMPLEMENTATION.md's documented schemas, not a running server. Safe to parallelise with backend work.                              |
+| **Steps 4+5+6 (CRUD) are mechanical**            | Once auth exists (Step 3), portfolios, holdings, and transactions follow a repeated pattern: async SQL + Pydantic models + ownership verification. One agent handles all three. |
+
+### Round-by-round execution plan
+
+| Round                | Steps                   | Agents             | Rationale                                                                                                                                                                                                                    |
+| -------------------- | ----------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1** (sequential)   | Step 1                  | 1 (code-architect) | Hard prerequisite. Scaffold file set is large — Dockerfile (two-stage), docker-compose (5 services), pyproject.toml (22 deps), config.py (12 settings), structlog setup, Makefile. One focused agent avoids context squeeze. |
+| **2** (parallel)     | Step 2, Step 8, Step 11 | 3 (general × 3)    | Schema lands in Step 2 before auth needs it. OCR (Step 8) has zero DB dependency. Terraform (Step 11) is fully independent. Three agents, all read-only with respect to each other's files.                                  |
+| **3** (parallel)     | Step 3, Step 7, Step 10 | 3 (general × 3)    | Auth needs schema (landed in Round 2). Categories need schema. RN migration needs API contracts (written from doc, not running server). All three agents work from the same source of truth document.                        |
+| **4** (parallel)     | Steps 4+5+6, Step 9     | 2 (general × 2)    | CRUD chain needs auth (landed in Round 3). Receipts need categories and OCR. One agent handles the three CRUD modules (they share identical patterns). One agent handles receipts.                                           |
+| **5** (sequential)   | Step 12                 | 1 (code-reviewer)  | Test suite depends on all code being written. Agent writes 60–80 tests and runs them.                                                                                                                                        |
+| **6** (verification) | Smoke test              | direct             | `make rebuild && make test`. Verify existing Jest tests still pass. Manual curl check of `/health`, `/auth/register`, `/auth/login`.                                                                                         |
+
+### File ownership (which agent writes what)
+
+```
+backend/
+├── Dockerfile              Round 1
+├── pyproject.toml          Round 1
+├── .env.example            Round 1
+├── Makefile                Round 1
+├── docker-compose.yml      Round 1
+├── alembic/                Round 2
+├── src/
+│   ├── main.py             Round 1 (structlog + lifespan skeleton)
+│   ├── config.py           Round 1
+│   ├── database/           Round 2
+│   ├── auth/               Round 3
+│   ├── portfolios/         Round 4
+│   ├── holdings/           Round 4
+│   ├── transactions/       Round 4
+│   ├── receipts/
+│   │   ├── router.py       Round 4
+│   │   ├── schemas.py      Round 4
+│   │   └── ocr.py          Round 2
+│   ├── categories/         Round 3
+│   └── cache/              Round 3
+├── tests/                  Round 5
+└── data/                   Round 1
+
+terraform/                 Round 2 (all modules)
+```
+
+---
+
 ## Step-by-Step Implementation
 
 ### Step 1: Project Scaffold & Docker Compose
 
+**Round:** 1
 **Agent:** code-architect / general
 
 **Task:** Create `backend/` directory structure, `Dockerfile`, `pyproject.toml`, `docker-compose.yml`, and `.env.example`.
@@ -292,6 +375,7 @@ The JSON log lines flow to stdout, captured by Docker's json-file driver locally
 
 ### Step 2: Database Schema & Migrations (Alembic)
 
+**Round:** 2
 **Agent:** code-architect / general
 
 **Task:** Set up Alembic with asyncpg, write the initial migration creating all Phase 1 tables with correct schema (including `refresh_tokens`, corrected `total_amount`, and all indexes).
@@ -408,6 +492,7 @@ Called in FastAPI `lifespan` on startup with retry logic (3 attempts, 2s backoff
 
 ### Step 3: Auth Module (JWT + Redis + Refresh Token Table + Rate Limiting)
 
+**Round:** 3
 **Agent:** general
 
 **Task:** Implement JWT auth with multi-session refresh token rotation, PostgreSQL-backed revocation, Redis blacklisting, and sliding-window rate limiting via slowapi.
@@ -532,6 +617,7 @@ class UserResponse(BaseModel):
 
 ### Step 4: Portfolio CRUD
 
+**Round:** 4
 **Agent:** general
 
 **Task:** Full CRUD for portfolios, nested under authenticated user.
@@ -572,6 +658,7 @@ Key difference from `psycopg2`: asyncpg uses `$1`, `$2` parameter placeholders (
 
 ### Step 5: Holdings CRUD
 
+**Round:** 4
 **Agent:** general
 
 **Task:** CRUD for holdings nested under portfolio.
@@ -598,6 +685,7 @@ Key difference from `psycopg2`: asyncpg uses `$1`, `$2` parameter placeholders (
 
 ### Step 6: Transactions CRUD
 
+**Round:** 4
 **Agent:** general
 
 **Task:** CRUD for transactions nested under portfolio.
@@ -630,6 +718,7 @@ Key difference from `psycopg2`: asyncpg uses `$1`, `$2` parameter placeholders (
 
 ### Step 7: Spending Categories & Merchant Mapping
 
+**Round:** 3
 **Agent:** general
 
 **Task:** Seed spending categories, implement merchant → category mapping with keyword lookup + Bedrock fallback.
@@ -667,6 +756,7 @@ Key difference from `psycopg2`: asyncpg uses `$1`, `$2` parameter placeholders (
 
 ### Step 8: OCR Pipeline (OpenCV Preprocessing + pytesseract)
 
+**Round:** 2
 **Agent:** general
 
 **Task:** Implement pytesseract-based OCR pipeline with OpenCV preprocessing, extracting total amount, merchant name, and line items from receipt images.
@@ -718,6 +808,7 @@ Key difference from `psycopg2`: asyncpg uses `$1`, `$2` parameter placeholders (
 
 ### Step 9: Receipt CRUD + OCR Integration
 
+**Round:** 4
 **Agent:** general
 
 **Task:** Full CRUD for receipts + `/receipts/scan` endpoint that runs OCR pipeline and auto-assigns category.
@@ -754,6 +845,7 @@ Key difference from `psycopg2`: asyncpg uses `$1`, `$2` parameter placeholders (
 
 ### Step 10: React Native Migration
 
+**Round:** 3
 **Agent:** general (TypeScript)
 
 **Task:** Replace all Firebase SDK calls with FastAPI HTTP calls. UI components remain unchanged.
@@ -903,6 +995,7 @@ Store both access and refresh tokens in `expo-secure-store` (already a dependenc
 
 ### Step 11: Terraform Provisioning
 
+**Round:** 2
 **Agent:** general
 
 **Task:** Terraform modules for VPC, RDS, S3, and ECR. Provisioned early to have real resource URLs for the README/CV.
@@ -1026,6 +1119,7 @@ terraform apply -var="environment=dev"
 
 ### Step 12: Test Suite
 
+**Round:** 5
 **Agent:** general / code-reviewer
 
 **Task:** Write 60–80 pytest tests covering all Phase 1 functionality.
