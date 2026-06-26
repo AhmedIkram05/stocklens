@@ -28,8 +28,12 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npx prettier --check .
-      - run: npx eslint src/
+      - name: Prettier check
+        run: |
+          ./node_modules/.bin/prettier --version
+          ls -la .prettierrc
+          ./node_modules/.bin/prettier --check .
+      - run: ./node_modules/.bin/eslint src/
 
   typecheck:
     name: TypeScript
