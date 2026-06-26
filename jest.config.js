@@ -24,5 +24,15 @@ module.exports = {
     '\\.(svg)$': path.join(__dirname, '__mocks__', 'svgMock.js')
   },
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  collectCoverage: true,
+  coverageDirectory: '<rootDir>/coverage',
+  coverageReporters: ['lcov', 'text', 'text-summary'],
+  collectCoverageFrom: [
+    'src/**/*.{ts,tsx}',
+    '!src/**/*.d.ts',
+    '!src/__tests__/**',
+    '!src/types/**',
+    '!src/**/index.ts'
+  ],
   passWithNoTests: true
 };

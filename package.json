@@ -8,7 +8,8 @@
     "ios": "expo start --ios",
     "test": "jest",
     "test:unit": "jest --testPathPattern='unit\\.test\\.(ts|tsx)$'",
-    "test:integration": "jest --testPathPattern='integration\\.test\\.(ts|tsx)$'"
+    "test:integration": "jest --testPathPattern='integration\\.test\\.(ts|tsx)$'",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
