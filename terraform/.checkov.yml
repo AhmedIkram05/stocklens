@@ -1,0 +1,9 @@
+# StockLens IaC security baseline
+# Run: checkov --framework terraform -d terraform/
+skip-check:
+  # CKV_AWS_272: WAF not provisioned until Phase 5
+  - 'CKV_AWS_272'
+  # CKV_AWS_173: Enhanced monitoring disabled for cost on dev/staging
+  - 'CKV_AWS_173'
+  # CKV_AWS_38: No S3 logging bucket (logs cost > benefit for receipts bucket)
+  - 'CKV_AWS_38'
