@@ -69,6 +69,13 @@ android/
 *.tmp
 *.temp
 
+# ─── Terraform (contains secrets and environment-specific values) ──────────────
+*.tfvars
+!*.tfvars.example
+*.tfstate
+*.tfstate.*
+.terraform/
+
 # ─── Backend local data ────────────────────────────────────────────────────────
 # Receipt images stored locally during development
 backend/data/

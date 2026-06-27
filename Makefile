@@ -5,8 +5,8 @@
 
 .PHONY: up down rebuild test logs migrate alembic-autogenerate
 
-up: ## Start all services (backend, postgres, redis)
-	docker compose up -d
+up: ## Start all services (backend, postgres, redis, test DB)
+	docker compose --profile test up -d
 
 down: ## Stop all services
 	docker compose down
