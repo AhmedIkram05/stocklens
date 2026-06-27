@@ -2,12 +2,9 @@
 # Contains API keys and secrets — must never be committed
 .env
 AGENTS.md
-.env.local
-.env.production
-.env.staging
-.env.development
-.env.example
-*.env.*
+.env.*
+# .env.example is a template with no secrets — track it
+!.env.example
 
 # ─── Dependencies ─────────────────────────────────────────────────────────────
 node_modules/
@@ -71,3 +68,7 @@ android/
 # Temporary files
 *.tmp
 *.temp
+
+# ─── Backend local data ────────────────────────────────────────────────────────
+# Receipt images stored locally during development
+backend/data/
