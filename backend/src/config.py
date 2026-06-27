@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_LOGIN: str = "20/minute"
     RATE_LIMIT_DEFAULT: str = "100/minute"
 
+    # CORS — comma-separated list of allowed origins
+    CORS_ORIGINS: str = "http://localhost:8081,http://localhost:19006,exp://127.0.0.1:19000"
+
     # Logging
     STRUCTLOG_LOG_LEVEL: str = "INFO"
 

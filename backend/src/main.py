@@ -7,8 +7,13 @@ Phase 1: Backend Foundation + Auth + OCR Migration.
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
 
 from src.config import settings
+from src.database.connection import close_pool, init_pool
+from src.database.init_db import run_migrations
+from src.limiter import limiter
+from src.receipts.router import router as receipt_router
 
 # ── Structured logging (JSON to stdout, captured by CloudWatch in production) ──
 
@@ -37,10 +42,24 @@ logger = structlog.get_logger()
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
     logger.info("app_starting", environment=settings.ENVIRONMENT)
-    # Database pool initialisation and Alembic migrations will be added in Step 2.
+
+    # Run pending Alembic migrations at startup so the database schema is
+    # always up to date before the first request is served.
+    try:
+        await run_migrations()
+        logger.info("migrations_complete")
+    except Exception:
+        logger.exception("migrations_failed")
+        raise
+
+    # Initialise raw asyncpg connection pool for runtime queries.
+    await init_pool(settings.DATABASE_URL)
+    logger.info("database_pool_initialised")
+
     yield
+
     logger.info("app_shutting_down")
-    # Connection pool cleanup will be added in Step 2.
+    await close_pool()
 
 
 # ── FastAPI application ──
@@ -54,18 +73,18 @@ app = FastAPI(
     redoc_url=None,
 )
 
-# CORS — restricted to Expo dev server in development
+# CORS — origins from config (comma-separated, supports dev + production)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8081",  # Expo dev server
-        "http://localhost:19006",  # Expo web
-        "exp://127.0.0.1:19000",  # Expo Go
-    ],
+    allow_origins=settings.CORS_ORIGINS.split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rate limiting — slowapi
+app.state.limiter = limiter
+app.add_exception_handler(429, _rate_limit_exceeded_handler)
 
 
 # ── Health endpoint ──
@@ -81,12 +100,11 @@ async def health():
 # from src.portfolios.router import router as portfolio_router
 # from src.holdings.router import router as holding_router
 # from src.transactions.router import router as transaction_router
-# from src.receipts.router import router as receipt_router
 # from src.categories.router import router as category_router
 #
 # app.include_router(auth_router, prefix="/auth", tags=["auth"])
 # app.include_router(portfolio_router, prefix="/portfolios", tags=["portfolios"])
 # app.include_router(holding_router, prefix="/portfolios", tags=["holdings"])
 # app.include_router(transaction_router, prefix="/portfolios", tags=["transactions"])
-# app.include_router(receipt_router, prefix="/receipts", tags=["receipts"])
+app.include_router(receipt_router, prefix="/receipts", tags=["receipts"])
 # app.include_router(category_router, prefix="/categories", tags=["categories"])

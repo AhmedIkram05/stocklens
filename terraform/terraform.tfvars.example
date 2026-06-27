@@ -1,0 +1,47 @@
+# ══════════════════════════════════════════════════════════════════════
+# StockLens — terraform.tfvars.example
+# ══════════════════════════════════════════════════════════════════════
+# Copy to terraform.tfvars, fill in real values, and run `terraform apply`.
+# ══════════════════════════════════════════════════════════════════════
+
+aws_region = "eu-west-2"
+
+environment = "production"
+
+app_name = "stocklens"
+
+availability_zones = ["eu-west-2a", "eu-west-2b"]
+
+# ── Networking ────────────────────────────────────────────────────────
+# VPC and subnets are optional. If omitted, the VPC module creates them:
+#   VPC: 10.0.0.0/16, 2 public subnets, 2 private subnets
+# Supply existing IDs below to skip module creation:
+# vpc_id             = "vpc-xxxxxxxxxxxxxxxxx"
+# private_subnet_ids = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-yyyyyyyyyyyyyyyyy"]
+# public_subnet_ids  = ["subnet-zzzzzzzzzzzzzzzzz", "subnet-wwwwwwwwwwwwwwwww"]
+
+# ── Container image (push to ECR first via CI/CD) ────────────────────
+container_image = "XXXXXXXXXXXX.dkr.ecr.eu-west-2.amazonaws.com/stocklens-production:latest"
+
+# ── Secrets (generate strong random values) ──────────────────────────
+db_password    = "<generate-a-24-char-random-string>"
+jwt_secret_key = "<generate-a-256-bit-random-key>"
+# redis_pass   = ""  # Omit to auto-generate a 24-char random token via random_password.redis
+
+# ── CORS origins for production frontend ─────────────────────────────
+cors_origins = [
+  "https://app.stocklens.com",
+  "https://api.stocklens.com",
+]
+
+# ── Bedrock (Claude Haiku is the default) ────────────────────────────
+# bedrock_model_id = "anthropic.claude-3-haiku-20240307-v1:0"
+
+# ── Instance sizing ──────────────────────────────────────────────────
+# db_instance_class  = "db.t4g.micro"
+# redis_node_type    = "cache.r6g.micro"
+# ecs_cpu            = "256"
+# ecs_memory         = "512"
+# desired_count      = 2
+# db_storage_gb      = 20
+# db_max_storage_gb  = 100
