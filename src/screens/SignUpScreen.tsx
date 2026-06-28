@@ -12,7 +12,8 @@ import PrimaryButton from '../components/PrimaryButton';
 import AuthFooter from '../components/AuthFooter';
 import { useNavigation } from '@react-navigation/native';
 import IconButton from '../components/IconButton';
-import { authService, SignUpData } from '../services/authService';
+import { authService } from '../services/auth';
+import { ApiError } from '../services/api';
 import { promptEnableDeviceAuth } from '../utils/deviceAuthPrompt';
 import { useAuth } from '../contexts/AuthContext';
 import { brandColors } from '../contexts/ThemeContext';
@@ -56,22 +57,23 @@ export default function SignUpScreen() {
     }
 
     try {
-      const signUpData: SignUpData = { firstName, email, password };
-      await authService.signUp(signUpData);
+      await authService.signUp({ fullName: firstName, email, password });
 
       startLockGrace();
 
       try {
         await promptEnableDeviceAuth(email, password);
       } catch (e) {}
-    } catch (error: any) {
+    } catch (error: unknown) {
       let errorMessage = 'An error occurred during sign up';
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = 'An account with this email already exists';
-      } else if (error.code === 'auth/weak-password') {
-        errorMessage = 'Password should be at least 6 characters';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'Invalid email address';
+      if (error instanceof ApiError) {
+        if (error.status === 409) {
+          errorMessage = 'An account with this email already exists';
+        } else if (error.status === 422) {
+          errorMessage = 'Please check your input and try again.';
+        } else {
+          errorMessage = error.message;
+        }
       }
       Alert.alert('Sign Up Error', errorMessage);
     }

@@ -22,7 +22,8 @@ import PrimaryButton from '../components/PrimaryButton';
 import Logo from '../components/Logo';
 import FormInput from '../components/FormInput';
 import AuthFooter from '../components/AuthFooter';
-import { authService, SignInData } from '../services/authService';
+import { authService } from '../services/auth';
+import { ApiError } from '../services/api';
 import { promptEnableDeviceAuth } from '../utils/deviceAuthPrompt';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -47,22 +48,23 @@ export default function LoginScreen() {
     }
 
     try {
-      const signInData: SignInData = { email, password };
-      await authService.signIn(signInData);
+      await authService.signIn({ email, password });
 
       startLockGrace();
 
       try {
         await promptEnableDeviceAuth(email, password);
       } catch (e) {}
-    } catch (error: any) {
+    } catch (error: unknown) {
       let errorMessage = 'An error occurred signing in. Please try again.';
-      if (error.code === 'auth/user-not-found') {
-        errorMessage = 'No account found for that email address.';
-      } else if (error.code === 'auth/wrong-password') {
-        errorMessage = 'Incorrect password. Please try again.';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'That does not look like a valid email address.';
+      if (error instanceof ApiError) {
+        if (error.status === 401) {
+          errorMessage = 'Invalid email or password. Please try again.';
+        } else if (error.status === 422) {
+          errorMessage = 'Please enter a valid email and password.';
+        } else {
+          errorMessage = error.message;
+        }
       }
       Alert.alert('Sign In Error', errorMessage);
     }
@@ -85,20 +87,13 @@ export default function LoginScreen() {
     }
     setForgotDisabled(true);
     try {
-      const mod = await import('../services/authService');
-      if (!mod || !mod.authService || typeof mod.authService.sendPasswordReset !== 'function') {
-        throw new Error('authService.sendPasswordReset is not available');
-      }
-      await mod.authService.sendPasswordReset(target);
+      await authService.forgotPassword(target);
       Alert.alert(
         'Password reset',
         "If an account exists for that email, we'll send a reset link. Check your inbox (and spam) for the message.",
       );
-    } catch (err: any) {
-      Alert.alert(
-        'Error',
-        `Could not send reset email. ${err?.code || ''} ${err?.message || 'Try again later.'}`,
-      );
+    } catch {
+      Alert.alert('Error', 'Could not send reset email. Try again later.');
     } finally {
       setTimeout(() => setForgotDisabled(false), 30000);
     }
