@@ -2,42 +2,52 @@
  * AuthContext
  *
  * Provides authentication state and unlock/lock helpers via React context.
+ *
+ * Replaced Firebase Auth with the StockLens FastAPI backend (JWT-based).
+ * Token lifecycle:
+ *   1. On mount: check SecureStore for access token, validate via GET /auth/me
+ *   2. On sign-in/sign-up: POST /auth/login or /auth/register, persist tokens
+ *   3. On sign-out: POST /auth/logout, clear SecureStore
+ *   4. Token refresh: handled transparently by the api.ts HTTP client
+ *
+ * Device-lock (Face ID / Touch ID) behaviour is preserved unchanged.
  */
 
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { useTheme } from './ThemeContext';
-import type { User } from 'firebase/auth';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { getAuthInstance } from '@/services/firebase';
-import { userService } from '@/services/dataService';
+import { authService } from '@/services/auth';
+import { apiService } from '@/services/api';
+import type { UserProfile as AuthUserProfile } from '@/services/auth';
 import { authenticateDevice, isDeviceAuthAvailable, isDeviceEnabled } from '@/hooks/useDeviceAuth';
 
-export interface UserProfile {
-  id?: number;
+// ── Backward-compatible profile type ──────────────────────────────────────────
+// Screens still reference `uid` (aliased to `id`) and `first_name` (aliased to
+// `display_name`).  The mapping layer in `_buildProfile` provides these.
+
+export interface UserProfile extends AuthUserProfile {
+  /** Backward-compatible alias for `id` (used by screens and hooks). */
   uid: string;
-  first_name?: string | null;
-  email: string;
-  created_at?: string;
-  last_login?: string;
+  /** Backward-compatible alias for `display_name`. */
+  first_name: string | null;
 }
 
 export interface AuthContextType {
-  /** Firebase Auth user object (null if not authenticated) */
-  user: User | null;
-  /** User profile data from Firestore */
+  /** Authenticated user profile (null when not authenticated). */
+  user: UserProfile | null;
+  /** Same reference as `user` — retained for backward compatibility. */
   userProfile: UserProfile | null;
-  /** True during initial authentication check */
+  /** True during the initial auth-state check on mount. */
   loading: boolean;
-  /** Signs out the current user and clears auth state */
+  /** Signs out and clears all persisted tokens. */
   signOutUser: () => Promise<void>;
-  /** True when the device lock is active (app backgrounded) */
+  /** True when the device lock is active (app backgrounded). */
   locked: boolean;
-  /** Attempts to unlock using Face ID/Touch ID */
+  /** Attempts to unlock using Face ID / Touch ID. */
   unlockWithDeviceAuth: () => Promise<boolean>;
-  /** Unlocks using email/password credentials from secure storage */
+  /** Unlocks using email + password credentials. */
   unlockWithCredentials: (email: string, password: string) => Promise<boolean>;
-  /** Starts 10-second grace period to prevent immediate locking after sign-in */
+  /** Starts a 10-second grace period to prevent immediate re-lock after auth. */
   startLockGrace: () => void;
 }
 
@@ -46,8 +56,8 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 /**
  * useAuth Hook
  *
- * Custom hook to access AuthContext from any component.
- * Throws error if used outside AuthProvider to catch integration mistakes early.
+ * Access authentication state from any component.  Throws if used outside of
+ * an {@link AuthProvider}.
  *
  * @example
  * const { user, locked, unlockWithDeviceAuth } = useAuth();
@@ -64,92 +74,103 @@ interface AuthProviderProps {
   children: React.ReactNode;
 }
 
+// ── Mapping helper ────────────────────────────────────────────────────────────
+
+/**
+ * Enrich a raw API profile with backward-compatible fields.
+ *
+ * The database stores `display_name`; older screen code expects `uid` (→ `id`)
+ * and `first_name` (→ `display_name`).
+ */
+function _buildProfile(raw: AuthUserProfile): UserProfile {
+  return {
+    ...raw,
+    uid: raw.id,
+    first_name: raw.display_name,
+  };
+}
+
+// ── Provider ──────────────────────────────────────────────────────────────────
+
 /**
  * AuthProvider Component
  *
- * Wraps the app to provide authentication state via context.
- * Manages Firebase Auth lifecycle, user profile sync, and lock/unlock behavior.
- *
  * Lifecycle:
- * 1. On mount: Sets up Firebase onAuthStateChanged listener
- * 2. When user signs in: Fetches/creates Firestore profile, loads theme preference
- * 3. When app backgrounds: Sets locked=true (if device lock enabled)
- * 4. When app foregrounds: Requires unlock before access
- * 5. On unmount: Cleans up Firebase listener and AppState subscription
+ * 1. **Mount** – Checks SecureStore for existing tokens.  If found, calls
+ *    `GET /auth/me` to validate the session and populate the user profile.
+ * 2. **Auth change** – Login / register triggers a token fetch via
+ *    {@link authService}, which persists tokens and returns the profile.
+ * 3. **Background / foreground** – The device-lock gate activates when the app
+ *    backgrounds for >5 s (configurable) and requires Face ID / passcode to
+ *    resume.
+ * 4. **Unmount** – Cleans up subscriptions and timers.
  *
- * Lock Logic:
- * - LOCK_ENABLED flag controls whether lock feature is active
- * - lockGraceActive ref prevents immediate lock for 10s after sign-in
+ * Lock Logic (unchanged from Firebase version):
+ * - `LOCK_ENABLED` flag controls whether the lock feature is active.
+ * - `lockGraceActive` ref prevents immediate lock for 10 s after sign-in.
+ * - `lockDelayTimer` defers lock activation by 5 s after backgrounding.
  */
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const appState = useRef<AppStateStatus | null>(null);
   const [locked, setLocked] = useState(false);
   const LOCK_ENABLED = true;
   const lockGraceActive = useRef(false);
   const lockGraceTimer = useRef<NodeJS.Timeout | null>(null);
-  // Timer used to delay locking when the app backgrounds. The app will only
-  // become `locked` if it's been backgrounded for more than `LOCK_DELAY_MS`.
   const lockDelayTimer = useRef<NodeJS.Timeout | null>(null);
-  const LOCK_DELAY_MS = 5000; // 5 seconds
+  const LOCK_DELAY_MS = 5000;
   const { setMode } = useTheme();
 
+  // ── Initial auth check on mount ────────────────────────────────────────────
   useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
 
     const initAuth = async () => {
       try {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        const auth = await getAuthInstance();
+        const token = await apiService.getAccessToken();
+        if (!token) {
+          if (!cancelled) setLoading(false);
+          return;
+        }
 
-        unsubscribe = onAuthStateChanged(auth, async (usr) => {
-          setUser(usr);
-          if (usr) {
-            try {
-              const profile = await userService.getByUid(usr.uid);
-              if (!profile) {
-                await userService.upsert(usr.uid, usr.displayName || null, usr.email || '');
-                setUserProfile(await userService.getByUid(usr.uid));
-              } else {
-                setUserProfile(profile);
-              }
-            } catch (err) {}
-          } else {
-            setUserProfile(null);
+        const profile = await authService.getProfile();
+        if (!cancelled) {
+          if (profile) {
+            setUser(_buildProfile(profile));
           }
           setLoading(false);
-        });
-      } catch (error) {
-        setLoading(false);
+        }
+      } catch {
+        if (!cancelled) {
+          // Token present but invalid — clear silently
+          await apiService.clearTokens();
+          setLoading(false);
+        }
       }
     };
 
     initAuth();
 
     return () => {
-      if (unsubscribe) {
-        unsubscribe();
-      }
+      cancelled = true;
     };
   }, []);
 
+  // ── App-state listener (device lock on background) ─────────────────────────
   useEffect(() => {
     appState.current = AppState.currentState;
     const handle = (nextAppState: AppStateStatus) => {
       const wasActive = !!(appState.current && appState.current.match(/active/));
       const isBackgrounding = !!nextAppState.match(/inactive|background/);
 
-      // App is transitioning from active -> background/inactive: start delayed lock
+      // Active → background: start delayed lock
       if (wasActive && isBackgrounding) {
         if (LOCK_ENABLED && user && !lockGraceActive.current) {
-          // Clear any existing delayed timer
           if (lockDelayTimer.current) {
             clearTimeout(lockDelayTimer.current);
           }
           lockDelayTimer.current = setTimeout(() => {
-            // Only lock if still backgrounded and grace not active
             const current = AppState.currentState;
             if (current.match(/inactive|background/) && !lockGraceActive.current) {
               setLocked(true);
@@ -159,7 +180,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       }
 
-      // App is transitioning from background/inactive -> active: cancel delayed lock
+      // Background → active: cancel delayed lock
       if (
         appState.current &&
         appState.current.match(/inactive|background/) &&
@@ -178,6 +199,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => sub.remove();
   }, [user]);
 
+  // ── Unlock helpers ─────────────────────────────────────────────────────────
+
   const unlockWithDeviceAuth = async (): Promise<boolean> => {
     try {
       if (!LOCK_ENABLED) {
@@ -189,8 +212,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (!available || !enabled) return false;
       const { success } = await authenticateDevice('Unlock StockLens');
       if (success) {
-        // Start grace period to prevent immediate re-locking
-        // Clear any pending delayed lock and start grace
         if (lockDelayTimer.current) {
           clearTimeout(lockDelayTimer.current);
           lockDelayTimer.current = null;
@@ -199,7 +220,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return true;
       }
       return false;
-    } catch (err) {
+    } catch {
       return false;
     }
   };
@@ -211,75 +232,68 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return true;
       }
 
-      // Validate credentials without triggering full sign-in
-      const auth = await getAuthInstance();
-
-      // Just verify credentials are correct
-      await signInWithEmailAndPassword(auth, email, password);
-
-      // If we get here, credentials are valid - start grace period
-      if (lockDelayTimer.current) {
-        clearTimeout(lockDelayTimer.current);
-        lockDelayTimer.current = null;
+      // Validate credentials against the backend
+      const result = await authService.signIn({ email, password });
+      if (result) {
+        setUser(_buildProfile(result.user));
+        if (lockDelayTimer.current) {
+          clearTimeout(lockDelayTimer.current);
+          lockDelayTimer.current = null;
+        }
+        startLockGrace();
+        return true;
       }
-      startLockGrace();
-      return true;
-    } catch (err) {
+      return false;
+    } catch {
       return false;
     }
   };
 
+  // ── Sign out ───────────────────────────────────────────────────────────────
+
   const signOutUser = async () => {
     try {
-      // Clear grace period timer if active
       if (lockGraceTimer.current) {
         clearTimeout(lockGraceTimer.current);
         lockGraceTimer.current = null;
       }
       lockGraceActive.current = false;
-      // Clear delayed lock timer as well
       if (lockDelayTimer.current) {
         clearTimeout(lockDelayTimer.current);
         lockDelayTimer.current = null;
       }
 
-      const auth = await getAuthInstance();
-      await signOut(auth);
-      setUserProfile(null);
+      await authService.signOut();
+      setUser(null);
       setLocked(false);
-
-      // Reset theme to light mode on sign out
       setMode('light');
-    } catch (error) {
-      throw error;
+    } catch {
+      // Ensure local state is cleared even if the server call fails
+      setUser(null);
+      setLocked(false);
     }
   };
 
-  /**
-   * Starts a 10-second grace period where the lock screen will not trigger.
-   * This prevents immediate locking after sign-in/unlock, allowing smooth onboarding.
-   * Should be called after successful login, signup, or unlock.
-   */
+  // ── Lock grace period ──────────────────────────────────────────────────────
+
   const startLockGrace = () => {
-    // Clear any existing timer
     if (lockGraceTimer.current) {
       clearTimeout(lockGraceTimer.current);
     }
-
-    // Set grace period active and unlock
     lockGraceActive.current = true;
     setLocked(false);
 
-    // Clear grace period after 10 seconds
     lockGraceTimer.current = setTimeout(() => {
       lockGraceActive.current = false;
       lockGraceTimer.current = null;
     }, 10000);
   };
 
+  // ── Context value ──────────────────────────────────────────────────────────
+
   const value: AuthContextType = {
     user,
-    userProfile,
+    userProfile: user,
     loading,
     signOutUser,
     locked,
