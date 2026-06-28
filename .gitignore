@@ -76,6 +76,14 @@ android/
 *.tfstate.*
 .terraform/
 
+# ─── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.ruff_cache/
+.pytest_cache/
+
 # ─── Backend local data ────────────────────────────────────────────────────────
 # Receipt images stored locally during development
 backend/data/
