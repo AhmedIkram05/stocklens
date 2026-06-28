@@ -9,11 +9,11 @@ import { Alert } from 'react-native';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import LockScreen from '@/screens/LockScreen';
 import { renderWithProviders } from '../utils';
-import * as authServiceModule from '@/services/authService';
+import * as authModule from '@/services/auth';
 
-jest.mock('@/services/authService', () => ({
+jest.mock('@/services/auth', () => ({
   authService: {
-    sendPasswordReset: jest.fn(),
+    forgotPassword: jest.fn(),
   },
 }));
 
@@ -28,7 +28,7 @@ describe('LockScreen', () => {
     alertSpy.mockClear();
     unlockWithDeviceAuth = jest.fn();
     unlockWithCredentials = jest.fn();
-    (authServiceModule.authService.sendPasswordReset as jest.Mock).mockResolvedValue(undefined);
+    (authModule.authService.forgotPassword as jest.Mock).mockResolvedValue({ message: 'ok' });
   });
 
   const renderScreen = (overrides?: { email?: string }) =>

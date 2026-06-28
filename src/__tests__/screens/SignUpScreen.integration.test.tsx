@@ -9,15 +9,17 @@ import { Alert } from 'react-native';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import SignUpScreen from '@/screens/SignUpScreen';
 import { renderWithProviders } from '../utils';
-import { authService } from '@/services/authService';
+import { authService } from '@/services/auth';
 import { promptEnableDeviceAuth } from '@/utils/deviceAuthPrompt';
 import { useNavigation } from '@react-navigation/native';
 
-jest.mock('@/services/authService', () => ({
+jest.mock('@/services/auth', () => ({
   authService: {
     signIn: jest.fn(),
     signUp: jest.fn(),
-    sendPasswordReset: jest.fn(),
+    signOut: jest.fn(),
+    getProfile: jest.fn(),
+    isAuthenticated: jest.fn(),
   },
 }));
 
@@ -92,7 +94,7 @@ describe('SignUpScreen', () => {
 
     await waitFor(() => {
       expect(mockedSignUp).toHaveBeenCalledWith({
-        firstName: 'Jane',
+        fullName: 'Jane',
         email: 'jane@example.com',
         password: 'secret1',
       });

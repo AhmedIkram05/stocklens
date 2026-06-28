@@ -9,15 +9,17 @@ import { Alert } from 'react-native';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import LoginScreen from '@/screens/LoginScreen';
 import { renderWithProviders } from '../utils';
-import { authService } from '@/services/authService';
+import { authService } from '@/services/auth';
 import { promptEnableDeviceAuth } from '@/utils/deviceAuthPrompt';
 import { useNavigation } from '@react-navigation/native';
 
-jest.mock('@/services/authService', () => ({
+jest.mock('@/services/auth', () => ({
   authService: {
     signIn: jest.fn(),
     signUp: jest.fn(),
-    sendPasswordReset: jest.fn(),
+    signOut: jest.fn(),
+    getProfile: jest.fn(),
+    isAuthenticated: jest.fn(),
   },
 }));
 
