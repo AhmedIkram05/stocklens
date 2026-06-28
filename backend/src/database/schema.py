@@ -43,6 +43,7 @@ users = Table(
     Column("email", String(255), unique=True, nullable=False),
     Column("password_hash", String(255), nullable=False),
     Column("display_name", String(100)),
+    Column("is_active", Boolean(), server_default=text("true"), nullable=False),
     Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
     Column("updated_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
 )

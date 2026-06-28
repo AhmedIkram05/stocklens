@@ -4,6 +4,11 @@ Asyncpg connection pool for runtime database access.
 All runtime queries use raw asyncpg — no SQLAlchemy ORM at query time.
 """
 
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
 import asyncpg
 
 pool: asyncpg.Pool | None = None
@@ -28,6 +33,9 @@ async def get_conn() -> asyncpg.Connection:
     """Acquire a connection from the pool.
 
     Raises ``RuntimeError`` if the pool has not been initialised.
+
+    Prefer :func:`connection_ctx` (an async context manager) over calling
+    this function directly to ensure connections are always returned.
     """
     if pool is None:
         raise RuntimeError("Database pool not initialised")
@@ -38,6 +46,22 @@ async def release_conn(conn: asyncpg.Connection) -> None:
     """Return a connection to the pool."""
     if pool:
         await pool.release(conn)
+
+
+@asynccontextmanager
+async def connection_ctx() -> AsyncIterator[asyncpg.Connection]:
+    """Async context manager that acquires and releases a connection.
+
+    Usage::
+
+        async with connection_ctx() as conn:
+            row = await conn.fetchrow("SELECT 1")
+    """
+    conn = await get_conn()
+    try:
+        yield conn
+    finally:
+        await release_conn(conn)
 
 
 async def close_pool() -> None:

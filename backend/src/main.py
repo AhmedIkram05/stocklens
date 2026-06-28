@@ -95,16 +95,11 @@ async def health():
     return {"status": "ok", "environment": settings.ENVIRONMENT}
 
 
-# ── Router registrations (added in subsequent steps) ──
-# from src.auth.router import router as auth_router
-# from src.portfolios.router import router as portfolio_router
-# from src.holdings.router import router as holding_router
-# from src.transactions.router import router as transaction_router
-# from src.categories.router import router as category_router
-#
-# app.include_router(auth_router, prefix="/auth", tags=["auth"])
-# app.include_router(portfolio_router, prefix="/portfolios", tags=["portfolios"])
-# app.include_router(holding_router, prefix="/portfolios", tags=["holdings"])
-# app.include_router(transaction_router, prefix="/portfolios", tags=["transactions"])
+# ── Router registrations ──
+# Import at function scope to avoid circular imports at module level.
+from src.auth.router import router as auth_router  # noqa: E402
+from src.categories.router import router as category_router  # noqa: E402
+
+app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(receipt_router, prefix="/receipts", tags=["receipts"])
-# app.include_router(category_router, prefix="/categories", tags=["categories"])
+app.include_router(category_router, prefix="/categories", tags=["categories"])
