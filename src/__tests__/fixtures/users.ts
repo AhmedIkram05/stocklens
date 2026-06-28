@@ -5,18 +5,19 @@
 
 import { UserProfile } from '@/contexts/AuthContext';
 
-let userSequence = 1;
+const userSequence = 1;
 
 export const createUserProfile = (overrides: Partial<UserProfile> = {}): UserProfile => {
   const now = new Date().toISOString();
 
   const base: UserProfile = {
-    id: overrides.id ?? userSequence++,
+    id: overrides.id ?? `test-id-${userSequence}`,
     uid: overrides.uid ?? `test-uid-${userSequence}`,
-    first_name: overrides.first_name ?? 'TestUser',
+    display_name: overrides.display_name ?? overrides.first_name ?? 'TestUser',
+    first_name: overrides.first_name ?? overrides.display_name ?? 'TestUser',
     email: overrides.email ?? 'user@example.com',
     created_at: overrides.created_at ?? now,
-    last_login: overrides.last_login ?? now,
+    updated_at: overrides.updated_at ?? now,
   };
 
   return { ...base, ...overrides };
