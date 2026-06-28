@@ -43,6 +43,8 @@ def upgrade() -> None:
         sa.Column("email", sa.String(255), unique=True, nullable=False),
         sa.Column("password_hash", sa.String(255), nullable=False),
         sa.Column("display_name", sa.String(100)),
+        sa.Column("is_active", sa.Boolean(), nullable=False,
+                  server_default=sa.text("true")),
         sa.Column("created_at", sa.DateTime(timezone=True),
                   server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True),
