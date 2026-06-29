@@ -12,6 +12,7 @@ also have standalone endpoints:
 
 from __future__ import annotations
 
+import asyncpg
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
@@ -26,6 +27,7 @@ from src.holdings.schemas import (
     HoldingUpdate,
 )
 from src.limiter import limiter
+from uuid import UUID
 
 logger = structlog.get_logger()
 
@@ -113,7 +115,7 @@ def _row_to_response(row: dict) -> HoldingResponse:
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def create_holding(
     request: Request,
-    portfolio_id: str,
+    portfolio_id: UUID,
     body: HoldingCreate,
     current_user: UserInDB = Depends(get_current_user),
 ) -> HoldingResponse:
@@ -125,16 +127,22 @@ async def create_holding(
             detail="Portfolio not found",
         )
 
-    async with connection_ctx() as conn:
-        row = await conn.fetchrow(
-            "INSERT INTO holdings (portfolio_id, ticker, shares, average_cost_basis) "
-            "VALUES ($1::uuid, $2, $3::numeric, $4::numeric) "
-            "RETURNING id, portfolio_id, ticker, shares, average_cost_basis, "
-            "created_at, updated_at",
-            portfolio_id,
-            body.ticker,
-            body.shares,
-            body.average_cost_basis,
+    try:
+        async with connection_ctx() as conn:
+            row = await conn.fetchrow(
+                "INSERT INTO holdings (portfolio_id, ticker, shares, average_cost_basis) "
+                "VALUES ($1::uuid, $2, $3::numeric, $4::numeric) "
+                "RETURNING id, portfolio_id, ticker, shares, average_cost_basis, "
+                "created_at, updated_at",
+                portfolio_id,
+                body.ticker,
+                body.shares,
+                body.average_cost_basis,
+            )
+    except asyncpg.exceptions.UniqueViolationError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A holding with this ticker already exists in this portfolio",
         )
 
     result = dict(row)
@@ -154,7 +162,7 @@ async def create_holding(
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def list_holdings(
     request: Request,
-    portfolio_id: str,
+    portfolio_id: UUID,
     current_user: UserInDB = Depends(get_current_user),
 ) -> HoldingListResponse:
     """Return all holdings for a portfolio (portfolio must belong to current user)."""
@@ -174,7 +182,7 @@ async def list_holdings(
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def get_holding(
     request: Request,
-    holding_id: str,
+    holding_id: UUID,
     current_user: UserInDB = Depends(get_current_user),
 ) -> HoldingResponse:
     """Return a single holding by ID (verified through portfolio ownership)."""
@@ -191,7 +199,7 @@ async def get_holding(
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def update_holding(
     request: Request,
-    holding_id: str,
+    holding_id: UUID,
     body: HoldingUpdate,
     current_user: UserInDB = Depends(get_current_user),
 ) -> HoldingResponse:
@@ -253,7 +261,7 @@ async def update_holding(
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def delete_holding(
     request: Request,
-    holding_id: str,
+    holding_id: UUID,
     current_user: UserInDB = Depends(get_current_user),
 ) -> None:
     """Delete a holding (verified through portfolio ownership)."""
@@ -291,8 +299,8 @@ async def delete_holding(
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def get_portfolio_holding(
     request: Request,
-    portfolio_id: str,
-    holding_id: str,
+    portfolio_id: UUID,
+    holding_id: UUID,
     current_user: UserInDB = Depends(get_current_user),
 ) -> HoldingResponse:
     """Return a single holding nested under a portfolio (spec-compliant path)."""
@@ -312,8 +320,8 @@ async def get_portfolio_holding(
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def update_portfolio_holding(
     request: Request,
-    portfolio_id: str,
-    holding_id: str,
+    portfolio_id: UUID,
+    holding_id: UUID,
     body: HoldingUpdate,
     current_user: UserInDB = Depends(get_current_user),
 ) -> HoldingResponse:
@@ -374,8 +382,8 @@ async def update_portfolio_holding(
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def delete_portfolio_holding(
     request: Request,
-    portfolio_id: str,
-    holding_id: str,
+    portfolio_id: UUID,
+    holding_id: UUID,
     current_user: UserInDB = Depends(get_current_user),
 ) -> None:
     """Delete a holding nested under a portfolio (spec-compliant path)."""

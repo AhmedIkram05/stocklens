@@ -54,8 +54,8 @@ SEED_CATEGORIES: list[dict[str, Any]] = [
             "amazon", "ebay", "next", "zara", "h&m", "uniqlo",
             "argos", "john lewis", "debenhams", "asos",
             "best buy", "currys", "apple store", "ikea",
-            "hema", "claire", "boots", "superdrug",
-            "primark", "matalan", "tk maxx", "home goods",
+            "hema", "claire", "primark", "matalan",
+            "tk maxx", "home goods",
         ],
         "associated_tickers": ["AMZN", "EBAY", "NXT.L", "WMT", "TGT", "HD", "LOW", "BBB.L"],
     },
@@ -90,7 +90,7 @@ SEED_CATEGORIES: list[dict[str, Any]] = [
             "british gas", "eon", "edf", "ovo", "sse", "npower",
             "water bill", "council tax", "housing", "rent",
             "thames water", "severn trent", "virgin media",
-            "bt", "sky", "ee", "vodafone", "three",
+            "bt", "ee", "vodafone", "three",
             "landlord", "tenancy", "letting agent",
         ],
         "associated_tickers": ["CNA.L", "NG.L", "SSE.L", "BT-A.L", "VOD.L", "VZ", "T"],
@@ -144,3 +144,31 @@ def get_seed_categories() -> list[dict[str, Any]]:
 
 
 CATEGORY_NAMES: list[str] = [c["name"] for c in SEED_CATEGORIES]
+
+
+async def seed_categories() -> int:
+    """Insert seed categories into ``spending_categories`` if not already present.
+    Returns the number of rows inserted.
+    """
+    from src.database.connection import connection_ctx
+
+    import json
+
+    count = 0
+    for cat in SEED_CATEGORIES:
+        async with connection_ctx() as conn:
+            row = await conn.fetchrow(
+                "SELECT 1 FROM spending_categories WHERE name = $1", cat["name"]
+            )
+            if row is None:
+                await conn.execute(
+                    "INSERT INTO spending_categories "
+                    "(name, description, merchant_keywords, associated_tickers) "
+                    "VALUES ($1, $2, $3::jsonb, $4::jsonb)",
+                    cat["name"],
+                    cat["description"],
+                    json.dumps(cat["merchant_keywords"]),
+                    json.dumps(cat["associated_tickers"]),
+                )
+                count += 1
+    return count

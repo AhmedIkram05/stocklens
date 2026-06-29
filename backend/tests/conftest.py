@@ -13,6 +13,7 @@ application code reuses the same connection currently inside a ``BEGIN`` /
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncGenerator
 
 import asyncpg
@@ -33,6 +34,19 @@ def event_loop():
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def _migrate_db() -> None:
+    """Run Alembic migrations once per test session.
+
+    ``ASGITransport`` does not send ``lifespan`` events, so the app's
+    lifespan (which runs ``run_migrations``) is never triggered inside tests.
+    This fixture ensures the schema exists before any test touches the DB.
+    """
+    from src.database.init_db import run_migrations
+
+    await run_migrations()
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -104,13 +118,13 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 async def auth_headers(client: AsyncClient) -> dict[str, str]:
     """Register a test user and return ``Authorization`` headers.
 
-    The user is created with email ``test@stocklens.test`` and password
+    The user is created with email ``test@stocklens.dev`` and password
     ``TestPass123!``.
     """
     response = await client.post(
         "/auth/register",
         json={
-            "email": "test@stocklens.test",
+            "email": "test@stocklens.dev",
             "password": "TestPass123!",
             "full_name": "Test User",
         },
@@ -122,6 +136,40 @@ async def auth_headers(client: AsyncClient) -> dict[str, str]:
 
 
 @pytest_asyncio.fixture
+async def _seed_categories() -> None:
+    """Insert seed categories into the DB so API endpoints that query
+    ``spending_categories`` return data.
+
+    ``ASGITransport`` does not send ``lifespan`` events, so the app's
+    startup logic (which normally seeds categories) is never triggered
+    inside tests.  This fixture fills the table inside the per-test
+    transaction so each test sees the full category list.
+    """
+    from src.categories.seed import SEED_CATEGORIES
+    from src.database.connection import connection_ctx
+
+    async def _category_exists(name: str) -> bool:
+        async with connection_ctx() as conn:
+            row = await conn.fetchrow(
+                "SELECT 1 FROM spending_categories WHERE name = $1", name
+            )
+            return row is not None
+
+    for cat in SEED_CATEGORIES:
+        if not await _category_exists(cat["name"]):
+            async with connection_ctx() as conn:
+                await conn.execute(
+                    "INSERT INTO spending_categories "
+                    "(name, description, merchant_keywords, associated_tickers) "
+                    "VALUES ($1, $2, $3::jsonb, $4::jsonb)",
+                    cat["name"],
+                    cat["description"],
+                    json.dumps(cat["merchant_keywords"]),
+                    json.dumps(cat["associated_tickers"]),
+                )
+
+
+@pytest_asyncio.fixture
 async def refresh_token(client: AsyncClient, auth_headers: dict[str, str]) -> str:
     """Return a valid refresh token for the test user by logging in.
 
@@ -130,7 +178,7 @@ async def refresh_token(client: AsyncClient, auth_headers: dict[str, str]) -> st
     response = await client.post(
         "/auth/login",
         json={
-            "email": "test@stocklens.test",
+            "email": "test@stocklens.dev",
             "password": "TestPass123!",
         },
     )

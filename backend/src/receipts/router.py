@@ -10,6 +10,7 @@ Endpoints
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import datetime, timezone
 
@@ -22,6 +23,7 @@ from src.categories.merchant_map import resolve_category
 from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
+from uuid import UUID
 from src.receipts.models import (
     ExtractedItem,
     ReceiptCreate,
@@ -179,7 +181,7 @@ async def scan_receipt(
                 category,
                 result["ocr_raw_text"],
                 result["ocr_confidence"],
-                [item.model_dump() for item in extraction.items],
+                json.dumps([item.model_dump() for item in extraction.items]),
                 datetime.now(timezone.utc),
             )
         # image_bytes discarded after processing (never stored on device)
@@ -227,7 +229,7 @@ async def _fetch_receipts_for_user(
         rows = await conn.fetch(
             "SELECT id, user_id, total_amount, merchant_name, category_id, "
             "ocr_raw_text, ocr_confidence, line_items, receipt_image_s3_key, "
-            "scanned_at, created_at "
+            "notes, transaction_date, scanned_at, created_at "
             "FROM receipts WHERE user_id = $1::uuid "
             "ORDER BY scanned_at DESC "
             "LIMIT $2 OFFSET $3",
@@ -235,7 +237,11 @@ async def _fetch_receipts_for_user(
             limit,
             offset,
         )
-    return [dict(r) for r in rows]
+    result = [dict(r) for r in rows]
+    for r in result:
+        if isinstance(r.get("line_items"), str):
+            r["line_items"] = json.loads(r["line_items"])
+    return result
 
 
 async def _count_receipts_for_user(user_id: str) -> int:
@@ -254,15 +260,24 @@ async def _fetch_receipt_by_id(receipt_id: str) -> dict | None:
         row = await conn.fetchrow(
             "SELECT id, user_id, total_amount, merchant_name, category_id, "
             "ocr_raw_text, ocr_confidence, line_items, receipt_image_s3_key, "
-            "scanned_at, created_at "
+            "notes, transaction_date, scanned_at, created_at "
             "FROM receipts WHERE id = $1::uuid",
             receipt_id,
         )
-    return dict(row) if row else None
+    if not row:
+        return None
+    data = dict(row)
+    data["user_id"] = str(data["user_id"])
+    if isinstance(data.get("line_items"), str):
+        data["line_items"] = json.loads(data["line_items"])
+    return data
 
 
 def _row_to_receipt_response(row: dict) -> ReceiptResponse:
     """Convert a raw DB row to a ``ReceiptResponse``."""
+    line_items = row.get("line_items")
+    if isinstance(line_items, str):
+        line_items = json.loads(line_items)
     return ReceiptResponse(
         id=str(row["id"]),
         total_amount=row.get("total_amount"),
@@ -270,8 +285,10 @@ def _row_to_receipt_response(row: dict) -> ReceiptResponse:
         category_id=str(row["category_id"]) if row.get("category_id") else None,
         ocr_raw_text=row.get("ocr_raw_text"),
         ocr_confidence=row.get("ocr_confidence"),
-        line_items=row.get("line_items"),
+        line_items=line_items,
         receipt_image_s3_key=row.get("receipt_image_s3_key"),
+        notes=row.get("notes"),
+        transaction_date=row.get("transaction_date"),
         scanned_at=row["scanned_at"],
         created_at=row["created_at"],
     )
@@ -301,19 +318,22 @@ async def create_receipt(
         row = await conn.fetchrow(
             "INSERT INTO receipts "
             "(user_id, total_amount, merchant_name, category_id, ocr_raw_text, "
-            " ocr_confidence, line_items, receipt_image_s3_key, scanned_at) "
-            "VALUES ($1::uuid, $2, $3, $4::uuid, $5, $6, $7::jsonb, $8, $9) "
+            " ocr_confidence, line_items, receipt_image_s3_key, "
+            " notes, transaction_date, scanned_at) "
+            "VALUES ($1::uuid, $2, $3, $4::uuid, $5, $6, $7::jsonb, $8, $9, $10, $11) "
             "RETURNING id, user_id, total_amount, merchant_name, category_id, "
             "ocr_raw_text, ocr_confidence, line_items, receipt_image_s3_key, "
-            "scanned_at, created_at",
+            "notes, transaction_date, scanned_at, created_at",
             current_user.id,
             body.total_amount,
             body.merchant_name,
             body.category_id,
             body.ocr_raw_text,
             body.ocr_confidence,
-            body.line_items,
+            json.dumps(body.line_items) if body.line_items is not None else None,
             body.receipt_image_s3_key,
+            body.notes,
+            body.transaction_date,
             scanned_at,
         )
 
@@ -355,7 +375,7 @@ async def list_receipts(
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def get_receipt(
     request: Request,
-    receipt_id: str,
+    receipt_id: UUID,
     current_user: UserInDB = Depends(get_current_user),
 ) -> ReceiptResponse:
     """Return a single receipt by ID (must belong to current user)."""
@@ -373,7 +393,7 @@ async def get_receipt(
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def update_receipt(
     request: Request,
-    receipt_id: str,
+    receipt_id: UUID,
     body: ReceiptUpdate,
     current_user: UserInDB = Depends(get_current_user),
 ) -> ReceiptResponse:
@@ -397,6 +417,8 @@ async def update_receipt(
         "ocr_confidence": body.ocr_confidence,
         "line_items": body.line_items,
         "receipt_image_s3_key": body.receipt_image_s3_key,
+        "notes": body.notes,
+        "transaction_date": body.transaction_date,
     }
 
     for col, val in field_map.items():
@@ -405,10 +427,13 @@ async def update_receipt(
                 set_clauses.append(f"{col} = ${idx}::uuid")
             elif col == "line_items":
                 set_clauses.append(f"{col} = ${idx}::jsonb")
+                val = json.dumps(val)
             elif col == "ocr_confidence":
                 set_clauses.append(f"{col} = ${idx}::real")
             elif col == "total_amount":
                 set_clauses.append(f"{col} = ${idx}::numeric")
+            elif col == "transaction_date":
+                set_clauses.append(f"{col} = ${idx}::date")
             else:
                 set_clauses.append(f"{col} = ${idx}")
             params.append(val)
@@ -430,7 +455,7 @@ async def update_receipt(
         + f" WHERE id = ${idx}::uuid AND user_id = ${idx + 1}::uuid "
         "RETURNING id, user_id, total_amount, merchant_name, category_id, "
         "ocr_raw_text, ocr_confidence, line_items, receipt_image_s3_key, "
-        "scanned_at, created_at"
+        "notes, transaction_date, scanned_at, created_at"
     )
     params.extend([receipt_id, current_user.id])
 
@@ -454,7 +479,7 @@ async def update_receipt(
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def delete_receipt(
     request: Request,
-    receipt_id: str,
+    receipt_id: UUID,
     current_user: UserInDB = Depends(get_current_user),
 ) -> None:
     """Delete a receipt (must belong to current user)."""

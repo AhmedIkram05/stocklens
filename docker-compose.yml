@@ -85,6 +85,8 @@ services:
       JWT_SECRET_KEY: test-jwt-secret-key
       ENVIRONMENT: test
       STRUCTLOG_LOG_LEVEL: WARNING
+      RATE_LIMIT_LOGIN: 1000/second
+      RATE_LIMIT_DEFAULT: 1000/second
     depends_on:
       postgres:
         condition: service_healthy
@@ -93,9 +95,11 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./backend:/app
+      - ./backend/src:/app/src
+      - ./backend/tests:/app/tests
+      - ./backend/alembic:/app/alembic
     command: >
-      sh -c "pytest -v --cov=src --cov-report=term-missing --cov-report=xml --tb=short -x"
+      sh -c "UV_CACHE_DIR=/tmp/uv-cache uv sync --extra dev && pytest -v --cov=src --cov-report=term-missing --cov-report=xml --tb=short"
 
 volumes:
   pgdata:

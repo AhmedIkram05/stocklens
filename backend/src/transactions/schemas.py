@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class TransactionBase(BaseModel):
+    model_config = ConfigDict(json_encoders={Decimal: float})
+
     ticker: str = Field(..., min_length=1, max_length=10)
     type: str = Field(..., pattern=r"^(BUY|SELL)$")
     shares: Decimal = Field(..., gt=0)
