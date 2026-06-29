@@ -56,6 +56,13 @@ async def lifespan(app: FastAPI):
     await init_pool(settings.DATABASE_URL)
     logger.info("database_pool_initialised")
 
+    # Seed categories on first startup
+    from src.categories.seed import seed_categories
+
+    seeded = await seed_categories()
+    if seeded:
+        logger.info("categories_seeded", count=seeded)
+
     yield
 
     logger.info("app_shutting_down")
