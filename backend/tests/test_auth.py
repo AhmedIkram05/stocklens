@@ -175,7 +175,7 @@ class TestGetMe:
         response = await client.get("/auth/me", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert data["email"] == "test@stocklens.test"
+        assert data["email"] == "test@stocklens.dev"
         assert "id" in data
         assert "display_name" in data
 
