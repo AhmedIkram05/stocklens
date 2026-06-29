@@ -15,6 +15,8 @@ from pydantic import BaseModel, ConfigDict, Field
 class ExtractedItem(BaseModel):
     """A single line item from a receipt."""
 
+    model_config = ConfigDict(json_encoders={Decimal: float})
+
     name: str
     quantity: int = 1
     price: Decimal
@@ -22,6 +24,8 @@ class ExtractedItem(BaseModel):
 
 class ReceiptExtraction(BaseModel):
     """Structured data extracted from a receipt."""
+
+    model_config = ConfigDict(json_encoders={Decimal: float})
 
     merchant_name: Optional[str] = None
     total: Optional[Decimal] = None
@@ -46,6 +50,9 @@ class ReceiptScanResponse(BaseModel):
 
 class ReceiptCreate(BaseModel):
     """Schema for manually creating a receipt record."""
+
+    model_config = ConfigDict(json_encoders={Decimal: float})
+
     merchant_name: Optional[str] = None
     total_amount: Optional[Decimal] = None
     category_id: Optional[str] = None
@@ -53,11 +60,16 @@ class ReceiptCreate(BaseModel):
     ocr_confidence: Optional[float] = None
     line_items: Optional[list[dict]] = None
     receipt_image_s3_key: Optional[str] = None
+    notes: Optional[str] = None
+    transaction_date: Optional[date] = None
     scanned_at: Optional[datetime] = None
 
 
 class ReceiptUpdate(BaseModel):
     """Schema for updating a receipt record (edit OCR mistakes)."""
+
+    model_config = ConfigDict(json_encoders={Decimal: float})
+
     merchant_name: Optional[str] = None
     total_amount: Optional[Decimal] = None
     category_id: Optional[str] = None
@@ -65,10 +77,15 @@ class ReceiptUpdate(BaseModel):
     ocr_confidence: Optional[float] = None
     line_items: Optional[list[dict]] = None
     receipt_image_s3_key: Optional[str] = None
+    transaction_date: Optional[date] = None
+    notes: Optional[str] = None
 
 
 class ReceiptInDB(BaseModel):
     """Full receipt record as stored in the database."""
+
+    model_config = ConfigDict(from_attributes=True, json_encoders={Decimal: float})
+
     id: str
     user_id: str
     total_amount: Optional[Decimal] = None
@@ -78,10 +95,10 @@ class ReceiptInDB(BaseModel):
     ocr_confidence: Optional[float] = None
     line_items: Optional[list[dict]] = None
     receipt_image_s3_key: Optional[str] = None
+    notes: Optional[str] = None
+    transaction_date: Optional[date] = None
     scanned_at: datetime
     created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
 
     @classmethod
     def from_db_row(cls, row: dict[str, Any]) -> "ReceiptInDB":
@@ -95,6 +112,8 @@ class ReceiptInDB(BaseModel):
             ocr_confidence=row.get("ocr_confidence"),
             line_items=row.get("line_items"),
             receipt_image_s3_key=row.get("receipt_image_s3_key"),
+            notes=row.get("notes"),
+            transaction_date=row.get("transaction_date"),
             scanned_at=row["scanned_at"],
             created_at=row["created_at"],
         )
@@ -102,6 +121,9 @@ class ReceiptInDB(BaseModel):
 
 class ReceiptResponse(BaseModel):
     """Receipt data returned to the client."""
+
+    model_config = ConfigDict(json_encoders={Decimal: float})
+
     id: str
     total_amount: Optional[Decimal] = None
     merchant_name: Optional[str] = None
@@ -110,6 +132,8 @@ class ReceiptResponse(BaseModel):
     ocr_confidence: Optional[float] = None
     line_items: Optional[list[dict]] = None
     receipt_image_s3_key: Optional[str] = None
+    notes: Optional[str] = None
+    transaction_date: Optional[date] = None
     scanned_at: datetime
     created_at: datetime
 
