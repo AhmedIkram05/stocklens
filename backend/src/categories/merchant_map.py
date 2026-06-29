@@ -105,7 +105,9 @@ def match_by_keyword(merchant_name: str) -> Optional[CategoryRule]:
 
     for category in get_categories():
         for keyword in category.merchant_keywords:
-            if keyword.lower() in normalised:
+            # Use word-boundary-at-start so "tfl" doesn't match inside "netflix"
+            # but "mcdonald" still matches inside "mcdonalds"
+            if re.search(rf"(?<!\w){re.escape(keyword.lower())}", normalised):
                 logger.debug(
                     "category_keyword_match",
                     merchant=merchant_name,

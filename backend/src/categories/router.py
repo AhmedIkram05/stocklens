@@ -8,6 +8,8 @@ Endpoints:
 
 from __future__ import annotations
 
+import json
+
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
@@ -17,6 +19,7 @@ from src.categories.schemas import CategoryListResponse, CategoryResponse
 from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
+from uuid import UUID
 
 logger = structlog.get_logger()
 
@@ -46,12 +49,18 @@ async def _fetch_category_by_id(category_id: str) -> dict | None:
 
 def _row_to_response(row: dict) -> CategoryResponse:
     """Convert a raw DB row to a ``CategoryResponse``."""
+    keywords = row.get("merchant_keywords") or []
+    if isinstance(keywords, str):
+        keywords = json.loads(keywords)
+    tickers = row.get("associated_tickers") or []
+    if isinstance(tickers, str):
+        tickers = json.loads(tickers)
     return CategoryResponse(
         id=str(row["id"]),
         name=row["name"],
         description=row.get("description"),
-        merchant_keywords=row.get("merchant_keywords") or [],
-        associated_tickers=row.get("associated_tickers") or [],
+        merchant_keywords=keywords,
+        associated_tickers=tickers,
     )
 
 
@@ -81,7 +90,7 @@ async def list_categories(
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def get_category(
     request: Request,
-    category_id: str,
+    category_id: UUID,
     current_user: UserInDB = Depends(get_current_user),
 ) -> CategoryResponse:
     """Return a single spending category by ID."""
