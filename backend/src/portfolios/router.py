@@ -19,6 +19,7 @@ from src.auth.schemas import UserInDB
 from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
+from uuid import UUID
 from src.portfolios.schemas import (
     PortfolioCreate,
     PortfolioListResponse,
@@ -105,7 +106,7 @@ async def create_portfolio(
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def get_portfolio(
     request: Request,
-    portfolio_id: str,
+    portfolio_id: UUID,
     current_user: UserInDB = Depends(get_current_user),
 ) -> PortfolioResponse:
     """Return a single portfolio by ID (must belong to current user)."""
@@ -122,7 +123,7 @@ async def get_portfolio(
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def update_portfolio(
     request: Request,
-    portfolio_id: str,
+    portfolio_id: UUID,
     body: PortfolioUpdate,
     current_user: UserInDB = Depends(get_current_user),
 ) -> PortfolioResponse:
@@ -178,7 +179,7 @@ async def update_portfolio(
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def delete_portfolio(
     request: Request,
-    portfolio_id: str,
+    portfolio_id: UUID,
     current_user: UserInDB = Depends(get_current_user),
 ) -> None:
     """Delete a portfolio (must belong to current user)."""
