@@ -99,7 +99,13 @@ async def health():
 # Import at function scope to avoid circular imports at module level.
 from src.auth.router import router as auth_router  # noqa: E402
 from src.categories.router import router as category_router  # noqa: E402
+from src.holdings.router import router as holdings_router  # noqa: E402
+from src.portfolios.router import router as portfolio_router  # noqa: E402
+from src.transactions.router import router as transaction_router  # noqa: E402
 
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(receipt_router, prefix="/receipts", tags=["receipts"])
 app.include_router(category_router, prefix="/categories", tags=["categories"])
+app.include_router(portfolio_router, prefix="/portfolios", tags=["portfolios"])
+app.include_router(holdings_router, tags=["holdings"])
+app.include_router(transaction_router, tags=["transactions"])

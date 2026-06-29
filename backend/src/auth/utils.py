@@ -119,7 +119,8 @@ def decode_token(token: str) -> TokenPayload:
 
 
 def hash_token(jti: str, user_id: str) -> str:
-    """Return a SHA-256 hex digest of ``{jti}:{user_id}`` for storage in ``refresh_tokens.token_hash``.
+    """Return a SHA-256 hex digest of ``{jti}:{user_id}`` for storage in
+    ``refresh_tokens.token_hash``.
 
     The compound input binds the token to its owning user as defense-in-depth.
     """
