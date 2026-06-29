@@ -17,6 +17,7 @@ from src.auth.schemas import UserInDB
 from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
+from uuid import UUID
 from src.transactions.schemas import (
     TransactionCreate,
     TransactionListResponse,
@@ -36,7 +37,11 @@ async def _fetch_portfolio_from_db(portfolio_id: str) -> dict | None:
             "FROM portfolios WHERE id = $1::uuid",
             portfolio_id,
         )
-    return dict(row) if row else None
+    if not row:
+        return None
+    data = dict(row)
+    data["user_id"] = str(data["user_id"])
+    return data
 
 
 async def _fetch_transactions_from_db(
@@ -100,7 +105,11 @@ async def _fetch_transaction_by_id(transaction_id: str) -> dict | None:
             "FROM transactions WHERE id = $1::uuid",
             transaction_id,
         )
-    return dict(row) if row else None
+    if not row:
+        return None
+    data = dict(row)
+    data["portfolio_id"] = str(data["portfolio_id"])
+    return data
 
 
 def _row_to_response(row: dict) -> TransactionResponse:
@@ -127,7 +136,7 @@ def _row_to_response(row: dict) -> TransactionResponse:
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def create_transaction(
     request: Request,
-    portfolio_id: str,
+    portfolio_id: UUID,
     body: TransactionCreate,
     current_user: UserInDB = Depends(get_current_user),
 ) -> TransactionResponse:
@@ -184,7 +193,7 @@ async def create_transaction(
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def list_transactions(
     request: Request,
-    portfolio_id: str,
+    portfolio_id: UUID,
     limit: int = 50,
     offset: int = 0,
     ticker: str | None = None,
@@ -222,7 +231,7 @@ async def list_transactions(
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def get_transaction(
     request: Request,
-    transaction_id: str,
+    transaction_id: UUID,
     current_user: UserInDB = Depends(get_current_user),
 ) -> TransactionResponse:
     """Return a single transaction by ID.
@@ -253,13 +262,13 @@ async def get_transaction(
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def get_portfolio_transaction(
     request: Request,
-    portfolio_id: str,
-    transaction_id: str,
+    portfolio_id: UUID,
+    transaction_id: UUID,
     current_user: UserInDB = Depends(get_current_user),
 ) -> TransactionResponse:
     """Return a single transaction nested under a portfolio (spec-compliant path)."""
     row = await _fetch_transaction_by_id(transaction_id)
-    if row is None or str(row["portfolio_id"]) != portfolio_id:
+    if row is None or str(row["portfolio_id"]) != str(portfolio_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Transaction not found",
