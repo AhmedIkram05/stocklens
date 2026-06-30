@@ -24,15 +24,13 @@ import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { brandColors, useTheme } from '../contexts/ThemeContext';
 import { radii, spacing, typography } from '../styles/theme';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import { receiptService } from '../services/dataService';
+import { receiptService } from '../services/receipts';
 import { emit } from '../services/eventBus';
-import { useAuth } from '../contexts/AuthContext';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useReceiptCapture } from '../hooks/useReceiptCapture';
 
 /** Camera/receipt capture screen. */
 export default function ScanScreen() {
-  const { userProfile } = useAuth();
   const navigation = useNavigation<any>();
   const facing: CameraType = 'back';
   const [permission, requestPermission] = useCameraPermissions();
@@ -45,7 +43,6 @@ export default function ScanScreen() {
   }, []);
   const capture = useReceiptCapture({
     navigation,
-    userUid: userProfile?.uid,
     onResetCamera: clearPhotoPreview,
   });
   const { processing, ocrRaw, draftReceiptId, manualModalVisible, manualEntryText } = capture.state;
@@ -117,20 +114,18 @@ export default function ScanScreen() {
         });
         setPhoto(photo.uri);
         if ((photo as any).base64) setPhotoBase64((photo as any).base64 as string);
-        let createdDraftId: number | null = null;
+        let createdDraftId: string | null = null;
         try {
-          const createdId = await receiptService.create({
-            user_id: userProfile?.uid || 'anon',
-            image_uri: photo.uri,
+          const created = await receiptService.create({
+            receipt_image_s3_key: photo.uri,
             total_amount: undefined,
-            ocr_data: '',
-            synced: 0,
+            ocr_raw_text: '',
           });
-          if (createdId && Number(createdId) > 0) {
-            createdDraftId = Number(createdId);
+          if (created && created.id) {
+            createdDraftId = created.id;
             setDraftReceiptId(createdDraftId);
             try {
-              emit('receipts-changed', { id: createdId, userId: userProfile?.uid });
+              emit('receipts-changed', { id: created.id });
             } catch (e) {}
           }
         } catch (e) {}

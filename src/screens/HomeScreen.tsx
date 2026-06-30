@@ -40,8 +40,7 @@ export default function HomeScreen() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const { theme } = useTheme();
 
-  const { user } = useAuth();
-  const { receipts: allScans, loading: receiptsLoading } = useReceipts(user?.uid);
+  const { receipts: allScans, loading: receiptsLoading } = useReceipts();
 
   const { userProfile } = useAuth();
   const firstName = useMemo(() => {

@@ -18,7 +18,7 @@ import { radii, spacing, typography } from '../styles/theme';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import DangerButton from '../components/DangerButton';
 import ResponsiveContainer from '../components/ResponsiveContainer';
-import { receiptService } from '../services/dataService';
+import { receiptService } from '../services/receipts';
 import { useTheme } from '../contexts/ThemeContext';
 
 // Route prop for receipt details screen
@@ -401,10 +401,10 @@ export default function ReceiptDetailsScreen() {
                       Alert.alert('Cannot delete', 'Receipt has not been saved yet');
                       return;
                     }
-                    await receiptService.delete(Number(receiptId));
+                    await receiptService.delete(receiptId);
                     // notify listeners that receipts changed
                     try {
-                      emit('receipts-changed', { id: Number(receiptId), action: 'deleted' });
+                      emit('receipts-changed', { id: receiptId, action: 'deleted' });
                     } catch (e) {}
                     Alert.alert('Deleted', 'Receipt deleted');
                     navigation.navigate('MainTabs' as any);

@@ -39,7 +39,7 @@ export default function SummaryScreen() {
   const [expandedInsight, setExpandedInsight] = useState<string | null>(null);
   const [expandedDefinition, setExpandedDefinition] = useState<string | null>(null);
 
-  const { receipts, loading: receiptsLoading } = useReceipts(user?.uid);
+  const { receipts, loading: receiptsLoading } = useReceipts();
 
   useEffect(() => {
     let mounted = true;
