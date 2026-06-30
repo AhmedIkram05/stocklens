@@ -1,8 +1,9 @@
 # StockLens — Implementation Tracker
 
 > **Purpose:** Single source of truth for implementation progress. Agents read this to determine what to work on next, and write to it when done.
-> **Plan docs:** [MASTER_PLAN.md](MASTER_PLAN.md) (architecture), [PHASE1_IMPLEMENTATION.md](PHASE1_IMPLEMENTATION.md) (Phase 1 blueprint)
-> **Docs are frozen** — plan docs are the spec. This tracker captures what actually happened.
+> **Plan docs:** [MASTER_PLAN.md](MASTER_PLAN.md) (architecture), [PHASE1_IMPLEMENTATION.md](PHASE1_IMPLEMENTATION.md), [PHASE2_IMPLEMENTATION.md](PHASE2_IMPLEMENTATION.md)
+> **Domain glossary:** [CONTEXT.md](CONTEXT.md) (normative terms)
+> **Docs are frozen** — plan docs are the specs. This tracker captures what actually happened.
 
 ---
 
@@ -102,11 +103,71 @@ When updating this file, agents must follow these rules:
 
 ---
 
-## Future Phases (placeholder sections)
+## Phase 2 — Market Data & Portfolio Analytics
 
-### Phase 2 — Market Data & Portfolio Analytics
+**Goal:** yfinance integration, OHLCV/quote endpoints, per-holding P&L, TWR (cash-flow-based), benchmark comparison (TE/IR), and cash_flows module for receipt-backed portfolio deposits.
+**Cutover:** Additive — Phase 1 endpoints are unchanged, Phase 2 is new capability.
+**Target tests:** 80+ new tests across `market/`, `cash_flows/`, and `performance/` modules.
 
-_Not started._ Add tracker rows when Phase 2 begins.
+### Step Tracker
+
+| #   | Step                                                                                                                           | Status         | Notes |
+| --- | ------------------------------------------------------------------------------------------------------------------------------ | -------------- | ----- |
+| R1  | **Round 1 — Market Data Provider**                                                                                             | 🔲 Not started |       |
+| 1.1 | Add yfinance + tenacity deps to `pyproject.toml`                                                                               | 🔲 Not started |       |
+| 1.2 | Market module skeleton — `market/__init__.py`                                                                                  | 🔲 Not started |       |
+| 1.3 | Market schemas — `market/schemas.py` (OHLCVData, QuoteResponse, OHLCVResponse)                                                 | 🔲 Not started |       |
+| 1.4 | OHLCV repository — `market/repository.py` (get_ohlcv, upsert_ohlcv via executemany)                                            | 🔲 Not started |       |
+| 1.5 | yfinance provider — `market/provider.py` (to_thread, tenacity retry, NaN handling)                                             | 🔲 Not started |       |
+| 1.6 | Market router — `market/router.py` (OHLCV + quote endpoints, Redis 60s cache)                                                  | 🔲 Not started |       |
+| 1.7 | Register market router in `main.py`                                                                                            | 🔲 Not started |       |
+| 1.8 | Market tests — `test_market.py` (25+ tests, yfinance mocked)                                                                   | 🔲 Not started |       |
+| R2  | **Round 2 — Cash Flows + Portfolio Analytics**                                                                                 | 🔲 Not started |       |
+| 2.1 | Performance schemas — `performance/schemas.py` (HoldingPerformance, PortfolioPerformanceResponse, BenchmarkComparisonResponse) | 🔲 Not started |       |
+| 2.2 | Cash flows migration — `0003_add_cash_flows.py` (cash_flows table, index)                                                      | 🔲 Not started |       |
+| 2.3 | Cash flows schemas — `cash_flows/schemas.py` (CashFlowCreate, CashFlowResponse)                                                | 🔲 Not started |       |
+| 2.4 | Cash flows repository — `cash_flows/repository.py` (create, list, sum, PATCH notes)                                            | 🔲 Not started |       |
+| 2.5 | Cash flows router — `cash_flows/router.py` (POST/GET/PATCH at /portfolios/{id}/cash-flows)                                     | 🔲 Not started |       |
+| 2.6 | Performance calculations — `performance/calculations.py` (P&L, TWR with cash_flows, daily returns, TE/IR, ENABLE_TWR flag)     | 🔲 Not started |       |
+| 2.7 | Performance router — `performance/router.py` (performance + benchmark endpoints, fetches cash_flows, free_cash_balance)        | 🔲 Not started |       |
+| 2.8 | Register cash_flows + performance routers in `main.py`; add `ENABLE_TWR` to `config.py`                                        | 🔲 Not started |       |
+| 2.9 | Performance + Cash Flows tests — `test_performance.py` (50+ tests), `test_cash_flows.py` (14+ tests)                           | 🔲 Not started |       |
+| R3  | **Round 3 — Integration, Tests & Polish**                                                                                      | 🔲 Not started |       |
+| 3.1 | Build & test — `docker compose build`, run all 232+ tests                                                                      | 🔲 Not started |       |
+| 3.2 | Lint — `ruff check src/ tests/` — zero errors                                                                                  | 🔲 Not started |       |
+| 3.3 | Verify API docs — `GET /docs` renders all 6+ Phase 2 endpoints                                                                 | 🔲 Not started |       |
+| 3.4 | Update CI — verify test paths include new test files                                                                           | 🔲 Not started |       |
+| 3.5 | Update TRACKER.md — log deviations, completion                                                                                 | 🔲 Not started |       |
+
+### Deviations from Plan
+
+| Step or Round | Planned | Actual | Rationale |
+| ------------- | ------- | ------ | --------- |
+| —             | —       | —      | —         |
+
+### Verification Checklist (Phase 2 DoD)
+
+- [ ] `GET /market/ohlcv/{ticker}` — returns OHLCV data with date range support (cache hit → DB, cache miss → yfinance → DB, tenacity retry on failure)
+- [ ] Market data freshness accounts for weekends — 3-day staleness tolerance on Monday
+- [ ] `GET /market/quote/{ticker}` — returns current quote with 60s Redis cache
+- [ ] Redis outage handled gracefully — quote endpoint returns fresh data from yfinance instead of 500
+- [ ] `GET /portfolios/{id}/cash-flows` — returns cash flow list (paginated)
+- [ ] `POST /portfolios/{id}/cash-flows` — creates deposit, validates amount > 0
+- [ ] `PATCH /portfolios/{id}/cash-flows/{cf_id}` — updates notes
+- [ ] `GET /portfolio/performance/{portfolio_id}` — returns per-holding P&L + TWR (cash-flow-based) + portfolio aggregate + free_cash_balance
+- [ ] `GET /portfolio/benchmark/{portfolio_id}` — returns alpha + tracking error + information ratio (with daily_returns_count)
+- [ ] TWR: cash-flow-based methodology, uses cash_flows for external CF amounts, transactions for holdings state only, BMV=0 guard
+- [ ] TWR: pre-existing holdings before start_date are correctly seeded from pre-start-date transactions
+- [ ] ENABLE_TWR feature flag: when False, TWR/TE/IR return null
+- [ ] Tenacity retry: exponential backoff (3 attempts, 1s/2s/4s) on yfinance failures
+- [ ] All Phase 1 tests still pass (152/152)
+- [ ] 80+ Phase 2 tests pass (25+ market + 14+ cash_flows + 50+ performance)
+- [ ] `ruff check src/ tests/` — zero errors
+- [ ] `docs/TRACKER.md` updated to reflect Phase 2 completion
+
+---
+
+## Future Phases
 
 ### Phase 3 — LSTM & ML Pipeline
 
