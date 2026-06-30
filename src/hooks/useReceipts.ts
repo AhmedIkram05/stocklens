@@ -5,12 +5,12 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { receiptService } from '../services/dataService';
+import { receiptService } from '../services/receipts';
 import { subscribe } from '../services/eventBus';
 import { formatRelativeDate } from '../utils/formatters';
 
 export type ReceiptShape = {
-  /** Unique receipt identifier (string representation of Firestore document ID) */
+  /** Unique receipt identifier (API document ID) */
   id: string;
   /** Formatted label for display (relative date like "2 days ago" or "Yesterday") */
   label: string;
@@ -20,56 +20,48 @@ export type ReceiptShape = {
   date: string;
   /** Time string (e.g., "14:30") for display purposes */
   time: string;
-  /** URI to receipt image in Firebase Storage */
+  /** URI to receipt image (S3 key or local) */
   image: string;
 };
 
 /**
- * Fetches receipts for the given user ID and subscribes to changes.
+ * Fetches receipts for the authenticated user and subscribes to changes.
  * Automatically refreshes when 'receipts-changed' event is emitted.
  * Polls every 30 seconds for freshness while mounted.
  */
-export default function useReceipts(userId?: string) {
+export default function useReceipts() {
   const [receipts, setReceipts] = useState<ReceiptShape[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
-  const fetch = useCallback(
-    async (opts: { silent?: boolean } = {}) => {
-      if (!opts.silent) setLoading(true);
-      setError(null);
-      try {
-        if (!userId) {
-          setReceipts([]);
-          return;
-        }
-        const data = await receiptService.getByUserId(userId);
-        if (!mountedRef.current) return;
-        const mapped = data.map((r: any) => ({
-          id: String(r.id),
-          label: formatRelativeDate(r.date_scanned) || 'Receipt',
-          amount: r.total_amount || 0,
-          date: r.date_scanned || '',
-          time: '',
-          image: r.image_uri || undefined,
-        }));
-        setReceipts(mapped);
-      } catch (err: any) {
-        if (mountedRef.current) setError(err?.message || String(err));
-      } finally {
-        if (mountedRef.current && !opts.silent) setLoading(false);
-      }
-    },
-    [userId],
-  );
+  const fetch = useCallback(async (opts: { silent?: boolean } = {}) => {
+    if (!opts.silent) setLoading(true);
+    setError(null);
+    try {
+      const data = await receiptService.list();
+      if (!mountedRef.current) return;
+      const mapped = data.map((r: any) => ({
+        id: String(r.id),
+        label: formatRelativeDate(r.scanned_at) || 'Receipt',
+        amount: r.total_amount || 0,
+        date: r.scanned_at || '',
+        time: '',
+        image: r.receipt_image_s3_key || undefined,
+      }));
+      setReceipts(mapped);
+    } catch (err: any) {
+      if (mountedRef.current) setError(err?.message || String(err));
+    } finally {
+      if (mountedRef.current && !opts.silent) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
     fetch().catch(() => {});
 
-    const unsub = subscribe('receipts-changed', async (payload) => {
-      if (payload?.userId && payload.userId !== userId) return;
+    const unsub = subscribe('receipts-changed', async () => {
       await fetch({ silent: true });
     });
 
@@ -83,7 +75,7 @@ export default function useReceipts(userId?: string) {
       } catch (e) {}
       clearInterval(id);
     };
-  }, [fetch, userId]);
+  }, [fetch]);
 
   return { receipts, loading, error } as const;
 }

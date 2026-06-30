@@ -8,34 +8,32 @@ import React from 'react';
 import { act, renderHook } from '@testing-library/react-native';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 
-// Mock Firebase auth module to avoid actual authentication calls during tests
-jest.mock('@/services/firebase', () => ({
-  getAuthInstance: jest.fn(async () => ({ currentUser: null })),
+// Mock new auth service and API client to avoid actual HTTP calls during tests
+jest.mock('@/services/auth', () => ({
+  authService: {
+    signIn: jest.fn(),
+    signUp: jest.fn(),
+    signOut: jest.fn(),
+    getProfile: jest.fn(),
+    isAuthenticated: jest.fn(),
+  },
 }));
 
-jest.mock('firebase/auth', () => {
-  const { act } = require('@testing-library/react-native');
-  return {
-    onAuthStateChanged: jest.fn((_auth, callback) => {
-      act(() => {
-        callback(null);
-      });
-      return jest.fn();
-    }),
-    signOut: jest.fn(async () => {}),
-    signInWithEmailAndPassword: jest.fn(async () => ({ user: { uid: 'uid-1' } })),
-  };
-});
-
-jest.mock('@/services/dataService', () => {
-  const { createUserProfile } = require('../fixtures');
-  return {
-    userService: {
-      getByUid: jest.fn(async () => createUserProfile({ uid: 'uid-1', email: 'demo@example.com' })),
-      upsert: jest.fn(async () => 1),
-    },
-  };
-});
+jest.mock('@/services/api', () => ({
+  apiService: {
+    getAccessToken: jest.fn(),
+    getRefreshToken: jest.fn(),
+    setTokens: jest.fn(),
+    clearTokens: jest.fn(),
+    get: jest.fn(),
+    post: jest.fn(),
+    put: jest.fn(),
+    delete: jest.fn(),
+    upload: jest.fn(),
+  },
+  ApiError: Error,
+  ApiAuthError: Error,
+}));
 
 jest.mock('@/hooks/useDeviceAuth', () => ({
   isDeviceAuthAvailable: jest.fn(async () => true),
@@ -60,6 +58,28 @@ describe('AuthContext', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     jest.clearAllMocks();
+  });
+
+  // Mock return values
+  beforeEach(() => {
+    const { authService } = require('@/services/auth');
+    const { apiService } = require('@/services/api');
+    apiService.getAccessToken.mockResolvedValue(null);
+    authService.signIn.mockResolvedValue({
+      user: {
+        id: 'test-id-1',
+        email: 'demo@example.com',
+        display_name: 'TestUser',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      tokens: {
+        access_token: 'test-at',
+        refresh_token: 'test-rt',
+        expires_in: 3600,
+      },
+    });
+    authService.signOut.mockResolvedValue(undefined);
   });
 
   // Cleanup: Restore real timers after each test
@@ -127,7 +147,7 @@ describe('AuthContext', () => {
    * Validates that users can unlock app by entering email/password.
    * Fallback mechanism when device authentication fails or isn't available.
    */
-  it('unlockWithCredentials verifies credentials via Firebase', async () => {
+  it('unlockWithCredentials verifies credentials via backend API', async () => {
     const { result } = renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });

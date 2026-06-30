@@ -7,7 +7,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import Constants from 'expo-constants';
-import { receiptService } from '@/services/dataService';
+import { receiptService } from '@/services/receipts';
 import { performOcrWithFallback } from '@/services/ocrService';
 import { parseAmountFromOcrText, validateAmount } from '@/services/receiptParser';
 import { emit } from '@/services/eventBus';
@@ -15,16 +15,15 @@ import { formatCurrencyGBP } from '@/utils/formatters';
 import showConfirmationPrompt from '@/components/ConfirmationPrompt';
 
 export type PendingReceiptState = {
-  draftId: number | null;
+  draftId: string | null;
   ocrText: string | null;
   photoUri: string | null;
   amount: number | null;
 };
 
-/** Options required by `useReceiptCapture` (navigation, user UID, callbacks). */
+/** Options required by `useReceiptCapture` (navigation and callbacks). */
 type UseReceiptCaptureOptions = {
   navigation: any;
-  userUid?: string;
   onResetCamera?: () => void;
 };
 
@@ -32,20 +31,16 @@ type UseReceiptCaptureOptions = {
 type ProcessReceiptOptions = {
   photoUri?: string | null;
   photoBase64?: string | null;
-  draftIdArg?: number | null;
+  draftIdArg?: string | null;
   onSuggestion?: (amount: number | null, ocrText: string | null) => void;
   skipOverlay?: boolean;
 };
 
 /** Coordinates the photo → OCR → confirmation → save pipeline. */
-export const useReceiptCapture = ({
-  navigation,
-  userUid,
-  onResetCamera,
-}: UseReceiptCaptureOptions) => {
+export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptureOptions) => {
   const [processing, setProcessing] = useState(false);
   const [ocrRaw, setOcrRaw] = useState<string | null>(null);
-  const [draftReceiptId, setDraftReceiptId] = useState<number | null>(null);
+  const [draftReceiptId, setDraftReceiptId] = useState<string | null>(null);
   const [manualModalVisible, setManualModalVisible] = useState(false);
   const [manualEntryText, setManualEntryText] = useState('');
   const pendingRef = useRef<PendingReceiptState>({
@@ -65,11 +60,11 @@ export const useReceiptCapture = ({
 
   /** Delete a draft receipt if it should not persist (rescan/cancel). */
   const discardDraft = useCallback(
-    async (draftId?: number | null) => {
+    async (draftId?: string | null) => {
       const id = draftId ?? draftReceiptId;
       if (!id) return;
       try {
-        await receiptService.delete(Number(id));
+        await receiptService.delete(id);
         try {
           emit('receipts-changed', { id });
         } catch (e) {}
@@ -82,23 +77,22 @@ export const useReceiptCapture = ({
   const saveAndNavigate = useCallback(
     async (
       amount: number,
-      draftId: number | null,
+      draftId: string | null,
       ocrText: string | null,
       photoUri: string | null,
     ) => {
       try {
         if (draftId) {
-          await receiptService.update(Number(draftId), {
+          await receiptService.update(draftId, {
             total_amount: amount,
-            ocr_data: ocrText || '',
-            synced: 0,
+            ocr_raw_text: ocrText || '',
           });
           try {
             emit('receipts-changed', { id: draftId });
           } catch (e) {}
           resetWorkflowState();
           navigation.navigate('ReceiptDetails' as any, {
-            receiptId: String(draftId),
+            receiptId: draftId,
             totalAmount: amount,
             date: new Date().toISOString(),
             image: photoUri ?? undefined,
@@ -106,19 +100,17 @@ export const useReceiptCapture = ({
           onResetCamera?.();
         } else {
           const created = await receiptService.create({
-            user_id: userUid || 'anon',
-            image_uri: photoUri ?? undefined,
+            receipt_image_s3_key: photoUri ?? undefined,
             total_amount: amount,
-            ocr_data: ocrText || '',
-            synced: 0,
+            ocr_raw_text: ocrText || '',
           });
-          if (created && Number(created) > 0) {
+          if (created && created.id) {
             try {
-              emit('receipts-changed', { id: created });
+              emit('receipts-changed', { id: created.id });
             } catch (e) {}
             resetWorkflowState();
             navigation.navigate('ReceiptDetails' as any, {
-              receiptId: String(created),
+              receiptId: created.id,
               totalAmount: amount,
               date: new Date().toISOString(),
               image: photoUri ?? undefined,
@@ -130,7 +122,7 @@ export const useReceiptCapture = ({
         Alert.alert('Save error', e?.message || 'Failed to save receipt');
       }
     },
-    [navigation, onResetCamera, resetWorkflowState, userUid],
+    [navigation, onResetCamera, resetWorkflowState],
   );
 
   /** Prompt the user to enter an amount manually (platform modal). */

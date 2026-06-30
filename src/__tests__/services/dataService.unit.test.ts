@@ -1,143 +1,131 @@
-jest.mock('@/services/database', () => ({
-  databaseService: {
-    executeNonQuery: jest.fn(),
-    executeQuery: jest.fn(),
-  },
-}));
-
-jest.mock('@/services/eventBus', () => ({
-  emit: jest.fn(),
-}));
-
-// Mock crypto helpers so encryption is deterministic in tests
-jest.mock('@/utils/crypto', () => ({
-  isEncryptedPayload: jest.fn((s: any) => typeof s === 'string' && s.startsWith('enc:')),
-  encryptString: jest.fn(async (s: string) => `enc:${s}`),
-  decryptString: jest.fn(async (s: string) =>
-    typeof s === 'string' && s.startsWith('enc:') ? s.slice(4) : s,
-  ),
-}));
-
-// Mock file-level encryption to avoid touching filesystem
-jest.mock('@/utils/fileCrypto', () => ({
-  encryptImageFile: jest.fn(async (uri: string) => `enc-${uri}`),
-  decryptImageToTemp: jest.fn(async (uri: string) =>
-    typeof uri === 'string' && uri.startsWith('enc-') ? uri.replace('enc-', 'tmp-') : uri,
-  ),
-}));
-
-// Mock key manager to return a stable key
-jest.mock('@/services/keyManager', () => ({
-  getOrCreateKey: jest.fn(async () => 'test-key'),
-}));
-
-import { databaseService } from '@/services/database';
-import { emit } from '@/services/eventBus';
-import { receiptService, settingsService, userService } from '@/services/dataService';
-import { createReceipt, createUserProfile } from '../fixtures';
-
 /**
- * Tests for `dataService` (receipt/user/settings persistence).
- * Exercises receipt CRUD, settings upsert, user upsert with UNIQUE handling,
- * and event emissions on data changes.
+ * Tests for the API-based receipt service (`@/services/receipts`).
+ *
+ * Exercises create, list, getById, update, delete, deleteAll with mocked HTTP.
+ * The service delegates to `apiService` — we mock fetch via jest-fetch-mock.
  */
 
-const mockedDb = databaseService as jest.Mocked<typeof databaseService>;
-const mockedEmit = emit as jest.MockedFunction<typeof emit>;
+import { receiptService } from '@/services/receipts';
 
-describe('receiptService', () => {
+const fetchMock = require('jest-fetch-mock');
+
+describe('receiptService (API)', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    fetchMock.resetMocks();
   });
 
-  it('creates receipts with default values and returns insert id', async () => {
-    mockedDb.executeNonQuery.mockResolvedValueOnce(42);
-
-    const receiptData = createReceipt({
-      user_id: 'uid-123',
-      image_uri: 'file:///foo.jpg',
+  it('create sends POST and returns created receipt', async () => {
+    const created = {
+      id: '1',
       total_amount: 12.5,
-      ocr_data: '£12.50',
+      ocr_raw_text: 'Total: $12.50',
+    };
+    fetchMock.mockResponseOnce(JSON.stringify(created), { status: 201 });
+
+    const result = await receiptService.create({
+      total_amount: 12.5,
+      ocr_raw_text: 'Total: $12.50',
     });
 
-    const id = await receiptService.create({
-      user_id: receiptData.user_id,
-      image_uri: receiptData.image_uri,
-      total_amount: receiptData.total_amount,
-      ocr_data: receiptData.ocr_data,
+    expect(result).toMatchObject(created);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/receipts$/),
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"total_amount"'),
+      }),
+    );
+  });
+
+  it('list sends GET and returns items array', async () => {
+    const items = [
+      { id: '1', total_amount: 10 },
+      { id: '2', total_amount: 20 },
+    ];
+    fetchMock.mockResponseOnce(JSON.stringify({ items, total: 2, limit: 50, offset: 0 }), {
+      status: 200,
     });
 
-    expect(id).toBe(42);
-    expect(mockedDb.executeNonQuery).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO receipts'),
-      expect.arrayContaining(['uid-123']),
+    const result = await receiptService.list();
+
+    expect(result).toHaveLength(2);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/receipts\?limit=50&offset=0/),
+      expect.objectContaining({ method: 'GET' }),
     );
   });
 
-  it('updates only provided fields', async () => {
-    await receiptService.update(7, { total_amount: 99.9 });
-    expect(mockedDb.executeNonQuery).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE receipts SET total_amount = ?'),
-      ['enc:99.9', 7],
+  it('getById returns receipt when found', async () => {
+    const receipt = { id: '42', total_amount: 99 };
+    fetchMock.mockResponseOnce(JSON.stringify(receipt), { status: 200 });
+
+    const result = await receiptService.getById('42');
+
+    expect(result).toMatchObject(receipt);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/receipts\/42$/),
+      expect.any(Object),
     );
   });
 
-  it('deletes all receipts for a user and emits event', async () => {
-    await receiptService.deleteAll('uid-abc');
-    expect(mockedDb.executeNonQuery).toHaveBeenCalledWith(
-      'DELETE FROM receipts WHERE user_id = ?',
-      ['uid-abc'],
-    );
-    expect(mockedEmit).toHaveBeenCalledWith('receipts-changed', { userId: 'uid-abc' });
-  });
-});
+  it('getById returns null on 404', async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ detail: 'Not found' }), { status: 404 });
 
-describe('settingsService', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
+    const result = await receiptService.getById('999');
+
+    expect(result).toBeNull();
   });
 
-  it('upserts settings with defaults when fields missing', async () => {
-    await settingsService.upsert({ user_id: 'uid-settings' } as any);
-    expect(mockedDb.executeNonQuery).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT OR REPLACE INTO user_settings'),
-      ['uid-settings', 'enc:light', 0],
+  it('update sends PUT with partial data', async () => {
+    fetchMock.mockResponseOnce('', { status: 204 });
+
+    await receiptService.update('7', { total_amount: 88.8 });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/receipts\/7$/),
+      expect.objectContaining({ method: 'PUT' }),
     );
   });
-});
 
-describe('userService', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
+  it('delete sends DELETE', async () => {
+    fetchMock.mockResponseOnce('', { status: 204 });
 
-  it('upserts user profiles via executeNonQuery', async () => {
-    mockedDb.executeNonQuery.mockResolvedValueOnce(1);
+    await receiptService.delete('7');
 
-    const user = createUserProfile({ uid: 'uid', first_name: 'Alice', email: 'alice@example.com' });
-
-    const result = await userService.upsert(user.uid, user.first_name!, user.email!);
-
-    expect(result).toBe(1);
-    expect(mockedDb.executeNonQuery).toHaveBeenCalledTimes(1);
-    expect(mockedDb.executeNonQuery.mock.calls[0][0]).toContain('INSERT INTO users');
-  });
-
-  it('handles UNIQUE email conflicts by updating existing rows', async () => {
-    mockedDb.executeNonQuery.mockRejectedValueOnce(
-      new Error('UNIQUE constraint failed: users.email'),
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/receipts\/7$/),
+      expect.objectContaining({ method: 'DELETE' }),
     );
-    mockedDb.executeNonQuery.mockResolvedValueOnce(2);
+  });
 
-    const user = createUserProfile({
-      uid: 'uid-new',
-      first_name: 'Bob',
-      email: 'duplicate@example.com',
-    });
+  it('deleteAll fetches all then deletes each', async () => {
+    const items = [
+      { id: '1', total_amount: 10 },
+      { id: '2', total_amount: 20 },
+    ];
+    fetchMock.mockResponses(
+      [JSON.stringify({ items, total: 2, limit: 1000, offset: 0 }), { status: 200 }],
+      ['', { status: 204 }],
+      ['', { status: 204 }],
+    );
 
-    const result = await userService.upsert(user.uid, user.first_name!, user.email!);
+    await receiptService.deleteAll();
 
-    expect(result).toBe(2);
-    expect(mockedDb.executeNonQuery.mock.calls[1][0]).toContain('UPDATE users');
+    // Should have fetched list and then deleted each
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      expect.stringMatching(/\/receipts\?limit=1000&offset=0/),
+      expect.any(Object),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      expect.stringMatching(/\/receipts\/1$/),
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      expect.stringMatching(/\/receipts\/2$/),
+      expect.objectContaining({ method: 'DELETE' }),
+    );
   });
 });

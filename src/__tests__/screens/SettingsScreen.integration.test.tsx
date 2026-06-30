@@ -10,7 +10,7 @@ import { act, fireEvent, waitFor } from '@testing-library/react-native';
 import SettingsScreen from '@/screens/SettingsScreen';
 import { renderWithProviders } from '../utils';
 import * as deviceAuth from '@/hooks/useDeviceAuth';
-import { receiptService } from '@/services/dataService';
+import { receiptService } from '@/services/receipts';
 
 jest.mock('@/hooks/useDeviceAuth', () => ({
   isDeviceAuthAvailable: jest.fn(),
@@ -20,7 +20,7 @@ jest.mock('@/hooks/useDeviceAuth', () => ({
   clearDeviceCredentials: jest.fn(),
 }));
 
-jest.mock('@/services/dataService', () => ({
+jest.mock('@/services/receipts', () => ({
   receiptService: {
     deleteAll: jest.fn(),
   },
@@ -128,6 +128,7 @@ describe('SettingsScreen', () => {
       await destructive?.onPress?.();
     });
 
-    expect(mockedReceiptService.deleteAll).toHaveBeenCalledWith('user-42');
+    // deleteAll now takes no args (JWT-based on backend)
+    expect(mockedReceiptService.deleteAll).toHaveBeenCalledWith();
   });
 });

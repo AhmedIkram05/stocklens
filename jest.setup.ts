@@ -12,16 +12,7 @@ const fetchMock = require('jest-fetch-mock');
 
 fetchMock.enableMocks();
 
-process.env.EXPO_PUBLIC_API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? 'test-api-key';
-process.env.EXPO_PUBLIC_AUTH_DOMAIN =
-  process.env.EXPO_PUBLIC_AUTH_DOMAIN ?? 'test-auth.firebaseapp.com';
-process.env.EXPO_PUBLIC_PROJECT_ID = process.env.EXPO_PUBLIC_PROJECT_ID ?? 'test-project';
-process.env.EXPO_PUBLIC_STORAGE_BUCKET =
-  process.env.EXPO_PUBLIC_STORAGE_BUCKET ?? 'test.appspot.com';
-process.env.EXPO_PUBLIC_MESSAGING_SENDER_ID =
-  process.env.EXPO_PUBLIC_MESSAGING_SENDER_ID ?? '1234567890';
-process.env.EXPO_PUBLIC_APP_ID = process.env.EXPO_PUBLIC_APP_ID ?? '1:1234567890:web:abcdef123456';
-process.env.EXPO_PUBLIC_MEASUREMENT_ID = process.env.EXPO_PUBLIC_MEASUREMENT_ID ?? 'G-TEST123';
+process.env.EXPO_PUBLIC_API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 jest.mock('expo-constants', () => ({
   manifest: { extra: {} },

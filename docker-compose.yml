@@ -1,0 +1,105 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: stocklens
+      POSTGRES_PASSWORD: stocklens
+      POSTGRES_DB: stocklens
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U stocklens']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - pgdata:/var/lib/postgresql
+    restart: unless-stopped
+
+  postgres_test:
+    image: postgres:18-alpine
+    ports:
+      - '5433:5432'
+    environment:
+      POSTGRES_USER: stocklens
+      POSTGRES_PASSWORD: stocklens
+      POSTGRES_DB: stocklens_test
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U stocklens']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    profiles:
+      - test
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.8-alpine
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - '8000:8000'
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://stocklens:stocklens@postgres:5432/stocklens
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: dev-jwt-secret-key-change-in-production
+      ENVIRONMENT: development
+      STRUCTLOG_LOG_LEVEL: DEBUG
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8000/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - ./backend/src:/app/src
+    restart: unless-stopped
+
+  pytest:
+    build:
+      context: ./backend
+    profiles:
+      - test
+    environment:
+      DATABASE_URL: postgresql+asyncpg://stocklens:stocklens@postgres_test:5432/stocklens_test
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: test-jwt-secret-key
+      ENVIRONMENT: test
+      STRUCTLOG_LOG_LEVEL: WARNING
+      RATE_LIMIT_LOGIN: 1000/second
+      RATE_LIMIT_DEFAULT: 1000/second
+    depends_on:
+      postgres:
+        condition: service_healthy
+      postgres_test:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/tests:/app/tests
+      - ./backend/alembic:/app/alembic
+    command: >
+      sh -c "UV_CACHE_DIR=/tmp/uv-cache uv sync --extra dev && pytest -v --cov=src --cov-report=term-missing --cov-report=xml --tb=short"
+
+volumes:
+  pgdata:

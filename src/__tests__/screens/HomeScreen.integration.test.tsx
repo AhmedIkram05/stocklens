@@ -14,6 +14,12 @@ import { createUserProfile } from '../fixtures';
 
 jest.mock('@/hooks/useReceipts', () => jest.fn());
 
+// Mock useDecryptedImage to return synchronously (avoids act() warning from async decryption)
+jest.mock('@/hooks/useDecryptedImage', () => ({
+  __esModule: true,
+  default: (src: string | null | undefined) => src ?? undefined,
+}));
+
 jest.mock('@react-navigation/native', () => {
   const actual = jest.requireActual('@react-navigation/native');
   return {

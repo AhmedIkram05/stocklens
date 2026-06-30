@@ -12,13 +12,13 @@ import SettingRow from '../components/SettingRow';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import * as deviceAuth from '../hooks/useDeviceAuth';
-import { receiptService } from '../services/dataService';
+import { receiptService } from '../services/receipts';
 import { spacing, typography } from '../styles/theme';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 
 /** Settings screen. */
 export default function SettingsScreen() {
-  const { signOutUser, userProfile } = useAuth();
+  const { signOutUser } = useAuth();
   const { setMode, isDark, theme } = useTheme();
   const [deviceAuthEnabled, setDeviceAuthEnabled] = useState(false);
   const { isSmallPhone, isTablet } = useBreakpoint();
@@ -133,8 +133,7 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const uid = userProfile?.uid;
-              await receiptService.deleteAll(uid);
+              await receiptService.deleteAll();
               Alert.alert(
                 'Data cleared',
                 'All scanned receipts stored on this device have been permanently deleted.',

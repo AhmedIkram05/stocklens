@@ -14,6 +14,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import PageHeader from '../components/PageHeader';
 import Logo from '../components/Logo';
+import { authService } from '../services/auth';
 import { brandColors } from '../contexts/ThemeContext';
 import { radii, spacing, typography } from '../styles/theme';
 import { useTheme } from '../contexts/ThemeContext';
@@ -43,15 +44,7 @@ export default function LockScreen() {
         onPress: async () => {
           setForgotDisabled(true);
           try {
-            const mod = await import('../services/authService');
-            if (
-              !mod ||
-              !mod.authService ||
-              typeof mod.authService.sendPasswordReset !== 'function'
-            ) {
-              throw new Error('authService.sendPasswordReset is not available');
-            }
-            await mod.authService.sendPasswordReset(accountEmail);
+            await authService.forgotPassword(accountEmail);
             Alert.alert(
               'Password Reset',
               "If an account exists for that email, we'll send a reset link. Check your inbox and spam folder.",
@@ -59,7 +52,7 @@ export default function LockScreen() {
           } catch (err: any) {
             Alert.alert(
               'Error',
-              `Could not send reset email. ${err?.code || ''} ${err?.message || 'Try again later.'}`,
+              `Could not send reset email. ${err?.message || 'Try again later.'}`,
             );
           } finally {
             setTimeout(() => setForgotDisabled(false), 30000);

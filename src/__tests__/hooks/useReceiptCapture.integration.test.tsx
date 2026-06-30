@@ -7,12 +7,12 @@
 import { act, renderHook } from '@testing-library/react-native';
 import { Alert, Platform } from 'react-native';
 import { useReceiptCapture } from '@/hooks/useReceiptCapture';
-import { receiptService } from '@/services/dataService';
+import { receiptService } from '@/services/receipts';
 import { performOcrWithFallback } from '@/services/ocrService';
 import { parseAmountFromOcrText, validateAmount } from '@/services/receiptParser';
 import showConfirmationPrompt from '@/components/ConfirmationPrompt';
 
-jest.mock('@/services/dataService', () => ({
+jest.mock('@/services/receipts', () => ({
   receiptService: {
     create: jest.fn(),
     update: jest.fn(),
@@ -48,25 +48,18 @@ const createHook = () =>
   renderHook(() =>
     useReceiptCapture({
       navigation: { navigate: jest.fn() },
-      userUid: 'user-1',
       onResetCamera: jest.fn(),
     }),
   );
 
 describe('useReceiptCapture', () => {
   beforeEach(() => {
-    // Reset mocks and set up sensible defaults for OCR and parsing
     jest.clearAllMocks();
     alertSpy.mockClear();
-    // Ensure tests behave as if OCR API key exists
     Constants.manifest.extra = { OCR_SPACE_API_KEY: 'test-key' };
-    // Mock OCR returning a simple total
     mockedPerformOcr.mockResolvedValue({ text: 'Total 12.34' } as any);
-    // Mock the parser to return a numeric amount
     mockedParseAmount.mockReturnValue(12.34);
-    // By default consider parsed amounts valid
     mockedValidateAmount.mockReturnValue(true);
-    // Confirmation prompt is replaced with a jest fn to capture options
     mockedPrompt.mockImplementation(() => {});
   });
 
@@ -78,19 +71,19 @@ describe('useReceiptCapture', () => {
   it('shows confirmation prompt and saves when OCR succeeds', async () => {
     const navigation = { navigate: jest.fn() };
     const onResetCamera = jest.fn();
-    const { result } = renderHook(() =>
-      useReceiptCapture({ navigation, userUid: 'user-1', onResetCamera }),
-    );
+    const { result } = renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
+
+    const draftId = '42';
 
     await act(async () => {
       await result.current.actions.processReceipt({
         photoUri: 'file://receipt.jpg',
         photoBase64: 'abc',
-        draftIdArg: 42,
+        draftIdArg: draftId,
       });
     });
 
-    // Verify confirmation prompt was displayed with formatted amount
+    // Verify confirmation prompt was displayed
     expect(mockedPrompt).toHaveBeenCalledWith('£12.34', expect.any(Object));
     const options = mockedPrompt.mock.calls[0][1];
 
@@ -100,7 +93,7 @@ describe('useReceiptCapture', () => {
     });
 
     expect(mockedReceiptService.update).toHaveBeenCalledWith(
-      42,
+      draftId,
       expect.objectContaining({ total_amount: 12.34 }),
     );
     expect(navigation.navigate).toHaveBeenCalledWith('ReceiptDetails', expect.any(Object));
