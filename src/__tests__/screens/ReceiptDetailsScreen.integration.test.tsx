@@ -10,16 +10,15 @@ import { act, fireEvent, waitFor } from '@testing-library/react-native';
 
 import ReceiptDetailsScreen from '@/screens/ReceiptDetailsScreen';
 import { renderWithProviders } from '../utils';
-import { receiptService } from '@/services/dataService';
+import { receiptService } from '@/services/receipts';
 import { emit, subscribe } from '@/services/eventBus';
 import { getHistoricalCAGRFromToday } from '@/services/projectionService';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
-jest.mock('@/services/dataService', () => ({
+jest.mock('@/services/receipts', () => ({
   receiptService: {
     delete: jest.fn(),
   },
-  PREFETCH_TICKERS: ['NVDA', 'AAPL', 'MSFT', 'TSLA', 'NKE', 'AMZN', 'GOOGL', 'META', 'JPM', 'UNH'],
 }));
 
 jest.mock('@/services/eventBus', () => ({
@@ -53,7 +52,7 @@ let navigateSpy: jest.Mock;
 let goBackSpy: jest.Mock;
 
 const defaultRouteParams = {
-  receiptId: 44,
+  receiptId: '44',
   totalAmount: 250,
   date: '2024-02-10T12:00:00.000Z',
   image: undefined,
@@ -121,11 +120,9 @@ describe('ReceiptDetailsScreen', () => {
       await destructiveButton?.onPress?.();
     });
 
-    expect(mockedReceiptService.delete).toHaveBeenCalledWith(44);
-    expect(mockedEmit).toHaveBeenCalledWith('receipts-changed', { id: 44, action: 'deleted' });
+    expect(mockedReceiptService.delete).toHaveBeenCalledWith('44');
+    expect(mockedEmit).toHaveBeenCalledWith('receipts-changed', { id: '44', action: 'deleted' });
     expect(navigateSpy).toHaveBeenCalledWith('MainTabs');
-
-    // success toast
     expect(alertSpy).toHaveBeenCalledWith('Deleted', 'Receipt deleted');
   });
 });
