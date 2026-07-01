@@ -9,6 +9,8 @@ Endpoints:
 
 from __future__ import annotations
 
+from uuid import UUID
+
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
@@ -17,7 +19,6 @@ from src.auth.schemas import UserInDB
 from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
-from uuid import UUID
 from src.transactions.schemas import (
     TransactionCreate,
     TransactionListResponse,
@@ -77,14 +78,11 @@ async def _fetch_transactions_from_db(
     return [dict(r) for r in rows]
 
 
-async def _count_transactions_in_portfolio(
-    portfolio_id: str, ticker: str | None = None
-) -> int:
+async def _count_transactions_in_portfolio(portfolio_id: str, ticker: str | None = None) -> int:
     """Return total transaction count for a portfolio, optionally filtered by ticker."""
     if ticker:
         query = (
-            "SELECT COUNT(*) as cnt FROM transactions "
-            "WHERE portfolio_id = $1::uuid AND ticker = $2"
+            "SELECT COUNT(*) as cnt FROM transactions WHERE portfolio_id = $1::uuid AND ticker = $2"
         )
         params = (portfolio_id, ticker)
     else:

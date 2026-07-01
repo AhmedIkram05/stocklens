@@ -11,6 +11,8 @@ Endpoints:
 
 from __future__ import annotations
 
+from uuid import UUID
+
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
@@ -19,7 +21,6 @@ from src.auth.schemas import UserInDB
 from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
-from uuid import UUID
 from src.portfolios.schemas import (
     PortfolioCreate,
     PortfolioListResponse,

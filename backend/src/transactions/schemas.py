@@ -1,6 +1,7 @@
 """
 Pydantic schemas for transactions CRUD.
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime

@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timezone
+from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
@@ -23,7 +24,6 @@ from src.categories.merchant_map import resolve_category
 from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
-from uuid import UUID
 from src.receipts.models import (
     ExtractedItem,
     ReceiptCreate,
@@ -41,12 +41,14 @@ router = APIRouter()
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-ALLOWED_CONTENT_TYPES: frozenset[str] = frozenset({
-    "image/jpeg",
-    "image/png",
-    "image/heic",
-    "image/heif",
-})
+ALLOWED_CONTENT_TYPES: frozenset[str] = frozenset(
+    {
+        "image/jpeg",
+        "image/png",
+        "image/heic",
+        "image/heif",
+    }
+)
 
 MAX_FILE_SIZE: int = 10 * 1024 * 1024  # 10 MB
 
@@ -137,8 +139,7 @@ async def scan_receipt(
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=(
-                    "Could not extract the total amount from the receipt. "
-                    "Please enter it manually."
+                    "Could not extract the total amount from the receipt. Please enter it manually."
                 ),
             )
 
@@ -221,9 +222,7 @@ async def scan_receipt(
 # ── Receipt CRUD helpers ──────────────────────────────────────────────────
 
 
-async def _fetch_receipts_for_user(
-    user_id: str, limit: int, offset: int
-) -> list[dict]:
+async def _fetch_receipts_for_user(user_id: str, limit: int, offset: int) -> list[dict]:
     """Return receipts for a user with pagination."""
     async with connection_ctx() as conn:
         rows = await conn.fetch(
@@ -366,9 +365,7 @@ async def list_receipts(
     rows = await _fetch_receipts_for_user(current_user.id, limit, offset)
     receipts = [_row_to_receipt_response(r) for r in rows]
 
-    return ReceiptListResponse(
-        receipts=receipts, total=total, limit=limit, offset=offset
-    )
+    return ReceiptListResponse(receipts=receipts, total=total, limit=limit, offset=offset)
 
 
 @router.get("/{receipt_id}", response_model=ReceiptResponse)
