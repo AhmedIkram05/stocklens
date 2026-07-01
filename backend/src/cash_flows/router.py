@@ -139,6 +139,11 @@ async def update_cash_flow_endpoint(
     existing = await get_cash_flow(str(cash_flow_id))
     if existing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cash flow not found")
+    if str(existing["portfolio_id"]) != str(portfolio_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cash flow not found for this portfolio",
+        )
 
     updated = await update_cash_flow_notes(str(cash_flow_id), body.notes)
     if not updated:

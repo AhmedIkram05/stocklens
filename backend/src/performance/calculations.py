@@ -7,7 +7,7 @@ No DB access — all data is passed in as arguments for testability.
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -113,7 +113,7 @@ def compute_portfolio_performance(
     if end_date is None:
         end_date = date.today()
     if start_date is None:
-        start_date = end_date.replace(year=end_date.year - 1)
+        start_date = end_date - timedelta(days=365)
 
     # ── 1. Get current prices ──
     latest_prices: dict[str, Decimal] = {}
@@ -437,7 +437,7 @@ def compute_benchmark_comparison(
             tracking_error = variance.sqrt()
 
             if tracking_error > 0:
-                annualised_excess = mean_excess * Decimal(252).sqrt()
+                annualised_excess = mean_excess * Decimal(252)
                 annualised_te = tracking_error * Decimal(252).sqrt()
                 information_ratio = annualised_excess / annualised_te
 

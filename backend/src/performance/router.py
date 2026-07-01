@@ -9,7 +9,7 @@ Endpoints:
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
@@ -166,7 +166,7 @@ async def get_portfolio_performance(
     if end_date is None:
         end_date = date.today()
     if start_date is None:
-        start_date = end_date.replace(year=end_date.year - 1)
+        start_date = end_date - timedelta(days=365)
 
     holdings = await _get_holdings(str(portfolio_id))
     if not holdings:
@@ -230,7 +230,7 @@ async def get_benchmark_comparison(
     if end_date is None:
         end_date = date.today()
     if start_date is None:
-        start_date = end_date.replace(year=end_date.year - 1)
+        start_date = end_date - timedelta(days=365)
 
     benchmark = benchmark.upper()
     if benchmark not in ("SPY", "QQQ"):
