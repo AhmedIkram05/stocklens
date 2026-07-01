@@ -5,18 +5,17 @@ Pydantic schemas for holdings CRUD.
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.types import DecimalAsFloat
+
 
 class HoldingBase(BaseModel):
-    model_config = ConfigDict(json_encoders={Decimal: float})
-
     ticker: str = Field(..., min_length=1, max_length=10)
-    shares: Decimal = Field(..., gt=0)
-    average_cost_basis: Decimal = Field(..., ge=0)
+    shares: DecimalAsFloat = Field(..., gt=0)
+    average_cost_basis: DecimalAsFloat = Field(..., ge=0)
 
     @field_validator("ticker")
     @classmethod
@@ -29,10 +28,8 @@ class HoldingCreate(HoldingBase):
 
 
 class HoldingUpdate(BaseModel):
-    model_config = ConfigDict(json_encoders={Decimal: float})
-
-    shares: Optional[Decimal] = Field(None, gt=0)
-    average_cost_basis: Optional[Decimal] = Field(None, ge=0)
+    shares: Optional[DecimalAsFloat] = Field(None, gt=0)
+    average_cost_basis: Optional[DecimalAsFloat] = Field(None, ge=0)
 
 
 class HoldingInDB(HoldingBase):
