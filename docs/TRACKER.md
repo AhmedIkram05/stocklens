@@ -37,7 +37,6 @@ When updating this file, agents must follow these rules:
 ## Phase 1 — Backend Foundation + Auth + OCR Migration
 
 **Goal:** Eliminate Firebase and Node.js. FastAPI + PostgreSQL is the single backend.
-**Cutover:** Big-bang (zero users, no risk).
 **Target tests:** 152 pytest (async) + existing 78 Jest (preserved).
 
 ### Step Tracker
@@ -106,51 +105,50 @@ When updating this file, agents must follow these rules:
 ## Phase 2 — Market Data & Portfolio Analytics
 
 **Goal:** yfinance integration, OHLCV/quote endpoints, per-holding P&L, TWR (cash-flow-based), benchmark comparison (TE/IR), and cash_flows module for receipt-backed portfolio deposits.
-**Cutover:** Additive — Phase 1 endpoints are unchanged, Phase 2 is new capability.
-**Target tests:** 80+ new tests across `market/`, `cash_flows/`, and `performance/` modules.
+**Target tests:** 80+ new tests across `market/`, `cash_flows/`, and `performance/` modules (38/80+ done — Round 1 complete).
 
 ### Step Tracker
 
-| #   | Step                                                                                                                           | Status         | Notes |
-| --- | ------------------------------------------------------------------------------------------------------------------------------ | -------------- | ----- |
-| R1  | **Round 1 — Market Data Provider**                                                                                             | 🔲 Not started |       |
-| 1.1 | Add yfinance + tenacity deps to `pyproject.toml`                                                                               | 🔲 Not started |       |
-| 1.2 | Market module skeleton — `market/__init__.py`                                                                                  | 🔲 Not started |       |
-| 1.3 | Market schemas — `market/schemas.py` (OHLCVData, QuoteResponse, OHLCVResponse)                                                 | 🔲 Not started |       |
-| 1.4 | OHLCV repository — `market/repository.py` (get_ohlcv, upsert_ohlcv via executemany)                                            | 🔲 Not started |       |
-| 1.5 | yfinance provider — `market/provider.py` (to_thread, tenacity retry, NaN handling)                                             | 🔲 Not started |       |
-| 1.6 | Market router — `market/router.py` (OHLCV + quote endpoints, Redis 60s cache)                                                  | 🔲 Not started |       |
-| 1.7 | Register market router in `main.py`                                                                                            | 🔲 Not started |       |
-| 1.8 | Market tests — `test_market.py` (25+ tests, yfinance mocked)                                                                   | 🔲 Not started |       |
-| R2  | **Round 2 — Cash Flows + Portfolio Analytics**                                                                                 | 🔲 Not started |       |
-| 2.1 | Performance schemas — `performance/schemas.py` (HoldingPerformance, PortfolioPerformanceResponse, BenchmarkComparisonResponse) | 🔲 Not started |       |
-| 2.2 | Cash flows migration — `0003_add_cash_flows.py` (cash_flows table, index)                                                      | 🔲 Not started |       |
-| 2.3 | Cash flows schemas — `cash_flows/schemas.py` (CashFlowCreate, CashFlowResponse)                                                | 🔲 Not started |       |
-| 2.4 | Cash flows repository — `cash_flows/repository.py` (create, list, sum, PATCH notes)                                            | 🔲 Not started |       |
-| 2.5 | Cash flows router — `cash_flows/router.py` (POST/GET/PATCH at /portfolios/{id}/cash-flows)                                     | 🔲 Not started |       |
-| 2.6 | Performance calculations — `performance/calculations.py` (P&L, TWR with cash_flows, daily returns, TE/IR, ENABLE_TWR flag)     | 🔲 Not started |       |
-| 2.7 | Performance router — `performance/router.py` (performance + benchmark endpoints, fetches cash_flows, free_cash_balance)        | 🔲 Not started |       |
-| 2.8 | Register cash_flows + performance routers in `main.py`; add `ENABLE_TWR` to `config.py`                                        | 🔲 Not started |       |
-| 2.9 | Performance + Cash Flows tests — `test_performance.py` (50+ tests), `test_cash_flows.py` (14+ tests)                           | 🔲 Not started |       |
-| R3  | **Round 3 — Integration, Tests & Polish**                                                                                      | 🔲 Not started |       |
-| 3.1 | Build & test — `docker compose build`, run all 232+ tests                                                                      | 🔲 Not started |       |
-| 3.2 | Lint — `ruff check src/ tests/` — zero errors                                                                                  | 🔲 Not started |       |
-| 3.3 | Verify API docs — `GET /docs` renders all 6+ Phase 2 endpoints                                                                 | 🔲 Not started |       |
-| 3.4 | Update CI — verify test paths include new test files                                                                           | 🔲 Not started |       |
-| 3.5 | Update TRACKER.md — log deviations, completion                                                                                 | 🔲 Not started |       |
+| #   | Step                                                                                                                           | Status         | Notes                                                                                                                                                                                                                                              |
+| --- | ------------------------------------------------------------------------------------------------------------------------------ | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1  | **Round 1 — Market Data Provider**                                                                                             | ✅ Complete    | 5 files created, 1 modified, 38 tests (all pass), ruff clean. `upsert_ohlcv` uses multi-row `execute()` instead of `executemany` (asyncpg 0.31 returns None from `executemany`). `r = None` guard added for `get_redis` return before cache write. |
+| 1.1 | Add yfinance + tenacity deps to `pyproject.toml`                                                                               | ✅ Complete    | yfinance==1.5.1, tenacity==9.1.4 installed via `uv sync`. Docker image rebuilt.                                                                                                                                                                    |
+| 1.2 | Market module skeleton — `market/__init__.py`                                                                                  | ✅ Complete    | Module docstring with public API.                                                                                                                                                                                                                  |
+| 1.3 | Market schemas — `market/schemas.py` (OHLCVData, QuoteResponse, OHLCVResponse)                                                 | ✅ Complete    | All values `Optional` for NaN resilience. `json_encoders={Decimal: float}` for JSON serialisation.                                                                                                                                                 |
+| 1.4 | OHLCV repository — `market/repository.py` (get_ohlcv, upsert_ohlcv via executemany)                                            | ✅ Complete    | Dynamic date conditions + pagination (`LIMIT`/`OFFSET`). `upsert_ohlcv` uses multi-row `INSERT … ON CONFLICT DO NOTHING` (deviated from `executemany`). `get_latest_ohlcv_date` and `ticker_exists_in_db` helpers.                                 |
+| 1.5 | yfinance provider — `market/provider.py` (to_thread, tenacity retry, NaN handling)                                             | ✅ Complete    | 3× exponential backoff via `tenacity`. `_maybe_decimal`/`_maybe_int` NaN→None converters. `fetch_ohlcv`/`fetch_quote` via `asyncio.get_running_loop().run_in_executor`.                                                                            |
+| 1.6 | Market router — `market/router.py` (OHLCV + quote endpoints, Redis 60s cache)                                                  | ✅ Complete    | `_refresh_ohlcv_if_stale` with 3-day weekend tolerance. Graceful Redis degradation on read/write. 503 on yfinance failure.                                                                                                                         |
+| 1.7 | Register market router in `main.py`                                                                                            | ✅ Complete    | Prefix `/market`, tag `market`.                                                                                                                                                                                                                    |
+| 1.8 | Market tests — `test_market.py` (25+ tests, yfinance mocked)                                                                   | ✅ Complete    | 38 tests across 8 classes: provider helpers (9), yfinance wrapper (6), async delegation (2), repository CRUD (8), OHLCV endpoint (6), quote endpoint (7). All mock yfinance/Redis.                                                                 |
+| R2  | **Round 2 — Cash Flows + Portfolio Analytics**                                                                                 | 🔲 Not started |                                                                                                                                                                                                                                                    |
+| 2.1 | Performance schemas — `performance/schemas.py` (HoldingPerformance, PortfolioPerformanceResponse, BenchmarkComparisonResponse) | 🔲 Not started |                                                                                                                                                                                                                                                    |
+| 2.2 | Cash flows migration — `0003_add_cash_flows.py` (cash_flows table, index)                                                      | 🔲 Not started |                                                                                                                                                                                                                                                    |
+| 2.3 | Cash flows schemas — `cash_flows/schemas.py` (CashFlowCreate, CashFlowResponse)                                                | 🔲 Not started |                                                                                                                                                                                                                                                    |
+| 2.4 | Cash flows repository — `cash_flows/repository.py` (create, list, sum, PATCH notes)                                            | 🔲 Not started |                                                                                                                                                                                                                                                    |
+| 2.5 | Cash flows router — `cash_flows/router.py` (POST/GET/PATCH at /portfolios/{id}/cash-flows)                                     | 🔲 Not started |                                                                                                                                                                                                                                                    |
+| 2.6 | Performance calculations — `performance/calculations.py` (P&L, TWR with cash_flows, daily returns, TE/IR, ENABLE_TWR flag)     | 🔲 Not started |                                                                                                                                                                                                                                                    |
+| 2.7 | Performance router — `performance/router.py` (performance + benchmark endpoints, fetches cash_flows, free_cash_balance)        | 🔲 Not started |                                                                                                                                                                                                                                                    |
+| 2.8 | Register cash_flows + performance routers in `main.py`; add `ENABLE_TWR` to `config.py`                                        | 🔲 Not started |                                                                                                                                                                                                                                                    |
+| 2.9 | Performance + Cash Flows tests — `test_performance.py` (50+ tests), `test_cash_flows.py` (14+ tests)                           | 🔲 Not started |                                                                                                                                                                                                                                                    |
+| R3  | **Round 3 — Integration, Tests & Polish**                                                                                      | 🔲 Not started |                                                                                                                                                                                                                                                    |
+| 3.1 | Build & test — `docker compose build`, run all 232+ tests                                                                      | 🔲 Not started |                                                                                                                                                                                                                                                    |
+| 3.2 | Lint — `ruff check src/ tests/` — zero errors                                                                                  | 🔲 Not started |                                                                                                                                                                                                                                                    |
+| 3.3 | Verify API docs — `GET /docs` renders all 6+ Phase 2 endpoints                                                                 | 🔲 Not started |                                                                                                                                                                                                                                                    |
+| 3.4 | Update CI — verify test paths include new test files                                                                           | 🔲 Not started |                                                                                                                                                                                                                                                    |
+| 3.5 | Update TRACKER.md — log deviations, completion                                                                                 | 🔲 Not started |                                                                                                                                                                                                                                                    |
 
 ### Deviations from Plan
 
-| Step or Round | Planned | Actual | Rationale |
-| ------------- | ------- | ------ | --------- |
-| —             | —       | —      | —         |
+| Step or Round | Planned                           | Actual                                                       | Rationale                                                                               |
+| ------------- | --------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| R1            | `upsert_ohlcv` uses `executemany` | Uses multi-row `INSERT ... ON CONFLICT` via `conn.execute()` | asyncpg 0.31.0 `executemany` always returns `None`; `execute` returns usable status tag |
 
 ### Verification Checklist (Phase 2 DoD)
 
-- [ ] `GET /market/ohlcv/{ticker}` — returns OHLCV data with date range support (cache hit → DB, cache miss → yfinance → DB, tenacity retry on failure)
-- [ ] Market data freshness accounts for weekends — 3-day staleness tolerance on Monday
-- [ ] `GET /market/quote/{ticker}` — returns current quote with 60s Redis cache
-- [ ] Redis outage handled gracefully — quote endpoint returns fresh data from yfinance instead of 500
+- [x] `GET /market/ohlcv/{ticker}` — returns OHLCV data with date range support (cache hit → DB, cache miss → yfinance → DB, tenacity retry on failure)
+- [x] Market data freshness accounts for weekends — 3-day staleness tolerance on Monday
+- [x] `GET /market/quote/{ticker}` — returns current quote with 60s Redis cache
+- [x] Redis outage handled gracefully — quote endpoint returns fresh data from yfinance instead of 500
 - [ ] `GET /portfolios/{id}/cash-flows` — returns cash flow list (paginated)
 - [ ] `POST /portfolios/{id}/cash-flows` — creates deposit, validates amount > 0
 - [ ] `PATCH /portfolios/{id}/cash-flows/{cf_id}` — updates notes

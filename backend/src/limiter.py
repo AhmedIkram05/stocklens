@@ -12,6 +12,14 @@ with an in-memory fallback so rate limiting gracefully degrades when
 Redis is unavailable.
 """
 
+import asyncio
+import inspect
+
+# slowapi uses ``asyncio.iscoroutinefunction`` which is deprecated in Python 3.14+
+# and slated for removal in 3.16. ``asyncio.iscoroutinefunction`` is an alias for
+# ``inspect.iscoroutinefunction`` — redirect it so slowapi uses the canonical API.
+asyncio.iscoroutinefunction = inspect.iscoroutinefunction
+
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 

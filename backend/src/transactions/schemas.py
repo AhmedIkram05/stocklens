@@ -9,14 +9,14 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.types import DecimalAsFloat
+
 
 class TransactionBase(BaseModel):
-    model_config = ConfigDict(json_encoders={Decimal: float})
-
     ticker: str = Field(..., min_length=1, max_length=10)
     type: str = Field(..., pattern=r"^(BUY|SELL)$")
-    shares: Decimal = Field(..., gt=0)
-    price_per_share: Decimal = Field(..., ge=0)
+    shares: DecimalAsFloat = Field(..., gt=0)
+    price_per_share: DecimalAsFloat = Field(..., ge=0)
     transaction_date: date
     notes: Optional[str] = None
 
@@ -54,7 +54,7 @@ class TransactionCreate(TransactionBase):
 class TransactionInDB(TransactionBase):
     id: str
     portfolio_id: str
-    total_amount: Decimal
+    total_amount: DecimalAsFloat
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -78,7 +78,7 @@ class TransactionInDB(TransactionBase):
 class TransactionResponse(TransactionBase):
     id: str
     portfolio_id: str
-    total_amount: Decimal
+    total_amount: DecimalAsFloat
     created_at: datetime
 
 
