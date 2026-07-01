@@ -23,6 +23,8 @@ dependencies = [
     "httpx>=0.28.0",
     "structlog>=24.4.0",
     "python-dotenv>=1.0.0",
+    "yfinance>=0.2.0",
+    "tenacity>=9.0.0",
 ]
 
 [project.optional-dependencies]
