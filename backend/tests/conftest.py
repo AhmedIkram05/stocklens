@@ -26,6 +26,7 @@ from src.database import connection as db_conn
 from src.main import app
 
 
+
 @pytest.fixture(scope="session")
 def event_loop():
     """Use the same event loop for the entire session."""
