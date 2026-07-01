@@ -20,10 +20,10 @@ import inspect
 # ``inspect.iscoroutinefunction`` — redirect it so slowapi uses the canonical API.
 asyncio.iscoroutinefunction = inspect.iscoroutinefunction
 
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from slowapi import Limiter  # noqa: E402
+from slowapi.util import get_remote_address  # noqa: E402
 
-from src.config import settings
+from src.config import settings  # noqa: E402
 
 limiter = Limiter(
     key_func=get_remote_address,

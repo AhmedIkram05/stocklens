@@ -50,8 +50,10 @@ class BatchQuoteResponse(BaseModel):
 
 # ── Query parameters ──
 
+
 class OHLCVParams(BaseModel):
     """Query params for OHLCV endpoint."""
+
     start_date: Optional[date] = Field(
         None, description="Start date (inclusive). Defaults to 1 year ago."
     )

@@ -1,7 +1,7 @@
 """
 Async wrapper around the synchronous yfinance library.
 
-All blocking calls are delegated to ``asyncio.to_thread()`` so the event loop
+All blocking calls are delegated to ``loop.run_in_executor()`` so the event loop
 is never blocked. Data is returned as plain dicts for downstream repository
 or response processing.
 
@@ -53,15 +53,17 @@ def _download_ohlcv(
     rows = []
     for idx, row in df.iterrows():
         d = idx.date() if hasattr(idx, "date") else idx
-        rows.append({
-            "date": d,
-            "open": _maybe_decimal(row.get("Open")),
-            "high": _maybe_decimal(row.get("High")),
-            "low": _maybe_decimal(row.get("Low")),
-            "close": _maybe_decimal(row.get("Close")),
-            "adjusted_close": _maybe_decimal(row.get("Adj Close")),
-            "volume": _maybe_int(row.get("Volume")),
-        })
+        rows.append(
+            {
+                "date": d,
+                "open": _maybe_decimal(row.get("Open")),
+                "high": _maybe_decimal(row.get("High")),
+                "low": _maybe_decimal(row.get("Low")),
+                "close": _maybe_decimal(row.get("Close")),
+                "adjusted_close": _maybe_decimal(row.get("Adj Close")),
+                "volume": _maybe_int(row.get("Volume")),
+            }
+        )
     return rows
 
 
@@ -75,7 +77,7 @@ def _fetch_quote(ticker: str) -> dict[str, Any]:
     """Synchronous quote fetch from yfinance Ticker.info.
 
     Returns a dict with keys: price, change, change_pct, previous_close,
-    volume, timestamp. Falls back to ``fast_info`` if ``info`` is stale.
+    volume, timestamp.
     """
     t = yf.Ticker(ticker)
     info = t.info or {}
@@ -112,7 +114,7 @@ def _maybe_decimal(value: Any) -> Optional[Decimal]:
         if v != v:  # NaN check
             return None
         return Decimal(str(v))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -125,7 +127,7 @@ def _maybe_int(value: Any) -> Optional[int]:
         if v != v:  # NaN check
             return None
         return int(v)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -143,7 +145,8 @@ async def fetch_ohlcv(
     """
     if start_date is None:
         start_date = date.today() - timedelta(days=365)
-    # yfinance uses exclusive end_date semantics, so add a day for inclusivity
+    # yfinance uses exclusive end_date semantics; defaulting to today is fine
+    # since the caller typically wants data up to yesterday (the last complete day)
     if end_date is None:
         end_date = date.today()
 

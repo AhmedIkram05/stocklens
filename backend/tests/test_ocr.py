@@ -17,7 +17,6 @@ from src.receipts.ocr import (
     parse_total,
 )
 
-
 # ── parse_total ──────────────────────────────────────────────────────────────
 
 

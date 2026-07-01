@@ -54,9 +54,16 @@ async def classify_merchant_with_bedrock(merchant_name: str) -> str | None:
         category = response.content.strip()
 
         valid_categories = {
-            "Groceries", "Dining", "Transport", "Utilities",
-            "Entertainment", "Healthcare", "Shopping", "Travel",
-            "Education", "Uncategorised",
+            "Groceries",
+            "Dining",
+            "Transport",
+            "Utilities",
+            "Entertainment",
+            "Healthcare",
+            "Shopping",
+            "Travel",
+            "Education",
+            "Uncategorised",
         }
 
         if category not in valid_categories:

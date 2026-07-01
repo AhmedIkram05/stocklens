@@ -54,9 +54,7 @@ def create_access_token(user_id: str) -> Tuple[str, str]:
     """
     jti = uuid4().hex
     now = _now_utc()
-    exp = int(
-        (now + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)).timestamp()
-    )
+    exp = int((now + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)).timestamp())
 
     payload = {
         "sub": user_id,
@@ -79,9 +77,7 @@ def create_refresh_token(user_id: str) -> Tuple[str, str]:
     """
     jti = uuid4().hex
     now = _now_utc()
-    exp = int(
-        (now + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)).timestamp()
-    )
+    exp = int((now + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)).timestamp())
 
     payload = {
         "sub": user_id,

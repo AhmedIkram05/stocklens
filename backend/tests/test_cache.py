@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from src.cache.redis import blacklist_token, is_token_blacklisted
 
 

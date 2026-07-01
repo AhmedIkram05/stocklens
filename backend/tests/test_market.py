@@ -28,22 +28,27 @@ class TestMaybeDecimal:
 
     def test_none_returns_none(self):
         from src.market.provider import _maybe_decimal
+
         assert _maybe_decimal(None) is None
 
     def test_nan_returns_none(self):
         from src.market.provider import _maybe_decimal
+
         assert _maybe_decimal(float("nan")) is None
 
     def test_float_converted(self):
         from src.market.provider import _maybe_decimal
+
         assert _maybe_decimal(185.50) == Decimal("185.50")
 
     def test_int_string_converted(self):
         from src.market.provider import _maybe_decimal
+
         assert _maybe_decimal("123.45") == Decimal("123.45")
 
     def test_zero(self):
         from src.market.provider import _maybe_decimal
+
         assert _maybe_decimal(0) == Decimal("0")
 
 
@@ -52,18 +57,22 @@ class TestMaybeInt:
 
     def test_none_returns_none(self):
         from src.market.provider import _maybe_int
+
         assert _maybe_int(None) is None
 
     def test_nan_returns_none(self):
         from src.market.provider import _maybe_int
+
         assert _maybe_int(float("nan")) is None
 
     def test_float_converted(self):
         from src.market.provider import _maybe_int
+
         assert _maybe_int(50000000.0) == 50000000
 
     def test_invalid_returns_none(self):
         from src.market.provider import _maybe_int
+
         assert _maybe_int("not-a-number") is None
 
 
@@ -78,15 +87,18 @@ class TestDownloadOHLCV:
     @patch("src.market.provider.yf.download")
     def test_empty_dataframe(self, mock_download):
         import pandas as pd
+
         mock_download.return_value = pd.DataFrame()
 
         from src.market.provider import _download_ohlcv
+
         result = _download_ohlcv("AAPL")
         assert result == []
 
     @patch("src.market.provider.yf.download")
     def test_multi_row(self, mock_download):
         import pandas as pd
+
         data = {
             "Open": [180.0, 184.5],
             "High": [185.0, 187.0],
@@ -99,6 +111,7 @@ class TestDownloadOHLCV:
         mock_download.return_value = pd.DataFrame(data, index=idx)
 
         from src.market.provider import _download_ohlcv
+
         result = _download_ohlcv("AAPL")
         assert len(result) == 2
         assert result[0]["date"] == date(2024, 1, 2)
@@ -112,6 +125,7 @@ class TestDownloadOHLCV:
         """Row-level NaN → None conversion works."""
         import numpy as np
         import pandas as pd
+
         data = {
             "Open": [np.nan],
             "High": [np.nan],
@@ -124,6 +138,7 @@ class TestDownloadOHLCV:
         mock_download.return_value = pd.DataFrame(data, index=idx)
 
         from src.market.provider import _download_ohlcv
+
         result = _download_ohlcv("AAPL")
         assert len(result) == 1
         assert result[0]["open"] is None
@@ -155,6 +170,7 @@ class TestFetchQuote:
         mock_ticker_cls.return_value = mock_ticker
 
         from src.market.provider import _fetch_quote
+
         result = _fetch_quote("AAPL")
         assert result["ticker"] == "AAPL"
         assert result["price"] == Decimal("185.50")
@@ -176,6 +192,7 @@ class TestFetchQuote:
         mock_ticker_cls.return_value = mock_ticker
 
         from src.market.provider import _fetch_quote
+
         result = _fetch_quote("AAPL")
         assert result["price"] == Decimal("190.00")
         assert result["volume"] == 30000000
@@ -188,6 +205,7 @@ class TestFetchQuote:
         mock_ticker_cls.return_value = mock_ticker
 
         from src.market.provider import _fetch_quote
+
         result = _fetch_quote("AAPL")
         assert result["price"] == Decimal("0")
         assert result["change"] == Decimal("0")
@@ -208,6 +226,7 @@ class TestFetchOHLCVAsync:
         mock_download.return_value = [{"date": date(2024, 1, 2)}]
 
         from src.market.provider import fetch_ohlcv
+
         result = await fetch_ohlcv("AAPL")
 
         assert len(result) == 1
@@ -222,6 +241,7 @@ class TestFetchOHLCVAsync:
         mock_fetch.return_value = {"ticker": "AAPL"}
 
         from src.market.provider import fetch_quote
+
         result = await fetch_quote("AAPL")
         assert result["ticker"] == "AAPL"
         mock_fetch.assert_called_once_with("AAPL")
@@ -238,6 +258,7 @@ class TestRepositoryOHLCV:
     async def test_get_ohlcv_empty(self):
         """No data for an unknown ticker returns []."""
         from src.market.repository import get_ohlcv
+
         result = await get_ohlcv("UNKNOWNTICKER")
         assert result == []
 
@@ -246,12 +267,24 @@ class TestRepositoryOHLCV:
         from src.market.repository import get_ohlcv, upsert_ohlcv
 
         rows = [
-            {"date": date(2024, 1, 2), "open": Decimal("180"), "high": Decimal("185"),
-             "low": Decimal("179"), "close": Decimal("184"), "adjusted_close": Decimal("183.5"),
-             "volume": 50000000},
-            {"date": date(2024, 1, 3), "open": Decimal("184.5"), "high": Decimal("187"),
-             "low": Decimal("183"), "close": Decimal("186"), "adjusted_close": Decimal("185.5"),
-             "volume": 45000000},
+            {
+                "date": date(2024, 1, 2),
+                "open": Decimal("180"),
+                "high": Decimal("185"),
+                "low": Decimal("179"),
+                "close": Decimal("184"),
+                "adjusted_close": Decimal("183.5"),
+                "volume": 50000000,
+            },
+            {
+                "date": date(2024, 1, 3),
+                "open": Decimal("184.5"),
+                "high": Decimal("187"),
+                "low": Decimal("183"),
+                "close": Decimal("186"),
+                "adjusted_close": Decimal("185.5"),
+                "volume": 45000000,
+            },
         ]
         inserted = await upsert_ohlcv("AAPL", rows)
         assert inserted == 2
@@ -266,9 +299,15 @@ class TestRepositoryOHLCV:
         from src.market.repository import get_ohlcv, upsert_ohlcv
 
         rows = [
-            {"date": date(2024, 1, 2), "open": Decimal("180"), "high": Decimal("185"),
-             "low": Decimal("179"), "close": Decimal("184"), "adjusted_close": Decimal("183.5"),
-             "volume": 50000000},
+            {
+                "date": date(2024, 1, 2),
+                "open": Decimal("180"),
+                "high": Decimal("185"),
+                "low": Decimal("179"),
+                "close": Decimal("184"),
+                "adjusted_close": Decimal("183.5"),
+                "volume": 50000000,
+            },
         ]
         assert await upsert_ohlcv("AAPL", rows) == 1
         assert await upsert_ohlcv("AAPL", rows) == 0  # no new rows
@@ -279,6 +318,7 @@ class TestRepositoryOHLCV:
     async def test_upsert_empty_list(self):
         """Empty list returns 0."""
         from src.market.repository import upsert_ohlcv
+
         assert await upsert_ohlcv("AAPL", []) == 0
 
     async def test_get_ohlcv_with_date_range(self):
@@ -300,6 +340,7 @@ class TestRepositoryOHLCV:
     async def test_get_latest_ohlcv_date_none(self):
         """No data returns None."""
         from src.market.repository import get_latest_ohlcv_date
+
         assert await get_latest_ohlcv_date("UNKNOWN") is None
 
     async def test_get_latest_ohlcv_date(self):
@@ -318,11 +359,15 @@ class TestRepositoryOHLCV:
     async def test_ticker_exists(self):
         """ticker_exists_in_db returns True/False."""
         from src.market.repository import ticker_exists_in_db, upsert_ohlcv
+
         assert await ticker_exists_in_db("AAPL") is False
 
-        await upsert_ohlcv("AAPL", [
-            {"date": date(2024, 1, 2), **_NULL_OHLCV},
-        ])
+        await upsert_ohlcv(
+            "AAPL",
+            [
+                {"date": date(2024, 1, 2), **_NULL_OHLCV},
+            ],
+        )
         assert await ticker_exists_in_db("AAPL") is True
 
 
@@ -340,12 +385,24 @@ class TestOHLCVEndpoint:
 
         today = date.today()
         rows = [
-            {"date": today, "open": Decimal("180"), "high": Decimal("185"),
-             "low": Decimal("179"), "close": Decimal("184"), "adjusted_close": Decimal("183.5"),
-             "volume": 50000000},
-            {"date": today - timedelta(days=1), "open": Decimal("178"), "high": Decimal("182"),
-             "low": Decimal("176"), "close": Decimal("180"), "adjusted_close": Decimal("179.5"),
-             "volume": 48000000},
+            {
+                "date": today,
+                "open": Decimal("180"),
+                "high": Decimal("185"),
+                "low": Decimal("179"),
+                "close": Decimal("184"),
+                "adjusted_close": Decimal("183.5"),
+                "volume": 50000000,
+            },
+            {
+                "date": today - timedelta(days=1),
+                "open": Decimal("178"),
+                "high": Decimal("182"),
+                "low": Decimal("176"),
+                "close": Decimal("180"),
+                "adjusted_close": Decimal("179.5"),
+                "volume": 48000000,
+            },
         ]
         await upsert_ohlcv("AAPL", rows)
 
@@ -361,9 +418,12 @@ class TestOHLCVEndpoint:
         from src.market.repository import upsert_ohlcv
 
         today = date.today()
-        await upsert_ohlcv("AAPL", [
-            {"date": today, **_NULL_OHLCV},
-        ])
+        await upsert_ohlcv(
+            "AAPL",
+            [
+                {"date": today, **_NULL_OHLCV},
+            ],
+        )
 
         response = await client.get("/market/ohlcv/aapl", headers=auth_headers)
         assert response.status_code == 200
@@ -379,7 +439,9 @@ class TestOHLCVEndpoint:
         assert response.status_code == 404
 
     async def test_yfinance_failure_returns_503(
-        self, client: AsyncClient, auth_headers: dict[str, str],
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
     ):
         """When yfinance is unreachable and no cache exists → 503."""
         with patch("src.market.router.fetch_ohlcv", side_effect=ConnectionError("yfinance down")):
@@ -393,14 +455,26 @@ class TestOHLCVEndpoint:
         from src.market.repository import upsert_ohlcv
 
         today = date.today()
-        await upsert_ohlcv("AAPL", [
-            {"date": today - timedelta(days=5), "close": Decimal("180"),
-             **{k: None for k in ("open", "high", "low", "adjusted_close", "volume")}},
-            {"date": today - timedelta(days=3), "close": Decimal("185"),
-             **{k: None for k in ("open", "high", "low", "adjusted_close", "volume")}},
-            {"date": today - timedelta(days=1), "close": Decimal("190"),
-             **{k: None for k in ("open", "high", "low", "adjusted_close", "volume")}},
-        ])
+        await upsert_ohlcv(
+            "AAPL",
+            [
+                {
+                    "date": today - timedelta(days=5),
+                    "close": Decimal("180"),
+                    **{k: None for k in ("open", "high", "low", "adjusted_close", "volume")},
+                },
+                {
+                    "date": today - timedelta(days=3),
+                    "close": Decimal("185"),
+                    **{k: None for k in ("open", "high", "low", "adjusted_close", "volume")},
+                },
+                {
+                    "date": today - timedelta(days=1),
+                    "close": Decimal("190"),
+                    **{k: None for k in ("open", "high", "low", "adjusted_close", "volume")},
+                },
+            ],
+        )
 
         start = (today - timedelta(days=4)).isoformat()
         end = (today - timedelta(days=1)).isoformat()
@@ -462,16 +536,19 @@ class TestQuoteEndpoint:
     async def test_redis_cache_hit(self, client: AsyncClient, auth_headers: dict[str, str]):
         """Returns cached quote without calling yfinance."""
         import json
+
         now = datetime.now(timezone.utc)
-        cached_json = json.dumps({
-            "ticker": "AAPL",
-            "price": 185.50,
-            "change": 1.25,
-            "change_pct": 0.68,
-            "previous_close": 184.25,
-            "volume": 45000000,
-            "timestamp": now.isoformat(),
-        })
+        cached_json = json.dumps(
+            {
+                "ticker": "AAPL",
+                "price": 185.50,
+                "change": 1.25,
+                "change_pct": 0.68,
+                "previous_close": 184.25,
+                "volume": 45000000,
+                "timestamp": now.isoformat(),
+            }
+        )
 
         mock_redis = AsyncMock()
         mock_redis.get.return_value = cached_json
@@ -496,7 +573,9 @@ class TestQuoteEndpoint:
         assert response.json()["price"] == 185.50
 
     async def test_yfinance_failure_returns_503(
-        self, client: AsyncClient, auth_headers: dict[str, str],
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
     ):
         """yfinance unreachable and no cache → 503."""
         mock_redis = AsyncMock()
@@ -531,7 +610,9 @@ class TestQuoteEndpoint:
         assert response.status_code == 401
 
     async def test_corrupted_cache_skips_and_refetches(
-        self, client: AsyncClient, auth_headers: dict[str, str],
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
     ):
         """Corrupted JSON in Redis → skip cache, fetch fresh."""
         mock_redis = AsyncMock()

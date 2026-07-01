@@ -1,4 +1,4 @@
-# Pre-commit hooks mirroring CI lint checks.
+# Pre-commit hooks mirroring CI lint checks (ruff for Python, ESLint + Prettier for JS/TS).
 # Install:  pre-commit install
 # Run all:  pre-commit run --all-files
 # Skip:     SKIP=hook_id git commit -m "..."
@@ -18,6 +18,16 @@ repos:
       - id: detect-private-key
       - id: mixed-line-ending
         args: [--fix=lf]
+
+  # ── Python lint (mirrors CI: ruff) ─────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.15
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
 
   # ── JS/TS lint (mirrors CI: ESLint + Prettier) ──────────────────
   - repo: local

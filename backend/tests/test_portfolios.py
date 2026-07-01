@@ -8,8 +8,6 @@ All database access runs inside the per-test transaction provided by
 from __future__ import annotations
 
 import httpx
-import pytest
-
 
 # ── Create ──────────────────────────────────────────────────────────────────
 
@@ -85,7 +83,9 @@ class TestListPortfolios:
         assert response.status_code == 200
         assert response.json() == {"portfolios": [], "total": 0}
 
-    async def test_list_scoped_to_user(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_list_scoped_to_user(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         """Users cannot see each other's portfolios."""
         await client.post("/portfolios", json={"name": "Mine"}, headers=auth_headers)
         # Register a second user
@@ -109,7 +109,9 @@ class TestGetPortfolio:
     async def test_get_success(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
         """Getting a portfolio by ID returns the correct portfolio."""
         created = await client.post(
-            "/portfolios", json={"name": "Get Test"}, headers=auth_headers,
+            "/portfolios",
+            json={"name": "Get Test"},
+            headers=auth_headers,
         )
         pid = created.json()["id"]
         response = await client.get(f"/portfolios/{pid}", headers=auth_headers)
@@ -124,10 +126,14 @@ class TestGetPortfolio:
         )
         assert response.status_code == 404
 
-    async def test_get_other_user_portfolio(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_get_other_user_portfolio(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         """Getting another user's portfolio returns 404 (not 403)."""
         created = await client.post(
-            "/portfolios", json={"name": "Secret"}, headers=auth_headers,
+            "/portfolios",
+            json={"name": "Secret"},
+            headers=auth_headers,
         )
         pid = created.json()["id"]
         # Second user
@@ -149,7 +155,8 @@ class TestUpdatePortfolio:
     async def test_update_success(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
         """Updating a portfolio returns the updated fields."""
         created = await client.post(
-            "/portfolios", json={"name": "Old Name", "description": "Old desc"},
+            "/portfolios",
+            json={"name": "Old Name", "description": "Old desc"},
             headers=auth_headers,
         )
         pid = created.json()["id"]
@@ -163,10 +170,13 @@ class TestUpdatePortfolio:
         assert data["name"] == "New Name"
         assert data["description"] == "New desc"
 
-    async def test_update_partial_name_only(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_update_partial_name_only(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         """Updating only the name preserves the existing description."""
         created = await client.post(
-            "/portfolios", json={"name": "Original", "description": "Keep me"},
+            "/portfolios",
+            json={"name": "Original", "description": "Keep me"},
             headers=auth_headers,
         )
         pid = created.json()["id"]
@@ -191,7 +201,9 @@ class TestUpdatePortfolio:
     async def test_update_no_fields(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
         """Updating with no fields returns 400."""
         created = await client.post(
-            "/portfolios", json={"name": "No Update"}, headers=auth_headers,
+            "/portfolios",
+            json={"name": "No Update"},
+            headers=auth_headers,
         )
         pid = created.json()["id"]
         response = await client.put(
@@ -211,7 +223,9 @@ class TestDeletePortfolio:
     async def test_delete_success(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
         """Deleting a portfolio returns 204."""
         created = await client.post(
-            "/portfolios", json={"name": "To Delete"}, headers=auth_headers,
+            "/portfolios",
+            json={"name": "To Delete"},
+            headers=auth_headers,
         )
         pid = created.json()["id"]
         response = await client.delete(f"/portfolios/{pid}", headers=auth_headers)
@@ -228,7 +242,9 @@ class TestDeletePortfolio:
     async def test_delete_other_user(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
         """Deleting another user's portfolio returns 404."""
         created = await client.post(
-            "/portfolios", json={"name": "Theirs"}, headers=auth_headers,
+            "/portfolios",
+            json={"name": "Theirs"},
+            headers=auth_headers,
         )
         pid = created.json()["id"]
         resp2 = await client.post(
@@ -242,7 +258,9 @@ class TestDeletePortfolio:
     async def test_delete_then_get(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
         """After deletion, getting the portfolio returns 404."""
         created = await client.post(
-            "/portfolios", json={"name": "Gone"}, headers=auth_headers,
+            "/portfolios",
+            json={"name": "Gone"},
+            headers=auth_headers,
         )
         pid = created.json()["id"]
         await client.delete(f"/portfolios/{pid}", headers=auth_headers)

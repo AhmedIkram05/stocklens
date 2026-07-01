@@ -222,9 +222,7 @@ async def forgot_password(
     """
     email = body.email.lower().strip()
     logger.info("password_reset_requested", email=email)
-    return Message(
-        message="If an account exists for that email, we'll send a reset link."
-    )
+    return Message(message="If an account exists for that email, we'll send a reset link.")
 
 
 @router.post("/refresh", response_model=TokenPair)

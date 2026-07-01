@@ -55,7 +55,7 @@ class SmokeTester:
 
     def _assert_in(self, name: str, item: Any, container: Any) -> None:
         if item in container:
-            self._ok(name, f"found")
+            self._ok(name, "found")
         else:
             self._fail(name, f"{item!r} not found")
 
@@ -92,8 +92,6 @@ class SmokeTester:
     def auth_flow(self) -> None:
         """Full lifecycle: register → login → me → refresh → stolen → logout."""
         email = self._fresh_session()
-        old_token = self.access_token
-
         # Login
         resp = self.client.post(
             f"{self.base_url}/auth/login",
@@ -105,7 +103,9 @@ class SmokeTester:
         self._extract_tokens(data)
 
         # /me
-        resp = self.client.get(f"{self.base_url}/auth/me", headers={"Authorization": f"Bearer {self.access_token}"})
+        resp = self.client.get(
+            f"{self.base_url}/auth/me", headers={"Authorization": f"Bearer {self.access_token}"}
+        )
         self._assert_eq("GET /auth/me", resp.status_code, 200)
         self._assert_eq("email matches", resp.json()["email"], email)
 
@@ -190,7 +190,9 @@ class SmokeTester:
         )
         assert resp.status_code == 201
         del_id = resp.json()["id"]
-        resp = self.client.delete(f"{self.base_url}/portfolios/{del_id}", headers=self._auth_headers())
+        resp = self.client.delete(
+            f"{self.base_url}/portfolios/{del_id}", headers=self._auth_headers()
+        )
         self._assert_eq("DELETE /portfolios/{id} → 204", resp.status_code, 204)
         resp = self.client.get(f"{self.base_url}/portfolios/{del_id}", headers=self._auth_headers())
         self._assert_eq("GET deleted portfolio → 404", resp.status_code, 404)
@@ -220,7 +222,9 @@ class SmokeTester:
         self._assert_eq("ticker uppercase", resp.json()["ticker"], "AAPL")
 
         # List
-        resp = self.client.get(f"{self.base_url}/portfolios/{pid}/holdings", headers=self._auth_headers())
+        resp = self.client.get(
+            f"{self.base_url}/portfolios/{pid}/holdings", headers=self._auth_headers()
+        )
         self._assert_eq("GET /portfolios/{id}/holdings", resp.status_code, 200)
         self._assert_in("holding in list", hid, [h["id"] for h in resp.json()["holdings"]])
 
@@ -230,7 +234,9 @@ class SmokeTester:
         self._assert_eq("ticker AAPL", resp.json()["ticker"], "AAPL")
 
         # Get nested
-        resp = self.client.get(f"{self.base_url}/portfolios/{pid}/holdings/{hid}", headers=self._auth_headers())
+        resp = self.client.get(
+            f"{self.base_url}/portfolios/{pid}/holdings/{hid}", headers=self._auth_headers()
+        )
         self._assert_eq("GET /portfolios/{pid}/holdings/{hid}", resp.status_code, 200)
         self._assert_eq("nested ticker AAPL", resp.json()["ticker"], "AAPL")
 
@@ -290,8 +296,11 @@ class SmokeTester:
         resp = self.client.post(
             f"{self.base_url}/portfolios/{pid}/transactions",
             json={
-                "ticker": "GOOGL", "type": "BUY", "shares": 10,
-                "price_per_share": 140.0, "transaction_date": "2026-06-29",
+                "ticker": "GOOGL",
+                "type": "BUY",
+                "shares": 10,
+                "price_per_share": 140.0,
+                "transaction_date": "2026-06-29",
                 "notes": "smoke test",
             },
             headers=self._auth_headers(),
@@ -348,7 +357,9 @@ class SmokeTester:
         category_list = cats.get("categories", [])
         if category_list:
             cid = category_list[0]["id"]
-            resp = self.client.get(f"{self.base_url}/categories/{cid}", headers=self._auth_headers())
+            resp = self.client.get(
+                f"{self.base_url}/categories/{cid}", headers=self._auth_headers()
+            )
             self._assert_eq("GET /categories/{id}", resp.status_code, 200)
             self._assert_eq("id matches", resp.json()["id"], cid)
 
@@ -367,8 +378,10 @@ class SmokeTester:
         resp = self.client.post(
             f"{self.base_url}/receipts",
             json={
-                "merchant_name": "Test Shop", "total_amount": 42.50,
-                "transaction_date": "2026-06-29", "notes": "smoke test",
+                "merchant_name": "Test Shop",
+                "total_amount": 42.50,
+                "transaction_date": "2026-06-29",
+                "notes": "smoke test",
             },
             headers=self._auth_headers(),
         )
@@ -381,7 +394,9 @@ class SmokeTester:
         self._assert_eq("merchant matches", resp.json()["merchant_name"], "Test Shop")
 
         # List
-        resp = self.client.get(f"{self.base_url}/receipts?limit=10&offset=0", headers=self._auth_headers())
+        resp = self.client.get(
+            f"{self.base_url}/receipts?limit=10&offset=0", headers=self._auth_headers()
+        )
         self._assert_eq("GET /receipts paginated", resp.status_code, 200)
         self._assert_in("receipt in list", rid, [r["id"] for r in resp.json()["receipts"]])
 

@@ -9,16 +9,12 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from pydantic import BaseModel
 
 from src.categories.merchant_map import (
-    CategoryRule,
-    get_categories,
     load_categories,
     match_by_keyword,
 )
 from src.categories.seed import CATEGORY_NAMES, SEED_CATEGORIES
-
 
 # ── Seed data ────────────────────────────────────────────────────────────────
 
@@ -124,7 +120,9 @@ class TestCategoriesAPI:
         assert "Dining Out" in names
 
     @pytest.mark.usefixtures("_seed_categories")
-    async def test_get_category_success(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_get_category_success(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         # Get list first to find a category ID
         list_resp = await client.get("/categories", headers=auth_headers)
         cat_id = list_resp.json()["categories"][0]["id"]
@@ -132,7 +130,9 @@ class TestCategoriesAPI:
         assert response.status_code == 200
         assert response.json()["id"] == cat_id
 
-    async def test_get_category_not_found(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_get_category_not_found(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         response = await client.get(
             "/categories/00000000-0000-0000-0000-000000000000",
             headers=auth_headers,

@@ -199,10 +199,29 @@ DATE_PATTERNS: list[re.Pattern] = [
 PRICE_PATTERN: re.Pattern = re.compile(r"(\d+\.\d{2})\s*$")
 
 MONTH_NAMES: dict[str, int] = {
-    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
-    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
-    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7,
-    "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
 }
 
 
@@ -213,7 +232,7 @@ def parse_total(text: str) -> Decimal | None:
             amount_str = matches[-1].replace(",", "")
             try:
                 return Decimal(amount_str)
-            except (ValueError, decimal.InvalidOperation):
+            except ValueError, decimal.InvalidOperation:
                 continue
     return None
 
@@ -267,11 +286,13 @@ def parse_line_items(text: str) -> list[dict]:
             quantity = int(qty_match.group(1))
             desc = desc[: qty_match.start()].strip()
 
-        items.append({
-            "description": desc,
-            "quantity": quantity,
-            "amount": price,
-        })
+        items.append(
+            {
+                "description": desc,
+                "quantity": quantity,
+                "amount": price,
+            }
+        )
 
     return items
 
@@ -311,7 +332,7 @@ def parse_date(text: str) -> date | None:
             if pattern == DATE_PATTERNS[4]:
                 month_str, day, year = groups[0].lower()[:3], int(groups[1]), int(groups[2])
                 return date(year, MONTH_NAMES[month_str], day)
-        except (ValueError, KeyError):
+        except ValueError, KeyError:
             continue
 
     return None
@@ -323,11 +344,7 @@ def _compute_ocr_confidence(image: np.ndarray) -> float:
         config="--oem 3 --psm 6",
         output_type=pytesseract.Output.DICT,
     )
-    confs = [
-        c
-        for i, c in enumerate(data["conf"])
-        if c > 0 and data["text"][i].strip()
-    ]
+    confs = [c for i, c in enumerate(data["conf"]) if c > 0 and data["text"][i].strip()]
     return round(sum(confs) / len(confs) / 100.0, 4) if confs else 0.0
 
 

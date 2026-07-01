@@ -77,16 +77,18 @@ async def upsert_ohlcv(ticker: str, rows: list[dict[str, Any]]) -> int:
     # Flatten params: multi-row INSERT uses positional placeholders
     params: list[Any] = []
     for r in rows:
-        params.extend([
-            ticker,
-            r["date"],
-            r.get("open"),
-            r.get("high"),
-            r.get("low"),
-            r.get("close"),
-            r.get("adjusted_close"),
-            r.get("volume"),
-        ])
+        params.extend(
+            [
+                ticker,
+                r["date"],
+                r.get("open"),
+                r.get("high"),
+                r.get("low"),
+                r.get("close"),
+                r.get("adjusted_close"),
+                r.get("volume"),
+            ]
+        )
 
     n_cols = 8
     placeholders = ", ".join(
