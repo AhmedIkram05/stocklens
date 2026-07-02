@@ -13,7 +13,6 @@ import { radii, spacing, typography } from '../styles/theme';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { useEffect, useState } from 'react';
 import { ScrollView } from 'react-native';
-import { ensureHistoricalPrefetch } from '../services/dataService';
 import { subscribe } from '../services/eventBus';
 import useReceipts, { ReceiptShape } from '../hooks/useReceipts';
 import { ActivityIndicator } from 'react-native';
@@ -75,8 +74,6 @@ export default function SummaryScreen() {
         }
       } catch (err) {}
     }
-
-    ensureHistoricalPrefetch().catch(() => {});
 
     loadTotals();
     const unsubHist = subscribe('historical-updated', () => {

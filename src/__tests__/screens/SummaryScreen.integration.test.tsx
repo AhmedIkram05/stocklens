@@ -9,21 +9,11 @@ import { fireEvent, waitFor } from '@testing-library/react-native';
 import SummaryScreen from '@/screens/SummaryScreen';
 import useReceipts, { ReceiptShape } from '@/hooks/useReceipts';
 import { renderWithProviders } from '../utils';
-import { ensureHistoricalPrefetch } from '@/services/dataService';
 import { subscribe } from '@/services/eventBus';
 import { useNavigation } from '@react-navigation/native';
 import { createReceipt } from '../fixtures';
 
 jest.mock('@/hooks/useReceipts');
-
-jest.mock('@/services/dataService', () => {
-  const actual = jest.requireActual('@/services/dataService');
-  return {
-    __esModule: true,
-    ...actual,
-    ensureHistoricalPrefetch: jest.fn(),
-  };
-});
 
 jest.mock('@/services/eventBus', () => ({
   subscribe: jest.fn(() => jest.fn()),
@@ -38,9 +28,6 @@ jest.mock('@react-navigation/native', () => {
 });
 
 const mockedUseReceipts = useReceipts as jest.MockedFunction<typeof useReceipts>;
-const mockedEnsurePrefetch = ensureHistoricalPrefetch as jest.MockedFunction<
-  typeof ensureHistoricalPrefetch
->;
 const mockedSubscribe = subscribe as jest.MockedFunction<typeof subscribe>;
 const mockedUseNavigation = useNavigation as jest.MockedFunction<typeof useNavigation>;
 
@@ -51,7 +38,6 @@ describe('SummaryScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedUseReceipts.mockReturnValue({ receipts: [], loading: false, error: null } as any);
-    mockedEnsurePrefetch.mockResolvedValue(undefined);
     navigateSpy = jest.fn();
     goBackSpy = jest.fn();
     mockedUseNavigation.mockReturnValue({
@@ -70,7 +56,6 @@ describe('SummaryScreen', () => {
     fireEvent.press(getByText('Scan Your First Receipt'));
 
     expect(navigateSpy).toHaveBeenCalledWith('Scan');
-    expect(mockedEnsurePrefetch).toHaveBeenCalled();
     expect(mockedSubscribe).toHaveBeenCalledWith('historical-updated', expect.any(Function));
   });
 
