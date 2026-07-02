@@ -359,6 +359,7 @@ Applied to `users`, `portfolios`, `holdings` via `CREATE TRIGGER ... BEFORE UPDA
 - Evaluation: directional accuracy, per-class F1, simulated Sharpe ratio
 - MLflow: hyperparams, loss curves, confusion matrix, metrics, model artifact
 - Train on ≥50 liquid S&P 500 components + portfolio tickers
+- Full frontend integration including replacing old stale code with new LSTM calculated predicted returns and updating other stale or non-existent features with Pytorch LSTM predicted returns
 
 **Depends on:** Phase 2 (needs OHLCV data in PostgreSQL)
 
@@ -437,12 +438,6 @@ Applied to `users`, `portfolios`, `holdings` via `CREATE TRIGGER ... BEFORE UPDA
 - **TypeScript:** Jest (existing 78 tests preserved during migration, then updated)
 - **Coverage target:** ≥80% for new Python code
 - **Test types:** unit (isolated logic), integration (DB + API), snapshot (RN components)
-
-### Git
-
-- Conventional commits (`feat:`, `fix:`, `chore:`, etc.)
-- Pre-commit: prettier + eslint (lint-staged)
-- CI checks: lint → typecheck → test (parallel)
 
 ### Documentation
 
