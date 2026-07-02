@@ -194,18 +194,18 @@ Index: `idx_holdings_portfolio_ticker ON holdings(portfolio_id, ticker)` UNIQUE
 
 ### Table: `transactions`
 
-| Column           | Type           | Constraints                                                |
-| ---------------- | -------------- | ---------------------------------------------------------- |
-| id               | UUID           | PK, default gen_random_uuid()                              |
-| portfolio_id     | UUID           | NOT NULL, FK → portfolios(id) ON DELETE CASCADE            |
-| ticker           | VARCHAR(10)    | NOT NULL                                                   |
-| type             | VARCHAR(4)     | NOT NULL, CHECK (type IN ('BUY', 'SELL'))                  |
-| shares           | DECIMAL(18, 6) | NOT NULL                                                   |
-| price_per_share  | DECIMAL(12, 4) | NOT NULL                                                   |
-| total_amount     | DECIMAL(24, 6) | NOT NULL, CHECK (total_amount = shares \* price_per_share) |
-| transaction_date | DATE           | NOT NULL                                                   |
-| notes            | TEXT           |
-| created_at       | TIMESTAMPTZ    | NOT NULL, DEFAULT NOW()                                    |
+| Column           | Type           | Constraints                                             |
+| ---------------- | -------------- | ------------------------------------------------------- |
+| id               | UUID           | PK, default gen_random_uuid()                           |
+| portfolio_id     | UUID           | NOT NULL, FK → portfolios(id) ON DELETE CASCADE         |
+| ticker           | VARCHAR(10)    | NOT NULL                                                |
+| type             | VARCHAR(4)     | NOT NULL, CHECK (type IN ('BUY', 'SELL'))               |
+| shares           | DECIMAL(18, 6) | NOT NULL                                                |
+| price_per_share  | DECIMAL(12, 4) | NOT NULL                                                |
+| total_amount     | DECIMAL(24, 6) | NOT NULL, CHECK (total_amount = shares price_per_share) |
+| transaction_date | DATE           | NOT NULL                                                |
+| notes            | TEXT           |                                                         |
+| created_at       | TIMESTAMPTZ    | NOT NULL, DEFAULT NOW()                                 |
 
 Index: `idx_transactions_portfolio_date ON transactions(portfolio_id, transaction_date)`
 
@@ -409,6 +409,7 @@ Applied to `users`, `portfolios`, `holdings` via `CREATE TRIGGER ... BEFORE UPDA
 - FastAPI `/agent/chat` endpoint
 - 15-question golden evaluation set
 - React Native conversational UI screen
+- Evidently integration again but for LLM response quality
 
 **Depends on:** Phase 5 (agent calls serving endpoint)
 
