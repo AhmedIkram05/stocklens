@@ -6,29 +6,26 @@ and the FastAPI router.
 """
 
 from datetime import date, datetime
-from decimal import Decimal
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from src.types import DecimalAsFloat
 
 
 class ExtractedItem(BaseModel):
     """A single line item from a receipt."""
 
-    model_config = ConfigDict(json_encoders={Decimal: float})
-
     name: str
     quantity: int = 1
-    price: Decimal
+    price: DecimalAsFloat
 
 
 class ReceiptExtraction(BaseModel):
     """Structured data extracted from a receipt."""
 
-    model_config = ConfigDict(json_encoders={Decimal: float})
-
     merchant_name: Optional[str] = None
-    total: Optional[Decimal] = None
+    total: Optional[DecimalAsFloat] = None
     date: Optional[date] = None
     currency: str = "GBP"
     items: list[ExtractedItem] = Field(default_factory=list)
@@ -51,10 +48,8 @@ class ReceiptScanResponse(BaseModel):
 class ReceiptCreate(BaseModel):
     """Schema for manually creating a receipt record."""
 
-    model_config = ConfigDict(json_encoders={Decimal: float})
-
     merchant_name: Optional[str] = None
-    total_amount: Optional[Decimal] = None
+    total_amount: Optional[DecimalAsFloat] = None
     category_id: Optional[str] = None
     ocr_raw_text: Optional[str] = None
     ocr_confidence: Optional[float] = None
@@ -68,10 +63,8 @@ class ReceiptCreate(BaseModel):
 class ReceiptUpdate(BaseModel):
     """Schema for updating a receipt record (edit OCR mistakes)."""
 
-    model_config = ConfigDict(json_encoders={Decimal: float})
-
     merchant_name: Optional[str] = None
-    total_amount: Optional[Decimal] = None
+    total_amount: Optional[DecimalAsFloat] = None
     category_id: Optional[str] = None
     ocr_raw_text: Optional[str] = None
     ocr_confidence: Optional[float] = None
@@ -84,11 +77,11 @@ class ReceiptUpdate(BaseModel):
 class ReceiptInDB(BaseModel):
     """Full receipt record as stored in the database."""
 
-    model_config = ConfigDict(from_attributes=True, json_encoders={Decimal: float})
+    model_config = ConfigDict(from_attributes=True)
 
     id: str
     user_id: str
-    total_amount: Optional[Decimal] = None
+    total_amount: Optional[DecimalAsFloat] = None
     merchant_name: Optional[str] = None
     category_id: Optional[str] = None
     ocr_raw_text: Optional[str] = None
@@ -122,10 +115,8 @@ class ReceiptInDB(BaseModel):
 class ReceiptResponse(BaseModel):
     """Receipt data returned to the client."""
 
-    model_config = ConfigDict(json_encoders={Decimal: float})
-
     id: str
-    total_amount: Optional[Decimal] = None
+    total_amount: Optional[DecimalAsFloat] = None
     merchant_name: Optional[str] = None
     category_id: Optional[str] = None
     ocr_raw_text: Optional[str] = None

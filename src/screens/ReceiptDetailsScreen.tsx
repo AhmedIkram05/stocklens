@@ -5,7 +5,17 @@
  */
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Alert,
+  ScrollView,
+  Modal,
+  TouchableOpacity,
+  FlatList,
+  ActivityIndicator,
+} from 'react-native';
 import type { TextStyle, ViewStyle } from 'react-native';
 import ScreenContainer from '../components/ScreenContainer';
 import PageHeader from '../components/PageHeader';
@@ -19,7 +29,9 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import DangerButton from '../components/DangerButton';
 import ResponsiveContainer from '../components/ResponsiveContainer';
 import { receiptService } from '../services/receipts';
+import { portfolioService, Portfolio } from '../services/portfolios';
 import { useTheme } from '../contexts/ThemeContext';
+import { formatCurrencyRounded } from '../utils/formatters';
 
 // Route prop for receipt details screen
 type ReceiptDetailsRouteProp = RouteProp<RootStackParamList, 'ReceiptDetails'>;
@@ -90,6 +102,12 @@ export default function ReceiptDetailsScreen() {
   const [, setRatesLoading] = useState(false);
   const [, setRatesError] = useState<string | null>(null);
 
+  // Deposit into portfolio
+  const [depositModalVisible, setDepositModalVisible] = useState(false);
+  const [portfolioList, setPortfolioList] = useState<Portfolio[]>([]);
+  const [portfoliosLoading, setPortfoliosLoading] = useState(false);
+  const [depositingPid, setDepositingPid] = useState<string | null>(null);
+
   // load historical rates whenever selectedYears changes
   useEffect(() => {
     let mounted = true;
@@ -99,7 +117,7 @@ export default function ReceiptDetailsScreen() {
       try {
         const promises = STOCK_PRESETS.map(async (s) => {
           try {
-            const cagr = await getHistoricalCAGRFromToday(s.ticker, years);
+            const cagr = await getHistoricalCAGRFromToday(s.ticker);
             return { ticker: s.ticker, total: cagr };
           } catch (e: any) {
             return { ticker: s.ticker, total: null };
@@ -134,6 +152,38 @@ export default function ReceiptDetailsScreen() {
       unsub();
     };
   }, [selectedYears]);
+
+  async function handleOpenDeposit() {
+    setDepositModalVisible(true);
+    setPortfoliosLoading(true);
+    try {
+      const data = await portfolioService.listPortfolios();
+      setPortfolioList(data);
+    } catch {
+      Alert.alert('Error', 'Could not load portfolios');
+      setDepositModalVisible(false);
+    } finally {
+      setPortfoliosLoading(false);
+    }
+  }
+
+  async function handleSelectPortfolio(pid: string) {
+    setDepositingPid(pid);
+    try {
+      await portfolioService.createCashFlow(pid, {
+        amount: totalAmount,
+        source: 'receipt',
+        source_id: receiptId ?? undefined,
+        notes: `Deposit from ${formattedAmount} receipt`,
+      });
+      Alert.alert('Deposited', `${formatCurrencyRounded(totalAmount)} deposited into portfolio`);
+      setDepositModalVisible(false);
+    } catch {
+      Alert.alert('Error', 'Failed to deposit. Please try again.');
+    } finally {
+      setDepositingPid(null);
+    }
+  }
 
   const cardSpacing = isTablet ? spacing.lg : spacing.md;
   const cardWidth = useMemo(() => {
@@ -387,6 +437,27 @@ export default function ReceiptDetailsScreen() {
           </>
         </ResponsiveContainer>
 
+        <TouchableOpacity
+          style={[
+            styles.depositButton,
+            { backgroundColor: brandColors.blue, marginBottom: spacing.md },
+          ]}
+          onPress={handleOpenDeposit}
+          activeOpacity={0.8}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons
+              name="wallet-outline"
+              size={18}
+              color={brandColors.white}
+              style={{ marginRight: 8 }}
+            />
+            <Text style={{ color: brandColors.white, ...typography.button }}>
+              Deposit into Portfolio
+            </Text>
+          </View>
+        </TouchableOpacity>
+
         <DangerButton
           accessibilityLabel="Delete receipt"
           onPress={() =>
@@ -441,6 +512,65 @@ export default function ReceiptDetailsScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={depositModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDepositModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle2, { color: theme.text }]}>
+              Deposit {formattedAmount} into…
+            </Text>
+
+            {portfoliosLoading ? (
+              <View style={styles.modalLoading}>
+                <ActivityIndicator size="large" color={theme.primary} />
+              </View>
+            ) : portfolioList.length === 0 ? (
+              <View style={styles.modalLoading}>
+                <Text style={[{ color: theme.textSecondary }]}>
+                  No portfolios yet. Create one first.
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={portfolioList}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => {
+                  const isProcessing = depositingPid === item.id;
+                  return (
+                    <TouchableOpacity
+                      style={[styles.modalPortfolioItem, { backgroundColor: theme.background }]}
+                      onPress={() => handleSelectPortfolio(item.id)}
+                      disabled={depositingPid !== null}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.modalPortfolioName, { color: theme.text }]}>
+                        {item.name}
+                      </Text>
+                      {isProcessing ? (
+                        <ActivityIndicator size="small" color={theme.primary} />
+                      ) : (
+                        <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            )}
+
+            <TouchableOpacity
+              style={[styles.modalCloseBtn, { backgroundColor: theme.background }]}
+              onPress={() => setDepositModalVisible(false)}
+            >
+              <Text style={[styles.modalCloseText, { color: theme.secondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScreenContainer>
   );
 }
@@ -477,6 +607,15 @@ type Styles = {
   warningBoxCompact: ViewStyle;
   warningIcon: ViewStyle;
   warningText: TextStyle;
+  depositButton: ViewStyle;
+  modalOverlay: ViewStyle;
+  modalCard: ViewStyle;
+  modalTitle2: TextStyle;
+  modalPortfolioItem: ViewStyle;
+  modalPortfolioName: TextStyle;
+  modalLoading: ViewStyle;
+  modalCloseBtn: ViewStyle;
+  modalCloseText: TextStyle;
 };
 
 // Stylesheet
@@ -600,5 +739,51 @@ const styles = StyleSheet.create<Styles>({
     lineHeight: 18,
     flex: 1,
     textAlign: 'left',
+  },
+  depositButton: {
+    borderRadius: radii.md,
+    paddingVertical: spacing.md + 2,
+    marginTop: spacing.xl,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: spacing.lg,
+  },
+  modalCard: {
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    maxHeight: '60%',
+  },
+  modalTitle2: {
+    ...typography.sectionTitle,
+    marginBottom: spacing.lg,
+    textAlign: 'center',
+  },
+  modalPortfolioItem: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    marginBottom: spacing.sm,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modalPortfolioName: {
+    ...typography.bodyStrong,
+  },
+  modalLoading: {
+    paddingVertical: spacing.xl,
+    alignItems: 'center',
+  },
+  modalCloseBtn: {
+    alignSelf: 'center',
+    marginTop: spacing.lg,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xl,
+  },
+  modalCloseText: {
+    ...typography.button,
   },
 });

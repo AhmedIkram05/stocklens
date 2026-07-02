@@ -38,17 +38,22 @@ def upgrade() -> None:
     # ── Users ───────────────────────────────────────────────────────────────
     op.create_table(
         "users",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("email", sa.String(255), unique=True, nullable=False),
         sa.Column("password_hash", sa.String(255), nullable=False),
         sa.Column("display_name", sa.String(100)),
-        sa.Column("is_active", sa.Boolean(), nullable=False,
-                  server_default=sa.text("true")),
-        sa.Column("created_at", sa.DateTime(timezone=True),
-                  server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True),
-                  server_default=sa.func.now(), nullable=False),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
     )
     op.execute(
         """
@@ -60,33 +65,49 @@ def upgrade() -> None:
     # ── Refresh tokens ──────────────────────────────────────────────────────
     op.create_table(
         "refresh_tokens",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("users.id", ondelete="CASCADE"),
-                  nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "user_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("token_hash", sa.String(64), unique=True, nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("revoked", sa.Boolean(), nullable=False,
-                  server_default=sa.text("false")),
-        sa.Column("created_at", sa.DateTime(timezone=True),
-                  server_default=sa.func.now(), nullable=False),
+        sa.Column("revoked", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
     )
 
     # ── Portfolios ──────────────────────────────────────────────────────────
     op.create_table(
         "portfolios",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("users.id", ondelete="CASCADE"),
-                  nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "user_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("name", sa.String(100)),
         sa.Column("description", sa.Text()),
-        sa.Column("created_at", sa.DateTime(timezone=True),
-                  server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True),
-                  server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
     )
     op.execute(
         """
@@ -98,18 +119,27 @@ def upgrade() -> None:
     # ── Holdings ────────────────────────────────────────────────────────────
     op.create_table(
         "holdings",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
-        sa.Column("portfolio_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("portfolios.id", ondelete="CASCADE"),
-                  nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "portfolio_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("portfolios.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("ticker", sa.String(10), nullable=False),
         sa.Column("shares", sa.Numeric(18, 6), nullable=False),
         sa.Column("average_cost_basis", sa.Numeric(12, 4), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True),
-                  server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True),
-                  server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
     )
     op.execute(
         """
@@ -121,11 +151,18 @@ def upgrade() -> None:
     # ── Transactions ────────────────────────────────────────────────────────
     op.create_table(
         "transactions",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
-        sa.Column("portfolio_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("portfolios.id", ondelete="CASCADE"),
-                  nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "portfolio_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("portfolios.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("ticker", sa.String(10), nullable=False),
         sa.Column("type", sa.String(4), nullable=False),
         sa.Column("shares", sa.Numeric(18, 6), nullable=False),
@@ -133,10 +170,10 @@ def upgrade() -> None:
         sa.Column("total_amount", sa.Numeric(24, 6), nullable=False),
         sa.Column("transaction_date", sa.Date(), nullable=False),
         sa.Column("notes", sa.Text()),
-        sa.Column("created_at", sa.DateTime(timezone=True),
-                  server_default=sa.func.now(), nullable=False),
-        sa.CheckConstraint("type IN ('BUY', 'SELL')",
-                           name="chk_transactions_type"),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.CheckConstraint("type IN ('BUY', 'SELL')", name="chk_transactions_type"),
         sa.CheckConstraint(
             "total_amount = shares * price_per_share",
             name="chk_transactions_amount",
@@ -146,8 +183,12 @@ def upgrade() -> None:
     # ── Spending categories ─────────────────────────────────────────────────
     op.create_table(
         "spending_categories",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("name", sa.String(50), unique=True, nullable=False),
         sa.Column("description", sa.String(255)),
         sa.Column("merchant_keywords", postgresql.JSONB()),
@@ -157,30 +198,39 @@ def upgrade() -> None:
     # ── Receipts ────────────────────────────────────────────────────────────
     op.create_table(
         "receipts",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("users.id", ondelete="CASCADE"),
-                  nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "user_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("total_amount", sa.Numeric(10, 2)),
         sa.Column("merchant_name", sa.String(255)),
-        sa.Column("category_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("spending_categories.id",
-                                ondelete="SET NULL")),
+        sa.Column(
+            "category_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("spending_categories.id", ondelete="SET NULL"),
+        ),
         sa.Column("ocr_raw_text", sa.Text()),
         sa.Column("ocr_confidence", sa.REAL()),
         sa.Column("line_items", postgresql.JSONB()),
         sa.Column("receipt_image_s3_key", sa.String(500)),
         sa.Column("scanned_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True),
-                  server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
     )
 
     # ── OHLCV prices ────────────────────────────────────────────────────────
     op.create_table(
         "ohlcv_prices",
-        sa.Column("id", sa.BigInteger(), primary_key=True,
-                  autoincrement=True),
+        sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
         sa.Column("ticker", sa.String(10), nullable=False),
         sa.Column("date", sa.Date(), nullable=False),
         sa.Column("open", sa.Numeric(12, 4)),
@@ -194,63 +244,72 @@ def upgrade() -> None:
     # ── Model registry ──────────────────────────────────────────────────────
     op.create_table(
         "model_registry",
-        sa.Column("id", sa.BigInteger(), primary_key=True,
-                  autoincrement=True),
+        sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
         sa.Column("ticker", sa.String(10)),
         sa.Column("mlflow_run_id", sa.String(100)),
         sa.Column("model_version", sa.String(20)),
         sa.Column("alias", sa.String(20)),
         sa.Column("metrics", postgresql.JSONB()),
-        sa.Column("trained_at", sa.DateTime(timezone=True),
-                  server_default=sa.func.now()),
+        sa.Column("trained_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
 
     # ── Agent conversations ─────────────────────────────────────────────────
     op.create_table(
         "agent_conversations",
-        sa.Column("id", sa.BigInteger(), primary_key=True,
-                  autoincrement=True),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("users.id", ondelete="CASCADE"),
-                  nullable=False),
+        sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
+        sa.Column(
+            "user_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("message", sa.Text()),
         sa.Column("response", sa.Text()),
         sa.Column("tools_used", postgresql.JSONB()),
         sa.Column("reasoning_steps", postgresql.JSONB()),
-        sa.Column("created_at", sa.DateTime(timezone=True),
-                  server_default=sa.func.now()),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
 
     # ── Indexes ─────────────────────────────────────────────────────────────
     op.create_index("idx_portfolios_user_id", "portfolios", ["user_id"])
     op.create_index(
-        "idx_holdings_portfolio_ticker", "holdings",
-        ["portfolio_id", "ticker"], unique=True,
+        "idx_holdings_portfolio_ticker",
+        "holdings",
+        ["portfolio_id", "ticker"],
+        unique=True,
     )
     op.create_index(
-        "idx_transactions_portfolio_date", "transactions",
+        "idx_transactions_portfolio_date",
+        "transactions",
         ["portfolio_id", "transaction_date"],
     )
     op.create_index(
-        "idx_receipts_user_date", "receipts",
+        "idx_receipts_user_date",
+        "receipts",
         ["user_id", "scanned_at"],
     )
     op.create_index(
-        "idx_ohlcv_ticker_date", "ohlcv_prices",
-        ["ticker", "date"], unique=True,
+        "idx_ohlcv_ticker_date",
+        "ohlcv_prices",
+        ["ticker", "date"],
+        unique=True,
     )
     op.create_index("idx_refresh_tokens_user", "refresh_tokens", ["user_id"])
     op.create_index(
-        "idx_refresh_tokens_hash", "refresh_tokens",
-        ["token_hash"], unique=True,
+        "idx_refresh_tokens_hash",
+        "refresh_tokens",
+        ["token_hash"],
+        unique=True,
     )
     op.create_index(
-        "idx_categories_keywords", "spending_categories",
+        "idx_categories_keywords",
+        "spending_categories",
         ["merchant_keywords"],
         postgresql_using="gin",
     )
     op.create_index(
-        "idx_conversations_user", "agent_conversations",
+        "idx_conversations_user",
+        "agent_conversations",
         ["user_id"],
     )
 

@@ -12,6 +12,8 @@ also have standalone endpoints:
 
 from __future__ import annotations
 
+from uuid import UUID
+
 import asyncpg
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -27,7 +29,6 @@ from src.holdings.schemas import (
     HoldingUpdate,
 )
 from src.limiter import limiter
-from uuid import UUID
 
 logger = structlog.get_logger()
 

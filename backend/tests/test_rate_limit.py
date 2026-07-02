@@ -15,7 +15,6 @@ for the sliding-window logic and integration tests for header presence.
 from __future__ import annotations
 
 import httpx
-import pytest
 
 
 class TestRateLimitHeaders:
@@ -34,7 +33,9 @@ class TestRateLimitHeaders:
         # We care that the request succeeded (no 429)
         assert response.status_code == 201
 
-    async def test_headers_on_auth_endpoint(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_headers_on_auth_endpoint(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         """Authenticated endpoints also return rate-limit headers."""
         response = await client.get("/auth/me", headers=auth_headers)
         assert response.status_code == 200
@@ -56,7 +57,9 @@ class TestRateLimitBehaviour:
             )
             assert response.status_code == 201
 
-    async def test_authenticated_endpoint_traffic(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_authenticated_endpoint_traffic(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         """Making multiple authenticated requests succeeds."""
         for _ in range(5):
             response = await client.get("/auth/me", headers=auth_headers)

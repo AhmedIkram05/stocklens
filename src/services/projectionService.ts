@@ -1,146 +1,80 @@
 /**
  * ProjectionService
  *
- * Calculate CAGR and project future values using historical stock data.
+ * Calculate CAGR and project future values using historical stock data
+ * from the backend `/market/ohlcv/` endpoint.
  */
 
-import { stockService } from './dataService';
+import { marketService, OHLCVData } from './market';
 import { PRESET_RATES } from './stockPresets';
 
 /**
- * Calculate CAGR from today backwards for a given number of years
+ * Calculate CAGR from backend OHLCV data for a ticker.
  *
- * @param symbol - Stock ticker (e.g., 'AAPL', 'TSLA')
- * @param years - Number of years to look back
- * @returns CAGR as decimal (e.g., 0.15 = 15% annual return) or null if insufficient data
- *
- * Process:
- * 1. Fetches historical data via stockService (monthly for >1 year, daily for ≤1 year)
- * 2. Finds data point closest to (today - years)
- * 3. Calculates CAGR using start and end adjusted close prices
- * 4. Returns null if data is insufficient or invalid
- *
- * Edge Cases:
- * - If daily data fails for 1 year, tries monthly data (2 years) as fallback
- * - Uses adjustedClose if available (accounts for splits/dividends), else close
- * - Returns null for negative prices or invalid date ranges
- *
- * Formula:
- * CAGR = (lastPrice / firstPrice)^(1 / actualYears) - 1
+ * @param ticker - Stock ticker (e.g., 'AAPL')
+ * @returns CAGR as decimal (e.g., 0.15 = 15%) or null if insufficient data
  */
-export async function getHistoricalCAGRFromToday(
-  symbol: string,
-  years: number,
-): Promise<number | null> {
+export async function getCAGR(ticker: string): Promise<number | null> {
   try {
-    const yearsInt = Math.max(1, Math.floor(Number(years) || 1));
-
-    let data = null as any;
-    try {
-      data = await stockService.getHistoricalForTicker(symbol, yearsInt);
-    } catch (e) {
-      data = null;
-    }
-
-    if ((!data || data.length < 2) && yearsInt <= 1) {
-      try {
-        const monthly = await stockService.getHistoricalForTicker(symbol, 2);
-        if (monthly && monthly.length >= 2) data = monthly;
-      } catch (e) {}
-    }
-
-    if (!data || data.length < 2) return null;
-
-    const now = new Date();
-    const target = new Date(now);
-    target.setFullYear(target.getFullYear() - yearsInt);
-
-    let startEntry = data[0];
-    for (let i = 0; i < data.length; i++) {
-      const d = new Date(data[i].date);
-      if (d <= target) startEntry = data[i];
-      else break;
-    }
-
-    const endEntry = data[data.length - 1];
-    const firstVal = (startEntry as any).adjustedClose ?? (startEntry as any).close;
-    const lastVal = (endEntry as any).adjustedClose ?? (endEntry as any).close;
-    if (!firstVal || !lastVal || firstVal <= 0) return null;
-
-    const actualYears =
-      (new Date(endEntry.date).getTime() - new Date(startEntry.date).getTime()) /
+    const ohlcv = await marketService.getOHLCV(ticker);
+    if (ohlcv.length < 2) return null;
+    const first = ohlcv[0].adjusted_close;
+    const last = ohlcv[ohlcv.length - 1].adjusted_close;
+    if (!first || !last || first <= 0) return null;
+    const years =
+      (new Date(ohlcv[ohlcv.length - 1].date).getTime() - new Date(ohlcv[0].date).getTime()) /
       (1000 * 60 * 60 * 24 * 365.25);
-    if (!(actualYears > 0)) return null;
-
-    // CAGR formula
-    return Math.pow(lastVal / firstVal, 1 / actualYears) - 1;
-  } catch (e) {
+    if (!(years > 0)) return null;
+    return (last / first) ** (1 / years) - 1;
+  } catch {
     return null;
   }
 }
 
 /**
- * Compute CAGR from a given time series
+ * Calculate CAGR from an arbitrary OHLCVData series.
  *
- * @param series - Array of OHLCV records with date, adjustedClose, and close
+ * @param series - Array of OHLCVData records
  * @returns CAGR as decimal or null if insufficient data
- *
- * Process:
- * 1. Uses first and last entries from series
- * 2. Calculates time span in years
- * 3. Computes CAGR using start and end prices
- *
- * Formula:
- * CAGR = (lastPrice / firstPrice)^(1 / years) - 1
- *
- * Usage:
- * Useful for calculating returns from pre-fetched or cached data
  */
-export function computeCAGRFromSeries(
-  series: Array<{ date: string; adjustedClose?: number; close: number }>,
-): number | null {
-  if (!series || series.length < 2) return null;
-  const first = series[0].adjustedClose ?? series[0].close;
-  const last = series[series.length - 1].adjustedClose ?? series[series.length - 1].close;
+export function computeCAGRFromSeries(series: OHLCVData[]): number | null {
+  if (series.length < 2) return null;
+  const first = series[0].adjusted_close;
+  const last = series[series.length - 1].adjusted_close;
   if (!first || !last || first <= 0) return null;
-  const actualYears =
+  const years =
     (new Date(series[series.length - 1].date).getTime() - new Date(series[0].date).getTime()) /
     (1000 * 60 * 60 * 24 * 365.25);
-  if (!(actualYears > 0)) return null;
-  // CAGR formula
-  return Math.pow(last / first, 1 / actualYears) - 1;
+  if (!(years > 0)) return null;
+  return (last / first) ** (1 / years) - 1;
 }
 
 /**
- * Project future value using historical CAGR with preset fallback
+ * Get the historical CAGR for a ticker from the backend.
+ * This is a backward-compatible alias used by ReceiptDetailsScreen.
  *
- * @param amount - Principal amount (receipt total)
- * @param symbol - Stock ticker (e.g., 'NVDA', 'MSFT')
- * @param years - Number of years to project forward
- * @returns Object with rate (CAGR) and futureValue
+ * @param ticker - Stock ticker
+ * @returns CAGR as decimal, or null if insufficient data
+ */
+export async function getHistoricalCAGRFromToday(ticker: string): Promise<number | null> {
+  return getCAGR(ticker);
+}
+
+/**
+ * Project future value using historical CAGR with preset fallback.
  *
- * Process:
- * 1. Attempts to fetch historical CAGR via getHistoricalCAGRFromToday
- * 2. If API data unavailable, falls back to PRESET_RATES[symbol]
- * 3. Calculates future value: amount * (1 + rate)^years
- *
- * Formula:
- * Future Value = principal * (1 + CAGR)^years
- *
- * Fallback:
- * - Uses PRESET_RATES if symbol exists (e.g., S&P 500 ≈ 10%)
- * - PRESET_RATES provide reasonable estimates for common stocks
- *
- * Usage:
- * Primary projection function used by ReceiptDetailsScreen and StockCard
+ * @param amount - Principal amount
+ * @param symbol - Stock ticker
+ * @param years - Number of years to project
+ * @returns Object with CAGR rate and future value
  */
 export async function projectUsingHistoricalCAGR(
   amount: number,
   symbol: string,
   years: number,
 ): Promise<{ rate: number; futureValue: number }> {
-  const cagr = await getHistoricalCAGRFromToday(symbol, years);
-  const rate = cagr ?? PRESET_RATES[symbol.toUpperCase()];
+  const cagr = await getCAGR(symbol);
+  const rate = cagr ?? PRESET_RATES[symbol.toUpperCase()] ?? 0.1;
   const futureValue = amount * Math.pow(1 + rate, years);
   return { rate, futureValue };
 }

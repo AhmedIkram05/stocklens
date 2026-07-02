@@ -57,7 +57,8 @@ refresh_tokens = Table(
     target_metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
     Column(
-        "user_id", UUID(as_uuid=True),
+        "user_id",
+        UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     ),
@@ -76,7 +77,8 @@ portfolios = Table(
     target_metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
     Column(
-        "user_id", UUID(as_uuid=True),
+        "user_id",
+        UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     ),
@@ -95,7 +97,8 @@ holdings = Table(
     target_metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
     Column(
-        "portfolio_id", UUID(as_uuid=True),
+        "portfolio_id",
+        UUID(as_uuid=True),
         ForeignKey("portfolios.id", ondelete="CASCADE"),
         nullable=False,
     ),
@@ -115,7 +118,8 @@ transactions = Table(
     target_metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
     Column(
-        "portfolio_id", UUID(as_uuid=True),
+        "portfolio_id",
+        UUID(as_uuid=True),
         ForeignKey("portfolios.id", ondelete="CASCADE"),
         nullable=False,
     ),
@@ -140,14 +144,16 @@ receipts = Table(
     target_metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
     Column(
-        "user_id", UUID(as_uuid=True),
+        "user_id",
+        UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     ),
     Column("total_amount", Numeric(10, 2)),
     Column("merchant_name", String(255)),
     Column(
-        "category_id", UUID(as_uuid=True),
+        "category_id",
+        UUID(as_uuid=True),
         ForeignKey("spending_categories.id", ondelete="SET NULL"),
     ),
     Column("ocr_raw_text", Text()),
@@ -215,7 +221,8 @@ agent_conversations = Table(
     target_metadata,
     Column("id", BigInteger(), primary_key=True, autoincrement=True),
     Column(
-        "user_id", UUID(as_uuid=True),
+        "user_id",
+        UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     ),

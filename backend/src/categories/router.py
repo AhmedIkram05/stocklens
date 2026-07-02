@@ -9,6 +9,7 @@ Endpoints:
 from __future__ import annotations
 
 import json
+from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -19,7 +20,6 @@ from src.categories.schemas import CategoryListResponse, CategoryResponse
 from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
-from uuid import UUID
 
 logger = structlog.get_logger()
 

@@ -39,6 +39,7 @@ logger = structlog.get_logger()
 
 # ── Application lifespan ──
 
+
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
     logger.info("app_starting", environment=settings.ENVIRONMENT)
@@ -96,6 +97,7 @@ app.add_exception_handler(429, _rate_limit_exceeded_handler)
 
 # ── Health endpoint ──
 
+
 @app.get("/health", tags=["system"])
 async def health():
     """Health check — used by Docker and load balancers."""
@@ -105,8 +107,11 @@ async def health():
 # ── Router registrations ──
 # Import at function scope to avoid circular imports at module level.
 from src.auth.router import router as auth_router  # noqa: E402
+from src.cash_flows.router import router as cash_flows_router  # noqa: E402
 from src.categories.router import router as category_router  # noqa: E402
 from src.holdings.router import router as holdings_router  # noqa: E402
+from src.market.router import router as market_router  # noqa: E402
+from src.performance.router import router as performance_router  # noqa: E402
 from src.portfolios.router import router as portfolio_router  # noqa: E402
 from src.transactions.router import router as transaction_router  # noqa: E402
 
@@ -115,4 +120,7 @@ app.include_router(receipt_router, prefix="/receipts", tags=["receipts"])
 app.include_router(category_router, prefix="/categories", tags=["categories"])
 app.include_router(portfolio_router, prefix="/portfolios", tags=["portfolios"])
 app.include_router(holdings_router, tags=["holdings"])
+app.include_router(market_router, prefix="/market", tags=["market"])
+app.include_router(cash_flows_router, tags=["cash_flows"])
+app.include_router(performance_router, tags=["performance"])
 app.include_router(transaction_router, tags=["transactions"])

@@ -173,11 +173,13 @@ async def classify_with_bedrock(merchant_name: str) -> Optional[CategoryRule]:
     try:
         client = _get_bedrock_client()
 
-        body = json.dumps({
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 10,
-            "messages": [{"role": "user", "content": prompt}],
-        })
+        body = json.dumps(
+            {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 10,
+                "messages": [{"role": "user", "content": prompt}],
+            }
+        )
 
         response = await asyncio.to_thread(
             client.invoke_model,

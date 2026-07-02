@@ -60,9 +60,7 @@ async def _test_db() -> AsyncGenerator[None, None]:
     On teardown the transaction is rolled back and the original functions are
     restored.
     """
-    dsn = settings.TEST_DATABASE_URL.replace(
-        "postgresql+asyncpg://", "postgresql://", 1
-    )
+    dsn = settings.TEST_DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://", 1)
     conn = await asyncpg.connect(dsn)
     await conn.execute("BEGIN")
 
@@ -108,9 +106,7 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
     then shuts down after the test completes.
     """
     transport = ASGITransport(app=app)
-    async with AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
 
@@ -150,9 +146,7 @@ async def _seed_categories() -> None:
 
     async def _category_exists(name: str) -> bool:
         async with connection_ctx() as conn:
-            row = await conn.fetchrow(
-                "SELECT 1 FROM spending_categories WHERE name = $1", name
-            )
+            row = await conn.fetchrow("SELECT 1 FROM spending_categories WHERE name = $1", name)
             return row is not None
 
     for cat in SEED_CATEGORIES:

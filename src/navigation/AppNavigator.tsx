@@ -27,6 +27,12 @@ import ReceiptDetailsScreen from '../screens/ReceiptDetailsScreen';
 import SplashScreen from '../screens/OnboardingScreen';
 import { useAuth } from '../contexts/AuthContext';
 import LockScreen from '../screens/LockScreen';
+import PortfolioListScreen from '../screens/portfolio/PortfolioListScreen';
+import PortfolioDetailScreen from '../screens/portfolio/PortfolioDetailScreen';
+import CreatePortfolioScreen from '../screens/portfolio/CreatePortfolioScreen';
+import DepositScreen from '../screens/portfolio/DepositScreen';
+import TradeScreen from '../screens/portfolio/TradeScreen';
+import BenchmarkScreen from '../screens/portfolio/BenchmarkScreen';
 
 /** Root stack navigation parameter list - defines all stack screens and their params */
 export type RootStackParamList = {
@@ -51,10 +57,22 @@ export type RootStackParamList = {
   };
 };
 
+/** Portfolio stack navigation parameter list - defines all portfolio screens */
+export type PortfolioStackParamList = {
+  PortfolioList: undefined;
+  PortfolioDetail: { portfolioId: string; portfolioName?: string };
+  CreatePortfolio: undefined;
+  Deposit: { portfolioId: string };
+  Trade: { portfolioId: string; mode: 'buy' | 'sell' };
+  Benchmark: { portfolioId: string; benchmarkTicker?: string };
+};
+
 /** Bottom tab navigation parameter list - defines all tab screens */
 export type MainTabParamList = {
   /** Home/dashboard tab showing receipt history */
   Dashboard: undefined;
+  /** Portfolio tab for managing investment portfolios */
+  Portfolio: undefined;
   /** Scan tab with camera for capturing receipts */
   Scan: undefined;
   /** Summary tab with analytics and insights */
@@ -65,11 +83,45 @@ export type MainTabParamList = {
 
 const Stack = createStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
+const PortfolioStack = createStackNavigator<PortfolioStackParamList>();
+
+/**
+ * PortfolioStackNavigator
+ *
+ * Stack navigator for the Portfolio tab with 6 screens:
+ * PortfolioList, PortfolioDetail, CreatePortfolio, Deposit, Trade, Benchmark.
+ * Uses horizontal iOS slide transitions matching the root stack style.
+ */
+function PortfolioStackNavigator() {
+  const { theme } = useTheme();
+
+  return (
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
+      <PortfolioStack.Navigator
+        screenOptions={{
+          headerShown: false,
+          cardStyleInterpolator: CardStyleInterpolators.forHorizontalIOS,
+          transitionSpec: {
+            open: { animation: 'timing', config: { duration: 200 } },
+            close: { animation: 'timing', config: { duration: 200 } },
+          },
+        }}
+      >
+        <PortfolioStack.Screen name="PortfolioList" component={PortfolioListScreen} />
+        <PortfolioStack.Screen name="PortfolioDetail" component={PortfolioDetailScreen} />
+        <PortfolioStack.Screen name="CreatePortfolio" component={CreatePortfolioScreen} />
+        <PortfolioStack.Screen name="Deposit" component={DepositScreen} />
+        <PortfolioStack.Screen name="Trade" component={TradeScreen} />
+        <PortfolioStack.Screen name="Benchmark" component={BenchmarkScreen} />
+      </PortfolioStack.Navigator>
+    </View>
+  );
+}
 
 /**
  * MainTabNavigator
  *
- * Bottom tab bar with 4 tabs: Dashboard, Scan, Summary, Settings.
+ * Bottom tab bar with 5 tabs: Dashboard, Portfolio, Scan, Summary, Settings.
  * Uses Ionicons for tab icons (filled when active, outlined when inactive).
  * Features:
  * - iOS: Native blur effect with translucent background
@@ -142,6 +194,30 @@ function MainTabNavigator() {
             color: string;
             size: number;
           }) => <Ionicons name={focused ? 'grid' : 'grid-outline'} size={size} color={color} />,
+        }}
+      />
+      <Tab.Screen
+        name="Portfolio"
+        component={PortfolioStackNavigator}
+        options={{
+          title: 'Portfolio',
+          tabBarLabel: 'Portfolio',
+          headerShown: false,
+          tabBarIcon: ({
+            focused,
+            color,
+            size,
+          }: {
+            focused: boolean;
+            color: string;
+            size: number;
+          }) => (
+            <Ionicons
+              name={focused ? 'briefcase' : 'briefcase-outline'}
+              size={size}
+              color={color}
+            />
+          ),
         }}
       />
       <Tab.Screen

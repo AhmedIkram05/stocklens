@@ -10,7 +10,6 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import httpx
-import pytest
 
 
 async def _create_portfolio(client: httpx.AsyncClient, headers: dict[str, str]) -> dict:
@@ -20,7 +19,10 @@ async def _create_portfolio(client: httpx.AsyncClient, headers: dict[str, str]) 
 
 
 async def _create_transaction(
-    client: httpx.AsyncClient, pid: str, headers: dict[str, str], **overrides,
+    client: httpx.AsyncClient,
+    pid: str,
+    headers: dict[str, str],
+    **overrides,
 ) -> dict:
     payload = {
         "ticker": "AAPL",
@@ -47,8 +49,11 @@ class TestCreateTransaction:
         response = await client.post(
             f"/portfolios/{p['id']}/transactions",
             json={
-                "ticker": "AAPL", "type": "BUY", "shares": "10.0",
-                "price_per_share": "150.50", "transaction_date": "2026-06-01",
+                "ticker": "AAPL",
+                "type": "BUY",
+                "shares": "10.0",
+                "price_per_share": "150.50",
+                "transaction_date": "2026-06-01",
             },
             headers=auth_headers,
         )
@@ -67,8 +72,11 @@ class TestCreateTransaction:
         response = await client.post(
             f"/portfolios/{p['id']}/transactions",
             json={
-                "ticker": "TSLA", "type": "SELL", "shares": "5.0",
-                "price_per_share": "700.0", "transaction_date": "2026-06-15",
+                "ticker": "TSLA",
+                "type": "SELL",
+                "shares": "5.0",
+                "price_per_share": "700.0",
+                "transaction_date": "2026-06-15",
             },
             headers=auth_headers,
         )
@@ -76,50 +84,70 @@ class TestCreateTransaction:
         assert response.json()["type"] == "SELL"
         assert float(response.json()["total_amount"]) == 3500.0
 
-    async def test_create_ticker_uppercased(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_create_ticker_uppercased(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         p = await _create_portfolio(client, auth_headers)
         response = await client.post(
             f"/portfolios/{p['id']}/transactions",
             json={
-                "ticker": "aapl", "type": "BUY", "shares": "1.0",
-                "price_per_share": "100.0", "transaction_date": "2026-06-01",
+                "ticker": "aapl",
+                "type": "BUY",
+                "shares": "1.0",
+                "price_per_share": "100.0",
+                "transaction_date": "2026-06-01",
             },
             headers=auth_headers,
         )
         assert response.status_code == 201
         assert response.json()["ticker"] == "AAPL"
 
-    async def test_create_portfolio_not_found(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_create_portfolio_not_found(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         response = await client.post(
             "/portfolios/00000000-0000-0000-0000-000000000000/transactions",
             json={
-                "ticker": "AAPL", "type": "BUY", "shares": "1.0",
-                "price_per_share": "100.0", "transaction_date": "2026-06-01",
+                "ticker": "AAPL",
+                "type": "BUY",
+                "shares": "1.0",
+                "price_per_share": "100.0",
+                "transaction_date": "2026-06-01",
             },
             headers=auth_headers,
         )
         assert response.status_code == 404
 
-    async def test_create_invalid_type(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_create_invalid_type(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         p = await _create_portfolio(client, auth_headers)
         response = await client.post(
             f"/portfolios/{p['id']}/transactions",
             json={
-                "ticker": "AAPL", "type": "HOLD", "shares": "1.0",
-                "price_per_share": "100.0", "transaction_date": "2026-06-01",
+                "ticker": "AAPL",
+                "type": "HOLD",
+                "shares": "1.0",
+                "price_per_share": "100.0",
+                "transaction_date": "2026-06-01",
             },
             headers=auth_headers,
         )
         assert response.status_code == 422
 
-    async def test_create_future_date(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_create_future_date(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         p = await _create_portfolio(client, auth_headers)
         future = (date.today() + timedelta(days=2)).isoformat()
         response = await client.post(
             f"/portfolios/{p['id']}/transactions",
             json={
-                "ticker": "AAPL", "type": "BUY", "shares": "1.0",
-                "price_per_share": "100.0", "transaction_date": future,
+                "ticker": "AAPL",
+                "type": "BUY",
+                "shares": "1.0",
+                "price_per_share": "100.0",
+                "transaction_date": future,
             },
             headers=auth_headers,
         )
@@ -130,8 +158,11 @@ class TestCreateTransaction:
         response = await client.post(
             f"/portfolios/{p['id']}/transactions",
             json={
-                "ticker": "GOOGL", "type": "BUY", "shares": "2.0",
-                "price_per_share": "2800.0", "transaction_date": "2026-06-10",
+                "ticker": "GOOGL",
+                "type": "BUY",
+                "shares": "2.0",
+                "price_per_share": "2800.0",
+                "transaction_date": "2026-06-10",
                 "notes": "Bought the dip",
             },
             headers=auth_headers,
@@ -167,8 +198,11 @@ class TestListTransactions:
         p = await _create_portfolio(client, auth_headers)
         for i in range(5):
             await _create_transaction(
-                client, p["id"], auth_headers,
-                ticker="AAPL", notes=f"tx_{i}",
+                client,
+                p["id"],
+                auth_headers,
+                ticker="AAPL",
+                notes=f"tx_{i}",
             )
         # limit=2, offset=0
         response = await client.get(
@@ -180,7 +214,9 @@ class TestListTransactions:
         assert len(data["transactions"]) == 2
         assert data["total"] == 5
 
-    async def test_list_ticker_filter(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_list_ticker_filter(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         p = await _create_portfolio(client, auth_headers)
         await _create_transaction(client, p["id"], auth_headers, ticker="AAPL")
         await _create_transaction(client, p["id"], auth_headers, ticker="TSLA")
@@ -238,7 +274,9 @@ class TestGetTransaction:
         assert response.status_code == 200
         assert response.json()["id"] == tid
 
-    async def test_get_nested_wrong_portfolio(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_get_nested_wrong_portfolio(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         p1 = await _create_portfolio(client, auth_headers)
         txn = await _create_transaction(client, p1["id"], auth_headers)
         tid = txn["id"]

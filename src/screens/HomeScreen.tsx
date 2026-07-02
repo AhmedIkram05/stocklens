@@ -4,7 +4,7 @@
  * Dashboard showing spending stats and recent receipts.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useNavigation, CompositeNavigationProp } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
@@ -23,6 +23,8 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import useReceipts from '../hooks/useReceipts';
 import { ActivityIndicator } from 'react-native';
 import { formatCurrencyRounded } from '../utils/formatters';
+import { portfolioService } from '../services/portfolios';
+
 import { useAuth } from '../contexts/AuthContext';
 import type { MainTabParamList, RootStackParamList } from '../navigation/AppNavigator';
 import ReceiptsSorter, { SortBy, SortDirection } from '../components/ReceiptsSorter';
@@ -41,6 +43,47 @@ export default function HomeScreen() {
   const { theme } = useTheme();
 
   const { receipts: allScans, loading: receiptsLoading } = useReceipts();
+
+  const [portfolioAgg, setPortfolioAgg] = useState<{
+    total_market_value: number;
+    total_unrealised_pl: number;
+  } | null>(null);
+  const [portfolioLoading, setPortfolioLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const portfolios = await portfolioService.listPortfolios();
+        if (!mounted || portfolios.length === 0) {
+          if (mounted) setPortfolioLoading(false);
+          return;
+        }
+        const results = await Promise.allSettled(
+          portfolios.map((p) => portfolioService.getPerformance(p.id)),
+        );
+        if (!mounted) return;
+        let totalMV = 0;
+        let totalPL = 0;
+        for (const r of results) {
+          if (r.status === 'fulfilled') {
+            totalMV += r.value.total_market_value ?? 0;
+            totalPL += r.value.total_unrealised_pl ?? 0;
+          }
+        }
+        if (totalMV > 0) {
+          setPortfolioAgg({ total_market_value: totalMV, total_unrealised_pl: totalPL });
+        }
+      } catch {
+        // Silently fail
+      } finally {
+        if (mounted) setPortfolioLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const { userProfile } = useAuth();
   const firstName = useMemo(() => {
@@ -123,6 +166,31 @@ export default function HomeScreen() {
                   variant="blue"
                 />
               </View>
+
+              {!portfolioLoading && portfolioAgg && (
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('MainTabs' as any, { screen: 'Portfolio' })}
+                  activeOpacity={0.7}
+                  style={styles.portfolioSection}
+                >
+                  <View style={styles.statsContainer}>
+                    <StatCard
+                      value={
+                        <IconValue
+                          iconName="briefcase-outline"
+                          iconSize={28}
+                          iconColor={brandColors.white}
+                          value={formatAmount(portfolioAgg.total_market_value)}
+                          valueStyle={{ color: brandColors.white, fontSize: 28, fontWeight: '700' }}
+                        />
+                      }
+                      label="Portfolio Value"
+                      subtitle={`${portfolioAgg.total_unrealised_pl >= 0 ? '+' : ''}${formatAmount(portfolioAgg.total_unrealised_pl)} P&L`}
+                      variant="green"
+                    />
+                  </View>
+                </TouchableOpacity>
+              )}
 
               <View style={styles.recentScans}>
                 <View style={styles.sectionHeader}>
@@ -269,5 +337,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: spacing.md,
+  },
+  portfolioSection: {
+    paddingBottom: spacing.md,
   },
 });

@@ -8,8 +8,6 @@ All database access runs inside the per-test transaction provided by
 from __future__ import annotations
 
 import httpx
-import pytest
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -40,7 +38,9 @@ class TestCreateHolding:
         assert float(data["average_cost_basis"]) == 150.50
         assert data["portfolio_id"] == p["id"]
 
-    async def test_create_ticker_uppercased(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_create_ticker_uppercased(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         """Ticker is automatically uppercased."""
         p = await _create_portfolio(client, auth_headers)
         response = await client.post(
@@ -51,7 +51,9 @@ class TestCreateHolding:
         assert response.status_code == 201
         assert response.json()["ticker"] == "AAPL"
 
-    async def test_create_portfolio_not_found(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_create_portfolio_not_found(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         """Adding a holding to a non-existent portfolio returns 404."""
         response = await client.post(
             "/portfolios/00000000-0000-0000-0000-000000000000/holdings",
@@ -60,7 +62,9 @@ class TestCreateHolding:
         )
         assert response.status_code == 404
 
-    async def test_create_duplicate_ticker(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_create_duplicate_ticker(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         """Adding the same ticker twice returns an error."""
         p = await _create_portfolio(client, auth_headers)
         await client.post(
@@ -75,7 +79,9 @@ class TestCreateHolding:
         )
         assert response.status_code == 409  # unique constraint
 
-    async def test_create_other_user_portfolio(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_create_other_user_portfolio(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         """Adding a holding to another user's portfolio returns 404."""
         p = await _create_portfolio(client, auth_headers)
         resp2 = await client.post(
@@ -148,7 +154,9 @@ class TestGetHolding:
         )
         assert response.status_code == 404
 
-    async def test_get_nested_success(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_get_nested_success(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         """GET /portfolios/{id}/holdings/{hid} works."""
         p = await _create_portfolio(client, auth_headers)
         created = await client.post(
@@ -164,7 +172,9 @@ class TestGetHolding:
         assert response.status_code == 200
         assert response.json()["ticker"] == "TSLA"
 
-    async def test_get_nested_wrong_portfolio(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_get_nested_wrong_portfolio(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         """Nested get with wrong portfolio ID returns 404."""
         p = await _create_portfolio(client, auth_headers)
         created = await client.post(

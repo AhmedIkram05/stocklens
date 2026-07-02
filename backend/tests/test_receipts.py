@@ -7,14 +7,13 @@ All database access runs inside the per-test transaction provided by
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import httpx
-import pytest
 
 
 async def _create_receipt(
-    client: httpx.AsyncClient, headers: dict[str, str], **overrides,
+    client: httpx.AsyncClient,
+    headers: dict[str, str],
+    **overrides,
 ) -> dict:
     payload = {
         "merchant_name": "Tesco",
@@ -56,7 +55,9 @@ class TestCreateReceipt:
         assert "id" in data
         assert "created_at" in data
 
-    async def test_create_with_line_items(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_create_with_line_items(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         response = await client.post(
             "/receipts",
             json={
@@ -105,7 +106,9 @@ class TestListReceipts:
         assert data["limit"] == 2
         assert data["offset"] == 0
 
-    async def test_list_scoped_to_user(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+    async def test_list_scoped_to_user(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
         await _create_receipt(client, auth_headers)
         resp2 = await client.post(
             "/auth/register",

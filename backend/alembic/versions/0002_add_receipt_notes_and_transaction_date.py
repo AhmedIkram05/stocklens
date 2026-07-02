@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Sequence, Union
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "0002"
@@ -20,9 +21,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     op.add_column("receipts", sa.Column("notes", sa.Text(), nullable=True))
-    op.add_column(
-        "receipts", sa.Column("transaction_date", sa.Date(), nullable=True)
-    )
+    op.add_column("receipts", sa.Column("transaction_date", sa.Date(), nullable=True))
 
 
 def downgrade() -> None:
