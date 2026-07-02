@@ -20,6 +20,12 @@ export interface QuoteData {
   timestamp: string;
 }
 
+interface OHLCVResponse {
+  ticker: string;
+  data: OHLCVData[];
+  total: number;
+}
+
 export const marketService = {
   async getOHLCV(ticker: string, startDate?: string, endDate?: string): Promise<OHLCVData[]> {
     const params = new URLSearchParams();
@@ -27,7 +33,8 @@ export const marketService = {
     if (endDate) params.set('end_date', endDate);
     const qs = params.toString();
     const endpoint = `/market/ohlcv/${ticker}${qs ? `?${qs}` : ''}`;
-    return apiService.get<OHLCVData[]>(endpoint);
+    const res = await apiService.get<OHLCVResponse>(endpoint);
+    return res.data;
   },
 
   async getQuote(ticker: string): Promise<QuoteData> {
