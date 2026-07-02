@@ -60,11 +60,11 @@ export type RootStackParamList = {
 /** Portfolio stack navigation parameter list - defines all portfolio screens */
 export type PortfolioStackParamList = {
   PortfolioList: undefined;
-  PortfolioDetail: { portfolioId: number; portfolioName?: string };
+  PortfolioDetail: { portfolioId: string; portfolioName?: string };
   CreatePortfolio: undefined;
-  Deposit: { portfolioId: number };
-  Trade: { portfolioId: number; mode: 'buy' | 'sell' };
-  Benchmark: { portfolioId: number; benchmarkTicker?: string };
+  Deposit: { portfolioId: string };
+  Trade: { portfolioId: string; mode: 'buy' | 'sell' };
+  Benchmark: { portfolioId: string; benchmarkTicker?: string };
 };
 
 /** Bottom tab navigation parameter list - defines all tab screens */
