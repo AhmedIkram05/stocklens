@@ -72,6 +72,8 @@ services:
       start_period: 30s
     volumes:
       - ./backend/src:/app/src
+      - ./backend/ml:/app/ml
+      - model_artifacts:/model_artifacts
     restart: unless-stopped
 
   pytest:
@@ -96,6 +98,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/src:/app/src
+      - ./backend/ml:/app/ml
       - ./backend/tests:/app/tests
       - ./backend/alembic:/app/alembic
     command: >
@@ -103,3 +106,4 @@ services:
 
 volumes:
   pgdata:
+  model_artifacts:
