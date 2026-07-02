@@ -1,15 +1,15 @@
 {
   "name": "stocklens",
   "version": "1.0.0",
-  "main": "index.ts",
+  "main": "frontend/index.ts",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "test": "jest",
-    "test:unit": "jest --testPathPattern='unit\\.test\\.(ts|tsx)$'",
-    "test:integration": "jest --testPathPattern='integration\\.test\\.(ts|tsx)$'",
-    "test:coverage": "jest --coverage"
+    "start": "cd frontend && expo start",
+    "android": "cd frontend && expo start --android",
+    "ios": "cd frontend && expo start --ios",
+    "test": "jest --config frontend/jest.config.js",
+    "test:unit": "jest --config frontend/jest.config.js --testPathPattern='unit\\.test\\.(ts|tsx)$'",
+    "test:integration": "jest --config frontend/jest.config.js --testPathPattern='integration\\.test\\.(ts|tsx)$'",
+    "test:coverage": "jest --config frontend/jest.config.js --coverage"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

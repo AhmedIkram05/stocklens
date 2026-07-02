@@ -4,11 +4,11 @@
     "slug": "StockLens",
     "version": "1.0.0",
     "orientation": "default",
-    "icon": "./assets/StockLens_Logo_T.png",
+    "icon": "./frontend/assets/StockLens_Logo_T.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/StockLens_Logo_T.png",
+      "image": "./frontend/assets/StockLens_Logo_T.png",
       "resizeMode": "contain"
     },
     "ios": {
@@ -16,7 +16,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/StockLens_Logo_T.png"
+        "foregroundImage": "./frontend/assets/StockLens_Logo_T.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
