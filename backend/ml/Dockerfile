@@ -29,7 +29,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 WORKDIR /app
-COPY . .
+COPY . /app/ml/
 
 # Non-root user
 RUN groupadd -r mluser && useradd -r -g mluser -u 1001 mluser \

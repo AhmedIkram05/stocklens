@@ -48,24 +48,28 @@ services:
     restart: unless-stopped
 
   mlflow:
-    image: python:3.14-slim
+    image: python:3.12-slim
     ports:
-      - '5000:5000'
+      - '5001:5001'
     environment:
-      MLFLOW_TRACKING_URI: http://0.0.0.0:5000
+      MLFLOW_TRACKING_URI: http://0.0.0.0:5001
       MLFLOW_BACKEND_STORE_URI: sqlite:///mlflow/mlflow.db
       MLFLOW_ARTIFACT_ROOT: /mlflow/artifacts
     command: >
       sh -c "pip install mlflow>=3.14.0 --quiet &&
-             mlflow server --host 0.0.0.0 --port 5000
+             mlflow server --host 0.0.0.0 --port 5001
              --backend-store-uri sqlite:///mlflow/mlflow.db
              --default-artifact-root /mlflow/artifacts"
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:5000']
+      test:
+        [
+          'CMD-SHELL',
+          'python -c "import urllib.request; exit(urllib.request.urlopen(\"http://localhost:5001\").status != 200)"',
+        ]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 15s
+      retries: 10
+      start_period: 60s
     volumes:
       - mlflow_data:/mlflow
     restart: unless-stopped
@@ -77,7 +81,7 @@ services:
       - ml
     environment:
       DATABASE_URL: postgresql+asyncpg://stocklens:stocklens@postgres:5432/stocklens
-      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_TRACKING_URI: http://mlflow:5001
       MLFLOW_ARTIFACT_ROOT: /mlflow/artifacts
       MODEL_ARTIFACT_DIR: /model_artifacts/champion
       ENVIRONMENT: development
