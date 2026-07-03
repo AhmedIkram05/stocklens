@@ -47,6 +47,50 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  mlflow:
+    image: python:3.14-slim
+    ports:
+      - '5000:5000'
+    environment:
+      MLFLOW_TRACKING_URI: http://0.0.0.0:5000
+      MLFLOW_BACKEND_STORE_URI: sqlite:///mlflow/mlflow.db
+      MLFLOW_ARTIFACT_ROOT: /mlflow/artifacts
+    command: >
+      sh -c "pip install mlflow>=3.14.0 --quiet &&
+             mlflow server --host 0.0.0.0 --port 5000
+             --backend-store-uri sqlite:///mlflow/mlflow.db
+             --default-artifact-root /mlflow/artifacts"
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:5000']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    volumes:
+      - mlflow_data:/mlflow
+    restart: unless-stopped
+
+  ml:
+    build:
+      context: ./backend/ml
+    profiles:
+      - ml
+    environment:
+      DATABASE_URL: postgresql+asyncpg://stocklens:stocklens@postgres:5432/stocklens
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_ARTIFACT_ROOT: /mlflow/artifacts
+      MODEL_ARTIFACT_DIR: /model_artifacts/champion
+      ENVIRONMENT: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+    volumes:
+      - model_artifacts:/model_artifacts
+      - mlflow_data:/mlflow
+    # No ports - runs on-demand via: docker compose run ml python -m ml.pipeline
+
   backend:
     build:
       context: ./backend
@@ -106,4 +150,5 @@ services:
 
 volumes:
   pgdata:
+  mlflow_data:
   model_artifacts:
