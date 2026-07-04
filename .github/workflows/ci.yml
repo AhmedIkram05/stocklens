@@ -75,3 +75,19 @@ jobs:
       - run: npm ci
       - name: npm audit
         run: npm audit --omit=dev || true
+
+  rust:
+    name: Rust (features-engine)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/ml/features-engine
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy
+      - name: Clippy
+        run: cargo clippy --all-features -- -D warnings
+      - name: Tests
+        run: cargo test

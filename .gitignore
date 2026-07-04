@@ -84,6 +84,13 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 
+# ─── Rust ───────────────────────────────────────────────────────────────────────
+# Rust build artifacts — hundreds of MB from cargo build / maturin
+target/
+*.so
+*.dylib
+Cargo.lock
+
 # ─── Backend local data ────────────────────────────────────────────────────────
 # Receipt images stored locally during development
 backend/data/

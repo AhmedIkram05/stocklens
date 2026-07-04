@@ -1,0 +1,7 @@
+Integration tests (`tests/`) are intentionally absent.
+
+This crate produces `crate-type = ["cdylib"]` (a Python .so via PyO3). Cargo
+integration-test binaries cannot link against a cdylib — there is no rlib to
+link against.
+
+All tests live as `#[cfg(test)] mod tests { ... }` inside the source modules.
