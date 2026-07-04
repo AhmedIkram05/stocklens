@@ -1,17 +1,21 @@
 # Stage 1: Rust native module builder
-FROM rust:1.85-slim-bookworm AS rust-builder
+# Use same Python version as runtime to ensure ABI-compatible wheel (cp314)
+FROM python:3.14-slim AS rust-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-dev python3-pip python3-venv \
+    curl \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-RUN python3 -m venv /venv && \
-    /venv/bin/pip install maturin
+# Install Rust via rustup
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:$PATH"
 
-ENV PATH="/venv/bin:$PATH"
+RUN pip install maturin --no-cache-dir
+
 WORKDIR /src
 COPY features-engine /src
-RUN maturin build --release --features extension --out /wheels --interpreter /usr/bin/python3
+RUN maturin build --release --features extension --out /wheels
 
 # Stage 2: Build Python dependencies with uv
 FROM python:3.14-slim AS builder
