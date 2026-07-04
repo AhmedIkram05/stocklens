@@ -64,6 +64,15 @@ async def lifespan(app: FastAPI):
     if seeded:
         logger.info("categories_seeded", count=seeded)
 
+    # Load prediction model
+    from src.prediction.service import prediction_service
+
+    loaded = prediction_service.load_model(settings.PREDICTION_MODEL_PATH)
+    if loaded:
+        logger.info("prediction_model_loaded", path=settings.PREDICTION_MODEL_PATH)
+    else:
+        logger.warning("prediction_model_not_found", path=settings.PREDICTION_MODEL_PATH)
+
     yield
 
     logger.info("app_shutting_down")
@@ -113,6 +122,7 @@ from src.holdings.router import router as holdings_router  # noqa: E402
 from src.market.router import router as market_router  # noqa: E402
 from src.performance.router import router as performance_router  # noqa: E402
 from src.portfolios.router import router as portfolio_router  # noqa: E402
+from src.prediction.router import router as prediction_router  # noqa: E402
 from src.transactions.router import router as transaction_router  # noqa: E402
 
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
@@ -123,4 +133,5 @@ app.include_router(holdings_router, tags=["holdings"])
 app.include_router(market_router, prefix="/market", tags=["market"])
 app.include_router(cash_flows_router, tags=["cash_flows"])
 app.include_router(performance_router, tags=["performance"])
+app.include_router(prediction_router, prefix="/predict", tags=["prediction"])
 app.include_router(transaction_router, tags=["transactions"])
