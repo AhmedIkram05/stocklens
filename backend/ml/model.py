@@ -57,6 +57,7 @@ class GlobalLSTM(nn.Module):
         self._vocab: dict[str, int] = {}
         self._feature_means: Optional[np.ndarray] = None
         self._feature_stds: Optional[np.ndarray] = None
+        self._model_version: str = "0"
 
         # Ticker entity embedding
         self.ticker_embedding = nn.Embedding(
@@ -150,6 +151,7 @@ class GlobalLSTM(nn.Module):
         vocab: Optional[dict[str, int]] = None,
         feature_means: Optional[np.ndarray] = None,
         feature_stds: Optional[np.ndarray] = None,
+        model_version: str = "0",
     ) -> None:
         """Save model state dict and config metadata.
 
@@ -158,6 +160,7 @@ class GlobalLSTM(nn.Module):
             vocab: Ticker-to-index vocabulary for embedding lookup at inference.
             feature_means: Per-feature means for z-score standardisation (inverse of training).
             feature_stds: Per-feature stds for z-score standardisation.
+            model_version: Model version string (default "0").
         """
         payload: dict = {
             "state_dict": self.state_dict(),
@@ -169,6 +172,7 @@ class GlobalLSTM(nn.Module):
             "n_classes": self.classifier.out_features,
             "vocab_size": self.ticker_embedding.num_embeddings,
             "unk_idx": self.unk_idx,
+            "model_version": model_version,
         }
         if vocab is not None:
             payload["vocab"] = vocab
@@ -188,7 +192,7 @@ class GlobalLSTM(nn.Module):
 
         Returns:
             Loaded GlobalLSTM instance with ``vocab``, ``feature_means``,
-            ``feature_stds`` attributes set if present in checkpoint.
+            ``feature_stds``, ``model_version`` attributes set if present in checkpoint.
         """
         # ponytail: weights_only=False because checkpoint includes numpy arrays
         # from optional metadata (vocab, feature_means, feature_stds). Since we
@@ -210,6 +214,7 @@ class GlobalLSTM(nn.Module):
         model._vocab = checkpoint.get("vocab", {})
         model._feature_means = checkpoint.get("feature_means")
         model._feature_stds = checkpoint.get("feature_stds")
+        model._model_version = checkpoint.get("model_version", "0")
 
         model.eval()
         return model
