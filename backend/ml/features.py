@@ -74,13 +74,86 @@ def compute_volatility_rank(close: pd.Series, period: int = 252) -> pd.Series:
     )
 
 
+def _safe_array(df: pd.DataFrame, col: str, dtype: type = np.float64) -> np.ndarray:
+    """Safely extract a column as a numpy array, falling back to NaN if missing."""
+    if col in df.columns:
+        return df[col].to_numpy(dtype=dtype)
+    n = len(df)
+    result = np.empty(n, dtype=dtype)
+    result.fill(np.nan)
+    if dtype == np.int64:
+        result.fill(0)
+    return result
+
+
 def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Compute all 13 technical indicators via the Rust native backend."""
+    """Compute 13 V1 technical indicators via the Rust native backend.
+
+    V1 features: log_ret_1/5/21d, ma_5/10/20/50, rsi_14, macd/signal/hist,
+    vol_30d, vol_rank.
+
+    The Rust backend produces 19 features total (13 V1 + 6 V2 extras).
+    V2 extras (bb_pctb, bb_width, atr_14, obv, williams_r_14, roc_10) are
+    dropped after compute — tested and hurt performance (35%→19% directional).
+    """
+    v1_features = [
+        "log_ret_1d",
+        "log_ret_5d",
+        "log_ret_21d",
+        "ma_5",
+        "ma_10",
+        "ma_20",
+        "ma_50",
+        "rsi_14",
+        "macd",
+        "macd_signal",
+        "macd_hist",
+        "vol_30d",
+        "vol_rank",
+    ]
     close = df["adjusted_close"].to_numpy(dtype=np.float64)
-    result = _dict_to_df(_rust.compute_all_features(close), df.index)
+    high = _safe_array(df, "high")
+    low = _safe_array(df, "low")
+    volume = _safe_array(df, "volume")
+    result = _dict_to_df(_rust.compute_all_features(close, high, low, volume), df.index)
+    result = result[v1_features]
+
     if "ticker" in df.columns:
         result["ticker"] = df["ticker"]
     return result
+
+
+def compute_cross_sectional_features(
+    ticker_features: pd.DataFrame,
+    benchmark_features: pd.DataFrame,
+) -> pd.DataFrame:
+    """Compute excess returns vs benchmark (SPY) for cross-sectional context.
+
+    For each of the three return windows (1d, 5d, 21d), the excess return
+    is ticker_return - benchmark_return. These features tell the model
+    whether the stock outperformed or underperformed the market — a key
+    signal that per-ticker z-scored features alone miss (z-scoring flattens
+    market-wide movements).
+
+    Both DataFrames must have the same index (dates). Returns are aligned
+    by pandas index matching via reindex() so missing benchmark dates get
+    NaN (filled to 0 by the caller).
+
+    Args:
+        ticker_features: DataFrame with at least log_ret_1d, log_ret_5d,
+            log_ret_21d columns (typically from compute_all_features).
+        benchmark_features: Same schema as ticker_features for the
+            benchmark index (e.g. SPY).
+
+    Returns:
+        DataFrame with columns: excess_ret_1d, excess_ret_5d, excess_ret_21d.
+    """
+    ret_cols = ["log_ret_1d", "log_ret_5d", "log_ret_21d"]
+    excess_cols = ["excess_ret_1d", "excess_ret_5d", "excess_ret_21d"]
+    aligned = benchmark_features.reindex(ticker_features.index)
+    excess = ticker_features[ret_cols] - aligned[ret_cols]
+    excess.columns = excess_cols
+    return excess
 
 
 def standardise_features(

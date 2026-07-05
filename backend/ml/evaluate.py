@@ -39,23 +39,19 @@ def evaluate(
     model.eval()
     all_preds: list[np.ndarray] = []
     all_labels: list[np.ndarray] = []
-    all_probs: list[np.ndarray] = []
 
     for features, labels, ticker_idxs in dataloader:
         features = features.to(device)
         ticker_idxs = ticker_idxs.to(device)
 
         logits = model(features, ticker_idxs)
-        probs = torch.softmax(logits, dim=-1)
         preds = logits.argmax(dim=-1)
 
         all_preds.append(preds.cpu().numpy())
         all_labels.append(labels.numpy())
-        all_probs.append(probs.cpu().numpy())
 
     preds = np.concatenate(all_preds)
     labels = np.concatenate(all_labels)
-    probs = np.concatenate(all_probs)
 
     # Directional accuracy (overall)
     accuracy = float((preds == labels).mean())
@@ -71,8 +67,11 @@ def evaluate(
     else:
         directional_acc = 0.0
 
-    # Simulated Sharpe
-    simulated_sharpe = compute_simulated_sharpe(labels, preds, probs)
+    # Simulated Sharpe (long-only)
+    simulated_sharpe = compute_simulated_sharpe(labels, preds)
+
+    # Long-short Sharpe (long UP, short DOWN)
+    long_short_sharpe = compute_long_short_sharpe(labels, preds)
 
     return {
         "accuracy": accuracy,
@@ -80,6 +79,7 @@ def evaluate(
         "per_class_f1": per_class_f1,
         "confusion_matrix": confusion_matrix.tolist(),
         "simulated_sharpe": simulated_sharpe,
+        "long_short_sharpe": long_short_sharpe,
         "total_samples": len(labels),
     }
 
@@ -120,7 +120,6 @@ def _compute_confusion_matrix(
 def compute_simulated_sharpe(
     labels: np.ndarray,
     preds: np.ndarray,
-    probs: np.ndarray,
     annual_factor: float = 252.0,
 ) -> float:
     """Compute Sharpe ratio from a simulated trading strategy.
@@ -138,7 +137,6 @@ def compute_simulated_sharpe(
     Args:
         labels: True class labels (0=DOWN, 1=FLAT, 2=UP).
         preds: Predicted class labels.
-        probs: Softmax probabilities (unused in V1 - for future confidence-based sizing).
         annual_factor: Number of trading days per year.
 
     Returns:
@@ -175,6 +173,57 @@ def compute_simulated_sharpe(
     sharpe = annualised_return / annualised_std
 
     return float(sharpe)
+
+
+def compute_long_short_sharpe(
+    labels: np.ndarray,
+    preds: np.ndarray,
+    annual_factor: float = 252.0,
+) -> float:
+    """Compute Sharpe ratio from a long-short trading strategy.
+
+    Strategy: Long when model predicts UP (+1), short when model predicts
+    DOWN (-1), flat (cash) when FLAT (0).
+
+    This doubles the return signal compared to long-only: correct UP
+    predictions earn +1%, correct DOWN predictions also earn +1%
+    (shorting a -1% move). Incorrect predictions lose -1% in either
+    direction. A symmetric model gets 2x the long-only Sharpe; an
+    asymmetric model that's good at UP but bad at DOWN gets penalised.
+
+    This is a more honest evaluation metric for directional forecasting
+    since the model should profit from both UP and DOWN predictions.
+
+    Args:
+        labels: True class labels (0=DOWN, 1=FLAT, 2=UP).
+        preds: Predicted class labels.
+        annual_factor: Number of trading days per year.
+
+    Returns:
+        Annualised Sharpe ratio. Returns 0.0 if std is 0.
+    """
+    # Signal: +1 (long UP), -1 (short DOWN), 0 (flat)
+    signal = np.where(preds == 2, 1.0, np.where(preds == 0, -1.0, 0.0))
+
+    # Market returns: +1% for UP, -1% for DOWN, 0% for FLAT
+    market_returns = np.where(labels == 2, 0.01, np.where(labels == 0, -0.01, 0.0))
+
+    # Strategy returns: signal × market_return
+    # Correct UP: (+1) × (+0.01) = +0.01
+    # Correct DOWN: (-1) × (-0.01) = +0.01
+    # Wrong UP: (+1) × (-0.01) = -0.01
+    # Wrong DOWN: (-1) × (+0.01) = -0.01
+    strategy_returns = signal * market_returns
+
+    mean_return = float(np.mean(strategy_returns))
+    std_return = float(np.std(strategy_returns))
+
+    if std_return == 0.0:
+        return 0.0
+
+    annualised_return = mean_return * annual_factor
+    annualised_std = std_return * np.sqrt(annual_factor)
+    return float(annualised_return / annualised_std)
 
 
 def plot_confusion_matrix(

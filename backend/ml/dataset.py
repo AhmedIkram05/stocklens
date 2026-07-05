@@ -48,7 +48,11 @@ def create_sliding_windows(
     labels: np.ndarray,
     ticker_idxs: np.ndarray,
     sequence_length: int = 30,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    dates: np.ndarray | None = None,
+) -> (
+    tuple[np.ndarray, np.ndarray, np.ndarray]
+    | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+):
     """Create sliding windows from a normalised feature matrix.
 
     Args:
@@ -56,17 +60,23 @@ def create_sliding_windows(
         labels: numpy array (T,) of labels for each time step.
         ticker_idxs: numpy array (T,) of ticker embedding indices.
         sequence_length: Number of time steps per window.
+        dates: Optional numpy array (T,) of dates for each time step.
+            When provided, returns window_dates aligned with each window.
 
     Returns:
-        (sequences, window_labels, window_ticker_idxs) tuple.
+        (sequences, window_labels, window_ticker_idxs) if dates is None.
+        (sequences, window_labels, window_ticker_idxs, window_dates) if dates is provided.
     """
     T = df_normalised.shape[0]
     if T < sequence_length:
-        return (
+        empty = (
             np.empty((0, sequence_length, df_normalised.shape[1])),
             np.empty((0,)),
             np.empty((0,)),
         )
+        if dates is not None:
+            return (*empty, np.empty((0,)))
+        return empty
 
     sequences = np.lib.stride_tricks.sliding_window_view(
         df_normalised, window_shape=(sequence_length, df_normalised.shape[1])
@@ -78,6 +88,15 @@ def create_sliding_windows(
     sequences = sequences[valid_mask]
     window_labels = window_labels[valid_mask]
     window_ticker_idxs = window_ticker_idxs[valid_mask]
+
+    if dates is not None:
+        window_dates = dates[sequence_length - 1 :][valid_mask]
+        return (
+            sequences,
+            window_labels.astype(np.int64),
+            window_ticker_idxs.astype(np.int64),
+            window_dates,
+        )
 
     return sequences, window_labels.astype(np.int64), window_ticker_idxs.astype(np.int64)
 

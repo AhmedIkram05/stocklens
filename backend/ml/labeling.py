@@ -4,10 +4,15 @@ Adaptive labeling for directional forecasting.
 Labels are computed per-ticker using a rolling volatility threshold,
 normalising across tickers with different base volatility levels.
 
-Label definitions:
-    FLAT  if |log_return| < 0.5 * sigma_30d
-    UP    if log_return >= 0.5 * sigma_30d
-    DOWN  if log_return <= -0.5 * sigma_30d
+The threshold is: rolling_vol * threshold_mult * sqrt(forecast_horizon)
+
+With threshold_mult=0.7 and forecast_horizon=5 (ML_CONFIG defaults):
+    FLAT  if |log_return| < 1.57 * sigma_30d  (~52% of samples)
+    UP    if log_return >= 1.57 * sigma_30d     (~24% of samples)
+    DOWN  if log_return <= -1.57 * sigma_30d    (~24% of samples)
+
+The widened FLAT band (was 0.671σ at mult=0.3) ensures directional labels
+reflect stronger, higher-confidence moves with better signal-to-noise ratio.
 """
 
 from __future__ import annotations
@@ -39,7 +44,10 @@ def compute_adaptive_labels(
     daily_log_ret = np.log(close / close.shift(1))
     rolling_vol = daily_log_ret.rolling(window=vol_lookback).std()
 
-    threshold = rolling_vol * threshold_mult
+    # Scale threshold by sqrt(forecast_horizon) — multi-day return volatility
+    # grows with sqrt(N), so the FLAT band needs to widen to keep the same
+    # effective class balance.
+    threshold = rolling_vol * threshold_mult * np.sqrt(forecast_horizon)
 
     labels = pd.Series(index=close.index, dtype=float)
     labels[forward_ret.abs() < threshold] = 1.0  # FLAT
