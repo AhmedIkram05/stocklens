@@ -71,8 +71,9 @@ mod tests {
             assert!(vals[0].is_nan());
             assert!(vals[3].is_nan());
             assert!(!vals[4].is_nan());
-            // With linearly increasing prices, %B should be around 0.5
-            assert!((vals[29] - 0.5).abs() < 0.1);
+            // With linearly increasing prices, close (129) is above SMA (127)
+            // so %B should be well above 0.5 (price is near upper band).
+            assert!(vals[29] > 0.5 && vals[29] <= 1.0);
 
             let width = dict.get_item("bb_width").unwrap().unwrap();
             let arr_w = width.extract::<Bound<'_, numpy::PyArray1<f64>>>().unwrap();
