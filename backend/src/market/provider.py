@@ -18,15 +18,34 @@ from typing import Any, Optional
 
 import yfinance as yf
 from requests.exceptions import HTTPError
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import (
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 logger = logging.getLogger(__name__)
 
+# ── yfinance 1.x compatibility ─────────────────────────────────────────────
+# yfinance >=1.0 uses curl_cffi with built-in TLS impersonation (`query2`
+# base URL, modern TLS fingerprint) — no module-level patching needed.
+# The retry decorator below handles transient HTTP errors (including 429).
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Return True for errors that deserve a retry (incl. 429 rate-limit)."""
+    if isinstance(exc, (ConnectionError, TimeoutError, ValueError)):
+        return True
+    if isinstance(exc, HTTPError):
+        return True
+    return False
+
 
 @retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=4),
-    retry=retry_if_exception_type((ConnectionError, TimeoutError, ValueError, HTTPError)),
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=2, min=2, max=60),
+    retry=retry_if_exception(_is_retryable),
     reraise=True,
 )
 def _download_ohlcv(
@@ -48,8 +67,11 @@ def _download_ohlcv(
     if df.empty:
         return []
 
-    # yfinance returns DataFrames with a DatetimeIndex and columns:
-    # ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
+    # yfinance >=1.0 returns MultiIndex columns even for single tickers
+    first_col = next(iter(df.columns), None)
+    if isinstance(first_col, tuple):
+        df.columns = [c[0] for c in df.columns]
+
     rows = []
     for idx, row in df.iterrows():
         d = idx.date() if hasattr(idx, "date") else idx
@@ -68,9 +90,9 @@ def _download_ohlcv(
 
 
 @retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=4),
-    retry=retry_if_exception_type((ConnectionError, TimeoutError, ValueError)),
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=2, min=2, max=60),
+    retry=retry_if_exception(_is_retryable),
     reraise=True,
 )
 def _fetch_quote(ticker: str) -> dict[str, Any]:

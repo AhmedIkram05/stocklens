@@ -1,12 +1,17 @@
 //! StockLens Feature Engine — Rust/PyO3 technical indicators.
 
+mod atr;
+mod bollinger;
 mod compute_all;
 mod log_returns;
 mod macd;
 mod moving_averages;
+mod obv;
+mod roc;
 mod rolling_volatility;
 mod rsi;
 mod volatility_rank;
+mod williams_r;
 
 use numpy::{PyArray1, PyArrayMethods};
 use pyo3::prelude::*;
@@ -18,18 +23,47 @@ fn alloc_nans(n: usize) -> Vec<f64> {
 }
 
 /// Helper: compute EMA with smoothing factor `alpha = 2 / (span + 1)`.
+/// Skips leading NaNs — starts seeding the SMA once `span` consecutive
+/// non-NaN values are seen. Required for MACD signal line (macd_line has
+/// leading NaNs from the slow EMA warmup).
+// ponytail: simple leading-NaN skip; a streaming incremental EMA would avoid
+// the O(span) seed scan but adds complexity for no measurable gain.
 fn ema(values: &[f64], span: usize) -> Vec<f64> {
     let n = values.len();
-    if n == 0 {
+    if n == 0 || span == 0 {
         return vec![];
     }
     let alpha = 2.0 / (span as f64 + 1.0);
     let mut result = alloc_nans(n);
-    if n >= span {
-        let sum: f64 = values[..span].iter().sum();
-        result[span - 1] = sum / span as f64;
-        for i in span..n {
-            result[i] = (values[i] - result[i - 1]) * alpha + result[i - 1];
+
+    // Find the first run of `span` consecutive non-NaN values.
+    let mut seed_end: Option<usize> = None;
+    let mut run = 0;
+    for i in 0..n {
+        if values[i].is_nan() {
+            run = 0;
+        } else {
+            run += 1;
+            if run == span {
+                seed_end = Some(i);
+                break;
+            }
+        }
+    }
+
+    if let Some(end) = seed_end {
+        let start = end + 1 - span;
+        let sum: f64 = values[start..=end].iter().sum();
+        result[end] = sum / span as f64;
+        let mut last_valid = end;
+        for i in (end + 1)..n {
+            if values[i].is_nan() {
+                // Hold previous EMA value forward (common convention).
+                result[i] = result[last_valid];
+            } else {
+                result[i] = (values[i] - result[last_valid]) * alpha + result[last_valid];
+                last_valid = i;
+            }
         }
     }
     result
@@ -49,6 +83,11 @@ fn features_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(compute_macd, m)?)?;
     m.add_function(wrap_pyfunction!(compute_rolling_volatility, m)?)?;
     m.add_function(wrap_pyfunction!(compute_volatility_rank, m)?)?;
+    m.add_function(wrap_pyfunction!(compute_bollinger, m)?)?;
+    m.add_function(wrap_pyfunction!(compute_atr, m)?)?;
+    m.add_function(wrap_pyfunction!(compute_obv, m)?)?;
+    m.add_function(wrap_pyfunction!(compute_williams_r, m)?)?;
+    m.add_function(wrap_pyfunction!(compute_roc, m)?)?;
     m.add_function(wrap_pyfunction!(compute_all_features, m)?)?;
     Ok(())
 }
@@ -106,7 +145,72 @@ fn compute_volatility_rank(close: Bound<'_, PyArray1<f64>>, period: i64) -> PyRe
 }
 
 #[pyfunction]
-fn compute_all_features(py: Python<'_>, close: Bound<'_, PyArray1<f64>>) -> PyResult<Py<PyDict>> {
+fn compute_bollinger(
+    py: Python<'_>,
+    close: Bound<'_, PyArray1<f64>>,
+    period: i64,
+    num_std: f64,
+) -> PyResult<Py<PyDict>> {
     let close_slice = get_slice(&close);
-    Ok(compute_all::compute(&close_slice, py))
+    Ok(bollinger::compute(&close_slice, period as usize, num_std, py))
+}
+
+#[pyfunction]
+fn compute_atr(
+    high: Bound<'_, PyArray1<f64>>,
+    low: Bound<'_, PyArray1<f64>>,
+    close: Bound<'_, PyArray1<f64>>,
+    period: i64,
+) -> PyResult<Py<PyArray1<f64>>> {
+    let high_slice = get_slice(&high);
+    let low_slice = get_slice(&low);
+    let close_slice = get_slice(&close);
+    Ok(atr::compute(&high_slice, &low_slice, &close_slice, period as usize))
+}
+
+#[pyfunction]
+fn compute_obv(
+    close: Bound<'_, PyArray1<f64>>,
+    volume: Bound<'_, PyArray1<f64>>,
+) -> PyResult<Py<PyArray1<f64>>> {
+    let close_slice = get_slice(&close);
+    let volume_slice = get_slice(&volume);
+    Ok(obv::compute(&close_slice, &volume_slice))
+}
+
+#[pyfunction]
+fn compute_williams_r(
+    high: Bound<'_, PyArray1<f64>>,
+    low: Bound<'_, PyArray1<f64>>,
+    close: Bound<'_, PyArray1<f64>>,
+    period: i64,
+) -> PyResult<Py<PyArray1<f64>>> {
+    let high_slice = get_slice(&high);
+    let low_slice = get_slice(&low);
+    let close_slice = get_slice(&close);
+    Ok(williams_r::compute(&high_slice, &low_slice, &close_slice, period as usize))
+}
+
+#[pyfunction]
+fn compute_roc(
+    close: Bound<'_, PyArray1<f64>>,
+    period: i64,
+) -> PyResult<Py<PyArray1<f64>>> {
+    let close_slice = get_slice(&close);
+    Ok(roc::compute(&close_slice, period as usize))
+}
+
+#[pyfunction]
+fn compute_all_features(
+    py: Python<'_>,
+    close: Bound<'_, PyArray1<f64>>,
+    high: Bound<'_, PyArray1<f64>>,
+    low: Bound<'_, PyArray1<f64>>,
+    volume: Bound<'_, PyArray1<f64>>,
+) -> PyResult<Py<PyDict>> {
+    let close_slice = get_slice(&close);
+    let high_slice = get_slice(&high);
+    let low_slice = get_slice(&low);
+    let volume_slice = get_slice(&volume);
+    Ok(compute_all::compute(&close_slice, &high_slice, &low_slice, &volume_slice, py))
 }

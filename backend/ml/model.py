@@ -1,11 +1,8 @@
 """
 GlobalLSTM - multi-ticker LSTM model with entity embeddings.
 
-Architecture:
-    TickerEmbedding(vocab_size, embed_dim=16) -> concat with features
-    -> FeatureProjection(n_features + embed_dim, hidden_dim)
-    -> LSTM(hidden_dim, hidden_size=128, num_layers=2, dropout=0.3, batch_first=True)
-    -> Classifier(128, 3) -> softmax
+Architecture (V1 LSTM only):
+    FeatureProjection -> LSTM (uni, 2-layer) -> Dropout -> Classifier
 
 The model learns per-ticker embedding vectors to capture ticker-specific
 price dynamics while sharing LSTM weights across all tickers.
@@ -23,6 +20,9 @@ import torch.nn.functional as F
 
 class GlobalLSTM(nn.Module):
     """Global multi-ticker LSTM with entity embeddings.
+
+    V1 architecture — V2 Conv1D+BiLSTM+Attention+RegimeGate tested
+    and caused gradient stall. This is the only stable variant.
 
     Args:
         n_features: Number of technical indicator features per time step.
@@ -57,6 +57,7 @@ class GlobalLSTM(nn.Module):
         self._vocab: dict[str, int] = {}
         self._feature_means: Optional[np.ndarray] = None
         self._feature_stds: Optional[np.ndarray] = None
+        self._model_version: str = "0"
 
         # Ticker entity embedding
         self.ticker_embedding = nn.Embedding(
@@ -69,7 +70,7 @@ class GlobalLSTM(nn.Module):
         input_size = n_features + embed_dim
         self.feature_projection = nn.Linear(input_size, hidden_dim)
 
-        # LSTM
+        # Unidirectional LSTM
         self.lstm = nn.LSTM(
             input_size=hidden_dim,
             hidden_size=hidden_dim,
@@ -92,12 +93,19 @@ class GlobalLSTM(nn.Module):
     ) -> torch.Tensor:
         """Forward pass.
 
+        Order:
+            features + ticker_embeds
+            -> concat -> feature_projection -> ReLU                (B, seq_len, hidden_dim)
+            -> LSTM (uni)                        lstm_out: (B, seq_len, hidden_dim)
+            -> last_hidden: h_n[-1]                                  (B, hidden_dim)
+            -> dropout -> classifier                                 (B, n_classes) logits
+
         Args:
             features: (batch_size, seq_len, n_features) tensor.
             ticker_idxs: (batch_size,) tensor of ticker embedding indices.
 
         Returns:
-            (batch_size, n_classes) logits (NOT softmaxed - use with CrossEntropyLoss).
+            (batch_size, n_classes) logits tensor.
         """
         batch_size, seq_len, _ = features.shape
 
@@ -118,15 +126,14 @@ class GlobalLSTM(nn.Module):
         projected = F.relu(projected)
 
         # LSTM
-        lstm_out, (h_n, _) = self.lstm(projected)  # lstm_out: (B, seq_len, hidden_dim)
+        lstm_out, (h_n, _) = self.lstm(projected)  # (B, seq_len, hidden_dim)
 
-        # Use the last hidden state from the top LSTM layer
-        # h_n shape: (n_layers, B, hidden_dim) -> take last layer
+        # Last hidden state from top layer (unidirectional)
         last_hidden = h_n[-1]  # (B, hidden_dim)
 
         # Dropout + classifier
-        last_hidden = self.dropout(last_hidden)
-        logits = self.classifier(last_hidden)  # (B, n_classes)
+        out = self.dropout(last_hidden)
+        logits = self.classifier(out)  # (B, n_classes)
 
         return logits
 
@@ -150,6 +157,7 @@ class GlobalLSTM(nn.Module):
         vocab: Optional[dict[str, int]] = None,
         feature_means: Optional[np.ndarray] = None,
         feature_stds: Optional[np.ndarray] = None,
+        model_version: str = "0",
     ) -> None:
         """Save model state dict and config metadata.
 
@@ -158,6 +166,7 @@ class GlobalLSTM(nn.Module):
             vocab: Ticker-to-index vocabulary for embedding lookup at inference.
             feature_means: Per-feature means for z-score standardisation (inverse of training).
             feature_stds: Per-feature stds for z-score standardisation.
+            model_version: Model version string (default "0").
         """
         payload: dict = {
             "state_dict": self.state_dict(),
@@ -169,6 +178,7 @@ class GlobalLSTM(nn.Module):
             "n_classes": self.classifier.out_features,
             "vocab_size": self.ticker_embedding.num_embeddings,
             "unk_idx": self.unk_idx,
+            "model_version": model_version,
         }
         if vocab is not None:
             payload["vocab"] = vocab
@@ -188,7 +198,7 @@ class GlobalLSTM(nn.Module):
 
         Returns:
             Loaded GlobalLSTM instance with ``vocab``, ``feature_means``,
-            ``feature_stds`` attributes set if present in checkpoint.
+            ``feature_stds``, ``model_version`` attributes set if present in checkpoint.
         """
         # ponytail: weights_only=False because checkpoint includes numpy arrays
         # from optional metadata (vocab, feature_means, feature_stds). Since we
@@ -210,6 +220,7 @@ class GlobalLSTM(nn.Module):
         model._vocab = checkpoint.get("vocab", {})
         model._feature_means = checkpoint.get("feature_means")
         model._feature_stds = checkpoint.get("feature_stds")
+        model._model_version = checkpoint.get("model_version", "0")
 
         model.eval()
         return model

@@ -38,17 +38,23 @@ class TestDirectionalAccuracy:
         import torch
         from torch.utils.data import DataLoader
 
+        from ml.config import ML_CONFIG
         from ml.dataset import SequenceDataset
         from ml.evaluate import evaluate
         from ml.model import GlobalLSTM
 
         model = GlobalLSTM(
-            n_features=13, vocab_size=5, embed_dim=4, hidden_dim=16, n_layers=1, dropout=0.0
+            n_features=ML_CONFIG.N_FEATURES,
+            vocab_size=5,
+            embed_dim=4,
+            hidden_dim=16,
+            n_layers=1,
+            dropout=0.0,
         )
         device = torch.device("cpu")
 
         # Create a tiny dataset
-        sequences = np.random.randn(20, 30, 13).astype(np.float32)
+        sequences = np.random.randn(20, 30, ML_CONFIG.N_FEATURES).astype(np.float32)
         labels = np.random.randint(0, 3, size=20)
         ticker_idxs = np.zeros(20, dtype=np.int64)
         ds = SequenceDataset(sequences, labels, ticker_idxs)
@@ -59,6 +65,7 @@ class TestDirectionalAccuracy:
         assert "per_class_f1" in metrics
         assert "confusion_matrix" in metrics
         assert "simulated_sharpe" in metrics
+        assert "long_short_sharpe" in metrics
         assert "total_samples" in metrics
         assert metrics["total_samples"] == 20
 
@@ -90,9 +97,8 @@ class TestSimulatedSharpe:
         # Mix of UP and FLAT so std > 0
         labels = np.array([2, 2, 1, 2, 2])  # True UP, UP, FLAT, UP, UP
         preds = np.array([2, 2, 1, 2, 2])  # Perfect predictions
-        probs = np.ones((5, 3)) / 3
 
-        sharpe = compute_simulated_sharpe(labels, preds, probs)
+        sharpe = compute_simulated_sharpe(labels, preds)
         assert sharpe > 0
 
     def test_always_wrong_strategy(self) -> None:
@@ -101,9 +107,8 @@ class TestSimulatedSharpe:
         # Always predict DOWN when UP is true -> always flat (no signal)
         labels = np.array([2, 2, 2])
         preds = np.array([0, 0, 0])
-        probs = np.ones((3, 3)) / 3
 
-        sharpe = compute_simulated_sharpe(labels, preds, probs)
+        sharpe = compute_simulated_sharpe(labels, preds)
         assert sharpe == 0.0  # No long positions
 
     def test_mixed_strategy(self) -> None:
@@ -111,9 +116,8 @@ class TestSimulatedSharpe:
 
         labels = np.array([2, 0, 2, 0])  # UP, DOWN, UP, DOWN
         preds = np.array([2, 2, 2, 2])  # Always predict UP
-        probs = np.ones((4, 3)) / 3
 
-        sharpe = compute_simulated_sharpe(labels, preds, probs)
+        sharpe = compute_simulated_sharpe(labels, preds)
         # Long on UP and DOWN days -> mixed returns
         assert isinstance(sharpe, float)
 
@@ -123,9 +127,55 @@ class TestSimulatedSharpe:
         # Single sample: std will be 0
         labels = np.array([2])
         preds = np.array([2])
-        probs = np.ones((1, 3)) / 3
 
-        sharpe = compute_simulated_sharpe(labels, preds, probs)
+        sharpe = compute_simulated_sharpe(labels, preds)
+        assert sharpe == 0.0
+
+
+class TestLongShortSharpe:
+    def test_long_short_boosts_sharpe(self) -> None:
+        """Long-short doubles signal vs long-only when model is right in both directions."""
+        from ml.evaluate import compute_long_short_sharpe, compute_simulated_sharpe
+
+        # Equal UP and DOWN, mostly correct, some wrong — gives variance for non-zero Sharpe
+        labels = np.array([2, 2, 2, 0, 0, 0, 1, 1, 2, 0])
+        preds = np.array([2, 2, 2, 0, 0, 0, 1, 1, 1, 1])  # last two wrong (pred FLAT)
+
+        long_only = compute_simulated_sharpe(labels, preds)
+        long_short = compute_long_short_sharpe(labels, preds)
+        # Long-short captures signal from BOTH UP and DOWN, so mean return > long-only
+        assert long_short > long_only
+        assert long_short > 0
+
+    def test_always_flat(self) -> None:
+        """No signal = zero Sharpe."""
+        from ml.evaluate import compute_long_short_sharpe
+
+        labels = np.array([2, 0, 2, 0])
+        preds = np.array([1, 1, 1, 1])  # Always FLAT
+
+        sharpe = compute_long_short_sharpe(labels, preds)
+        assert sharpe == 0.0
+
+    def test_asymmetric_model_penalized(self) -> None:
+        """Model that always predicts UP gets BOTH correct UP and wrong DOWN."""
+        from ml.evaluate import compute_long_short_sharpe
+
+        labels = np.array([2, 0, 2, 0])
+        preds = np.array([2, 2, 2, 2])  # Always UP
+
+        sharpe = compute_long_short_sharpe(labels, preds)
+        # UP predictions earn +1%, DOWN predictions lose -1%
+        # avg return = (0.01 + -0.01 + 0.01 + -0.01) / 4 = 0
+        assert sharpe == 0.0
+
+    def test_zero_std_returns_zero(self) -> None:
+        from ml.evaluate import compute_long_short_sharpe
+
+        labels = np.array([2])
+        preds = np.array([2])
+
+        sharpe = compute_long_short_sharpe(labels, preds)
         assert sharpe == 0.0
 
 

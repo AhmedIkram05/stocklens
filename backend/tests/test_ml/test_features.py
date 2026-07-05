@@ -54,7 +54,12 @@ def _impl():
 
         def compute_all_features(self, df: pd.DataFrame) -> pd.DataFrame:
             close = df["adjusted_close"].to_numpy(dtype=np.float64)
-            raw = _rust.compute_all_features(close)
+            high = df.get("high", pd.Series(np.full(len(df), np.nan))).to_numpy(dtype=np.float64)
+            low = df.get("low", pd.Series(np.full(len(df), np.nan))).to_numpy(dtype=np.float64)
+            volume = df.get("volume", pd.Series(np.full(len(df), np.nan))).to_numpy(
+                dtype=np.float64
+            )
+            raw = _rust.compute_all_features(close, high, low, volume)
             result = pd.DataFrame(raw, index=df.index)
             if "ticker" in df.columns:
                 result["ticker"] = df["ticker"]
@@ -227,8 +232,114 @@ class TestAllFeatures:
         impl = _impl()
         df = pd.DataFrame({"adjusted_close": [100.0]})
         result = impl.compute_all_features(df)
-        non_macd = [c for c in result.columns if not c.startswith("macd")]
-        assert result[non_macd].isna().all().all()
+        # Only check V1 features (production code filters to these);
+        # V2 extras (obv, bb_*, atr, williams_r, roc) may have 0-value initialisations
+        v1 = [
+            "log_ret_1d",
+            "log_ret_5d",
+            "log_ret_21d",
+            "ma_5",
+            "ma_10",
+            "ma_20",
+            "ma_50",
+            "rsi_14",
+            "vol_30d",
+            "vol_rank",
+        ]
+        assert result[v1].isna().all().all()
+
+
+class TestCrossSectionalFeatures:
+    """Tests for compute_cross_sectional_features — pure Python, no Rust dep."""
+
+    def test_excess_returns_match_expected(self) -> None:
+        from ml.features import compute_cross_sectional_features
+
+        # Ticker goes up 1%, benchmark stays flat → excess = 1%
+        dates = pd.date_range("2024-01-01", periods=5, freq="B")
+        ticker = pd.DataFrame({"log_ret_1d": [0.0, 0.01, 0.0, -0.005, 0.0]}, index=dates)
+        benchmark = pd.DataFrame({"log_ret_1d": [0.0, 0.0, 0.0, 0.0, 0.0]}, index=dates)
+        # Add dummy 5d and 21d columns so subtraction works
+        for df in [ticker, benchmark]:
+            df["log_ret_5d"] = 0.0
+            df["log_ret_21d"] = 0.0
+
+        result = compute_cross_sectional_features(ticker, benchmark)
+        assert result["excess_ret_1d"].iloc[1] == pytest.approx(0.01)
+
+    def test_excess_returns_ticker_underperforms(self) -> None:
+        from ml.features import compute_cross_sectional_features
+
+        dates = pd.date_range("2024-01-01", periods=5, freq="B")
+        ticker = pd.DataFrame(
+            {
+                "log_ret_1d": [0.0, -0.02, 0.0, 0.01, 0.0],
+                "log_ret_5d": [0.0, 0.0, 0.0, 0.0, 0.0],
+                "log_ret_21d": [0.0, 0.0, 0.0, 0.0, 0.0],
+            },
+            index=dates,
+        )
+        benchmark = pd.DataFrame(
+            {
+                "log_ret_1d": [0.0, 0.01, 0.0, 0.0, 0.0],
+                "log_ret_5d": [0.0, 0.0, 0.0, 0.0, 0.0],
+                "log_ret_21d": [0.0, 0.0, 0.0, 0.0, 0.0],
+            },
+            index=dates,
+        )
+
+        result = compute_cross_sectional_features(ticker, benchmark)
+        # -0.02 - 0.01 = -0.03
+        assert result["excess_ret_1d"].iloc[1] == pytest.approx(-0.03)
+
+    def test_benchmark_missing_dates_filled_to_zero(self) -> None:
+        from ml.features import compute_cross_sectional_features
+
+        dates = pd.date_range("2024-01-01", periods=5, freq="B")
+        ticker = pd.DataFrame(
+            {
+                "log_ret_1d": [0.0, 0.01, 0.0, 0.005, 0.0],
+                "log_ret_5d": [0.0, 0.0, 0.0, 0.0, 0.0],
+                "log_ret_21d": [0.0, 0.0, 0.0, 0.0, 0.0],
+            },
+            index=dates,
+        )
+        # Benchmark has fewer rows — missing indices get NaN → caller fills to 0
+        benchmark = pd.DataFrame(
+            {"log_ret_1d": [0.0], "log_ret_5d": [0.0], "log_ret_21d": [0.0]}, index=dates[:1]
+        )
+
+        result = compute_cross_sectional_features(ticker, benchmark)
+        # NaN for missing benchmark dates (caller is responsible for fillna(0))
+        assert result["excess_ret_1d"].iloc[1] != result["excess_ret_1d"].iloc[1]  # self-NaN check
+
+    def test_returns_three_excess_columns(self) -> None:
+        from ml.features import compute_cross_sectional_features
+
+        dates = pd.date_range("2024-01-01", periods=5, freq="B")
+        ticker = pd.DataFrame(
+            {c: [0.0] * 5 for c in ["log_ret_1d", "log_ret_5d", "log_ret_21d"]}, index=dates
+        )
+        benchmark = ticker.copy()
+
+        result = compute_cross_sectional_features(ticker, benchmark)
+        assert list(result.columns) == ["excess_ret_1d", "excess_ret_5d", "excess_ret_21d"]
+
+    def test_index_alignment_preserved(self) -> None:
+        from ml.features import compute_cross_sectional_features
+
+        dates = pd.date_range("2024-01-05", periods=5, freq="B")  # starts later
+        ticker = pd.DataFrame(
+            {c: [0.1] * 5 for c in ["log_ret_1d", "log_ret_5d", "log_ret_21d"]}, index=dates
+        )
+        benchmark_dates = pd.date_range("2024-01-01", periods=10, freq="B")
+        benchmark = pd.DataFrame(
+            {c: [0.0] * 10 for c in ["log_ret_1d", "log_ret_5d", "log_ret_21d"]},
+            index=benchmark_dates,
+        )
+
+        result = compute_cross_sectional_features(ticker, benchmark)
+        pd.testing.assert_index_equal(result.index, ticker.index)
 
 
 # ---------------------------------------------------------------------------

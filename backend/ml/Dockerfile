@@ -1,17 +1,37 @@
 # Stage 1: Rust native module builder
-FROM rust:1.85-slim-bookworm AS rust-builder
+# Use same Python version as runtime to ensure ABI-compatible wheel (cp314)
+FROM python:3.14-slim AS rust-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-dev python3-pip python3-venv \
+    curl \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-RUN python3 -m venv /venv && \
-    /venv/bin/pip install maturin
+# Install Rust via rustup
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:$PATH"
 
-ENV PATH="/venv/bin:$PATH"
+RUN pip install maturin --no-cache-dir
+
 WORKDIR /src
-COPY features-engine /src
-RUN maturin build --release --features extension --out /wheels --interpreter /usr/bin/python3
+
+# Layer 1: Fetch dependencies (only invalidated when Cargo.toml/lock changes).
+# Cache mounts persist .cargo/git and .cargo/registry across docker rebuilds.
+COPY features-engine/Cargo.toml features-engine/Cargo.lock features-engine/pyproject.toml /src/
+# Cargo validates the lib path exists during manifest parsing, even for fetch.
+# Dummy placeholder — real src/ overwritten below.
+RUN mkdir -p /src/src && touch /src/src/lib.rs
+RUN --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/root/.cargo/registry \
+    cargo fetch --manifest-path /src/Cargo.toml
+
+# Layer 2: Build with real source (only recompiles our crate on src changes).
+# target/ mount preserves incremental compilation artifacts.
+COPY features-engine/src /src/src/
+RUN --mount=type=cache,target=/src/target,sharing=locked \
+    --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/root/.cargo/registry \
+    maturin build --release --features extension --out /wheels
 
 # Stage 2: Build Python dependencies with uv
 FROM python:3.14-slim AS builder
@@ -52,6 +72,12 @@ COPY . /app/ml/
 # Non-root user
 RUN groupadd -r mluser && useradd -r -g mluser -u 1001 mluser \
     && chown -R mluser:mluser /app
+
+# Ensure model artifacts directory exists with correct ownership.
+# Named volume initialization copies these permissions when the volume is
+# first created. If the volume already exists (e.g., from a stale run),
+# run `docker compose down -v` to reset it.
+RUN mkdir -p /model_artifacts/champion && chown -R mluser:mluser /model_artifacts
 
 USER mluser
 
