@@ -73,6 +73,12 @@ COPY . /app/ml/
 RUN groupadd -r mluser && useradd -r -g mluser -u 1001 mluser \
     && chown -R mluser:mluser /app
 
+# Ensure model artifacts directory exists with correct ownership.
+# Named volume initialization copies these permissions when the volume is
+# first created. If the volume already exists (e.g., from a stale run),
+# run `docker compose down -v` to reset it.
+RUN mkdir -p /model_artifacts/champion && chown -R mluser:mluser /model_artifacts
+
 USER mluser
 
 # No default CMD - runs via 'docker compose run ml python -m ml.pipeline'
