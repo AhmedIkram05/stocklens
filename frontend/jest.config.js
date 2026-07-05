@@ -9,6 +9,17 @@ const path = require('path');
 module.exports = {
   preset: 'jest-expo',
   testEnvironment: 'node',
+  // ponytail: force babel-jest to find root babel.config.js;
+  // jest-expo's resolveBabelConfig returns null when one exists, so
+  // babel falls back to process.cwd() which may not be the project root.
+  transform: {
+    '\\.[jt]sx?$': [
+      'babel-jest',
+      {
+        configFile: path.resolve(__dirname, '..', 'babel.config.js'),
+      },
+    ],
+  },
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   testPathIgnorePatterns: [
     '/node_modules/',

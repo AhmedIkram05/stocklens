@@ -32,7 +32,7 @@ jobs:
         run: |
           node node_modules/prettier/bin/prettier.cjs --version
           node node_modules/prettier/bin/prettier.cjs --check .
-      - run: ./node_modules/.bin/eslint src/
+      - run: ./node_modules/.bin/eslint frontend/src/
 
   typecheck:
     name: TypeScript

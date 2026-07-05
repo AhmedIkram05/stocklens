@@ -39,8 +39,8 @@ fn ema(values: &[f64], span: usize) -> Vec<f64> {
     // Find the first run of `span` consecutive non-NaN values.
     let mut seed_end: Option<usize> = None;
     let mut run = 0;
-    for i in 0..n {
-        if values[i].is_nan() {
+    for (i, val) in values.iter().enumerate() {
+        if val.is_nan() {
             run = 0;
         } else {
             run += 1;
