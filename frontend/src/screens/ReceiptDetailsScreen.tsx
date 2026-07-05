@@ -42,7 +42,7 @@ type YEAR_OPTIONS = 1 | 3 | 5 | 10 | 20;
 import { STOCK_PRESETS } from '../services/stockPresets';
 
 import { subscribe, emit } from '../services/eventBus';
-import { getHistoricalCAGRFromToday } from '../services/projectionService';
+import { getHistoricalCAGRFromToday, getCombinedProjection } from '../services/projectionService';
 import { formatCurrencyGBP, formatRelativeDate } from '../utils/formatters';
 import YearSelector from '../components/YearSelector';
 import StockCard from '../components/StockCard';
@@ -102,6 +102,11 @@ export default function ReceiptDetailsScreen() {
   const [, setRatesLoading] = useState(false);
   const [, setRatesError] = useState<string | null>(null);
 
+  // LSTM predictions per ticker
+  const [predictions, setPredictions] = useState<
+    Record<string, { direction: 'UP' | 'FLAT' | 'DOWN'; rate: number; confidence: number }>
+  >({});
+
   // Deposit into portfolio
   const [depositModalVisible, setDepositModalVisible] = useState(false);
   const [portfolioList, setPortfolioList] = useState<Portfolio[]>([]);
@@ -152,6 +157,48 @@ export default function ReceiptDetailsScreen() {
       unsub();
     };
   }, [selectedYears]);
+
+  // Load LSTM predictions for all tickers
+  useEffect(() => {
+    let mounted = true;
+    async function loadPredictions() {
+      try {
+        const results = await Promise.allSettled(
+          STOCK_PRESETS.map(async (s) => {
+            const pred = await getCombinedProjection(s.ticker);
+            if (!pred) return null;
+            return {
+              ticker: s.ticker,
+              direction: pred.direction,
+              rate: pred.rate,
+              confidence: pred.confidence,
+            };
+          }),
+        );
+        if (!mounted) return;
+        const map: Record<
+          string,
+          { direction: 'UP' | 'FLAT' | 'DOWN'; rate: number; confidence: number }
+        > = {};
+        results.forEach((r) => {
+          if (r.status === 'fulfilled' && r.value) {
+            map[r.value.ticker] = {
+              direction: r.value.direction,
+              rate: r.value.rate,
+              confidence: r.value.confidence,
+            };
+          }
+        });
+        setPredictions(map);
+      } catch {
+        // Keep empty — no badges shown
+      }
+    }
+    loadPredictions();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   async function handleOpenDeposit() {
     setDepositModalVisible(true);
@@ -234,8 +281,9 @@ export default function ReceiptDetailsScreen() {
         computedPercentReturn = (computedFutureValue / totalAmount - 1) * 100;
       }
     } else {
-      // future mode — use the unified projectionService (but we already precompute historicalRates for past mode)
-      const rate = investmentValue.returnRate;
+      // future mode — prefer LSTM+combined rate, fall back to preset
+      const pred = predictions[investmentValue.ticker];
+      const rate = pred?.rate ?? investmentValue.returnRate;
       computedFutureValue = totalAmount * Math.pow(1 + rate, years);
       computedGain = computedFutureValue - totalAmount;
       computedPercentReturn = (computedFutureValue / totalAmount - 1) * 100;
@@ -250,22 +298,43 @@ export default function ReceiptDetailsScreen() {
     // color: green for positive or zero, red for negative
     const valueColor = computedPercentReturn >= 0 ? brandColors.green : brandColors.red;
 
-    // determine badge: show Over/Underperformer for the current mode (past/future)
+    // determine badge: show prediction direction for future mode, Over/Underperformer for past
     let badgeTextToShow: string | undefined = undefined;
-    if (mode === 'past') {
+    let badgeColorToShow: string | undefined = undefined;
+
+    if (mode === 'future') {
+      const pred = predictions[investmentValue.ticker];
+      if (pred) {
+        badgeTextToShow =
+          pred.direction === 'UP'
+            ? `LSTM: ↑ ${(pred.confidence * 100).toFixed(0)}%`
+            : pred.direction === 'DOWN'
+              ? `LSTM: ↓ ${(pred.confidence * 100).toFixed(0)}%`
+              : `LSTM: — ${(pred.confidence * 100).toFixed(0)}%`;
+        badgeColorToShow =
+          pred.direction === 'UP'
+            ? brandColors.green
+            : pred.direction === 'DOWN'
+              ? brandColors.red
+              : brandColors.blue;
+      } else {
+        if (investmentValue.ticker === bestFutureTicker) badgeTextToShow = 'Overperformer';
+        else if (investmentValue.ticker === worstFutureTicker) badgeTextToShow = 'Underperformer';
+      }
+    } else {
       if (investmentValue.ticker === bestPastTicker) badgeTextToShow = 'Overperformer';
       else if (investmentValue.ticker === worstPastTicker) badgeTextToShow = 'Underperformer';
-    } else {
-      if (investmentValue.ticker === bestFutureTicker) badgeTextToShow = 'Overperformer';
-      else if (investmentValue.ticker === worstFutureTicker) badgeTextToShow = 'Underperformer';
     }
 
-    const badgeColorToShow =
-      badgeTextToShow === 'Overperformer'
-        ? brandColors.green
-        : badgeTextToShow === 'Underperformer'
-          ? brandColors.red
-          : undefined;
+    // Fallback color for non-prediction badges
+    if (!badgeColorToShow) {
+      badgeColorToShow =
+        badgeTextToShow === 'Overperformer'
+          ? brandColors.green
+          : badgeTextToShow === 'Underperformer'
+            ? brandColors.red
+            : undefined;
+    }
 
     return (
       <StockCard
