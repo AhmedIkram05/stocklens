@@ -87,6 +87,10 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: clippy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy
       - name: Clippy
         run: cargo clippy --all-features -- -D warnings
       - name: Tests
