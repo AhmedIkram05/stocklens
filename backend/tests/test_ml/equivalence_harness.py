@@ -162,22 +162,37 @@ def _generate_prices(n: int = 2000, seed: int = 0) -> pd.Series:
     return pd.Series(100 * np.exp(np.cumsum(returns)))
 
 
+def _generate_ohlcv(
+    n: int = 2000, seed: int = 0
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Generate synthetic OHLCV arrays aligned with the price series."""
+    rng = np.random.default_rng(seed)
+    returns = rng.normal(0, 0.02, n)
+    base = 100 * np.exp(np.cumsum(returns))
+    high = base * (1 + np.abs(rng.normal(0, 0.005, n)))
+    low = base * (1 - np.abs(rng.normal(0, 0.005, n)))
+    volume = rng.integers(1_000_000, 10_000_000, n).astype(np.float64)
+    return base.astype(np.float64), high.astype(np.float64), low.astype(np.float64), volume
+
+
 def test_equivalence() -> None:
-    close = _generate_prices()
+    close, high, low, volume = _generate_ohlcv()
 
     # Rust backend
-    raw = rust_mod.compute_all_features(close.to_numpy(dtype=np.float64))
-    rust_out = {k: pd.Series(v, index=close.index) for k, v in raw.items()}
+    raw = rust_mod.compute_all_features(close, high, low, volume)
+    index = pd.RangeIndex(len(close))
+    rust_out = {k: pd.Series(v, index=index) for k, v in raw.items()}
 
     # Python reference (inlined)
-    df = pd.DataFrame({"adjusted_close": close})
+    df = pd.DataFrame({"adjusted_close": close, "volume": volume})
     py_result = _py_compute_all_features(df)
     py_out = {c: py_result[c] for c in py_result.columns if c != "ticker"}
 
     mismatches = []
     for col in rust_out:
         if col not in py_out:
-            mismatches.append(f"Column {col!r} missing from Python output")
+            # New Rust-only indicators (ATR, Bollinger, OBV, Williams %R, ROC)
+            # are verified in their own unit tests — skip in equivalence check.
             continue
         r_arr = rust_out[col].to_numpy(dtype=np.float64)
         p_arr = py_out[col].to_numpy(dtype=np.float64)
@@ -196,7 +211,11 @@ def test_equivalence() -> None:
             print(f"  MISMATCH: {m}")
         msg = f"{len(mismatches)} column(s) deviate beyond {TOLERANCE}"
         raise AssertionError(msg)
-    print(f"OK — all {len(rust_out)} columns equivalent within {TOLERANCE}")
+    skipped = [c for c in rust_out if c not in py_out]
+    print(
+        f"OK — {len(rust_out) - len(skipped)}/{len(rust_out)} columns equivalent within {TOLERANCE} "
+        f"({len(skipped)} new Rust-only features skipped: {', '.join(skipped)})"
+    )
 
 
 def main() -> None:
