@@ -14,7 +14,7 @@ import structlog
 import torch
 
 from ml.config import ML_CONFIG as ml_config
-from ml.features import compute_all_features
+from ml.features import compute_all_features, compute_cross_sectional_features
 from ml.model import GlobalLSTM
 
 logger = structlog.get_logger()
@@ -66,15 +66,46 @@ class PredictionService:
         """Check if model is loaded and ready."""
         return self.model is not None
 
-    def _compute_features(self, ohlcv_rows: list[dict]) -> torch.Tensor | None:
-        """Compute 30-day feature window from OHLCV data and standardise.
+    def _compute_padded_features(self, df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+        """Compute V1 features from a ticker OHLCV DataFrame, returning
+        NaN-padded full-length DataFrame plus the time-aligned length.
 
-        Uses the global feature means/stds stored in the model checkpoint
-        during training. Without standardisation, the model receives
-        non-normalized inputs and produces degraded predictions.
+        Constructs the full-COLUMN DataFrame the Rust engine expects
+        (adjusted_close, high, low, volume), runs compute_all_features,
+        returns the result with a date index for SPY alignment.
+        """
+        feature_df = pd.DataFrame(
+            {
+                "adjusted_close": df["adjusted_close"].astype(float),
+                "high": df["high"].astype(float),
+                "low": df["low"].astype(float),
+                "volume": df["volume"].astype(float),
+            }
+        )
+        features_df = compute_all_features(feature_df)
+        # Drop ticker column if present
+        named = features_df.drop(columns=["ticker"], errors="ignore")
+        return named, len(named)
+
+    def _compute_vol_pct(self, close_series: pd.Series) -> np.ndarray:
+        """Compute vol percentile (14th feature) for a ticker's close series."""
+        daily_log_ret = np.log(close_series / close_series.shift(1))
+        rolling_vol = daily_log_ret.rolling(window=ml_config.SEQUENCE_LENGTH).std()
+        vol_pct = rolling_vol.rank(pct=True).values.astype(np.float32)[:, np.newaxis]
+        vol_pct = np.nan_to_num(vol_pct, nan=0.5)
+        return vol_pct
+
+    def _compute_features(
+        self, ohlcv_rows: list[dict], spy_ohlcv_rows: list[dict] | None = None
+    ) -> torch.Tensor | None:
+        """Compute feature window from OHLCV data and standardise.
+
+        When ``spy_ohlcv_rows`` is provided, also computes cross-sectional
+        features (excess returns vs SPY) for the feature window.
 
         Args:
-            ohlcv_rows: List of OHLCV dicts from market/repository.py.
+            ohlcv_rows: List of OHLCV dicts for the target ticker.
+            spy_ohlcv_rows: Optional list of OHLCV dicts for SPY.
 
         Returns:
             (1, 30, n_features) tensor ready for model input, or None if
@@ -90,18 +121,44 @@ class PredictionService:
 
         # Convert to DataFrame and sort chronologically
         df = pd.DataFrame(ohlcv_rows).sort_values("date")
-        close = df["adjusted_close"].astype(float)
+        close_series = df["adjusted_close"].astype(float)
 
-        # Compute features
-        features_df = compute_all_features(pd.DataFrame({"adjusted_close": close}))
+        # 1. Compute V1 features
+        ticker_features, n_dates = self._compute_padded_features(df)
 
-        # Take the last SEQUENCE_LENGTH rows
-        feature_values = features_df.values[-ml_config.SEQUENCE_LENGTH :].astype(np.float32)
+        # 2. Compute vol_pct
+        vol_pct = self._compute_vol_pct(close_series)  # (T, 1)
 
-        # Handle NaN (shouldn't happen with 60+ days of data, but safeguard)
-        feature_values = np.nan_to_num(feature_values, nan=0.0)
+        # 3. Compute cross-sectional features if SPY data available
+        spy_features = None
+        if spy_ohlcv_rows is not None and len(spy_ohlcv_rows) >= ml_config.SEQUENCE_LENGTH + 30:
+            try:
+                spy_df = pd.DataFrame(spy_ohlcv_rows).sort_values("date")
+                spy_named, _ = self._compute_padded_features(spy_df)
+                # Align by date — take the last n_dates rows from SPY
+                spy_aligned = spy_named.iloc[-n_dates:]
+                spy_aligned.index = ticker_features.index[-len(spy_aligned) :]
+                excess = compute_cross_sectional_features(ticker_features, spy_aligned)
+                excess_values = excess.values.astype(np.float32)
+                excess_values = np.nan_to_num(excess_values, nan=0.0)
+                spy_features = excess_values
+            except Exception as exc:
+                logger.warning("cross_sectional_features_failed", error=str(exc))
 
-        # Apply z-score standardisation using training distribution params
+        # 4. Concatenate features
+        if spy_features is not None:
+            feature_values = np.concatenate(
+                [ticker_features.values.astype(np.float32), vol_pct, spy_features],
+                axis=-1,
+            )
+        else:
+            # Fall back to 14 features (no cross-sectional)
+            feature_values = np.concatenate(
+                [ticker_features.values.astype(np.float32), vol_pct],
+                axis=-1,
+            )
+
+        # 5. Standardise using training stats
         if (
             self.model is not None
             and self.model._feature_means is not None
@@ -109,7 +166,20 @@ class PredictionService:
         ):
             means = self.model._feature_means
             stds = self.model._feature_stds
-            feature_values = (feature_values - means) / stds
+            # Handle feature count mismatch (14 vs 17)
+            if len(means) != feature_values.shape[-1]:
+                logger.warning(
+                    "feature_count_mismatch",
+                    stored=len(means),
+                    computed=feature_values.shape[-1],
+                )
+                # Use per-batch normalisation
+                batch_mean = np.nanmean(feature_values, axis=0)
+                batch_std = np.nanstd(feature_values, axis=0)
+                batch_std[batch_std == 0] = 1.0
+                feature_values = (feature_values - batch_mean) / batch_std
+            else:
+                feature_values = (feature_values - means) / stds
         else:
             # Fallback: per-batch standardisation
             logger.warning("no_stored_feature_stats_applying_per_batch_standardisation")
@@ -118,16 +188,23 @@ class PredictionService:
             batch_std[batch_std == 0] = 1.0
             feature_values = (feature_values - batch_mean) / batch_std
 
-        # Convert to tensor with batch dimension
-        tensor = torch.tensor(feature_values, dtype=torch.float32).unsqueeze(0)
+        feature_values = np.nan_to_num(feature_values, nan=0.0)
+
+        # 6. Take last SEQUENCE_LENGTH rows and add batch dim
+        feature_window = feature_values[-ml_config.SEQUENCE_LENGTH :]
+        tensor = torch.tensor(feature_window, dtype=torch.float32).unsqueeze(0)
         return tensor
 
-    def predict(self, ticker: str, ohlcv_rows: list[dict]) -> dict | None:
+    def predict(
+        self, ticker: str, ohlcv_rows: list[dict], spy_ohlcv_rows: list[dict] | None = None
+    ) -> dict | None:
         """Run prediction for a single ticker.
 
         Args:
             ticker: Ticker symbol (for embedding lookup).
             ohlcv_rows: List of OHLCV dicts (90+ days).
+            spy_ohlcv_rows: Optional list of SPY OHLCV dicts for
+                cross-sectional features.
 
         Returns:
             Dict with keys: direction, confidence, probabilities, model_version.
@@ -143,7 +220,7 @@ class PredictionService:
         ticker_idx = torch.tensor([ticker_idx_val], dtype=torch.long)
 
         # Compute features
-        features = self._compute_features(ohlcv_rows)
+        features = self._compute_features(ohlcv_rows, spy_ohlcv_rows)
         if features is None:
             return None
 

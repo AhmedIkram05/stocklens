@@ -78,9 +78,16 @@ async def predict(
             detail=f"Insufficient price data for {ticker}. Need at least 60 trading days.",
         )
 
-    # Run prediction
+    # Fetch SPY benchmark data for cross-sectional features
+    spy_rows = None
     try:
-        result = prediction_service.predict(ticker, rows)
+        spy_rows = await fetch_ohlcv("SPY", limit=500)
+    except Exception:
+        logger.warning("spy_data_fetch_failed", ticker=ticker)
+
+    # Run prediction (with SPY data for cross-sectional features)
+    try:
+        result = prediction_service.predict(ticker, rows, spy_ohlcv_rows=spy_rows)
     except Exception as exc:
         logger.exception("prediction_failed", ticker=ticker, error=str(exc))
         raise HTTPException(
