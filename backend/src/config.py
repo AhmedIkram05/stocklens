@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # Performance
     ENABLE_TWR: bool = True
 
+    # Prediction
+    PREDICTION_MODEL_PATH: str = "/model_artifacts/champion/model.pt"
+    PREDICTION_CACHE_TTL: int = 21600
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 

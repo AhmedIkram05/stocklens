@@ -32,7 +32,7 @@ jobs:
         run: |
           node node_modules/prettier/bin/prettier.cjs --version
           node node_modules/prettier/bin/prettier.cjs --check .
-      - run: ./node_modules/.bin/eslint src/
+      - run: ./node_modules/.bin/eslint frontend/src/
 
   typecheck:
     name: TypeScript
@@ -75,3 +75,23 @@ jobs:
       - run: npm ci
       - name: npm audit
         run: npm audit --omit=dev || true
+
+  rust:
+    name: Rust (features-engine)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/ml/features-engine
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy
+      - name: Clippy
+        run: cargo clippy --all-features -- -D warnings
+      - name: Tests
+        run: cargo test

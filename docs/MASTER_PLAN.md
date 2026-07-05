@@ -372,8 +372,8 @@ Applied to `users`, `portfolios`, `holdings` via `CREATE TRIGGER ... BEFORE UPDA
 **Key deliverables:**
 
 - Airflow DAG (weekly Docker Compose on EC2 t3.medium): fetch new OHLCV → retrain LSTM → log to MLflow → compare challenger vs champion → promote if >2pp accuracy improvement
-- Evidently data drift + prediction drift reports → HTML → S3 (public-read)
-- Alert if JS divergence > 0.3 on any feature
+- **LSTM track — data drift:** PSI (Population Stability Index) and KS-test on input features (log returns, technical indicators). Reports distribution shift per feature per ticker → HTML → S3 (public-read). Alert if JS divergence > 0.3 on any feature.
+- **LSTM track — prediction drift:** Forecast distribution shift over time — tracks the predicted class distribution (UP/FLAT/DOWN) and confidence scores across inference batches. Detects silent model degradation when live distribution diverges from training-time distribution.
 
 **Depends on:** Phase 3 (trained model to retrain)
 
@@ -410,7 +410,9 @@ Applied to `users`, `portfolios`, `holdings` via `CREATE TRIGGER ... BEFORE UPDA
 - FastAPI `/agent/chat` endpoint
 - 15-question golden evaluation set
 - React Native conversational UI screen
-- Evidently integration again but for LLM response quality
+- **Agent monitoring — latency drift:** Tracks response latency percentiles (p50/p95/p99) over sliding windows. Alerts on sustained degradation or outlier spikes.
+- **Agent monitoring — tool-call success/failure rate:** Per-tool invocation success rate, failure modes (timeout, parsing error, API error), and recovery actions. Dashboard for drill-down into failing tool paths.
+- **Agent monitoring — LLM response relevance:** Periodic LLM-as-judge relevance score sampled from live traffic. Reuses the same judge-model pattern as the RAGAS evaluation set — a subset of production conversations are scored for answer relevance, context adherence, and tool selection correctness.
 
 **Depends on:** Phase 5 (agent calls serving endpoint)
 

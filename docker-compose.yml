@@ -26,7 +26,7 @@ services:
       POSTGRES_PASSWORD: stocklens
       POSTGRES_DB: stocklens_test
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U stocklens']
+      test: ['CMD-SHELL', 'pg_isready -U stocklens -d stocklens_test']
       interval: 5s
       timeout: 5s
       retries: 5
@@ -46,6 +46,56 @@ services:
       retries: 5
       start_period: 5s
     restart: unless-stopped
+
+  mlflow:
+    image: python:3.12-slim
+    ports:
+      - '5001:5001'
+    environment:
+      MLFLOW_TRACKING_URI: http://0.0.0.0:5001
+      MLFLOW_BACKEND_STORE_URI: sqlite:///mlflow/mlflow.db
+      MLFLOW_ARTIFACT_ROOT: /mlflow/artifacts
+      MLFLOW_SERVER_ALLOWED_HOSTS: '*'
+    command: >
+      sh -c "pip install mlflow>=3.14.0 --quiet &&
+             mlflow server --host 0.0.0.0 --port 5001
+             --backend-store-uri sqlite:///mlflow/mlflow.db
+             --default-artifact-root /mlflow/artifacts"
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'python -c "import urllib.request; exit(urllib.request.urlopen(\"http://localhost:5001\").status != 200)"',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    volumes:
+      - mlflow_data:/mlflow
+    restart: unless-stopped
+
+  ml:
+    build:
+      context: ./backend/ml
+    profiles:
+      - ml
+    environment:
+      DATABASE_URL: postgresql+asyncpg://stocklens:stocklens@postgres:5432/stocklens
+      MLFLOW_TRACKING_URI: http://mlflow:5001
+      MLFLOW_ARTIFACT_ROOT: /mlflow/artifacts
+      MODEL_ARTIFACT_DIR: /model_artifacts/champion
+      MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING: 'true'
+      ENVIRONMENT: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+    volumes:
+      - model_artifacts:/model_artifacts
+      - mlflow_data:/mlflow
+    # No ports - runs on-demand via: docker compose run ml python -m ml.pipeline
 
   backend:
     build:
@@ -72,6 +122,8 @@ services:
       start_period: 30s
     volumes:
       - ./backend/src:/app/src
+      - ./backend/ml:/app/ml
+      - model_artifacts:/model_artifacts
     restart: unless-stopped
 
   pytest:
@@ -80,6 +132,7 @@ services:
     profiles:
       - test
     environment:
+      HOME: /tmp
       DATABASE_URL: postgresql+asyncpg://stocklens:stocklens@postgres_test:5432/stocklens_test
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET_KEY: test-jwt-secret-key-32-chars-minimum
@@ -96,10 +149,13 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/src:/app/src
+      - ./backend/ml:/app/ml
       - ./backend/tests:/app/tests
       - ./backend/alembic:/app/alembic
     command: >
-      sh -c "UV_CACHE_DIR=/tmp/uv-cache uv sync --extra dev && pytest -v -W 'ignore::DeprecationWarning:slowapi' --cov=src --cov-report=term-missing --cov-report=xml --tb=short"
+      sh -c "UV_CACHE_DIR=/tmp/uv-cache uv sync --extra dev && uv pip install --no-deps /app/wheels/features_engine*.whl && pytest -v -W 'ignore::DeprecationWarning:slowapi' --cov=src --cov-report=term-missing --cov-report=xml --tb=short"
 
 volumes:
   pgdata:
+  mlflow_data:
+  model_artifacts:

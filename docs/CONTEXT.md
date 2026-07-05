@@ -1,7 +1,7 @@
-# Phase 2 — Domain Glossary
+# StockLens — Domain Glossary
 
-> **Purpose:** Shared vocabulary for market data and portfolio analytics.
-> **Audience:** AI coding agents implementing Phase 2.
+> **Purpose:** Shared vocabulary across all phases. Updated per-phase.
+> **Audience:** AI coding agents implementing any phase.
 > **All terms defined here are normative** — if implementation docs use different language, this glossary wins.
 
 ---
@@ -83,15 +83,81 @@ Client → FastAPI → market router → yfinance provider → ohlcv_prices (DB 
 
 ---
 
-## Edge Cases & Risks
+## LSTM Model & ML Pipeline (Phase 3)
 
-| Edge Case                                      | Handling                                                             |
-| ---------------------------------------------- | -------------------------------------------------------------------- |
-| Missing price data for a holding               | Return `null` for market_value, exclude from TWR, log warning.       |
-| Ticker not found in yfinance                   | Return error, do not cache.                                          |
-| Empty portfolio (no holdings)                  | Performance endpoint returns 0 value, 0 return, 0 weight.            |
-| Portfolio with no transactions (no cash flows) | TWR is calculated as simple return: `(end_value / start_value) − 1`. |
-| Single holding, single day                     | Sub-period return formula still works: `(EMV − BMV) / BMV` (CF = 0). |
-| Benchmark ticker not found                     | Return error with descriptive message.                               |
-| Date range with no price data                  | Return empty series, log warning.                                    |
-| yfinance rate limit hit                        | Catch exception, log error, return 503 with retry-after hint.        |
+| Term                          | Definition                                                                                                                                                                                                                                                                                                                                                                                                | Attributes / Constraints                                                                                                                                                                                                                                      |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Directional Forecast**      | The model's prediction: UP (price will rise), FLAT (price will stay within noise band), DOWN (price will fall).                                                                                                                                                                                                                                                                                           | 3-class classification. Confidence ∈ [0, 1] for each class.                                                                                                                                                                                                   |
+| **Global Model**              | A single LSTM trained on 55+ S&P 500 components simultaneously, with ticker entity embeddings to learn ticker-specific patterns. Generalizes to unseen tickers via UNK.                                                                                                                                                                                                                                   | One model with one MLflow run. Not per-ticker models. Train set = 55 tickers (dev), 475 (prod via TRAINING_TICKERS env).                                                                                                                                      |
+| **Feature Window**            | The 30-trading-day lookback window used to construct each prediction sample. Each sample is 30 rows × N_features.                                                                                                                                                                                                                                                                                         | Fixed at 30 trading days (not calendar days). Defined in both the dataset generator and the model's input layer.                                                                                                                                              |
+| **Technical Indicators**      | The feature set computed from raw OHLCV for each ticker across 55+ tickers: 17 features — 13 v1 (log returns 1/5/21d, MA 5/10/20/50, RSI(14), MACD line/signal/hist, vol_30d, vol_rank), vol_pct (rolling 30d vol percentile), and 3 cross-sectional excess returns vs SPY (excess_ret_1d/5d/21d). Extra indicators exist in Rust engine (BB, ATR, OBV, Williams %R, ROC) but are dropped in features.py. | All computed from `adjusted_close`. Cross-sectional features require SPY benchmark data in `ohlcv_prices` table. Standardised via **global pooled z-score** (one set of means/stds across all tickers). NaN-padded at sequence boundaries.                    |
+| **Log Returns**               | `ln(P_t / P_{t-1})` — the standard transform for financial time series. Used as the primary return metric for labeling and feature engineering.                                                                                                                                                                                                                                                           | Daily log returns. Multi-period: 1d, 5d, 21d log returns included as features.                                                                                                                                                                                |
+| **Adaptive Label**            | The UP/FLAT/DOWN label computed using a rolling volatility threshold, not a fixed percentage. 5-day forecast horizon (forward return over 5 trading days).                                                                                                                                                                                                                                                | `FLAT` if `                                                                                                                                                                                                                                                   | log_return | < 0.3 × σ_30d × sqrt(horizon)`. `UP`/`DOWN`otherwise.`σ_30d`= rolling 30-day std of daily log returns.`threshold_mult=0.3`(was 0.5 — gave 44% FLAT).`sqrt(horizon)` scaling keeps class balance stable as horizon changes. |
+| **Entity Embedding**          | A learned vector representation per ticker, used by the Global Model to capture ticker-specific price dynamics while keeping the LSTM weights shared across all tickers.                                                                                                                                                                                                                                  | Vocabulary = all training tickers + UNK token. Embedding dimension = 16 (configurable). UNK embedding is learned for unseen tickers.                                                                                                                          |
+| **Champion Model**            | The best-performing registered model in MLflow (by directional accuracy on validation set). Promoted via MLflow Model Registry aliases.                                                                                                                                                                                                                                                                   | Stored in `model_registry` DB table with alias='champion'. One champion at a time.                                                                                                                                                                            |
+| **MLflow Run**                | A single training execution, logged with hyperparameters, loss curves, confusion matrix, evaluation metrics, and the model artifact.                                                                                                                                                                                                                                                                      | Runs stored in the MLflow tracking server (Docker Compose service) with SQLite backend.                                                                                                                                                                       |
+| **Directional Accuracy**      | Percentage of correct direction predictions across all test samples. Not just UP accuracy — all 3 classes.                                                                                                                                                                                                                                                                                                | Computed on the held-out test set (last 15% chronological).                                                                                                                                                                                                   |
+| **Simulated Sharpe**          | Sharpe ratio from a signal-based trading simulation: long the ticker when model predicts UP, flat (cash) when FLAT or DOWN.                                                                                                                                                                                                                                                                               | Daily returns from the simulated strategy. `Sharpe = mean(daily_return) / std(daily_return) × sqrt(252)`. No transaction costs in V1 (ponytail: add if live trading is implemented).                                                                          |
+| **Long-Short Sharpe**         | Sharpe ratio from a symmetric strategy: long UP predictions (+1% when correct), short DOWN predictions (+1% when correct, −1% when wrong), flat on FLAT.                                                                                                                                                                                                                                                  | Doubles the signal per prediction for symmetric models. `return = +1%` for correct UP/DOWN, `−1%` for incorrect, 0% for FLAT or incorrect FLAT. Same annualisation as Simulated Sharpe.                                                                       |
+| **Chronological Split**       | Train/validation/test split that respects time ordering: earliest 70% of trading days → train, next 15% → validation, last 15% → test. No random shuffle.                                                                                                                                                                                                                                                 | Applied globally after merging all tickers' data. Each sample stays in its time bucket based on the last date in its feature window.                                                                                                                          |
+| **Weighted Cross-Entropy**    | Cross-entropy loss with class weights inversely proportional to class frequencies. Handles UP/FLAT/DOWN imbalance where FLAT dominates.                                                                                                                                                                                                                                                                   | `class_weight[c] = total_samples / (n_classes × samples_in_class[c])`. Weights computed per training epoch over the current ticker subset.                                                                                                                    |
+| **Model Quality Limitations** | Directional accuracy ~29% → 53% after R11/R12 improvements (FocalLoss, split-then-normalize, cross-sectional features vs SPY). Test Sharpe 0.97. FLAT class F1 still 0.0 — model rarely predicts FLAT.                                                                                                                                                                                                    | Financial time series has inherently low SNR. 17 features (13 V1 + vol_pct + 3 excess returns vs SPY) plus FocalLoss γ=2.0 and vol filtering (bottom 40th pctile removed) gave the largest single improvement (+2.52pp directional acc, +0.26 Sharpe in R12). |
+
+### Data Flow — Prediction
+
+```
+Client → GET /predict/{ticker}
+  → FastAPI router → prediction_service (lifespan-loaded GlobalLSTM model)
+  → Fetch 90+ days of OHLCV from market/repository.py (DB cache)
+  → Compute technical indicators (30-day window × N features)
+  → Convert to tensor → model forward pass
+  → Return { ticker, prediction: "UP"|"FLAT"|"DOWN", confidence, probabilities }
+  → Cache result in Redis (6h TTL) for identical ticker queries
+```
+
+### Data Flow — Training
+
+```
+backend/ml/pipeline.py
+   1. Fetch OHLCV for 55+ S&P 500 tickers from ohlcv_prices (6yr lookback)
+  2. Compute features + labels per ticker
+  3. Build ticker vocabulary → assign embedding indices
+  4. Merge all tickers into global dataset with global pooled z-score standardisation
+  5. Sort by date globally → chronological split: 70/15/15
+  6. Create DataLoaders with SequenceDataset
+   7. Initialise GlobalLSTM (vocab_size, embed_dim=16, hidden=64, n_layers=2, dropout=0.5, n_features=17)
+   8. Train with AdamW + CosineAnnealingLR + weighted cross-entropy + gradient clipping (max_norm=5.0)
+   9. Early stopping (patience 15) on validation loss
+  10. Evaluate on test set: directional accuracy, per-class F1, confusion matrix, Simulated Sharpe
+  11. Log everything to MLflow (tracking server at http://mlflow:5000)
+  12. Register champion model in MLflow Model Registry + persist to model_registry DB
+```
+
+### Model Architecture (torch.nn.Module)
+
+```
+GlobalLSTM(
+  ticker_embedding: Embedding(vocab_size, embed_dim=16, padding_idx=UNK)
+  feature_projection: Linear(n_features + embed_dim, hidden_dim=64) → ReLU  // n_features=17 (13 V1 + vol_pct + excess_ret_1d/5d/21d)
+  lstm: LSTM(hidden_dim=64, hidden_size=64, num_layers=2, dropout=0.5, batch_first=True, bidirectional=False)
+  dropout: Dropout(p=0.5)
+  classifier: Linear(64, 3) → logits
+)
+```
+
+---
+
+## Edge Cases & Risks (Phase 3+)
+
+| Edge Case                                        | Handling                                                                                                                                                                    |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ticker with < 5 years of OHLCV data              | Use all available data; pad with zeros at sequence boundaries. If < 30 days + feature window (60 days total), exclude from training.                                        |
+| Unseen ticker at inference                       | Use UNK embedding vector. Result is less accurate but still functional. Log warning.                                                                                        |
+| Market regime shift (e.g., 2020 COVID crash)     | Training includes crash periods within the 5-year window, so the model learns regime-aware patterns. 5-year rolling window naturally discards pre-2021 regimes over time.   |
+| Model confidence is low (< 0.4)                  | Return prediction with `confidence: "low"` flag. Frontend may choose to show "uncertain" indicator or fall back to historical CAGR.                                         |
+| yfinance data for model training unavailable     | Training pipeline must verify OHLCV data exists before starting. Skip tickers with insufficient data. Log warning.                                                          |
+| MLflow server unavailable                        | Training should log to local filesystem as fallback (`mlruns/` directory). Alert in logs.                                                                                   |
+| GPU unavailable (MPS/CUDA)                       | Fall back to CPU. MPS (Apple Silicon) supported via `torch.backends.mps.is_available()`. CUDA supported via `torch.cuda.is_available()`. Training is slower but functional. |
+| Class imbalance in adaptive labeling             | Weighted cross-entropy handles this. Monitor per-class F1 after training — retune threshold_mult (currently 0.3, scaled by sqrt(horizon)) if minority classes collapse.     |
+| Simulated Sharpe has extreme values (>5 or < -5) | Cap detected — flag in evaluation report. Likely due to look-ahead bias or data leakage. Investigate chronology split integrity.                                            |
+| Inference latency (model forward pass time)      | ~5-20ms per ticker on CPU with 64-hidden LSTM. Redis cache (6h TTL) prevents repeated inference for same ticker. Model weights ~0.5MB.                                      |

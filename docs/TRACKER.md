@@ -78,9 +78,9 @@ When updating this file, agents must follow these rules:
 - [x] ESLint — zero errors
 - [x] `npx tsc --noEmit` — zero errors (confirmed in Step 10)
 - [x] `terraform plan -var="environment=dev"` exits 0
-- [ ] IaC security scan passes: `checkov --config-file checkov.yml -d terraform/` and `tfsec terraform/` — zero critical/high _(config written, needs `terraform apply` to run full scan)_
-- [ ] Secrets Manager: 5 secrets created and accessible by intended IAM roles _(Terraform config written, needs `terraform apply`)_
-- [x] Python test coverage ≥80% _(confirmed 84% via `--cov=src`)_
+- [ ] IaC security scan passes: `checkov --config-file checkov.yml -d terraform/` and `tfsec terraform/` — zero critical/high _(config written, needs_ `terraform apply` _to run full scan)_
+- [ ] Secrets Manager: 5 secrets created and accessible by intended IAM roles _(Terraform config written, needs_ `terraform apply`_)_
+- [x] Python test coverage ≥80% _(confirmed 84% via_ `--cov=src`_)_
 
 ### Security Checklist
 
@@ -89,14 +89,14 @@ When updating this file, agents must follow these rules:
 - [x] Refresh tokens: SHA256 hash in DB, per-session, rotation active
 - [x] Stolen token detection: revoked refresh reuse → all sessions invalidated (implemented in /refresh, tested)
 - [x] Logout: revokes specific refresh token + blacklists access token (returns 204, accepts refresh_token in body)
-- [x] Receipt images: processed in memory, discarded immediately _(confirmed in `router.py:187` — explicit comment, no write-to-disk code)_
+- [x] Receipt images: processed in memory, discarded immediately _(confirmed in_ `router.py:187` _— explicit comment, no write-to-disk code)_
 - [x] All DB queries: parameterised (`$1`, `$2` via asyncpg) _(confirmed across all 39 asyncpg queries in src/)_
 - [x] Rate limiting: slowapi + Redis sliding window (20/min auth, 100/min other via config.py settings)
-- [x] CORS: restricted via `CORS_ORIGINS` env var _(confirmed in `config.py:35` + `main.py:86`)_
+- [x] CORS: restricted via `CORS_ORIGINS` env var _(confirmed in_ `config.py:35` _+_ `main.py:86`_)_
 - [x] RDS: `storage_encrypted = true`, security group restricted to VPC CIDR _(Terraform config — apply in Phase 5)_
 - [ ] Redis: encryption at rest + transit enabled (cache.r6g.micro) _(Terraform config — apply in Phase 5)_
 - [x] ECR: immutable tags confirmed in `ecr.tf:8` _(Terraform config — apply in Phase 5)_
-- [x] Secrets: all production secrets defined in `secrets.tf` (DATABASE*URL, JWT_SECRET_KEY, BEDROCK_API_KEY, REDIS_PASSWORD, DB_PASSWORD) *(Terraform config — apply in Phase 5)\_
+- [x] Secrets: all production secrets defined in `secrets.tf` (DATABASE*URL, JWT_SECRET_KEY, BEDROCK_API_KEY, REDIS_PASSWORD, DB_PASSWORD) *(Terraform config — apply in Phase 5)
 - [x] IaC security: `checkov.yml` config present; runs blocked until `terraform apply` _(needs provisioned resources for full scan)_
 - [x] Terraform state: `*.tfstate` files gitignored (local only — **must migrate to S3 backend before production deployment**)
 
@@ -135,7 +135,7 @@ When updating this file, agents must follow these rules:
 | 3.2  | Lint — `ruff check src/ tests/` — zero errors                                                                                  | ✅ Complete | ruff 0.15.15 — all checks passed, zero errors.                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 3.3  | Verify API docs — `GET /docs` renders all 6+ Phase 2 endpoints                                                                 | ✅ Complete | Swagger UI renders at /docs. 7 Phase 2 endpoints confirmed: market/ohlcv, market/quote, cash-flows (GET/POST/PATCH), portfolio/performance, portfolio/benchmark.                                                                                                                                                                                                                                                                                                   |
 | 3.4  | Update CI — verify test paths include new test files                                                                           | ✅ Complete | No `.github/workflows/` directory exists — CI setup deferred to Phase 5.                                                                                                                                                                                                                                                                                                                                                                                           |
-| 3.5  | Phase 2 completion audit — code review of all Round 2 files; fixed duplicate code in `performance/router.py` \_build_price_map | ✅ Complete | Duplicate `isinstance(rows, Exception)` block removed. `market/router.py` syntax error fixed (`except` comma → parens). Both deviations logged.                                                                                                                                                                                                                                                                                                                    |
+| 3.5  | Phase 2 completion audit — code review of all Round 2 files; fixed duplicate code in `performance/router.py` build_price_map   | ✅ Complete | Duplicate `isinstance(rows, Exception)` block removed. `market/router.py` syntax error fixed (`except` comma → parens). Both deviations logged.                                                                                                                                                                                                                                                                                                                    |
 | R4   | **Round 4 — Frontend: Full Portfolio UX**                                                                                      | ✅ Complete | 2 new services, 6 new screens, navigation update, AV removal. Post-completion: backend contract alignment (8+ field-name mismatches fixed, list responses unwrapped, HomeScreen portfolio aggregate added). 28 Jest suites / 124 tests pass. tsc + eslint clean.                                                                                                                                                                                                   |
 | 4.1  | Create typed service wrappers — `portfolios.ts` (16 endpoints) + `market.ts` (OHLCV/quote)                                     | ✅ Complete | `api.ts` already had generic get/post/put/delete — no extension needed. Created `portfolios.ts` (Portfolio/Holding/Transaction/CashFlow/Performance/Benchmark types + service) and `market.ts` (OHLCVData/QuoteData + service).                                                                                                                                                                                                                                    |
 | 4.2  | Build Portfolio List screen — show all portfolios with value, P&L, last updated                                                | ✅ Complete | `PortfolioListScreen.tsx` — FlatList with portfolio cards, batch P&L fetch via `Promise.allSettled`, pull-to-refresh, empty/error/loading states. "+" header navigates to CreatePortfolio.                                                                                                                                                                                                                                                                         |
@@ -197,11 +197,125 @@ When updating this file, agents must follow these rules:
 
 ---
 
-## Future Phases
+## Phase 3 — LSTM & ML Pipeline
 
-### Phase 3 — LSTM & ML Pipeline
+**Goal:** Train a Global multi-ticker LSTM 5-day directional forecasting model with entity embeddings, logged to MLflow, served via FastAPI `/predict` endpoint.
+**Final Architecture:**
 
-_Not started._ Add tracker rows when Phase 3 begins.
+- **17 features:** log returns 1/5/21d, MA 5/10/20/50, RSI(14), MACD line/signal/hist, vol_30d, vol_rank, vol_pct (rolling 30d vol percentile), excess_ret_1d/5d/21d vs SPY benchmark
+- **Model:** GlobalLSTM — Embedding(vocab_size, 16) → Linear(17+16, 64) → 2-layer uni LSTM(hidden 64, dropout 0.5) → Linear(64, 3) → logits
+- **Loss:** FocalLoss(γ=2.0, α=class_weights), AdamW, CosineAnnealingLR, grad clipping max_norm=5.0
+- **Labeling:** Adaptive threshold 0.3×σ_30d×sqrt(5), 5-day horizon, bottom 40th-pctile vol filter per ticker
+- **Split:** Chronological 70/15/15, split-then-normalize (global pooled z-score, fit on train only)
+- **v22 champion:** **53.18% directional accuracy**, **0.97 Simulated Sharpe**, **0.66 Long-Short Sharpe**
+
+### Step Tracker
+
+| #    | Step                            | Status      | Notes                                                                                                                                                                                                                              |
+| ---- | ------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1   | ML Infrastructure               | ✅ Complete | ML container (PyTorch 2.12.x, uv-managed), MLflow tracking server (Docker Compose, port 5001), shared model_artifacts volume                                                                                                       |
+| R2   | Feature Engineering & Dataset   | ✅ Complete | 17 features from Rust-native engine (features_engine PyO3 crate), adaptive labeling, sliding-window dataset (30d), chronological split                                                                                             |
+| R3   | LSTM Model Definition           | ✅ Complete | GlobalLSTM with entity embeddings, OOV clamping, save/load with vocab+means/stds, FocalLoss, early stopping on val_dir_acc                                                                                                         |
+| R4   | MLflow Integration & Pipeline   | ✅ Complete | Full orchestrator: asyncpg DB fetch → features → labels → dataset → standardize → train → MLflow log (autologging, system metrics, dataset tracking, best-run tagging) → champion registry                                         |
+| R4.5 | Feature Engine Rust Port (PyO3) | ✅ Complete | features-engine crate (7 indicator modules, 12 Rust tests), 31 parametrised pytest tests, equivalence harness (1e-10 max diff), CI job (clippy + cargo test). Engine computes 19 indicators; features.py selects configured subset |
+| R5   | Production Predict Endpoint     | ✅ Complete | GET /predict/{ticker}, Redis 6h cache, model loaded at startup via lifespan, UNK embedding for unseen tickers, SPY OHLCV fetch for cross-sectional features (falls back to 14 if SPY unavailable)                                  |
+| R6   | Training Execution              | ✅ Complete | Native macOS MPS GPU (3s/epoch, 20x Docker CPU speed). yfinance upgraded 0.2.25→1.5.1 (curl_cffi TLS fixes Docker IP block). DB seeded with 55 S&P 500 tickers × 5yr OHLCV                                                         |
+| R7   | Frontend Integration            | ✅ Complete | PredictionCard component, SummaryScreen LSTM projection, prediction badges on holdings                                                                                                                                             |
+| R11  | Signal Recovery                 | ✅ Complete | FocalLoss(γ=2.0), early stop on val_dir_acc, split-then-normalize, vol_pct feature, bottom 40th-pctile vol filter. Jumped dir acc ~29% → 50.66%                                                                                    |
+| R12  | Cross-Sectional Features        | ✅ Complete | 3 excess returns vs SPY (excess_ret_1d/5d/21d), long_short_sharpe eval metric. v22 champion: 53.18% dir acc, 0.97 Sharpe, 0.66 Long-Short Sharpe                                                                                   |
+
+### Deviations from Plan
+
+| Step | Planned                                      | Actual                                                            | Rationale                                                                              |
+| ---- | -------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| R1   | Per-ticker models                            | Single multi-ticker Global model with entity embeddings           | Generalizes to unseen tickers via UNK, single endpoint, CV-stronger                    |
+| R1   | LSTM hidden 128, dropout 0.3                 | Hidden 64, dropout 0.5, weight_decay 1e-3                         | Reduces overfitting on noisy financial data                                            |
+| R1   | ML infrastructure not specified              | Separate ML Docker container + MLflow tracking server (port 5001) | PyTorch ~2GB; tracking server provides experiment comparison, model registry           |
+| R2   | Fixed label threshold                        | Adaptive threshold: 0.3×σ_30d×sqrt(horizon)                       | Adjusts to market volatility                                                           |
+| R2   | Training window not specified                | 5-year rolling window                                             | Avoids concept drift from older regimes                                                |
+| R3   | Class imbalance: weighted CE                 | FocalLoss(γ=2.0, α=class_weights)                                 | γ=2.0 down-weights easy FLAT samples, forces UP/DOWN learning                          |
+| R3   | OOV ticker raises RuntimeError               | Forward clamps `ticker_idxs` to vocabulary range                  | Prevents inference crash; UNK embedding fallback for unseen tickers                    |
+| R3   | Schema: separate metric columns              | `metrics JSONB()` column                                          | Flexible, matches MLflow's metrics-as-dict pattern                                     |
+| R4   | Per-ticker z-score                           | Global pooled z-score (one means/stds)                            | Inference needs one set of stats; per-ticker would require N sets                      |
+| R4.5 | RSI: Wilder's EMA                            | SMA matching pandas `rolling().mean()`                            | Equivalence harness requires exact Python match                                        |
+| R4.5 | Volatility: population std                   | Sample std (ddof=1)                                               | pandas `rolling().std()` defaults to ddof=1                                            |
+| R4.5 | CI gate: per-indicator MAE                   | 1e-10 max-diff across all indicators                              | More conservative; one threshold for all                                               |
+| R5   | Model loading not specified                  | Lifespan context manager + Redis 6h cache                         | PyTorch deserialization per request is too slow                                        |
+| R5   | Inference: 13 features                       | 17 features (with SPY cross-sectional), fallback to 14            | Requires SPY in `ohlcv_prices`; works identically at train and inference               |
+| R5   | Rust backend wheel not in backend Dockerfile | Added rust-builder stage + wheel to backend build                 | R4.5 changed features.py to import Rust module                                         |
+| R6   | Docker CPU training (75s/epoch)              | Native macOS MPS GPU (3s/epoch)                                   | Docker on macOS can't access Metal GPU; host venv at /tmp/ml_venv                      |
+| R6   | MLflow port 5000                             | Port 5001                                                         | Port 5000 conflicts with macOS AirPlay Receiver                                        |
+| R6   | yfinance 0.2.25                              | Upgraded to 1.5.1 (curl_cffi TLS impersonation)                   | Docker IP blocked by Yahoo Finance                                                     |
+| R6   | Model expected >60% accuracy                 | ~53% directional acc                                              | Financial time series has low SNR; 17 features + FocalLoss give best practical results |
+| R11  | Normalize on all data then split             | Split-then-normalize (fit on train only)                          | Eliminates test-data leakage from normalization statistics                             |
+| R11  | Early stopping on val_loss                   | Early stopping on val_dir_acc (MIN_DELTA=5e-3)                    | Val loss flat; dir acc has detectable signal                                           |
+| R11  | 13 features                                  | 14 (added vol_pct)                                                | Per-ticker volatility context lost when z-scoring flattens vol differences             |
+| R11  | No volatility filter                         | Bottom 40th-pctile vol periods discarded                          | Low-vol periods have lowest SNR                                                        |
+| R12  | Simulated Sharpe (long-only)                 | Added long_short_sharpe                                           | Correct UP and DOWN both earn +1%; penalizes always-UP models                          |
+| R12  | Champion: 50.66% dir acc, 0.71 Sharpe        | v22: **53.18%**, **0.97**, **0.66** L/S                           | Cross-sectional excess returns vs SPY gave +2.52pp directional acc, +0.26 Sharpe       |
+| R7   | Hardcoded 10% projection                     | LSTM-driven avg rate from 5 presets                               | getCombinedProjection() merges LSTM direction + CAGR rate                              |
+| R7   | No prediction badges on StockCards           | LSTM: ↑/↓/— with confidence % badge on future carousel            | Badge color: green=UP, red=DOWN, blue=FLAT                                             |
+| R7   | No frontend prediction service               | prediction.ts service + PredictionCard component                  | Calls GET /predict/{ticker}, renders direction/confidence/probabilities                |
+
+### Verification Checklist (Phase 3 DoD)
+
+- [x] `docker compose build` succeeds (all services: postgres, postgres_test, redis, backend, mlflow, ml, pytest)
+- [x] `docker compose up -d mlflow` — starts MLflow tracking server
+- [x] ML container can run feature engineering: `docker compose run ml python -c "from ml.features import compute_all_features; print('OK')"`
+- [x] Full training pipeline completes: `python -m ml.pipeline` from host venv with MPS GPU — 6 epochs, champion registered
+- [x] Backend container starts and loads champion model at startup (lifespan logs `"champion_model_loaded"`)
+- [x] `GET /predict/AAPL` returns 200 with direction, confidence, probabilities (v22: **53.18% dir acc, 0.97 Sharpe**)
+- [x] `GET /predict/UNKNOWN_TICKER` returns prediction (uses UNK embedding, not 500)
+- [x] Redis cached prediction returns in <10ms (cache hit)
+- [x] ReceiptDetailsScreen shows LSTM predictions for associated tickers (R7)
+- [x] All 240+ existing tests still pass (Phase 1 + Phase 2)
+- [x] 53+ new Phase 3 tests pass (15 features + 8 labeling + 10 dataset + 8 model + 12 evaluate)
+- [x] 15 prediction endpoint tests pass (R5 — all success/error/cache/auth cases)
+- [x] `ruff check src/ tests/ ml/` — zero errors
+- [x] `npx tsc --noEmit` — zero errors (frontend) (R7)
+- [x] `model_registry` table exists — no new migration needed
+- [x] Model has `vocab`, `feature_means`, `feature_stds` stored in checkpoint for correct inference
+- [x] MLflow UI shows completed run with metrics, params, artifacts
+- [x] `model_registry` DB has champion record
+- [x] `/model_artifacts/champion/model.pt` exists
+
+### Success Criteria (Phase 3 DoD)
+
+- [x] ML Docker image builds and `docker compose build ml` succeeds
+- [x] MLflow tracking server starts and is accessible at [http://localhost:5001](http://localhost:5001)
+- [x] All feature functions pass unit tests (test_features.py)
+- [x] All labeling functions pass unit tests (test_labeling.py)
+- [x] All dataset functions pass unit tests (test_dataset.py)
+- [x] All model functions pass unit tests (test_model.py)
+- [x] All evaluation functions pass unit tests (test_evaluate.py)
+- [x] Full training pipeline runs to completion (host MPS): early stop epoch 6/21, champion registered
+- [x] Champion model registered in MLflow with params, metrics, loss curves, confusion matrix
+- [x] Champion model saved to /model_artifacts/champion/model.pt
+- [x] Champion model recorded in model_registry DB table with alias='champion'
+- [x] Backend starts with prediction model loaded (logs: `"prediction_model_loaded"`)
+- [x] Data pipeline verified: sequences × 17 features from 55 tickers + SPY (cross-sectional excess returns)
+- [x] MLflow accessible at [http://localhost:5001](http://localhost:5001)
+- [x] Docker yfinance rate limit fixed (upgrade 0.2.25→1.5.1, curl_cffi TLS impersonation)
+- [x] GET /predict/{ticker} returns PredictionResponse for tickers with data — **53.18% directional acc, 0.97 Sharpe, 0.66 Long-Short Sharpe (v22 champion)**
+- [x] GET /predict/{ticker} returns 503 when no model loaded
+- [x] GET /predict/{ticker} returns 404 for unknown tickers
+- [x] GET /predict/{ticker} returns cached response within 6h (Redis hit)
+- [x] MLflow experiment tags set (project, model_type, problem_type, data_source)
+- [x] MLflow registered model tags set (architecture, classes, features, framework, hidden_dim, layers, window_size)
+- [x] MLflow model signature logged (TensorSpec schema for features + ticker_idxs → logits)
+- [x] MLflow model description set (prose description of architecture and training data)
+- [x] MLflow run description set (training config summary in mlflow.note.content)
+- [x] MLflow autologging enabled (log_models=False, log_datasets=False — conflicts with manual)
+- [x] MLflow system metrics enabled (CPU/memory)
+- [x] MLflow dataset tracking logged (6 datasets: train/val/test features + labels)
+- [x] MLflow best-run tagging active (best_run=true, run_quality=challenger, delta_from_best)
+- [x] All 80+ ML tests pass (53 Phase 3 unit tests + 15 prediction endpoint tests + 12 eval/model)
+- [x] All existing Phase 1 + Phase 2 tests still pass (240+ tests)
+- [x] PredictionCard component renders correctly (direction, confidence, probabilities) (R7)
+- [x] SummaryScreen shows LSTM-based projection instead of hardcoded 10% (R7)
+- [x] ReceiptDetailsScreen shows prediction badges on StockCards (R7)
+- [x] `ruff check src/ tests/` zero errors
+- [x] `npx tsc --noEmit` zero errors (frontend) (R7)
 
 ### Phase 4 — MLOps & Automation
 
