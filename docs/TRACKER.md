@@ -1,8 +1,7 @@
 # StockLens — Implementation Tracker
 
 > **Purpose:** Single source of truth for implementation progress. Agents read this to determine what to work on next, and write to it when done.
-> **Plan docs:** [MASTER_PLAN.md](MASTER_PLAN.md) (architecture), [PHASE1_IMPLEMENTATION.md](PHASE1_IMPLEMENTATION.md), [PHASE2_IMPLEMENTATION.md](PHASE2_IMPLEMENTATION.md)
-> **Domain glossary:** [CONTEXT.md](CONTEXT.md) (normative terms)
+> **Plan docs:** [MASTER_PLAN.md](MASTER_PLAN.md) (architecture), [PHASE1_IMPLEMENTATION.md](PHASE1_IMPLEMENTATION.md), [PHASE2_IMPLEMENTATION.md](PHASE2_IMPLEMENTATION.md) > **Domain glossary:** [CONTEXT.md](CONTEXT.md) (normative terms)
 > **Docs are frozen** — plan docs are the specs. This tracker captures what actually happened.
 
 ---
@@ -102,6 +101,59 @@ When updating this file, agents must follow these rules:
 
 ---
 
+## Phase 1.5 — NLP Cascade OCR System
+
+**Goal:** Add a confidence-gated cascade to the receipt OCR pipeline: fast regex parsing first, Bedrock Haiku LLM escalation only when confidence is low. Per-field confidence scoring, discrepancy detection, background async enrichment, fuzzy merchant matching, and a 50–100 synthetic receipt eval dataset.
+**Plan doc:** [Phase 1.5 NLP Cascade OCR Plan](PHASE1.5_NLP_IMPLEMENTATION.md) (frozen spec)
+**Target tests:** ~30 new tests across cascade logic, LLM extractor (mocked Bedrock), and eval dataset. Existing `test_ocr.py` regex parsing tests must continue to pass unchanged.
+
+### Step Tracker
+
+| #   | Step                                                                     | Status | Notes                                                                                                                                                                                                                                                                                                                     |
+| --- | ------------------------------------------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Add `rapidfuzz>=3.0.0` dependency to `backend/pyproject.toml`            | ⬜     | Fuzzy merchant matching. Low risk.                                                                                                                                                                                                                                                                                        |
+| 2   | Add config values to `backend/src/config.py`                             | ⬜     | `CASCADE_CONFIDENCE_THRESHOLD=0.7`, `LLM_MAX_TOKENS=1024`, `LLM_MAX_RETRIES=2`, `LLM_RETRY_BACKOFF=1.0`, `LLM_CACHE_TTL=86400`, `ENRICH_STATUS_TTL=3600`. `REDIS_URL` already exists.                                                                                                                                     |
+| 3   | Add new Pydantic models to `backend/src/receipts/models.py`              | ⬜     | `FieldConfidence`, `CascadeResult`, `CascadeDecision`. No breaking changes to existing `ReceiptExtraction`/`ExtractedItem`/`ReceiptScanResponse`.                                                                                                                                                                         |
+| 4   | Reuse existing Redis connection pool — `backend/src/receipts/cache.py`   | ⬜     | NEW module. Reuses `get_redis()` from `backend/src/cache/redis.py` (shared `ConnectionPool` from app lifespan). `settings` imported inside functions to avoid circular import (config → receipts → cache → config). Dual retry key scopes: `retry_count:receipt:{id}` + `retry_count:hash:{sha256[:16]}`, TTL 5 min each. |
+| 5   | Create LLM extractor module — `backend/src/receipts/llm_extractor.py`    | ⬜     | Bedrock Haiku structured extraction (Pydantic output). Tenacity retry with exponential backoff. Redis cache (24h TTL on text hash). Pattern follows existing `bedrock.py` `classify_merchant_with_bedrock()`.                                                                                                             |
+| 6   | Create cascade orchestrator — `backend/src/receipts/cascade.py`          | ⬜     | Run regex → score confidence → escalate to LLM if any field < threshold. Overall confidence = average of merchant/total/date (items excluded). `_detect_discrepancies()` logs only when BOTH sources have confidence ≥ 0.5 AND values differ. `_score_heuristic_confidence(known_merchants: list[str])`.                  |
+| 7   | Create fuzzy merchant matcher — `backend/src/receipts/merchant_match.py` | ⬜     | rapidfuzz token_sort_ratio against `KNOWN_MERCHANTS` loaded once at module load from `SEED_CATEGORIES` in `backend/src/categories/seed.py`: `KNOWN_MERCHANTS = [kw for cat in SEED_CATEGORIES for kw in cat['merchant_keywords']]`.                                                                                       |
+| 8   | Add `cascade_decisions` table + Alembic migration                        | ⬜     | Stores per-receipt cascade outcomes: overall confidence, source, discrepancies, field confidences (JSONB). Manual DDL for full control (matches Phase 1 convention).                                                                                                                                                      |
+| 9   | Add health check endpoint                                                | ⬜     | GET `/receipts/cascade/health` — reports Redis connectivity, Bedrock reachability, cascade threshold config.                                                                                                                                                                                                              |
+| 10  | Modify `scan_receipt` router to use cascade + background enrichment      | ⬜     | Swap synchronous `process_receipt()` for cascade. `background_tasks: BackgroundTasks` injected by FastAPI. Background task signature `(receipt_id: str, raw_text: str)` — NOT image_bytes. `source` field reflects cascade outcome (`regex`/`cascade`/`degraded`/`failed`).                                               |
+| 11  | Update `source` field logic in `backend/src/receipts/router.py`          | ⬜     | Replace hardcoded `source = 'regex'` (line 162) with cascade outcome. Never lose a scan — degraded/failed still persists with flag.                                                                                                                                                                                       |
+| 12  | Create eval dataset — `backend/tests/eval_dataset.py`                    | ⬜     | 50–100 synthetic receipts with known ground truth. Used by eval step for field-level precision/recall/F1 (serves as LLM confidence calibration check).                                                                                                                                                                    |
+| 13  | Write cascade tests — `backend/tests/test_cascade.py`                    | ⬜     | Confidence scoring, discrepancy detection (threshold ≥ 0.5 both sides), degraded path, fuzzy merchant matching, dual retry key scopes.                                                                                                                                                                                    |
+| 14  | Write LLM extractor tests — `backend/tests/test_llm_extractor.py`        | ⬜     | Mocked Bedrock (follow `bedrock.py` test patterns). Retry + cache hit/miss paths. Graceful degradation on LLM failure.                                                                                                                                                                                                    |
+| 15  | Run eval dataset — `backend/tests/test_eval.py`                          | ⬜     | Logs per-field precision/recall/F1 for regex-only, LLM-only, and cascade modes. Serves as the LLM confidence calibration check (prompt kept as-is).                                                                                                                                                                       |
+
+### Deviations from Plan
+
+| Step | Planned | Actual | Rationale                        |
+| ---- | ------- | ------ | -------------------------------- |
+| —    | —       | —      | _(none yet — phase not started)_ |
+
+### Verification Checklist (Phase 1.5 DoD)
+
+- [ ] `docker compose build` succeeds with `rapidfuzz` installed
+- [ ] All existing `test_ocr.py` regex parsing tests pass unchanged
+- [ ] All new cascade/LLM extractor/eval tests pass
+- [ ] `ruff check src/ tests/` — zero errors (line-length=100, py314)
+- [ ] `scan_receipt` endpoint returns cascade `source` field correctly
+- [ ] Low-confidence receipt (< 0.7) triggers LLM escalation
+- [ ] LLM failure degrades gracefully (never loses a scan)
+- [ ] `cascade_decisions` migration applies cleanly
+- [ ] Health check endpoint returns Redis + Bedrock + threshold status
+- [ ] Per-field precision/recall/F1 logged from eval run
+
+### Notes
+
+- **Background Enrichment MVP**: Uses FastAPI `BackgroundTasks` (in-process). `ponytail:` — replace with Celery/Redis queue when retries/persistence across worker restarts are needed. Sufficient for current throughput.
+- **Plan doc frozen**: `implementation_plan_nlp_cascade.md` is the spec. This tracker captures what actually happens.
+- **No Phase 1 regression**: All Phase 1 receipt endpoints continue to function; cascade is additive.
+
+---
+
 ## Phase 2 — Market Data & Portfolio Analytics
 
 **Goal:** yfinance integration, OHLCV/quote endpoints, per-holding P&L, TWR (cash-flow-based), benchmark comparison (TE/IR), cash_flows module for receipt-backed portfolio deposits, and full portfolio UX frontend (deposit, buy/sell, holdings, P&L, benchmarks).
@@ -166,35 +218,6 @@ When updating this file, agents must follow these rules:
 | R4            | `eventBus.ts` scheduled for deletion in cleanup (step 4.10)                   | Kept `eventBus.ts` — not deleted                                                                                     | Portfolio screens use `subscribe`/`emit` for cache invalidation signals. `ReceiptDetailsScreen` still depends on it for projection events. |
 | R4            | `getHistoricalCAGRFromToday(ticker, years)` to be replaced by new CAGR API    | Function signature simplified to single-arg `(ticker)`. Added backward-compatible wrapper in `projectionService.ts`. | Backend `/market/ohlcv/` returns full history; CAGR computed from available data regardless of requested years.                            |
 
-### Verification Checklist (Phase 2 DoD)
-
-- [x] `GET /market/ohlcv/{ticker}` — returns OHLCV data with date range support (cache hit → DB, cache miss → yfinance → DB, tenacity retry on failure)
-- [x] Market data freshness accounts for weekends — 3-day staleness tolerance on Monday
-- [x] `GET /market/quote/{ticker}` — returns current quote with 60s Redis cache
-- [x] Redis outage handled gracefully — quote endpoint returns fresh data from yfinance instead of 500
-- [x] `GET /portfolios/{id}/cash-flows` — returns cash flow list (paginated)
-- [x] `POST /portfolios/{id}/cash-flows` — creates deposit, validates amount > 0
-- [x] `PATCH /portfolios/{id}/cash-flows/{cf_id}` — updates notes
-- [x] `GET /portfolio/performance/{portfolio_id}` — returns per-holding P&L + TWR (cash-flow-based) + portfolio aggregate + free_cash_balance
-- [x] `GET /portfolio/benchmark/{portfolio_id}` — returns alpha + tracking error + information ratio (with daily_returns_count)
-- [x] TWR: cash-flow-based methodology, uses cash_flows for external CF amounts, transactions for holdings state only, BMV=0 guard
-- [x] TWR: pre-existing holdings before start_date are correctly seeded from pre-start-date transactions
-- [x] ENABLE_TWR feature flag: when False, TWR/TE/IR return null
-- [x] Tenacity retry: exponential backoff (3 attempts, 1s/2s/4s) on yfinance failures (Round 1)
-- [x] All Phase 1 tests still pass (152/152)
-- [x] 88 Phase 2 tests pass (38 market + 14 cash_flows + 36 performance)
-- [x] `ruff check src/ tests/` — zero errors
-- [x] `docs/TRACKER.md` updated to reflect Phase 2 completion
-- [x] R4: `portfolios.ts` created (16 typed endpoints) + `market.ts` (OHLCV/quote)
-- [x] R4: 6 portfolio screens created (List, Detail, Create, Deposit, Trade, Benchmark) — all with loading/error/empty states + pull-to-refresh
-- [x] R4: Navigation updated — Portfolio tab (5th tab) with stack navigator (6 routes)
-- [x] R4: `alphaVantageService.ts` + `database.ts` deleted (~586 lines dead code removed)
-- [x] R4: `dataService.ts` stripped to `PREFETCH_TICKERS` re-export; `projectionService.ts` rewritten for backend `/market/` endpoints
-- [x] R4: 28 Jest suites / 124 tests pass
-- [x] R4: `npx tsc --noEmit` — zero errors
-- [x] R4: `eslint src/` — zero errors, zero warnings
-- [x] R4: Frontend-backend contract aligned — all field names match backend schemas (PortfolioPerformance, HoldingPerformance, BenchmarkComparison, Transaction, CashFlow, OHLCV response)
-
 ---
 
 ## Phase 3 — LSTM & ML Pipeline
@@ -256,66 +279,6 @@ When updating this file, agents must follow these rules:
 | R7   | Hardcoded 10% projection                     | LSTM-driven avg rate from 5 presets                               | getCombinedProjection() merges LSTM direction + CAGR rate                              |
 | R7   | No prediction badges on StockCards           | LSTM: ↑/↓/— with confidence % badge on future carousel            | Badge color: green=UP, red=DOWN, blue=FLAT                                             |
 | R7   | No frontend prediction service               | prediction.ts service + PredictionCard component                  | Calls GET /predict/{ticker}, renders direction/confidence/probabilities                |
-
-### Verification Checklist (Phase 3 DoD)
-
-- [x] `docker compose build` succeeds (all services: postgres, postgres_test, redis, backend, mlflow, ml, pytest)
-- [x] `docker compose up -d mlflow` — starts MLflow tracking server
-- [x] ML container can run feature engineering: `docker compose run ml python -c "from ml.features import compute_all_features; print('OK')"`
-- [x] Full training pipeline completes: `python -m ml.pipeline` from host venv with MPS GPU — 6 epochs, champion registered
-- [x] Backend container starts and loads champion model at startup (lifespan logs `"champion_model_loaded"`)
-- [x] `GET /predict/AAPL` returns 200 with direction, confidence, probabilities (v22: **53.18% dir acc, 0.97 Sharpe**)
-- [x] `GET /predict/UNKNOWN_TICKER` returns prediction (uses UNK embedding, not 500)
-- [x] Redis cached prediction returns in <10ms (cache hit)
-- [x] ReceiptDetailsScreen shows LSTM predictions for associated tickers (R7)
-- [x] All 240+ existing tests still pass (Phase 1 + Phase 2)
-- [x] 53+ new Phase 3 tests pass (15 features + 8 labeling + 10 dataset + 8 model + 12 evaluate)
-- [x] 15 prediction endpoint tests pass (R5 — all success/error/cache/auth cases)
-- [x] `ruff check src/ tests/ ml/` — zero errors
-- [x] `npx tsc --noEmit` — zero errors (frontend) (R7)
-- [x] `model_registry` table exists — no new migration needed
-- [x] Model has `vocab`, `feature_means`, `feature_stds` stored in checkpoint for correct inference
-- [x] MLflow UI shows completed run with metrics, params, artifacts
-- [x] `model_registry` DB has champion record
-- [x] `/model_artifacts/champion/model.pt` exists
-
-### Success Criteria (Phase 3 DoD)
-
-- [x] ML Docker image builds and `docker compose build ml` succeeds
-- [x] MLflow tracking server starts and is accessible at [http://localhost:5001](http://localhost:5001)
-- [x] All feature functions pass unit tests (test_features.py)
-- [x] All labeling functions pass unit tests (test_labeling.py)
-- [x] All dataset functions pass unit tests (test_dataset.py)
-- [x] All model functions pass unit tests (test_model.py)
-- [x] All evaluation functions pass unit tests (test_evaluate.py)
-- [x] Full training pipeline runs to completion (host MPS): early stop epoch 6/21, champion registered
-- [x] Champion model registered in MLflow with params, metrics, loss curves, confusion matrix
-- [x] Champion model saved to /model_artifacts/champion/model.pt
-- [x] Champion model recorded in model_registry DB table with alias='champion'
-- [x] Backend starts with prediction model loaded (logs: `"prediction_model_loaded"`)
-- [x] Data pipeline verified: sequences × 17 features from 55 tickers + SPY (cross-sectional excess returns)
-- [x] MLflow accessible at [http://localhost:5001](http://localhost:5001)
-- [x] Docker yfinance rate limit fixed (upgrade 0.2.25→1.5.1, curl_cffi TLS impersonation)
-- [x] GET /predict/{ticker} returns PredictionResponse for tickers with data — **53.18% directional acc, 0.97 Sharpe, 0.66 Long-Short Sharpe (v22 champion)**
-- [x] GET /predict/{ticker} returns 503 when no model loaded
-- [x] GET /predict/{ticker} returns 404 for unknown tickers
-- [x] GET /predict/{ticker} returns cached response within 6h (Redis hit)
-- [x] MLflow experiment tags set (project, model_type, problem_type, data_source)
-- [x] MLflow registered model tags set (architecture, classes, features, framework, hidden_dim, layers, window_size)
-- [x] MLflow model signature logged (TensorSpec schema for features + ticker_idxs → logits)
-- [x] MLflow model description set (prose description of architecture and training data)
-- [x] MLflow run description set (training config summary in mlflow.note.content)
-- [x] MLflow autologging enabled (log_models=False, log_datasets=False — conflicts with manual)
-- [x] MLflow system metrics enabled (CPU/memory)
-- [x] MLflow dataset tracking logged (6 datasets: train/val/test features + labels)
-- [x] MLflow best-run tagging active (best_run=true, run_quality=challenger, delta_from_best)
-- [x] All 80+ ML tests pass (53 Phase 3 unit tests + 15 prediction endpoint tests + 12 eval/model)
-- [x] All existing Phase 1 + Phase 2 tests still pass (240+ tests)
-- [x] PredictionCard component renders correctly (direction, confidence, probabilities) (R7)
-- [x] SummaryScreen shows LSTM-based projection instead of hardcoded 10% (R7)
-- [x] ReceiptDetailsScreen shows prediction badges on StockCards (R7)
-- [x] `ruff check src/ tests/` zero errors
-- [x] `npx tsc --noEmit` zero errors (frontend) (R7)
 
 ### Phase 4 — MLOps & Automation
 
