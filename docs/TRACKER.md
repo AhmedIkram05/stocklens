@@ -220,7 +220,7 @@ When updating this file, agents must follow these rules:
 | R4.5 | Feature Engine Rust Port (PyO3) | ✅ Complete | features-engine crate (7 indicator modules, 12 Rust tests), 31 parametrised pytest tests, equivalence harness (1e-10 max diff), CI job (clippy + cargo test). Engine computes 19 indicators; features.py selects configured subset |
 | R5   | Production Predict Endpoint     | ✅ Complete | GET /predict/{ticker}, Redis 6h cache, model loaded at startup via lifespan, UNK embedding for unseen tickers, SPY OHLCV fetch for cross-sectional features (falls back to 14 if SPY unavailable)                                  |
 | R6   | Training Execution              | ✅ Complete | Native macOS MPS GPU (3s/epoch, 20x Docker CPU speed). yfinance upgraded 0.2.25→1.5.1 (curl_cffi TLS fixes Docker IP block). DB seeded with 55 S&P 500 tickers × 5yr OHLCV                                                         |
-| R7   | Frontend Integration            | ⏳ Planned  | PredictionCard component, SummaryScreen LSTM projection, prediction badges on holdings                                                                                                                                             |
+| R7   | Frontend Integration            | ✅ Complete | PredictionCard component, SummaryScreen LSTM projection, prediction badges on holdings                                                                                                                                             |
 | R11  | Signal Recovery                 | ✅ Complete | FocalLoss(γ=2.0), early stop on val_dir_acc, split-then-normalize, vol_pct feature, bottom 40th-pctile vol filter. Jumped dir acc ~29% → 50.66%                                                                                    |
 | R12  | Cross-Sectional Features        | ✅ Complete | 3 excess returns vs SPY (excess_ret_1d/5d/21d), long_short_sharpe eval metric. v22 champion: 53.18% dir acc, 0.97 Sharpe, 0.66 Long-Short Sharpe                                                                                   |
 
@@ -253,6 +253,9 @@ When updating this file, agents must follow these rules:
 | R11  | No volatility filter                         | Bottom 40th-pctile vol periods discarded                          | Low-vol periods have lowest SNR                                                        |
 | R12  | Simulated Sharpe (long-only)                 | Added long_short_sharpe                                           | Correct UP and DOWN both earn +1%; penalizes always-UP models                          |
 | R12  | Champion: 50.66% dir acc, 0.71 Sharpe        | v22: **53.18%**, **0.97**, **0.66** L/S                           | Cross-sectional excess returns vs SPY gave +2.52pp directional acc, +0.26 Sharpe       |
+| R7   | Hardcoded 10% projection                     | LSTM-driven avg rate from 5 presets                               | getCombinedProjection() merges LSTM direction + CAGR rate                              |
+| R7   | No prediction badges on StockCards           | LSTM: ↑/↓/— with confidence % badge on future carousel            | Badge color: green=UP, red=DOWN, blue=FLAT                                             |
+| R7   | No frontend prediction service               | prediction.ts service + PredictionCard component                  | Calls GET /predict/{ticker}, renders direction/confidence/probabilities                |
 
 ### Verification Checklist (Phase 3 DoD)
 
@@ -264,13 +267,12 @@ When updating this file, agents must follow these rules:
 - [x] `GET /predict/AAPL` returns 200 with direction, confidence, probabilities (v22: **53.18% dir acc, 0.97 Sharpe**)
 - [x] `GET /predict/UNKNOWN_TICKER` returns prediction (uses UNK embedding, not 500)
 - [x] Redis cached prediction returns in <10ms (cache hit)
-- [ ] ReceiptDetailsScreen shows LSTM predictions for associated tickers (R7)
-- [ ] PortfolioDetailScreen shows prediction badges on holdings (R7)
+- [x] ReceiptDetailsScreen shows LSTM predictions for associated tickers (R7)
 - [x] All 240+ existing tests still pass (Phase 1 + Phase 2)
 - [x] 53+ new Phase 3 tests pass (15 features + 8 labeling + 10 dataset + 8 model + 12 evaluate)
 - [x] 15 prediction endpoint tests pass (R5 — all success/error/cache/auth cases)
 - [x] `ruff check src/ tests/ ml/` — zero errors
-- [ ] `npx tsc --noEmit` — zero errors (frontend) (R7)
+- [x] `npx tsc --noEmit` — zero errors (frontend) (R7)
 - [x] `model_registry` table exists — no new migration needed
 - [x] Model has `vocab`, `feature_means`, `feature_stds` stored in checkpoint for correct inference
 - [x] MLflow UI shows completed run with metrics, params, artifacts
@@ -309,11 +311,11 @@ When updating this file, agents must follow these rules:
 - [x] MLflow best-run tagging active (best_run=true, run_quality=challenger, delta_from_best)
 - [x] All 80+ ML tests pass (53 Phase 3 unit tests + 15 prediction endpoint tests + 12 eval/model)
 - [x] All existing Phase 1 + Phase 2 tests still pass (240+ tests)
-- [ ] PredictionCard component renders correctly (direction, confidence, probabilities) (R7)
-- [ ] SummaryScreen shows LSTM-based projection instead of hardcoded 10% (R7)
-- [ ] ReceiptDetailsScreen shows prediction badges on StockCards (R7)
+- [x] PredictionCard component renders correctly (direction, confidence, probabilities) (R7)
+- [x] SummaryScreen shows LSTM-based projection instead of hardcoded 10% (R7)
+- [x] ReceiptDetailsScreen shows prediction badges on StockCards (R7)
 - [x] `ruff check src/ tests/` zero errors
-- [ ] `npx tsc --noEmit` zero errors (frontend) (R7)
+- [x] `npx tsc --noEmit` zero errors (frontend) (R7)
 
 ### Phase 4 — MLOps & Automation
 
