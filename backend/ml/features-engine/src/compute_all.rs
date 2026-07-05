@@ -1,9 +1,9 @@
-//! Orchestrator: calls all 6 indicator functions, merges into a single PyDict.
+//! Orchestrator: calls all 11 indicator functions, merges into a single PyDict.
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-pub fn compute(close: &[f64], py: Python<'_>) -> Py<PyDict> {
+pub fn compute(close: &[f64], high: &[f64], low: &[f64], volume: &[f64], py: Python<'_>) -> Py<PyDict> {
     let dict = PyDict::new(py);
 
     // Log returns
@@ -44,6 +44,31 @@ pub fn compute(close: &[f64], py: Python<'_>) -> Py<PyDict> {
     // Volatility rank(252)
     let rank = crate::volatility_rank::compute(close, 252);
     dict.set_item("vol_rank", rank.bind(py)).unwrap();
+
+    // Bollinger Bands(20, 2.0)
+    let bb = crate::bollinger::compute(close, 20, 2.0, py);
+    let bb_dict = bb.bind(py);
+    for key in &["bb_pctb", "bb_width"] {
+        if let Some(val) = bb_dict.get_item(*key).unwrap() {
+            dict.set_item(*key, val).unwrap();
+        }
+    }
+
+    // ATR(14)
+    let atr = crate::atr::compute(high, low, close, 14);
+    dict.set_item("atr_14", atr.bind(py)).unwrap();
+
+    // OBV
+    let obv = crate::obv::compute(close, volume);
+    dict.set_item("obv", obv.bind(py)).unwrap();
+
+    // Williams %R(14)
+    let wr = crate::williams_r::compute(high, low, close, 14);
+    dict.set_item("williams_r_14", wr.bind(py)).unwrap();
+
+    // ROC(10)
+    let roc = crate::roc::compute(close, 10);
+    dict.set_item("roc_10", roc.bind(py)).unwrap();
 
     dict.into()
 }
