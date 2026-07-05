@@ -2,11 +2,13 @@
  * ProjectionService
  *
  * Calculate CAGR and project future values using historical stock data
- * from the backend `/market/ohlcv/` endpoint.
+ * from the backend `/market/ohlcv/` endpoint. Also provides LSTM-based
+ * directional predictions from the ML model.
  */
 
 import { marketService, OHLCVData } from './market';
 import { PRESET_RATES } from './stockPresets';
+import { predictionService, PredictionResponse } from './prediction';
 
 /**
  * Calculate CAGR from backend OHLCV data for a ticker.
@@ -77,4 +79,55 @@ export async function projectUsingHistoricalCAGR(
   const rate = cagr ?? PRESET_RATES[symbol.toUpperCase()] ?? 0.1;
   const futureValue = amount * Math.pow(1 + rate, years);
   return { rate, futureValue };
+}
+
+/**
+ * Get LSTM-based directional prediction for a ticker.
+ *
+ * @param ticker - Stock ticker symbol
+ * @returns PredictionResponse or null if unavailable
+ */
+export async function getLSTMPrediction(ticker: string): Promise<PredictionResponse | null> {
+  try {
+    return await predictionService.getPrediction(ticker);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get combined projection: LSTM direction + CAGR rate.
+ * Uses LSTM as primary signal, CAGR as fallback growth rate.
+ *
+ * @param ticker - Stock ticker symbol
+ * @returns Object with direction, rate, confidence, or null
+ */
+export async function getCombinedProjection(ticker: string): Promise<{
+  direction: 'UP' | 'FLAT' | 'DOWN';
+  rate: number;
+  confidence: number;
+  model_version: string;
+} | null> {
+  try {
+    const [prediction, cagr] = await Promise.all([
+      predictionService.getPrediction(ticker),
+      getCAGR(ticker),
+    ]);
+    return {
+      direction: prediction.direction,
+      rate: cagr ?? 0.1,
+      confidence: prediction.confidence,
+      model_version: prediction.model_version,
+    };
+  } catch {
+    // Fall back to CAGR-only
+    const cagr = await getCAGR(ticker);
+    if (cagr === null) return null;
+    return {
+      direction: cagr > 0 ? 'UP' : cagr < 0 ? 'DOWN' : 'FLAT',
+      rate: cagr,
+      confidence: 0.5,
+      model_version: 'cagr-fallback',
+    };
+  }
 }
