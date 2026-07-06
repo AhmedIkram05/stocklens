@@ -1,49 +1,37 @@
-/**
- * Tests for `useReceiptCapture` hook (integration).
- * Covers the capture → OCR → confirm → save flow, manual-entry fallback,
- * and error handling when OCR configuration is missing.
- */
-
 import { act, renderHook } from '@testing-library/react-native';
-import { Alert, Platform } from 'react-native';
+import { Alert } from 'react-native';
 import { useReceiptCapture } from '@/hooks/useReceiptCapture';
 import { receiptService } from '@/services/receipts';
-import { performOcrWithFallback } from '@/services/ocrService';
-import { parseAmountFromOcrText, validateAmount } from '@/services/receiptParser';
-import showConfirmationPrompt from '@/components/ConfirmationPrompt';
 
 jest.mock('@/services/receipts', () => ({
   receiptService: {
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+    scan: jest.fn(),
   },
-}));
-
-jest.mock('@/services/ocrService', () => ({
-  performOcrWithFallback: jest.fn(),
-}));
-
-jest.mock('@/services/receiptParser', () => ({
-  parseAmountFromOcrText: jest.fn(),
-  validateAmount: jest.fn(),
 }));
 
 jest.mock('@/components/ConfirmationPrompt', () => jest.fn());
 
-const mockedReceiptService = receiptService as jest.Mocked<typeof receiptService>;
-const mockedPerformOcr = performOcrWithFallback as jest.MockedFunction<
-  typeof performOcrWithFallback
->;
-const mockedParseAmount = parseAmountFromOcrText as jest.MockedFunction<
-  typeof parseAmountFromOcrText
->;
-const mockedValidateAmount = validateAmount as jest.MockedFunction<typeof validateAmount>;
-const mockedPrompt = showConfirmationPrompt as jest.MockedFunction<typeof showConfirmationPrompt>;
+const mockedPrompt = require('@/components/ConfirmationPrompt') as jest.Mock;
 const alertSpy = jest.spyOn(Alert, 'alert');
-const Constants = require('expo-constants');
 
-// Helper: create a hook instance with basic mocks for navigation and callbacks
+const mockScanResponse = {
+  id: 'scan-42',
+  extraction: {
+    merchant_name: 'Tesco',
+    total: 12.34,
+    date: '2025-06-15',
+    currency: 'GBP',
+    items: [{ name: 'Item', quantity: 1, price: 12.34 }],
+  },
+  raw_text: 'TOTAL: £12.34',
+  source: 'regex',
+  confidence: 95,
+  processing_time_ms: 350,
+};
+
 const createHook = () =>
   renderHook(() =>
     useReceiptCapture({
@@ -56,84 +44,92 @@ describe('useReceiptCapture', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     alertSpy.mockClear();
-    Constants.manifest.extra = { OCR_SPACE_API_KEY: 'test-key' };
-    mockedPerformOcr.mockResolvedValue({ text: 'Total 12.34' } as any);
-    mockedParseAmount.mockReturnValue(12.34);
-    mockedValidateAmount.mockReturnValue(true);
-    mockedPrompt.mockImplementation(() => {});
   });
 
-  /**
-   * Test: OCR success path
-   * - Simulates capturing a photo, OCR returning a valid amount,
-   *   showing a confirmation prompt, and saving the receipt on confirm.
-   */
-  it('shows confirmation prompt and saves when OCR succeeds', async () => {
+  it('shows confirmation prompt and navigates when scan succeeds', async () => {
     const navigation = { navigate: jest.fn() };
     const onResetCamera = jest.fn();
     const { result } = renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
 
-    const draftId = '42';
+    (receiptService.scan as jest.Mock).mockResolvedValue(mockScanResponse);
 
     await act(async () => {
       await result.current.actions.processReceipt({
         photoUri: 'file://receipt.jpg',
-        photoBase64: 'abc',
-        draftIdArg: draftId,
       });
     });
 
-    // Verify confirmation prompt was displayed
+    expect(receiptService.scan).toHaveBeenCalledWith('file://receipt.jpg');
     expect(mockedPrompt).toHaveBeenCalledWith('£12.34', expect.any(Object));
-    const options = mockedPrompt.mock.calls[0][1];
 
-    // Simulate user confirming the prompt which should save the receipt
+    const options = mockedPrompt.mock.calls[0][1];
     await act(async () => {
       await options.onConfirm?.();
     });
 
-    expect(mockedReceiptService.update).toHaveBeenCalledWith(
-      draftId,
-      expect.objectContaining({ total_amount: 12.34 }),
-    );
-    expect(navigation.navigate).toHaveBeenCalledWith('ReceiptDetails', expect.any(Object));
+    expect(navigation.navigate).toHaveBeenCalledWith('ReceiptDetails', {
+      receiptId: 'scan-42',
+      totalAmount: 12.34,
+      date: '2025-06-15',
+      image: 'file://receipt.jpg',
+      source: 'regex',
+      confidence: 95,
+      processingTimeMs: 350,
+    });
     expect(onResetCamera).toHaveBeenCalled();
   });
 
-  it('opens manual entry flow when OCR returns empty text', async () => {
-    mockedPerformOcr.mockResolvedValue({ text: '' } as any);
+  it('opens manual entry flow when scan fails with no amount', async () => {
+    (receiptService.scan as jest.Mock).mockRejectedValue(
+      new Error('No total amount found in receipt'),
+    );
     const { result } = createHook();
-    const platform = Platform as any;
-    const originalOS = platform.OS;
 
     await act(async () => {
       await result.current.actions.processReceipt({
         photoUri: 'file://receipt.jpg',
-        photoBase64: 'abc',
       });
     });
 
-    const options = mockedPrompt.mock.calls[0][1];
-    await act(async () => {
-      platform.OS = 'android';
-      options.onEnterManually?.();
-    });
-    platform.OS = originalOS;
-
+    expect(alertSpy).toHaveBeenCalledWith('Could not read receipt', expect.any(String));
     expect(result.current.state.manualModalVisible).toBe(true);
   });
 
-  it('alerts when OCR API key is missing', async () => {
-    Constants.manifest.extra = {};
+  it('alerts on unexpected scan errors', async () => {
+    (receiptService.scan as jest.Mock).mockRejectedValue(new Error('Network error'));
     const { result } = createHook();
 
     await act(async () => {
       await result.current.actions.processReceipt({
         photoUri: 'file://receipt.jpg',
-        photoBase64: 'abc',
       });
     });
 
-    expect(alertSpy).toHaveBeenCalledWith('Missing API Key', expect.any(String));
+    expect(alertSpy).toHaveBeenCalledWith('Scan Error', expect.any(String));
+  });
+
+  it('manual entry via saveAndNavigate creates receipt and navigates', async () => {
+    const navigation = { navigate: jest.fn() };
+    const onResetCamera = jest.fn();
+    const { result } = renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
+
+    (receiptService.create as jest.Mock).mockResolvedValue({ id: 'manual-1' });
+
+    await act(async () => {
+      await result.current.actions.saveAndNavigate(99.99, 'Total £99.99', 'file://manual.jpg');
+    });
+
+    expect(receiptService.create).toHaveBeenCalledWith({
+      receipt_image_s3_key: 'file://manual.jpg',
+      total_amount: 99.99,
+      ocr_raw_text: 'Total £99.99',
+    });
+    expect(navigation.navigate).toHaveBeenCalledWith(
+      'ReceiptDetails',
+      expect.objectContaining({
+        receiptId: 'manual-1',
+        totalAmount: 99.99,
+      }),
+    );
   });
 });

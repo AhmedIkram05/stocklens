@@ -71,6 +71,8 @@ describe('useReceipts', () => {
         date: '2025-01-01T10:00:00Z',
         time: '',
         image: 's3://key/1',
+        source: undefined,
+        confidence: undefined,
       },
     ]);
 

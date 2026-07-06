@@ -1,7 +1,6 @@
 # Phase 1 — Backend Foundation + Auth + OCR Migration
 
-> **Parent document:** [MASTER_PLAN.md](MASTER_PLAN.md)
-> **Status:** Draft
+> **Parent document:** [MASTER_PLAN.md](MASTER_PLAN.md) > **Status:** Draft
 > **Goal:** Eliminate Firebase and Node.js. FastAPI + PostgreSQL is the single backend. All existing app functionality ported and improved.
 > **Depends on:** Nothing (greenfield backend — existing Firebase app runs in parallel until cutover)
 > **Cutover strategy:** Big-bang (zero users, no risk)

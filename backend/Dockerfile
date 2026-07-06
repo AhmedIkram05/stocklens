@@ -29,7 +29,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock .
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-dev
+    uv sync --no-dev --index-strategy unsafe-best-match
 
 # Install Rust native module into the virtual environment
 COPY --from=rust-builder /wheels /wheels

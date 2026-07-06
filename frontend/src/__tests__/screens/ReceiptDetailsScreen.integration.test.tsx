@@ -56,6 +56,9 @@ const defaultRouteParams = {
   totalAmount: 250,
   date: '2024-02-10T12:00:00.000Z',
   image: undefined,
+  source: 'regex',
+  confidence: 95,
+  processingTimeMs: 350,
 };
 
 describe('ReceiptDetailsScreen', () => {

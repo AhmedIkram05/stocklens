@@ -1,11 +1,12 @@
 """
-FastAPI router for receipt scanning.
+FastAPI router for receipt scanning with confidence-gated cascade OCR.
 
 Endpoints
 ---------
 - ``GET /receipts/health`` — OCR module health check.
-- ``POST /receipts/scan`` — Upload a receipt image; returns extracted text and
-  optionally LLM-enhanced structured data.
+- ``GET /receipts/cascade/health`` — Cascade-specific health (Bedrock + Redis).
+- ``POST /receipts/scan`` — Upload a receipt image; returns extracted text via
+  the confidence-gated cascade with optional background LLM enrichment.
 """
 
 from __future__ import annotations
@@ -16,24 +17,33 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
 
 from src.auth.dependencies import get_current_user
 from src.auth.schemas import UserInDB
+from src.cache.redis import get_redis
 from src.categories.merchant_map import resolve_category
 from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
+from src.receipts.cache import get_enrich_status
+from src.receipts.cascade import cascade_extract
 from src.receipts.models import (
-    ExtractedItem,
+    EnrichStatusResponse,
     ReceiptCreate,
-    ReceiptExtraction,
     ReceiptListResponse,
     ReceiptResponse,
     ReceiptScanResponse,
     ReceiptUpdate,
 )
-from src.receipts.ocr import process_receipt
 
 logger = structlog.get_logger()
 
@@ -67,6 +77,41 @@ async def health() -> dict:
     }
 
 
+@router.get("/cascade/health", tags=["receipts"])
+async def cascade_health() -> dict:
+    """Cascade-specific health check — Bedrock + Redis + threshold config."""
+    checks: dict[str, str] = {}
+
+    # Bedrock: invoke with minimal prompt
+    try:
+        from langchain_aws import ChatBedrock  # noqa: PLC0415
+
+        llm = ChatBedrock(
+            model_id=settings.BEDROCK_MODEL_ID,
+            region_name=settings.AWS_REGION,
+            model_kwargs={"temperature": 0, "max_tokens": 10},
+        )
+        await llm.ainvoke("Respond with OK")
+        checks["bedrock"] = "ok"
+    except Exception:
+        checks["bedrock"] = "unavailable"
+
+    # Redis: ping
+    try:
+        await (await get_redis()).ping()
+        checks["redis"] = "ok"
+    except Exception:
+        checks["redis"] = "unavailable"
+
+    status_flag = "healthy" if all(v == "ok" for v in checks.values()) else "degraded"
+
+    return {
+        "status": status_flag,
+        "checks": checks,
+        "cascade_threshold": settings.CASCADE_CONFIDENCE_THRESHOLD,
+    }
+
+
 @router.post(
     "/scan",
     response_model=ReceiptScanResponse,
@@ -88,9 +133,10 @@ async def scan_receipt(
     1. Validates file type and size.
     2. Preprocesses the image (grayscale → threshold → denoise → deskew).
     3. Runs Tesseract OCR (LSTM engine).
-    4. Parses the raw text with regex to extract total, merchant, date, items.
-    5. Persists the receipt record to the database with OCR output.
-    6. Returns the structured result with source ``"regex"``.
+    4. **Cascade**: regex parsing first — if confidence >= threshold, returns
+       ``source="regex"``. If below threshold, escalates to Bedrock Haiku
+       inline and returns ``source="cascade"`` (or ``source="degraded"`` on
+       LLM failure).
 
     If regex parsing cannot find a total amount, a 422 is returned so the
     caller can prompt the user to enter the total manually.
@@ -122,101 +168,198 @@ async def scan_receipt(
         size_bytes=len(image_bytes),
     )
 
+    # ── Cascade pipeline ────────────────────────────────────────────────────
+    cascade_result = await cascade_extract(image_bytes)
+
+    if not cascade_result.raw_text.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Could not extract text from the image. "
+                "Please retake the photo with better lighting."
+            ),
+        )
+
+    if cascade_result.extraction.total is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Could not extract the total amount from the receipt. Please enter it manually."
+            ),
+        )
+
+    # ── Resolve category ────────────────────────────────────────────────
+    category = None
+    matched = None
+    if cascade_result.extraction.merchant_name:
+        matched = await resolve_category(cascade_result.extraction.merchant_name)
+        category = matched.id if matched else None
+
+    elapsed = (time.perf_counter() - start_time) * 1000
+
+    # Build line items for DB (only from regex for initial persist)
+    # ── Persist to database ─────────────────────────────────────────────
+    async with connection_ctx() as conn:
+        db_row = await conn.fetchrow(
+            "INSERT INTO receipts "
+            "(user_id, total_amount, merchant_name, category_id, ocr_raw_text, "
+            " ocr_confidence, line_items, scanned_at, source) "
+            "VALUES ($1::uuid, $2, $3, $4::uuid, $5, $6, $7::jsonb, $8, $9) "
+            "RETURNING id, user_id, total_amount, merchant_name, category_id, "
+            "ocr_raw_text, ocr_confidence, line_items, source, scanned_at, created_at",
+            current_user.id,
+            cascade_result.extraction.total,
+            cascade_result.extraction.merchant_name,
+            category,
+            cascade_result.raw_text,
+            cascade_result.overall_confidence,
+            json.dumps([item.model_dump() for item in cascade_result.extraction.items]),
+            datetime.now(timezone.utc),
+            cascade_result.source,
+        )
+    # image_bytes discarded after processing (never stored on device)
+
+    receipt_id = str(db_row["id"])
+
+    # ── Log cascade decision ───────────────────────────────────────────
+    await _log_cascade_decision(
+        receipt_id=receipt_id,
+        raw_text_hash=cascade_result.raw_text[:16],
+        regex_confidence=cascade_result.overall_confidence,
+        llm_confidence=None,
+        chosen_source=cascade_result.source,
+        processing_time_ms=round(elapsed),
+        field_confidences={
+            k: {"confidence": v.confidence, "source": v.source}
+            for k, v in cascade_result.field_confidences.items()
+        },
+        discrepancies=cascade_result.discrepancies if cascade_result.discrepancies else None,
+    )
+
+    logger.info(
+        "receipt_scan_persisted",
+        receipt_id=receipt_id,
+        source=cascade_result.source,
+        merchant=cascade_result.extraction.merchant_name,
+        overall_confidence=cascade_result.overall_confidence,
+    )
+
+    # ── Cross-check LLM category vs resolve_category ──────────────────
+    if cascade_result.llm_category and matched:
+        if cascade_result.llm_category.lower() != matched.name.lower():
+            logger.info(
+                "cascade_category_mismatch",
+                llm_category=cascade_result.llm_category,
+                resolved_category=matched.name,
+                merchant=cascade_result.extraction.merchant_name,
+            )
+
+    return ReceiptScanResponse(
+        id=receipt_id,
+        extraction=cascade_result.extraction,
+        raw_text=cascade_result.raw_text,
+        source=cascade_result.source,
+        confidence=cascade_result.overall_confidence,
+        processing_time_ms=round(elapsed, 2),
+    )
+
+
+@router.get(
+    "/{receipt_id}/enrich-status",
+    response_model=EnrichStatusResponse,
+    tags=["receipts"],
+    summary="Poll enrichment status for a scanned receipt",
+)
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
+async def get_enrichment_status(
+    request: Request,
+    receipt_id: UUID,
+    current_user: UserInDB = Depends(get_current_user),
+) -> EnrichStatusResponse:
+    """Poll the status of background LLM enrichment for a receipt.
+
+    Returns the current enrichment status. The frontend polls this after
+    receiving ``source="pending_llm"`` to know when the background task
+    has completed.
+
+    Status values
+    -------------
+    - ``completed`` — LLM enrichment succeeded (DB source = "cascade")
+    - ``failed`` — LLM enrichment exhausted retries (DB source = "degraded")
+    - ``pending`` — enrichment still running (Redis key is set)
+    - ``not_needed`` — regex confidence was sufficient (DB source = "regex")
+    - ``unknown`` — receipt not found or unexpected state
+    """
+    # ponytail: check Redis first for pending, then DB for final state.
+    # Only one -circuit through each.
+    redis_status: str | None = None
     try:
-        # ── Regex-based parsing pipeline ────────────────────────────────────
-        result = process_receipt(image_bytes)
-
-        if not result["ocr_raw_text"].strip():
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=(
-                    "Could not extract text from the image. "
-                    "Please retake the photo with better lighting."
-                ),
-            )
-
-        if result["total_amount"] is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=(
-                    "Could not extract the total amount from the receipt. Please enter it manually."
-                ),
-            )
-
-        elapsed = (time.perf_counter() - start_time) * 1000
-
-        extraction = ReceiptExtraction(
-            merchant_name=result["merchant_name"],
-            total=result["total_amount"],
-            date=result["date"],
-            items=[
-                ExtractedItem(
-                    name=item["description"],
-                    quantity=item["quantity"],
-                    price=item["amount"],
-                )
-                for item in result["line_items"]
-            ],
-        )
-
-        source = "regex"
-
-        # ── Resolve category ────────────────────────────────────────────────
-        category = None
-        if extraction.merchant_name:
-            matched = await resolve_category(extraction.merchant_name)
-            category = matched.id if matched else None
-
-        # ── Persist to database ─────────────────────────────────────────────
-        async with connection_ctx() as conn:
-            db_row = await conn.fetchrow(
-                "INSERT INTO receipts "
-                "(user_id, total_amount, merchant_name, category_id, ocr_raw_text, "
-                " ocr_confidence, line_items, scanned_at) "
-                "VALUES ($1::uuid, $2, $3, $4::uuid, $5, $6, $7::jsonb, $8) "
-                "RETURNING id, user_id, total_amount, merchant_name, category_id, "
-                "ocr_raw_text, ocr_confidence, line_items, scanned_at, created_at",
-                current_user.id,
-                extraction.total,
-                extraction.merchant_name,
-                category,
-                result["ocr_raw_text"],
-                result["ocr_confidence"],
-                json.dumps([item.model_dump() for item in extraction.items]),
-                datetime.now(timezone.utc),
-            )
-        # image_bytes discarded after processing (never stored on device)
-
-        logger.info(
-            "receipt_scan_persisted",
-            receipt_id=str(db_row["id"]),
-            source=source,
-            merchant=extraction.merchant_name,
-            item_count=len(extraction.items),
-        )
-
-        return ReceiptScanResponse(
-            extraction=extraction,
-            raw_text=result["ocr_raw_text"],
-            source=source,
-            confidence=result["ocr_confidence"],
-            processing_time_ms=round(elapsed, 2),
-        )
-
-    except ValueError as exc:
-        logger.error("receipt_processing_error", error=str(exc))
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
-    except HTTPException:
-        raise
+        redis_status = await get_enrich_status(str(receipt_id))
     except Exception:
-        logger.exception("receipt_processing_unexpected_error")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred during receipt processing",
+        logger.warning("enrich_status_redis_failed", receipt_id=str(receipt_id))
+
+    if redis_status == "pending":
+        return EnrichStatusResponse(
+            receipt_id=str(receipt_id),
+            status="pending",
+            source=None,
         )
+
+    # Fall back to DB source column
+    row = await _fetch_receipt_by_id(str(receipt_id))
+    if row is None or row["user_id"] != current_user.id:
+        return EnrichStatusResponse(
+            receipt_id=str(receipt_id),
+            status="unknown",
+            source=None,
+        )
+
+    db_source = row.get("source", "")
+    if db_source == "cascade":
+        status = "completed"
+    elif db_source == "degraded":
+        status = "failed"
+    elif db_source == "regex":
+        status = "not_needed"
+    else:
+        status = "unknown"
+
+    return EnrichStatusResponse(
+        receipt_id=str(receipt_id),
+        status=status,
+        source=db_source or None,
+    )
+
+
+async def _log_cascade_decision(
+    receipt_id: str,
+    raw_text_hash: str,
+    regex_confidence: float,
+    llm_confidence: float | None,
+    chosen_source: str,
+    processing_time_ms: int,
+    field_confidences: dict | None = None,
+    discrepancies: list[dict] | None = None,
+) -> None:
+    """Log a cascade decision to the ``cascade_decisions`` table."""
+    try:
+        async with connection_ctx() as conn:
+            await conn.execute(
+                "INSERT INTO cascade_decisions "
+                "(receipt_id, raw_text_hash, regex_confidence, llm_confidence, "
+                " chosen_source, processing_time_ms, field_confidences, discrepancies) "
+                "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb)",
+                receipt_id,
+                raw_text_hash,
+                regex_confidence,
+                llm_confidence,
+                chosen_source,
+                processing_time_ms,
+                json.dumps(field_confidences) if field_confidences else None,
+                json.dumps(discrepancies) if discrepancies else None,
+            )
+    except Exception:
+        logger.warning("cascade_decision_log_failed", receipt_id=receipt_id, exc_info=True)
 
 
 # ── Receipt CRUD helpers ──────────────────────────────────────────────────
@@ -259,7 +402,7 @@ async def _fetch_receipt_by_id(receipt_id: str) -> dict | None:
         row = await conn.fetchrow(
             "SELECT id, user_id, total_amount, merchant_name, category_id, "
             "ocr_raw_text, ocr_confidence, line_items, receipt_image_s3_key, "
-            "notes, transaction_date, scanned_at, created_at "
+            "notes, transaction_date, scanned_at, created_at, source "
             "FROM receipts WHERE id = $1::uuid",
             receipt_id,
         )

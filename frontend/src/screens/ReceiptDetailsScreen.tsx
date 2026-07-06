@@ -49,11 +49,28 @@ import StockCard from '../components/StockCard';
 import ReceiptCard from '../components/ReceiptCard';
 import Carousel from '../components/Carousel';
 
+import type { SourceBadgeKey } from '../components/ReceiptCard';
+
+const SOURCE_BADGE: Record<SourceBadgeKey, { label: string; color: string }> = {
+  regex: { label: 'Regex', color: '#22c55e' },
+  cascade: { label: 'AI Enhanced', color: '#3b82f6' },
+  degraded: { label: 'Low Quality', color: '#f97316' },
+  failed: { label: 'Failed', color: '#ef4444' },
+};
+
 /** Receipt details and projection screen. */
 export default function ReceiptDetailsScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<ReceiptDetailsRouteProp>();
-  const { receiptId, totalAmount: initialAmount, date, image } = route.params;
+  const {
+    receiptId,
+    totalAmount: initialAmount,
+    date,
+    image,
+    confidence,
+    processingTimeMs,
+  } = route.params;
+  const source = route.params.source as SourceBadgeKey | undefined;
 
   const [selectedYears, setSelectedYears] = useState<YEAR_OPTIONS>(5);
   const [selectedFutureYears, setSelectedFutureYears] = useState<YEAR_OPTIONS>(5);
@@ -250,7 +267,9 @@ export default function ReceiptDetailsScreen() {
   const formattedEditableAmount = formatCurrencyGBP(amount || 0);
 
   const formattedYearsLabel = `${selectedYears} ${selectedYears === 1 ? 'year' : 'years'}`;
-  const formattedFutureYearsLabel = `${selectedFutureYears} ${selectedFutureYears === 1 ? 'year' : 'years'}`;
+  const formattedFutureYearsLabel = `${selectedFutureYears} ${
+    selectedFutureYears === 1 ? 'year' : 'years'
+  }`;
 
   const renderStockCard = (
     investmentValue: (typeof investmentOptions)[number],
@@ -422,8 +441,77 @@ export default function ReceiptDetailsScreen() {
                 label={formatRelativeDate(date)}
                 time={new Date(date).toLocaleString()}
                 onPress={() => {}}
+                source={source}
+                confidence={confidence}
               />
             </View>
+
+            {source && (
+              <View style={[styles.cascadePanel, { backgroundColor: theme.surface }]}>
+                <Text style={[styles.cascadeTitle, { color: theme.text }]}>Extraction Details</Text>
+                <View style={styles.cascadeRow}>
+                  <Text style={[styles.cascadeLabel, { color: theme.textSecondary }]}>Source</Text>
+                  <View
+                    style={[
+                      styles.sourceBadge,
+                      {
+                        backgroundColor:
+                          (SOURCE_BADGE[source as SourceBadgeKey]?.color ?? '#6b7280') + '20',
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.sourceBadgeText,
+                        { color: SOURCE_BADGE[source as SourceBadgeKey]?.color ?? '#6b7280' },
+                      ]}
+                    >
+                      {SOURCE_BADGE[source as SourceBadgeKey]?.label || source}
+                    </Text>
+                  </View>
+                </View>
+                {confidence != null && confidence > 0 && (
+                  <View style={styles.cascadeRow}>
+                    <Text style={[styles.cascadeLabel, { color: theme.textSecondary }]}>
+                      Confidence
+                    </Text>
+                    <View style={styles.confidenceContainer}>
+                      <View style={styles.confidenceBarBg}>
+                        <View
+                          style={[
+                            styles.confidenceBarFill,
+                            {
+                              width: `${confidence}%`,
+                              backgroundColor:
+                                confidence > 70
+                                  ? '#22c55e'
+                                  : confidence > 40
+                                    ? '#f97316'
+                                    : '#ef4444',
+                            },
+                          ]}
+                        />
+                      </View>
+                      <Text style={[styles.confidenceText, { color: theme.text }]}>
+                        {Math.round(confidence)}%
+                      </Text>
+                    </View>
+                  </View>
+                )}
+                {processingTimeMs != null && processingTimeMs > 0 && (
+                  <View style={styles.cascadeRow}>
+                    <Text style={[styles.cascadeLabel, { color: theme.textSecondary }]}>
+                      Processing Time
+                    </Text>
+                    <Text style={[styles.cascadeValue, { color: theme.text }]}>
+                      {processingTimeMs < 1000
+                        ? `${Math.round(processingTimeMs)}ms`
+                        : `${(processingTimeMs / 1000).toFixed(1)}s`}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
 
             <PageHeader>
               <View>
@@ -674,6 +762,17 @@ type Styles = {
   verticalDivider: ViewStyle;
   warningBox: ViewStyle;
   warningBoxCompact: ViewStyle;
+  cascadePanel: ViewStyle;
+  cascadeTitle: TextStyle;
+  cascadeRow: ViewStyle;
+  cascadeLabel: TextStyle;
+  cascadeValue: TextStyle;
+  sourceBadge: ViewStyle;
+  sourceBadgeText: TextStyle;
+  confidenceContainer: ViewStyle;
+  confidenceBarBg: ViewStyle;
+  confidenceBarFill: ViewStyle;
+  confidenceText: TextStyle;
   warningIcon: ViewStyle;
   warningText: TextStyle;
   depositButton: ViewStyle;
@@ -789,6 +888,59 @@ const styles = StyleSheet.create<Styles>({
   verticalDivider: {
     width: 1,
     marginHorizontal: spacing.md,
+  },
+  cascadePanel: {
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  cascadeTitle: {
+    ...typography.sectionTitle,
+    marginBottom: spacing.md,
+  },
+  cascadeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  cascadeLabel: {
+    ...typography.body,
+  },
+  cascadeValue: {
+    ...typography.bodyStrong,
+  },
+  sourceBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radii.sm,
+  },
+  sourceBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  confidenceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  confidenceBarBg: {
+    width: 80,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#e5e7eb',
+    overflow: 'hidden',
+  },
+  confidenceBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  confidenceText: {
+    ...typography.bodyStrong,
+    minWidth: 35,
+    textAlign: 'right',
   },
   warningBox: {
     marginTop: spacing.xl,

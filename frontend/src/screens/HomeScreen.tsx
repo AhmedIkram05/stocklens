@@ -16,7 +16,7 @@ import ScreenContainer from '../components/ScreenContainer';
 import ResponsiveContainer from '../components/ResponsiveContainer';
 import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
-import ReceiptCard from '../components/ReceiptCard';
+import ReceiptCard, { SourceBadgeKey } from '../components/ReceiptCard';
 import { EmptyStateWithOnboarding } from '../components/EmptyStateWithOnboarding';
 import IconValue from '../components/IconValue';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -185,7 +185,9 @@ export default function HomeScreen() {
                         />
                       }
                       label="Portfolio Value"
-                      subtitle={`${portfolioAgg.total_unrealised_pl >= 0 ? '+' : ''}${formatAmount(portfolioAgg.total_unrealised_pl)} P&L`}
+                      subtitle={`${portfolioAgg.total_unrealised_pl >= 0 ? '+' : ''}${formatAmount(
+                        portfolioAgg.total_unrealised_pl,
+                      )} P&L`}
                       variant="green"
                     />
                   </View>
@@ -225,12 +227,17 @@ export default function HomeScreen() {
                               amount={formatAmount(scan.amount)}
                               label={scan.label}
                               time={scan.time}
+                              source={scan.source as SourceBadgeKey | undefined}
+                              confidence={scan.confidence}
                               onPress={() =>
                                 navigation.navigate('ReceiptDetails', {
                                   receiptId: scan.id,
                                   totalAmount: scan.amount,
                                   date: scan.date,
                                   image: scan.image,
+                                  source: scan.source as SourceBadgeKey | undefined,
+                                  confidence: scan.confidence,
+                                  processingTimeMs: undefined,
                                 })
                               }
                             />

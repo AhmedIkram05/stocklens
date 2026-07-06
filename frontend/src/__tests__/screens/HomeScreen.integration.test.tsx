@@ -74,6 +74,8 @@ describe('HomeScreen', () => {
           date: '2025-02-01T10:00:00Z',
           time: '9:00',
           image: 'uri://receipt-1',
+          source: 'regex',
+          confidence: 95,
         },
         {
           id: '2',
@@ -82,6 +84,8 @@ describe('HomeScreen', () => {
           date: '2025-01-05T10:00:00Z',
           time: '12:00',
           image: 'uri://receipt-2',
+          source: 'cascade',
+          confidence: 78,
         },
         {
           id: '3',
@@ -90,6 +94,8 @@ describe('HomeScreen', () => {
           date: '2024-12-15T10:00:00Z',
           time: '15:00',
           image: 'uri://receipt-3',
+          source: 'degraded',
+          confidence: 45,
         },
         {
           id: '4',
@@ -98,6 +104,8 @@ describe('HomeScreen', () => {
           date: '2024-12-01T10:00:00Z',
           time: '11:00',
           image: 'uri://receipt-4',
+          source: 'failed',
+          confidence: 0,
         },
       ],
       loading: false,
@@ -117,7 +125,7 @@ describe('HomeScreen', () => {
     fireEvent.press(getAllByTestId('receipt-card')[0]);
     expect(navigateSpy).toHaveBeenCalledWith(
       'ReceiptDetails',
-      expect.objectContaining({ receiptId: '1', totalAmount: 80 }),
+      expect.objectContaining({ receiptId: '1', totalAmount: 80, source: 'regex', confidence: 95 }),
     );
   });
 });

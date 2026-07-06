@@ -192,7 +192,9 @@ export default function PortfolioDetailScreen() {
               ]}
             >
               {total_unrealised_pl != null
-                ? `${formatCurrency(total_unrealised_pl)} (${formatPercent(total_unrealised_pl_pct)})`
+                ? `${formatCurrency(total_unrealised_pl)} (${formatPercent(
+                    total_unrealised_pl_pct,
+                  )})`
                 : 'N/A'}
             </Text>
           </View>

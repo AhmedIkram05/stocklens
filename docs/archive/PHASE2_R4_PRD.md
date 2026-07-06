@@ -1,7 +1,6 @@
 # Phase 2, Round 4 — PRD: Full Portfolio UX Frontend
 
-> **Product Requirements Document**
-> **Project:** StockLens
+> **Product Requirements Document** > **Project:** StockLens
 > **Phase:** 2 (Round 4)
 > **Status:** Draft
 > **Date:** 2026-07-01
