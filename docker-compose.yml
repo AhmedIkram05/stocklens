@@ -153,7 +153,7 @@ services:
       - ./backend/tests:/app/tests
       - ./backend/alembic:/app/alembic
     command: >
-      sh -c "UV_CACHE_DIR=/tmp/uv-cache uv sync --extra dev && uv pip install --no-deps /app/wheels/features_engine*.whl && pytest -v -W 'ignore::DeprecationWarning:slowapi' --cov=src --cov-report=term-missing --cov-report=xml --tb=short"
+      sh -c "UV_CACHE_DIR=/tmp/uv-cache uv sync --extra dev --index-strategy unsafe-best-match && uv pip install --no-deps /app/wheels/features_engine*.whl && pytest -v -W 'ignore::DeprecationWarning:slowapi' --cov=src --cov-report=term-missing --cov-report=xml --tb=short"
 
 volumes:
   pgdata:
