@@ -185,7 +185,9 @@ export default function HomeScreen() {
                         />
                       }
                       label="Portfolio Value"
-                      subtitle={`${portfolioAgg.total_unrealised_pl >= 0 ? '+' : ''}${formatAmount(portfolioAgg.total_unrealised_pl)} P&L`}
+                      subtitle={`${portfolioAgg.total_unrealised_pl >= 0 ? '+' : ''}${formatAmount(
+                        portfolioAgg.total_unrealised_pl,
+                      )} P&L`}
                       variant="green"
                     />
                   </View>
@@ -225,12 +227,17 @@ export default function HomeScreen() {
                               amount={formatAmount(scan.amount)}
                               label={scan.label}
                               time={scan.time}
+                              source={scan.source}
+                              confidence={scan.confidence}
                               onPress={() =>
                                 navigation.navigate('ReceiptDetails', {
                                   receiptId: scan.id,
                                   totalAmount: scan.amount,
                                   date: scan.date,
                                   image: scan.image,
+                                  source: scan.source,
+                                  confidence: scan.confidence,
+                                  processingTimeMs: undefined,
                                 })
                               }
                             />

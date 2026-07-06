@@ -24,8 +24,6 @@ import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { brandColors, useTheme } from '../contexts/ThemeContext';
 import { radii, spacing, typography } from '../styles/theme';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import { receiptService } from '../services/receipts';
-import { emit } from '../services/eventBus';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useReceiptCapture } from '../hooks/useReceiptCapture';
 
@@ -45,9 +43,8 @@ export default function ScanScreen() {
     navigation,
     onResetCamera: clearPhotoPreview,
   });
-  const { processing, ocrRaw, draftReceiptId, manualModalVisible, manualEntryText } = capture.state;
+  const { processing, ocrRaw, manualModalVisible, manualEntryText } = capture.state;
   const {
-    setDraftReceiptId,
     setManualEntryText,
     setManualModalVisible,
     processReceipt,
@@ -113,27 +110,9 @@ export default function ScanScreen() {
           base64: true,
         });
         setPhoto(photo.uri);
-        if ((photo as any).base64) setPhotoBase64((photo as any).base64 as string);
-        let createdDraftId: string | null = null;
-        try {
-          const created = await receiptService.create({
-            receipt_image_s3_key: photo.uri,
-            total_amount: undefined,
-            ocr_raw_text: '',
-          });
-          if (created && created.id) {
-            createdDraftId = created.id;
-            setDraftReceiptId(createdDraftId);
-            try {
-              emit('receipts-changed', { id: created.id });
-            } catch (e) {}
-          }
-        } catch (e) {}
 
         await processReceipt({
           photoUri: photo.uri,
-          photoBase64: (photo as any).base64 ?? null,
-          draftIdArg: createdDraftId,
         });
       } catch (error) {
         Alert.alert('Error', 'Failed to capture image');
@@ -174,9 +153,9 @@ export default function ScanScreen() {
                     <TouchableOpacity
                       style={[styles.modalBtn, styles.modalCancel]}
                       onPress={async () => {
-                        // User cancelled manual entry: delete draft and reset state, return to camera
+                        // User cancelled manual entry: delete scanned receipt and return to camera
                         try {
-                          await discardDraft(draftReceiptId);
+                          await discardDraft(capture.pendingRef.current?.scanResponse?.id);
                         } catch (e) {}
                         try {
                           resetWorkflowState();
@@ -200,8 +179,7 @@ export default function ScanScreen() {
                           return;
                         }
                         setManualModalVisible(false);
-                        const draft = draftReceiptId;
-                        await saveAndNavigate(parsed, draft, ocrRaw, photo);
+                        await saveAndNavigate(parsed, ocrRaw, photo);
                       }}
                     >
                       <Text style={styles.modalConfirmText}>Confirm</Text>

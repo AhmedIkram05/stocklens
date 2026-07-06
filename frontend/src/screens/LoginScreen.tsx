@@ -127,15 +127,15 @@ export default function LoginScreen() {
                   const titleMarginTop = isSmallPhone
                     ? spacing.lg
                     : isTablet
-                      ? orientation === 'landscape'
-                        ? spacing.md
-                        : spacing.lg
-                      : spacing.xl;
+                    ? orientation === 'landscape'
+                      ? spacing.md
+                      : spacing.lg
+                    : spacing.xl;
                   const titleMarginBottom = isSmallPhone
                     ? spacing.xs
                     : isTablet
-                      ? spacing.sm
-                      : spacing.md;
+                    ? spacing.sm
+                    : spacing.md;
                   return (
                     <Text
                       style={[

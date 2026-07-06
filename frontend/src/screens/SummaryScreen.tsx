@@ -155,7 +155,9 @@ export default function SummaryScreen() {
       dynamicInsights.push({
         icon: 'wallet-outline',
         title: 'Your Spending Could Be Investing',
-        description: `You've spent ${formatCurrency(totalMoneySpent)} that could be working for you`,
+        description: `You've spent ${formatCurrency(
+          totalMoneySpent,
+        )} that could be working for you`,
       });
     }
 
@@ -257,18 +259,30 @@ export default function SummaryScreen() {
     'Your Spending Could Be Investing': {
       bullets: [
         `Instead of ${receiptsScanned} receipts, you could have ${receiptsScanned} investment contributions`,
-        `Your average purchase of ${formatCurrency(avgPerReceipt)} could become a recurring investment`,
+        `Your average purchase of ${formatCurrency(
+          avgPerReceipt,
+        )} could become a recurring investment`,
         'Even small amounts compound significantly over decades',
       ],
-      example: `If you invested just half your spending (${formatCurrency(totalMoneySpent / 2)}) today at 8% annual return, you'd have ${formatCurrency((totalMoneySpent / 2) * Math.pow(1.08, 30))} in 30 years.`,
+      example: `If you invested just half your spending (${formatCurrency(
+        totalMoneySpent / 2,
+      )}) today at 8% annual return, you'd have ${formatCurrency(
+        (totalMoneySpent / 2) * Math.pow(1.08, 30),
+      )} in 30 years.`,
     },
     'High Spending Opportunity': {
       bullets: [
-        `Redirecting 20% (${formatCurrency(totalMoneySpent * 0.2)}) to investments could yield significant returns`,
+        `Redirecting 20% (${formatCurrency(
+          totalMoneySpent * 0.2,
+        )}) to investments could yield significant returns`,
         'High earners who invest aggressively often retire 10-15 years earlier',
         'Consider automatic transfers to investment accounts before spending',
       ],
-      example: `${formatCurrency(totalMoneySpent * 0.2)} invested monthly at 8% for 20 years = ${formatCurrency((totalMoneySpent * 0.2 * (Math.pow(1.08, 20) - 1)) / 0.08)}.`,
+      example: `${formatCurrency(
+        totalMoneySpent * 0.2,
+      )} invested monthly at 8% for 20 years = ${formatCurrency(
+        (totalMoneySpent * 0.2 * (Math.pow(1.08, 20) - 1)) / 0.08,
+      )}.`,
     },
     'Small Purchases Add Up': {
       bullets: [
@@ -276,7 +290,11 @@ export default function SummaryScreen() {
         'Small frequent expenses are the #1 wealth killer',
         'Cutting just 30% of these could fund a retirement account',
       ],
-      example: `Reducing spending by 30% saves ${formatCurrency(totalMoneySpent * 0.3)}/year. Over 25 years at 7%, that's ${formatCurrency((totalMoneySpent * 0.3 * (Math.pow(1.07, 25) - 1)) / 0.07)}.`,
+      example: `Reducing spending by 30% saves ${formatCurrency(
+        totalMoneySpent * 0.3,
+      )}/year. Over 25 years at 7%, that's ${formatCurrency(
+        (totalMoneySpent * 0.3 * (Math.pow(1.07, 25) - 1)) / 0.07,
+      )}.`,
     },
     'Consistent Spending Pattern': {
       bullets: [
@@ -284,7 +302,13 @@ export default function SummaryScreen() {
         'Set up automatic investments during consistent periods',
         'Awareness is the first step to financial optimization',
       ],
-      example: `With consistent spending of ${formatCurrency(avgPerReceipt)} per purchase, redirecting 25% monthly (${formatCurrency((avgPerReceipt * 0.25 * receiptsScanned) / 12)}) for 20 years at 7% = ${formatCurrency((((avgPerReceipt * 0.25 * receiptsScanned) / 12) * 12 * (Math.pow(1.07, 20) - 1)) / 0.07)}.`,
+      example: `With consistent spending of ${formatCurrency(
+        avgPerReceipt,
+      )} per purchase, redirecting 25% monthly (${formatCurrency(
+        (avgPerReceipt * 0.25 * receiptsScanned) / 12,
+      )}) for 20 years at 7% = ${formatCurrency(
+        (((avgPerReceipt * 0.25 * receiptsScanned) / 12) * 12 * (Math.pow(1.07, 20) - 1)) / 0.07,
+      )}.`,
     },
 
     'Time is Your Superpower': {
@@ -293,7 +317,11 @@ export default function SummaryScreen() {
         'A 25-year-old investing £200/month reaches £500k+ by 65',
         'The same £200/month starting at 35 only reaches £250k',
       ],
-      example: `Starting today with ${formatCurrency(avgPerReceipt)}/month vs waiting 5 years could mean ${formatCurrency((avgPerReceipt * 12 * (Math.pow(1.08, 25) - Math.pow(1.08, 20))) / 0.08)} more wealth.`,
+      example: `Starting today with ${formatCurrency(
+        avgPerReceipt,
+      )}/month vs waiting 5 years could mean ${formatCurrency(
+        (avgPerReceipt * 12 * (Math.pow(1.08, 25) - Math.pow(1.08, 20))) / 0.08,
+      )} more wealth.`,
     },
     'Inflation is Eating Your Cash': {
       bullets: [
@@ -301,7 +329,13 @@ export default function SummaryScreen() {
         'Savings accounts (~1-2%) lose value after inflation',
         'The S&P 500 historically return 7-10%, beating inflation by 4-7%',
       ],
-      example: `Your ${formatCurrency(totalMoneySpent)} in cash may have the buying power of only ${formatCurrency(totalMoneySpent * Math.pow(0.97, 10))} in 10 years. Invested at 8%, it becomes ${formatCurrency(totalMoneySpent * Math.pow(1.08, 10))}.`,
+      example: `Your ${formatCurrency(
+        totalMoneySpent,
+      )} in cash may have the buying power of only ${formatCurrency(
+        totalMoneySpent * Math.pow(0.97, 10),
+      )} in 10 years. Invested at 8%, it becomes ${formatCurrency(
+        totalMoneySpent * Math.pow(1.08, 10),
+      )}.`,
     },
   };
 
@@ -448,7 +482,9 @@ export default function SummaryScreen() {
                   />
                 }
                 label="20-Year Portfolio Projection"
-                subtitle={`If your ${formatCurrency(totalMoneySpent)} grew at ${(lstmRate * 100).toFixed(1)}% per year (LSTM ${lstmDirection})`}
+                subtitle={`If your ${formatCurrency(totalMoneySpent)} grew at ${(
+                  lstmRate * 100
+                ).toFixed(1)}% per year (LSTM ${lstmDirection})`}
                 variant="white"
                 style={{ width: '100%', marginBottom: spacing.md, marginHorizontal: 0 }}
               />

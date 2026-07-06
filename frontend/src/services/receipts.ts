@@ -21,6 +21,7 @@ export interface Receipt {
   ocr_confidence: number | null;
   line_items: Record<string, unknown> | null;
   receipt_image_s3_key: string | null;
+  source?: string;
   scanned_at: string;
   created_at: string;
 }
@@ -53,11 +54,19 @@ export interface ReceiptListResponse {
 }
 
 export interface ScanResponse {
-  receipt: Receipt;
-  ocr_text: string;
+  id: string;
+  extraction: {
+    merchant_name: string | null;
+    total: number | null;
+    date: string | null;
+    currency: string;
+    items: Array<{ name: string; quantity: number; price: number }>;
+  };
+  raw_text: string;
+  source: string;
   confidence: number;
-  merchant: string | null;
-  category: string | null;
+  processing_time_ms: number;
+  error?: string | null;
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -138,16 +147,31 @@ export const receiptService = {
   },
 
   /**
-   * Scan a receipt image and extract data via OCR.
+   * Scan a receipt image and extract data via the cascade OCR backend.
    *
    * @param imageUri - Local URI of the receipt image
-   * @returns OCR scan result with extracted receipt data
+   * @returns Scan response with extracted receipt data
    */
-  async scan(_imageUri: string): Promise<ScanResponse> {
-    // For now, this is a stub. The actual implementation would need to:
-    // 1. Convert the local URI to a file/blob
-    // 2. Upload it via FormData to /receipts/scan
-    // 3. Return the scan response
-    throw new Error('Receipt scan not yet implemented - requires file upload handling');
+  async scan(imageUri: string): Promise<ScanResponse> {
+    const formData = new FormData();
+    formData.append('file', {
+      uri: imageUri,
+      type: 'image/jpeg',
+      name: 'receipt.jpg',
+    } as any);
+    return apiService.upload<ScanResponse>('/receipts/scan', formData);
+  },
+
+  /**
+   * Check the health of the cascade OCR pipeline.
+   *
+   * @returns Health status with individual component checks
+   */
+  async checkHealth(): Promise<{
+    status: string;
+    checks: Record<string, string>;
+    cascade_threshold: number;
+  }> {
+    return apiService.get('/receipts/cascade/health');
   },
 };
