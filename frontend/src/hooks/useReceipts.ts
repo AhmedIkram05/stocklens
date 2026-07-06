@@ -22,6 +22,10 @@ export type ReceiptShape = {
   time: string;
   /** URI to receipt image (S3 key or local) */
   image: string;
+  /** OCR extraction source: "regex" | "cascade" | "degraded" | "failed" */
+  source?: string;
+  /** OCR extraction confidence 0-100 */
+  confidence?: number;
 };
 
 /**
@@ -48,6 +52,8 @@ export default function useReceipts() {
         date: r.scanned_at || '',
         time: '',
         image: r.receipt_image_s3_key || undefined,
+        source: r.source || undefined,
+        confidence: r.ocr_confidence != null ? Number(r.ocr_confidence) : undefined,
       }));
       setReceipts(mapped);
     } catch (err: any) {
