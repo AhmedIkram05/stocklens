@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     PREDICTION_MODEL_PATH: str = "/model_artifacts/champion/model.pt"
     PREDICTION_CACHE_TTL: int = 21600
 
+    # NLP Cascade OCR
+    CASCADE_CONFIDENCE_THRESHOLD: float = 0.7
+    LLM_MAX_TOKENS: int = 1024
+    LLM_MAX_RETRIES: int = 2
+    LLM_RETRY_BACKOFF: float = 1.0  # seconds, doubles each retry
+    LLM_CACHE_TTL: int = 86400  # 24 hours
+    ENRICH_STATUS_TTL: int = 3600  # 1 hour
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
