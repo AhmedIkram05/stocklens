@@ -5,10 +5,11 @@ Defines the shared data contracts used by the OCR pipeline, Bedrock LLM enhancer
 and the FastAPI router.
 """
 
-from datetime import date, datetime
+import datetime as _dt
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+from typing_extensions import Literal
 
 from src.types import DecimalAsFloat
 
@@ -26,7 +27,7 @@ class ReceiptExtraction(BaseModel):
 
     merchant_name: Optional[str] = None
     total: Optional[DecimalAsFloat] = None
-    date: Optional[date] = None
+    date: Optional[_dt.date] = None
     currency: str = "GBP"
     items: list[ExtractedItem] = Field(default_factory=list)
 
@@ -34,9 +35,10 @@ class ReceiptExtraction(BaseModel):
 class ReceiptScanResponse(BaseModel):
     """Response from a receipt scan — raw OCR text plus structured extraction."""
 
+    id: str
     extraction: ReceiptExtraction
     raw_text: str
-    source: str  # "regex" or "bedrock"
+    source: str  # "regex", "cascade", "degraded", or "failed"
     confidence: float = 0.0
     processing_time_ms: float = 0.0
     error: Optional[str] = None
@@ -56,8 +58,8 @@ class ReceiptCreate(BaseModel):
     line_items: Optional[list[dict]] = None
     receipt_image_s3_key: Optional[str] = None
     notes: Optional[str] = None
-    transaction_date: Optional[date] = None
-    scanned_at: Optional[datetime] = None
+    transaction_date: Optional[_dt.date] = None
+    scanned_at: Optional[_dt.datetime] = None
 
 
 class ReceiptUpdate(BaseModel):
@@ -70,7 +72,7 @@ class ReceiptUpdate(BaseModel):
     ocr_confidence: Optional[float] = None
     line_items: Optional[list[dict]] = None
     receipt_image_s3_key: Optional[str] = None
-    transaction_date: Optional[date] = None
+    transaction_date: Optional[_dt.date] = None
     notes: Optional[str] = None
 
 
@@ -89,9 +91,9 @@ class ReceiptInDB(BaseModel):
     line_items: Optional[list[dict]] = None
     receipt_image_s3_key: Optional[str] = None
     notes: Optional[str] = None
-    transaction_date: Optional[date] = None
-    scanned_at: datetime
-    created_at: datetime
+    transaction_date: Optional[_dt.date] = None
+    scanned_at: _dt.datetime
+    created_at: _dt.datetime
 
     @classmethod
     def from_db_row(cls, row: dict[str, Any]) -> "ReceiptInDB":
@@ -124,9 +126,9 @@ class ReceiptResponse(BaseModel):
     line_items: Optional[list[dict]] = None
     receipt_image_s3_key: Optional[str] = None
     notes: Optional[str] = None
-    transaction_date: Optional[date] = None
-    scanned_at: datetime
-    created_at: datetime
+    transaction_date: Optional[_dt.date] = None
+    scanned_at: _dt.datetime
+    created_at: _dt.datetime
 
 
 class ReceiptListResponse(BaseModel):
@@ -134,3 +136,51 @@ class ReceiptListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+# ── NLP Cascade models ──────────────────────────────────────────────────
+
+
+class FieldConfidence(BaseModel):
+    """An extracted field with its confidence score."""
+
+    value: str | float | list[dict] | None = None
+    confidence: float  # 0.0 – 1.0
+    source: Literal["regex", "llm"]
+
+
+class CascadeResult(BaseModel):
+    """Result of the cascade extraction pipeline."""
+
+    extraction: ReceiptExtraction
+    field_confidences: dict[str, FieldConfidence]
+    overall_confidence: float
+    source: Literal["regex", "cascade", "pending_llm", "degraded", "failed"]
+    discrepancies: list[dict] = Field(default_factory=list)
+    raw_text: str
+    llm_category: str | None = None
+
+
+class EnrichStatusResponse(BaseModel):
+    """Status of background LLM enrichment for a receipt."""
+
+    receipt_id: str
+    status: Literal["completed", "failed", "pending", "not_needed", "unknown"]
+    source: str | None = None
+
+
+class CascadeDecisionDB(BaseModel):
+    """Per-receipt cascade outcome as stored in cascade_decisions table."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    receipt_id: str
+    raw_text_hash: str
+    regex_confidence: float
+    llm_confidence: float | None = None
+    chosen_source: str
+    field_confidences: dict | None = None
+    discrepancies: list[dict] | None = None
+    processing_time_ms: int
+    created_at: _dt.datetime
