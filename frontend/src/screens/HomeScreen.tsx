@@ -16,7 +16,7 @@ import ScreenContainer from '../components/ScreenContainer';
 import ResponsiveContainer from '../components/ResponsiveContainer';
 import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
-import ReceiptCard from '../components/ReceiptCard';
+import ReceiptCard, { SourceBadgeKey } from '../components/ReceiptCard';
 import { EmptyStateWithOnboarding } from '../components/EmptyStateWithOnboarding';
 import IconValue from '../components/IconValue';
 import { useBreakpoint } from '../hooks/useBreakpoint';
@@ -227,7 +227,7 @@ export default function HomeScreen() {
                               amount={formatAmount(scan.amount)}
                               label={scan.label}
                               time={scan.time}
-                              source={scan.source}
+                              source={scan.source as SourceBadgeKey | undefined}
                               confidence={scan.confidence}
                               onPress={() =>
                                 navigation.navigate('ReceiptDetails', {
@@ -235,7 +235,7 @@ export default function HomeScreen() {
                                   totalAmount: scan.amount,
                                   date: scan.date,
                                   image: scan.image,
-                                  source: scan.source,
+                                  source: scan.source as SourceBadgeKey | undefined,
                                   confidence: scan.confidence,
                                   processingTimeMs: undefined,
                                 })
