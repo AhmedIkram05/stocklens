@@ -75,10 +75,10 @@ export default function PortfolioListScreen() {
       pnl == null
         ? theme.textSecondary
         : pnl > 0
-        ? brandColors.green
-        : pnl < 0
-        ? brandColors.red
-        : theme.textSecondary;
+          ? brandColors.green
+          : pnl < 0
+            ? brandColors.red
+            : theme.textSecondary;
 
     return (
       <TouchableOpacity

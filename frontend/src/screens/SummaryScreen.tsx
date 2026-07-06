@@ -130,9 +130,7 @@ export default function SummaryScreen() {
             dirCounts[p.direction] = (dirCounts[p.direction] || 0) + 1;
           });
           const topDir = Object.entries(dirCounts).sort((a, b) => b[1] - a[1])[0][0] as
-            | 'UP'
-            | 'FLAT'
-            | 'DOWN';
+            'UP' | 'FLAT' | 'DOWN';
           setLstmRate(avgRate);
           setLstmDirection(topDir);
         }

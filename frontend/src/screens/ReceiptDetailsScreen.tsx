@@ -328,14 +328,14 @@ export default function ReceiptDetailsScreen() {
           pred.direction === 'UP'
             ? `LSTM: ↑ ${(pred.confidence * 100).toFixed(0)}%`
             : pred.direction === 'DOWN'
-            ? `LSTM: ↓ ${(pred.confidence * 100).toFixed(0)}%`
-            : `LSTM: — ${(pred.confidence * 100).toFixed(0)}%`;
+              ? `LSTM: ↓ ${(pred.confidence * 100).toFixed(0)}%`
+              : `LSTM: — ${(pred.confidence * 100).toFixed(0)}%`;
         badgeColorToShow =
           pred.direction === 'UP'
             ? brandColors.green
             : pred.direction === 'DOWN'
-            ? brandColors.red
-            : brandColors.blue;
+              ? brandColors.red
+              : brandColors.blue;
       } else {
         if (investmentValue.ticker === bestFutureTicker) badgeTextToShow = 'Overperformer';
         else if (investmentValue.ticker === worstFutureTicker) badgeTextToShow = 'Underperformer';
@@ -351,8 +351,8 @@ export default function ReceiptDetailsScreen() {
         badgeTextToShow === 'Overperformer'
           ? brandColors.green
           : badgeTextToShow === 'Underperformer'
-          ? brandColors.red
-          : undefined;
+            ? brandColors.red
+            : undefined;
     }
 
     return (
@@ -486,8 +486,8 @@ export default function ReceiptDetailsScreen() {
                                 confidence > 70
                                   ? '#22c55e'
                                   : confidence > 40
-                                  ? '#f97316'
-                                  : '#ef4444',
+                                    ? '#f97316'
+                                    : '#ef4444',
                             },
                           ]}
                         />
