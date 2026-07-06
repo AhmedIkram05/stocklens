@@ -1,28 +1,11 @@
-/**
- * Tests for `ScanScreen` (integration).
- * Verifies camera permission handling, photo capture/draft creation,
- * OCR invocation, and manual-entry flows.
- */
-
 import React from 'react';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import ScanScreen from '@/screens/ScanScreen';
 import { renderWithProviders } from '../utils';
 import { useReceiptCapture } from '@/hooks/useReceiptCapture';
-import { receiptService } from '@/services/receipts';
 
 jest.mock('@/hooks/useReceiptCapture', () => ({
   useReceiptCapture: jest.fn(),
-}));
-
-jest.mock('@/services/receipts', () => ({
-  receiptService: {
-    create: jest.fn(),
-  },
-}));
-
-jest.mock('@/services/eventBus', () => ({
-  emit: jest.fn(),
 }));
 
 jest.mock('expo-camera', () => {
@@ -49,7 +32,6 @@ const mockUseCameraPermissions = cameraModule.useCameraPermissions as jest.Mock;
 const mockTakePictureAsync = cameraModule.__mockTakePictureAsync as jest.Mock;
 
 const mockedUseReceiptCapture = useReceiptCapture as jest.MockedFunction<typeof useReceiptCapture>;
-const mockedReceiptService = receiptService as jest.Mocked<typeof receiptService>;
 
 const renderScreen = () => renderWithProviders(<ScanScreen />);
 
@@ -58,12 +40,10 @@ const createHookState = () => {
     state: {
       processing: false,
       ocrRaw: null,
-      draftReceiptId: null,
       manualModalVisible: false,
       manualEntryText: '',
     },
     actions: {
-      setDraftReceiptId: jest.fn(),
       setManualEntryText: jest.fn(),
       setManualModalVisible: jest.fn(),
       processReceipt: jest.fn(),
@@ -92,35 +72,25 @@ describe('ScanScreen', () => {
     expect(getByTestId('camera-permission-text')).toBeTruthy();
   });
 
-  it('captures a photo, creates a draft receipt, and forwards to the OCR workflow', async () => {
+  it('captures a photo and forwards to the OCR workflow', async () => {
     const hook = createHookState();
-    mockedReceiptService.create.mockResolvedValue({ id: '55' } as any);
     mockTakePictureAsync.mockResolvedValue({ uri: 'file://snap.jpg', base64: 'YmFzZTY0' });
 
     const { getByTestId, queryByTestId } = renderScreen();
 
     fireEvent.press(getByTestId('capture-button'));
 
-    await waitFor(() => expect(hook.actions.processReceipt).toHaveBeenCalled());
-
-    expect(mockedReceiptService.create).toHaveBeenCalledWith({
-      receipt_image_s3_key: 'file://snap.jpg',
-      total_amount: undefined,
-      ocr_raw_text: '',
-    });
-    expect(hook.actions.setDraftReceiptId).toHaveBeenCalledWith('55');
-    expect(hook.actions.processReceipt).toHaveBeenCalledWith({
-      photoUri: 'file://snap.jpg',
-      photoBase64: 'YmFzZTY0',
-      draftIdArg: '55',
-    });
+    await waitFor(() =>
+      expect(hook.actions.processReceipt).toHaveBeenCalledWith({
+        photoUri: 'file://snap.jpg',
+      }),
+    );
 
     await waitFor(() => expect(queryByTestId('scan-preview-image')).toBeTruthy());
   });
 
   it('submits manual entry amounts via saveAndNavigate', async () => {
     const hook = createHookState();
-    mockedReceiptService.create.mockResolvedValue({ id: '99' } as any);
     mockTakePictureAsync.mockResolvedValue({ uri: 'file://manual.jpg', base64: 'bWFudWFs' });
 
     const screen = renderScreen();
@@ -130,7 +100,6 @@ describe('ScanScreen', () => {
 
     hook.state.manualModalVisible = true;
     hook.state.manualEntryText = '45.67';
-    hook.state.draftReceiptId = '99';
     hook.state.ocrRaw = 'Total £45.67';
 
     screen.rerender(<ScanScreen />);
@@ -140,7 +109,6 @@ describe('ScanScreen', () => {
     await waitFor(() =>
       expect(hook.actions.saveAndNavigate).toHaveBeenCalledWith(
         45.67,
-        '99',
         'Total £45.67',
         'file://manual.jpg',
       ),
