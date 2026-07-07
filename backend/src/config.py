@@ -47,6 +47,16 @@ class Settings(BaseSettings):
     PREDICTION_MODEL_PATH: str = "/model_artifacts/champion/model.pt"
     PREDICTION_CACHE_TTL: int = 21600
 
+    # Prediction Logging / Drift
+    PREDICTION_LOG_ENABLED: bool = True
+    PREDICTION_LOG_RETENTION_DAYS: int = 90
+    DRIFT_ALERT_PSI_THRESHOLD: float = 0.25
+    DRIFT_ALERT_KS_THRESHOLD: float = 0.3
+    DRIFT_ALERT_JS_THRESHOLD: float = 0.3
+    DRIFT_MONITORED_TICKERS: str = ""  # comma-separated, empty = portfolio-only
+    DRIFT_REPORT_S3_BUCKET: str = "stocklens-drift-reports"
+    DRIFT_REPORT_S3_PREFIX: str = "drift_reports/"
+
     # NLP Cascade OCR
     CASCADE_CONFIDENCE_THRESHOLD: float = 0.7
     LLM_MAX_TOKENS: int = 1024
