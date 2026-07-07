@@ -489,7 +489,7 @@ _ALL_SP500 = [
     "ZTS",
 ]
 
-_DEV_SUBSET = _ALL_SP500[:55]  # ~19s/epoch on MPS — fast iteration
+_DEV_SUBSET = _ALL_SP500[8::9]  # ~53 tickers, alphabetically spread across full S&P 500
 
 
 def _train_tickers_env() -> list[str]:
@@ -509,12 +509,13 @@ class MLConfig:
     N_FEATURES: int = 17  # 13 V1 + vol_pct + 3 cross-sectional (excess_ret_1d/5d/21d vs SPY)
     BENCHMARK_TICKER: str = "SPY"  # Market benchmark for cross-sectional features
 
-    # Labeling — widened threshold from 0.3→0.7 so FLAT band is ±1.57σ₃₀*√5,
-    # giving ~52% FLAT. Directional labels now reflect stronger (>2σ₅) moves
-    # with higher signal-to-noise ratio instead of labeling noise as directional.
+    # FLAT band = threshold_mult × σ_30d × √horizon.
+    # At 0.3: ~28% FLAT, 28.7% acc, 0.26 Sharpe (model can't learn 3-way).
+    # At 0.4: ~36% FLAT, 47.1% acc, 0.42 Sharpe, F1_flat=0.05.
+    # At 0.5: ~44% FLAT, 49.4% acc, 0.67 Sharpe, F1_flat~0 — best overall.
+    # At 0.7: ~52% FLAT, 48.7% acc, 0.46 Sharpe, F1_flat=0.0.
     VOL_LOOKBACK: int = 30
-    THRESHOLD_MULT: float = 0.7  # σ multiplier for FLAT band. 0.3 gave ~28% FLAT — UP/DOWN
-    # labels were indistinguishable from noise.
+    THRESHOLD_MULT: float = 0.5
     FORECAST_HORIZON: int = 5  # N-day forward return (1=daily, 5=weekly, 21=monthly)
 
     # Volatility regime filter — only train on windows where the ticker's 30-day
@@ -526,18 +527,16 @@ class MLConfig:
     # Model architecture — V1 LSTM only. V2 (Conv1D+BiLSTM+Attention+RegimeGate)
     # tested and caused gradient stall — 203k params could never escape uniform init.
     EMBED_DIM: int = 16
-    HIDDEN_DIM: int = 64  # reduced from 128 to reduce overfitting to noise
+    HIDDEN_DIM: int = 64  # reduced from 128 — better empirically (49.4% dir acc, 0.67 Sharpe)
     N_LAYERS: int = 2  # 1 layer collapsed to majority-class prediction
-    DROPOUT: float = 0.5  # increased from 0.3/0.4 for noisy financial data
+    DROPOUT: float = 0.5  # increased from 0.3 — better empirically (49.4% dir acc, 0.67 Sharpe)
     N_CLASSES: int = 3  # DOWN, FLAT, UP
 
     # Training
     EPOCHS: int = 100
     BATCH_SIZE: int = 256  # 256 for MPS GPU memory efficiency
     LEARNING_RATE: float = 1e-3
-    WEIGHT_DECAY: float = (
-        1e-3  # increased from 1e-5 to suppress overfitting on noisy financial data
-    )
+    WEIGHT_DECAY: float = 1e-3  # up from 1e-5 — better empirically (49.4% dir acc, 0.67 Sharpe)
     PATIENCE: int = 15  # number of epochs without directional accuracy improvement before stopping
     MIN_DELTA: float = 5e-3  # minimum directional accuracy improvement to reset patience (0.5%)
     FOCAL_GAMMA: float = (

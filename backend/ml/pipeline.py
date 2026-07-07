@@ -349,8 +349,13 @@ async def _run_lstm_pipeline(
     global_means: np.ndarray,
     global_stds: np.ndarray,
     device: torch.device,
-) -> dict[str, Any]:
-    """Train LSTM, evaluate, log to MLflow, register champion."""
+) -> tuple[dict[str, Any], str, GlobalLSTM, str]:
+    """Train LSTM, evaluate, log to MLflow, register model.
+
+    Returns:
+        ``(test_metrics, model_version, model, run_id)`` tuple. Does NOT gate
+        promotion — that happens in ``run_pipeline()``.
+    """
     # --- Datasets and DataLoaders ---
     train_ds = SequenceDataset(*train_data)
     val_ds = SequenceDataset(*val_data)
@@ -471,17 +476,13 @@ async def _run_lstm_pipeline(
         loss_path = plot_loss_curves(history["train_losses"], history["val_losses"])
         mlflow_mgr.log_artifact(loss_path, artifact_path="training")
 
-        # --- Register champion ---
+        # --- Register model in MLflow Model Registry ---
         lstm_version = mlflow_mgr.log_model(
             model,
             registered_model_name="GlobalLSTM",
         )[1]
 
-        mlflow_mgr.set_champion_alias(version=lstm_version)
         mlflow_mgr.set_model_description("GlobalLSTM", model_description)
-        # ponytail: tags fixed — previously read "conv1d_bilstm_attention_
-        # regimegate_v2" (V2 arch that was abandoned). Now accurate: V1 LSTM
-        # with focal loss + per-ticker vol context + vol regime filter.
         mlflow_mgr.set_registered_model_tags(
             {
                 "problem_type": "classification",
@@ -504,27 +505,15 @@ async def _run_lstm_pipeline(
                 "data_source": "yahoo_finance_ohlcv",
             }
         )
-        mlflow_mgr.tag_best_run(metric="test_directional_accuracy")
-
-        # Save champion
-        champion_path = mlflow_mgr.save_champion_to_disk(
-            model,
-            vocab=vocab,
-            feature_means=global_means,
-            feature_stds=global_stds,
-        )
-
-        # Record in DB
-        await _record_in_db(run_id, lstm_version, test_metrics)
 
     finally:
         mlflow_mgr.end_run()
 
     logger.info(
-        "Pipeline complete",
-        extra={"champion_path": champion_path, "run_id": run_id},
+        "Training complete — model registered",
+        extra={"run_id": run_id, "model_version": lstm_version},
     )
-    return test_metrics
+    return test_metrics, lstm_version, model, run_id
 
 
 async def run_pipeline() -> dict[str, Any]:
@@ -602,6 +591,10 @@ async def run_pipeline() -> dict[str, Any]:
         len(test_data[0]),
     )
 
+    # Save pre-normalization training data for reference distributions
+    train_features_raw = train_data[0].copy()
+    train_labels_raw = train_data[1].copy()
+
     # 7. Normalize using TRAINING stats only (fixes data leak — Issue 3)
     train_data, val_data, test_data, global_means, global_stds = fit_normalize_splits(
         train_data,
@@ -610,8 +603,8 @@ async def run_pipeline() -> dict[str, Any]:
     )
     logger.info("Normalization complete — means/stds fit on training data only")
 
-    # 8. Train LSTM, evaluate, register
-    test_metrics = await _run_lstm_pipeline(
+    # 8. Train LSTM, evaluate, register model (pure — no promotion logic)
+    test_metrics, model_version, trained_model, run_id = await _run_lstm_pipeline(
         train_data,
         val_data,
         test_data,
@@ -622,6 +615,100 @@ async def run_pipeline() -> dict[str, Any]:
         global_stds,
         device,
     )
+
+    # ------------------------------------------------------------------
+    # Champion Comparison Gate
+    # ------------------------------------------------------------------
+    mlflow_mgr = MLflowManager()
+    champion_metrics = await mlflow_mgr.read_champion_metrics()
+    challenger_da = test_metrics.get("directional_accuracy", 0.0)
+    champion_da = champion_metrics.get("directional_accuracy", 0.0) if champion_metrics else None
+
+    da_improvement = (challenger_da - champion_da) if champion_da is not None else None
+    # Only promote if no existing champion, or challenger beats it by >2pp
+    promote = champion_da is None or (da_improvement is not None and da_improvement > 0.02)
+
+    # Run sync MLflow calls in executor to avoid blocking event loop
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(
+        None,
+        lambda: mlflow_mgr.log_metrics(
+            {
+                "champion_directional_accuracy": champion_da or 0.0,
+                "challenger_improvement_pp": (
+                    (da_improvement * 100) if da_improvement is not None else 100.0
+                ),
+            }
+        ),
+    )
+    await loop.run_in_executor(
+        None,
+        lambda: mlflow_mgr.set_registered_model_tags(
+            {
+                "champion_da": f"{champion_da:.4f}" if champion_da is not None else "none",
+                "challenger_da": f"{challenger_da:.4f}",
+                "promoted": str(promote).lower(),
+            }
+        ),
+    )
+
+    if promote:
+        # Promotion: alias, disk, DB, reference distributions
+        await loop.run_in_executor(
+            None,
+            lambda: mlflow_mgr.set_champion_alias(version=model_version),
+        )
+        mlflow_mgr.save_champion_to_disk(
+            trained_model,
+            vocab=vocab,
+            feature_means=global_means,
+            feature_stds=global_stds,
+        )
+        await _record_in_db(run_id, model_version, test_metrics)
+
+        # Compute and store reference distributions for drift detection
+        # Uses pre-normalization training data only — full dataset would leak
+        # test/val distribution info into the reference baseline.
+        from ml.reference_distributions import (
+            FEATURE_NAMES as REF_FEATURE_NAMES,
+        )
+        from ml.reference_distributions import (
+            build_reference_from_training_data,
+            store_reference_in_db,
+        )
+
+        ref = build_reference_from_training_data(
+            global_sequences=train_features_raw,
+            global_labels=train_labels_raw,
+            feature_names=REF_FEATURE_NAMES,
+        )
+        dsn = ML_CONFIG.SYNC_DATABASE_URL
+        import asyncpg
+
+        ref_conn = await asyncpg.connect(dsn)
+        try:
+            await store_reference_in_db(ref_conn, ref, model_version)
+        finally:
+            await ref_conn.close()
+
+        logger.info(
+            "Champion promoted — challenger DA %.2f%% vs champion DA %s",
+            challenger_da * 100,
+            f"{champion_da * 100:.2f}%" if champion_da is not None else "none",
+        )
+    else:
+        await _record_challenger_in_db(
+            run_id,
+            model_version,
+            test_metrics,
+            champion_da=champion_da,
+            challenger_da=challenger_da,
+        )
+        logger.info(
+            "Champion unchanged — challenger DA %.2f%% does not beat champion DA %.2f%% by >2pp",
+            challenger_da * 100,
+            (champion_da or 0.0) * 100,
+        )
 
     return test_metrics
 
@@ -657,6 +744,47 @@ async def _record_in_db(
     finally:
         await conn.close()
     logger.info("Champion recorded in model_registry", extra={"run_id": run_id})
+
+
+async def _record_challenger_in_db(
+    run_id: str,
+    model_version: str,
+    metrics: dict,
+    champion_da: float | None,
+    challenger_da: float,
+) -> None:
+    """Record a non-promoted challenger in the model_registry for historical tracking."""
+    import asyncpg
+
+    dsn = ML_CONFIG.SYNC_DATABASE_URL
+    conn = await asyncpg.connect(dsn)
+    try:
+        async with conn.transaction():
+            await conn.execute(
+                """
+                INSERT INTO model_registry
+                    (ticker, mlflow_run_id, model_version, alias, metrics)
+                VALUES ($1, $2, $3, $4, $5::jsonb)
+                """,
+                None,
+                run_id,
+                model_version,
+                "challenger",
+                json.dumps(
+                    {
+                        **metrics,
+                        "champion_da": champion_da,
+                        "challenger_da": challenger_da,
+                        "promoted": False,
+                    }
+                ),
+            )
+    finally:
+        await conn.close()
+    logger.info(
+        "Challenger recorded in model_registry",
+        extra={"run_id": run_id, "model_version": model_version},
+    )
 
 
 def main() -> None:

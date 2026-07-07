@@ -13,6 +13,7 @@ Handles:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import tempfile
@@ -293,7 +294,7 @@ class MLflowManager:
                 client.set_experiment_tag(experiment.experiment_id, key, value)
         logger.info("Experiment tags set", extra={"tags": tags})
 
-    def tag_best_run(self, metric: str = "test_accuracy") -> None:
+    def tag_best_run(self, metric: str = "test_accuracy") -> bool:
         """Find the best run in this experiment by *metric* and tag it.
 
         Sets ``best_run=true``, ``best_metric=<metric>``, and
@@ -301,12 +302,15 @@ class MLflowManager:
 
         Args:
             metric: Metric name to rank by (descending).
+
+        Returns:
+            True if the current run IS the best run, False otherwise.
         """
         client = mlflow.tracking.MlflowClient()
         experiment = client.get_experiment_by_name(self.experiment_name)
         if not experiment:
             logger.warning("Experiment %s not found — skipping best-run tag", self.experiment_name)
-            return
+            return False
 
         runs = mlflow.search_runs(
             experiment_ids=[experiment.experiment_id],
@@ -315,14 +319,14 @@ class MLflowManager:
         )
         if runs.empty:
             logger.warning("No runs found — skipping best-run tag")
-            return
+            return False
 
         best_run = runs.iloc[0]
         best_run_id = best_run.get("run_id")
 
         if not best_run_id or not isinstance(best_run_id, str):
             logger.warning("Invalid run_id in search results — skipping best-run tag")
-            return
+            return False
 
         best_value = best_run.get(f"metrics.{metric}", "unknown")
 
@@ -335,6 +339,7 @@ class MLflowManager:
             current_id = self.active_run.info.run_id
             if current_id == best_run_id:
                 client.set_tag(current_id, "run_quality", "best")
+                return True
             else:
                 client.set_tag(current_id, "run_quality", "challenger")
                 client.set_tag(
@@ -342,11 +347,54 @@ class MLflowManager:
                     "delta_from_best",
                     str(best_value),
                 )
+                return False
+
+        return False
 
         logger.info(
             "Best-run tag set",
             extra={"run_id": best_run_id, "metric": metric, "value": best_value},
         )
+
+    # ------------------------------------------------------------------
+    # Champion metrics
+    # ------------------------------------------------------------------
+
+    async def read_champion_metrics(self) -> dict[str, Any] | None:
+        """Read champion metrics from the model_registry DB table.
+
+        Reads the ``metrics`` JSONB column from the ``model_registry`` table
+        where ``alias = 'champion'``.  Returns the raw ``test_metrics`` dict
+        (with key ``directional_accuracy``), or ``None`` if no champion exists.
+
+        Returns:
+            Dict of metric name → value (e.g. ``{"directional_accuracy": 0.52}``),
+            or ``None`` if there is no champion.
+        """
+        import asyncpg
+
+        dsn = ML_CONFIG.SYNC_DATABASE_URL
+        conn = await asyncpg.connect(dsn)
+        try:
+            await conn.set_type_codec(
+                "jsonb",
+                encoder=json.dumps,
+                decoder=json.loads,
+                schema="pg_catalog",
+            )
+            row = await conn.fetchrow(
+                "SELECT metrics FROM model_registry WHERE alias = 'champion'",
+            )
+            if row and row["metrics"]:
+                logger.info(
+                    "Champion metrics read from DB",
+                    extra={"directional_accuracy": row["metrics"].get("directional_accuracy")},
+                )
+                return row["metrics"]
+            logger.info("No champion row found in model_registry")
+            return None
+        finally:
+            await conn.close()
 
     # ------------------------------------------------------------------
     # Disk persistence
@@ -379,7 +427,7 @@ class MLflowManager:
         save_dir = Path(ML_CONFIG.MODEL_ARTIFACT_DIR)
         try:
             save_dir.mkdir(parents=True, exist_ok=True)
-        except OSError, PermissionError:
+        except (OSError, PermissionError):  # noqa: UP040
             fallback = Path(tempfile.gettempdir()) / "stocklens_model"
             logger.warning(
                 "Cannot write to %s, falling back to %s",

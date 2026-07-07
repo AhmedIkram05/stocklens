@@ -58,6 +58,7 @@ target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+ignore = ["UP040"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]
@@ -65,3 +66,6 @@ select = ["E", "F", "I"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: marks tests as integration tests (require running PostgreSQL)",
+]

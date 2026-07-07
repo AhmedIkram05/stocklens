@@ -41,7 +41,7 @@ ENV UV_COMPILE_BYTECODE=1
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 WORKDIR /app
-COPY pyproject.toml uv.lock .
+COPY pyproject.toml uv.lock ./
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --no-dev
@@ -70,7 +70,7 @@ WORKDIR /app
 COPY . /app/ml/
 
 # Non-root user
-RUN groupadd -r mluser && useradd -r -g mluser -u 1001 mluser \
+RUN groupadd -r mluser && useradd -r -g mluser -u 1000 mluser \
     && chown -R mluser:mluser /app
 
 # Ensure model artifacts directory exists with correct ownership.

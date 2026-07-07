@@ -56,7 +56,10 @@ class TestPredictNoModel:
 
     async def test_returns_503(self, client: AsyncClient, auth_headers: dict[str, str]) -> None:
         """GET /predict/AAPL returns 503 when no model loaded."""
-        with patch("src.prediction.router.prediction_service.is_loaded", return_value=False):
+        with (
+            patch("src.prediction.service.prediction_service.is_loaded", return_value=False),
+            patch("src.prediction.router.get_redis", return_value=None),
+        ):
             response = await client.get("/predict/AAPL", headers=auth_headers)
         assert response.status_code == 503
         assert "model not yet loaded" in response.json()["detail"].lower()
