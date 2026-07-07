@@ -427,7 +427,7 @@ class MLflowManager:
         save_dir = Path(ML_CONFIG.MODEL_ARTIFACT_DIR)
         try:
             save_dir.mkdir(parents=True, exist_ok=True)
-        except OSError, PermissionError:
+        except (OSError, PermissionError):  # noqa: UP040
             fallback = Path(tempfile.gettempdir()) / "stocklens_model"
             logger.warning(
                 "Cannot write to %s, falling back to %s",
