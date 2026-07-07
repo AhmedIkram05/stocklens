@@ -1,0 +1,92 @@
+# Airflow container for StockLens weekly retraining DAG.
+# Uses Python 3.12 (Airflow requires <3.14) with ML deps installed directly.
+# Backend source is mounted at runtime so PythonOperator can import
+# ml.pipeline, drift modules, etc. — no Docker-in-Docker.
+# Multi-stage: rust-builder compiles features_engine (PyO3), final installs wheel.
+
+# Stage 0: Rust native module builder (features_engine)
+FROM python:3.12-slim AS rust-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust via rustup
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:$PATH"
+
+RUN pip install maturin --no-cache-dir
+
+WORKDIR /src
+COPY ../backend/ml/features-engine /src
+RUN maturin build --release --features extension --out /wheels
+
+
+# Stage 1: Final Airflow image
+FROM python:3.12-slim
+
+ENV AIRFLOW_HOME=/opt/airflow
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# System deps: curl for healthcheck, libgomp for torch parallelism
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install ML dependencies + Airflow + drift deps in one layer.
+# pytorch-cpu extra index for CPU-only torch; PyPI for everything else.
+RUN pip install --no-cache-dir \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    torch>=2.12.0 \
+    mlflow>=3.14.0 \
+    scikit-learn>=1.6.0 \
+    numpy>=2.1.0 \
+    pandas>=2.3.0 \
+    matplotlib>=3.10.0 \
+    asyncpg>=0.30.0 \
+    psutil>=6.0.0 \
+    httpx>=0.28.1 \
+    evidently>=0.6.0 \
+    boto3>=1.43.0 \
+    'apache-airflow>=3.3.0' \
+    'apache-airflow-providers-standard>=1.0.0' \
+    'apache-airflow-providers-postgres>=5.0.0' \
+    'apache-airflow-providers-fab>=1.0.0'
+
+# Install Rust native module (features_engine)
+COPY --from=rust-builder /wheels /wheels
+RUN pip install --no-deps /wheels/features_engine*.whl
+
+# Copy DAGs and config
+COPY airflow/dags/ /opt/airflow/dags/
+COPY airflow/config/airflow.cfg /opt/airflow/config/
+
+# Airflow env defaults
+ENV AIRFLOW__CORE__LOAD_EXAMPLES=False
+ENV AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
+ENV AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+ENV AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL=30
+
+WORKDIR ${AIRFLOW_HOME}
+
+# Initialise Airflow metadata DB at build time
+RUN airflow db migrate
+
+# Backend source code is mounted at runtime via docker-compose volumes
+# (not copied into the image) so DAGs can import backend modules directly.
+
+# ponytail: single-container dev setup (scheduler + dag-processor + api-server).
+# Phase 5 EC2: split into separate scheduler/dag-processor/api-server/worker containers.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/api/v2/monitor/health || exit 1
+
+CMD ["bash", "-c", "\
+    airflow db migrate \
+    && airflow dag-processor & \
+    airflow scheduler & \
+    airflow api-server --port 8080"]
