@@ -13,6 +13,7 @@ Handles:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import tempfile
@@ -354,6 +355,46 @@ class MLflowManager:
             "Best-run tag set",
             extra={"run_id": best_run_id, "metric": metric, "value": best_value},
         )
+
+    # ------------------------------------------------------------------
+    # Champion metrics
+    # ------------------------------------------------------------------
+
+    async def read_champion_metrics(self) -> dict[str, Any] | None:
+        """Read champion metrics from the model_registry DB table.
+
+        Reads the ``metrics`` JSONB column from the ``model_registry`` table
+        where ``alias = 'champion'``.  Returns the raw ``test_metrics`` dict
+        (with key ``directional_accuracy``), or ``None`` if no champion exists.
+
+        Returns:
+            Dict of metric name → value (e.g. ``{"directional_accuracy": 0.52}``),
+            or ``None`` if there is no champion.
+        """
+        import asyncpg
+
+        dsn = ML_CONFIG.SYNC_DATABASE_URL
+        conn = await asyncpg.connect(dsn)
+        try:
+            await conn.set_type_codec(
+                "jsonb",
+                encoder=json.dumps,
+                decoder=json.loads,
+                schema="pg_catalog",
+            )
+            row = await conn.fetchrow(
+                "SELECT metrics FROM model_registry WHERE alias = 'champion'",
+            )
+            if row and row["metrics"]:
+                logger.info(
+                    "Champion metrics read from DB",
+                    extra={"directional_accuracy": row["metrics"].get("directional_accuracy")},
+                )
+                return row["metrics"]
+            logger.info("No champion row found in model_registry")
+            return None
+        finally:
+            await conn.close()
 
     # ------------------------------------------------------------------
     # Disk persistence
