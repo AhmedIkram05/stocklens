@@ -49,6 +49,7 @@ const createAuthValue = (overrides?: Partial<AuthContextType>): AuthContextType 
   unlockWithDeviceAuth: async () => true,
   unlockWithCredentials: async () => true,
   startLockGrace: () => {},
+  refreshUser: async () => {},
   ...overrides,
 });
 

@@ -49,6 +49,8 @@ export interface AuthContextType {
   unlockWithCredentials: (email: string, password: string) => Promise<boolean>;
   /** Starts a 10-second grace period to prevent immediate re-lock after auth. */
   startLockGrace: () => void;
+  /** Re-fetches the user profile from the backend using stored tokens and updates state. */
+  refreshUser: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -249,6 +251,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // ── Refresh user from stored tokens ────────────────────────────────────────
+
+  const refreshUser = async (): Promise<void> => {
+    try {
+      const profile = await authService.getProfile();
+      if (profile) {
+        setUser(_buildProfile(profile));
+      } else {
+        // Token present but invalid — clear
+        await apiService.clearTokens();
+        setUser(null);
+      }
+    } catch {
+      // Network error — leave current state unchanged
+    }
+  };
+
   // ── Sign out ───────────────────────────────────────────────────────────────
 
   const signOutUser = async () => {
@@ -300,6 +319,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     unlockWithDeviceAuth,
     unlockWithCredentials,
     startLockGrace,
+    refreshUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
