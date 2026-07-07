@@ -6,13 +6,14 @@ normalising across tickers with different base volatility levels.
 
 The threshold is: rolling_vol * threshold_mult * sqrt(forecast_horizon)
 
-With threshold_mult=0.7 and forecast_horizon=5 (ML_CONFIG defaults):
-    FLAT  if |log_return| < 1.57 * sigma_30d  (~52% of samples)
-    UP    if log_return >= 1.57 * sigma_30d     (~24% of samples)
-    DOWN  if log_return <= -1.57 * sigma_30d    (~24% of samples)
+With threshold_mult=0.3 and forecast_horizon=5 (ML_CONFIG defaults):
+    FLAT  if |log_return| < 0.67 * sigma_30d  (~28% of samples)
+    UP    if log_return >= 0.67 * sigma_30d     (~36% of samples)
+    DOWN  if log_return <= -0.67 * sigma_30d    (~36% of samples)
 
-The widened FLAT band (was 0.671σ at mult=0.3) ensures directional labels
-reflect stronger, higher-confidence moves with better signal-to-noise ratio.
+The narrow FLAT band maximizes directional training examples, giving the
+model more signal to learn from. Model never predicts FLAT (F1=0 anyway),
+so wider bands just increase wrong predictions without benefit.
 """
 
 from __future__ import annotations
