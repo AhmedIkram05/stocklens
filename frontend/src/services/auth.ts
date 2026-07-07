@@ -59,11 +59,15 @@ export const authService = {
    * Tokens are automatically persisted to SecureStore on success.
    */
   async signUp(data: SignUpRequest): Promise<AuthResponse> {
-    const response = await apiService.post<AuthResponse>('/auth/register', {
-      email: data.email,
-      password: data.password,
-      full_name: data.fullName,
-    });
+    const response = await apiService.post<AuthResponse>(
+      '/auth/register',
+      {
+        email: data.email,
+        password: data.password,
+        full_name: data.fullName,
+      },
+      { skipAuth: true },
+    );
 
     // Persist tokens
     await apiService.setTokens(response.tokens.access_token, response.tokens.refresh_token);
