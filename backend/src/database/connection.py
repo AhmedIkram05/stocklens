@@ -6,12 +6,27 @@ All runtime queries use raw asyncpg — no SQLAlchemy ORM at query time.
 
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 import asyncpg
 
 pool: asyncpg.Pool | None = None
+
+# JSONB codec so ``SELECT metrics FROM model_registry`` returns ``dict``
+# instead of a raw JSON string.  Registered on every connection in the pool.
+_JSONB_CODEC = ("jsonb", "pg_catalog")
+
+
+async def _init_jsonb_codec(conn: asyncpg.Connection) -> None:
+    """Register JSONB decoder so asyncpg returns JSONB columns as dict/list."""
+    await conn.set_type_codec(
+        _JSONB_CODEC[0],
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema=_JSONB_CODEC[1],
+    )
 
 
 def _normalise_dsn(dsn: str) -> str:
@@ -26,6 +41,7 @@ async def init_pool(dsn: str, min_size: int = 2, max_size: int = 10) -> None:
         _normalise_dsn(dsn),
         min_size=min_size,
         max_size=max_size,
+        init=_init_jsonb_codec,
     )
 
 

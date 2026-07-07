@@ -14,6 +14,7 @@ from sqlalchemy import (
     Column,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     MetaData,
@@ -273,3 +274,53 @@ Index(
 
 # Agent conversations — user lookup
 Index("idx_conversations_user", agent_conversations.c.user_id)
+
+# ---------------------------------------------------------------------------
+# prediction_log — stores every prediction request for drift monitoring
+# ---------------------------------------------------------------------------
+
+prediction_log = Table(
+    "prediction_log",
+    target_metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("ticker", String(10), nullable=False),
+    Column("model_version", String(20), nullable=False),
+    Column("prediction", String(4), nullable=False),  # UP/FLAT/DOWN
+    Column("confidence", Float, nullable=False),
+    Column("probabilities", JSONB, nullable=True),  # {"DOWN": 0.1, "FLAT": 0.3, "UP": 0.6}
+    Column("features", JSONB, nullable=True),  # {"window": ..., "stats": ...}
+    Column("feature_stats", JSONB, nullable=True),  # {"mean": 0.0, "std": ...}
+    Column("raw_feature_names", JSONB, nullable=True),  # ["log_ret_1d", ..., "excess_ret_21d"]
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+Index("idx_prediction_log_ticker_created", prediction_log.c.ticker, prediction_log.c.created_at)
+Index("idx_prediction_log_model_version", prediction_log.c.model_version)
+Index("idx_prediction_log_created_at", prediction_log.c.created_at)
+
+
+# ---------------------------------------------------------------------------
+# drift_metrics — queryable drift indicators per ticker per feature per run
+# ---------------------------------------------------------------------------
+
+drift_metrics = Table(
+    "drift_metrics",
+    target_metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("drift_run_id", String(36), nullable=False),  # UUID for each drift run
+    Column("ticker", String(10), nullable=False),
+    Column("model_version", String(20), nullable=False),
+    Column("metric_type", String(20), nullable=False),  # 'psi', 'ks_statistic', etc.
+    Column("feature_name", String(50), nullable=False),  # 'log_ret_1d', etc.
+    Column("drift_score", Float, nullable=False),  # The numeric score
+    Column("alert_triggered", Boolean, nullable=False, server_default=text("false")),
+    Column("reference_period", String(30), nullable=True),
+    Column("current_period", String(30), nullable=True),
+    Column("report_s3_key", String(500), nullable=True),
+    Column("details", JSONB, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+Index("idx_drift_metrics_run", drift_metrics.c.drift_run_id)
+Index("idx_drift_metrics_ticker_metric", drift_metrics.c.ticker, drift_metrics.c.metric_type)
+Index("idx_drift_metrics_alert", drift_metrics.c.alert_triggered)
