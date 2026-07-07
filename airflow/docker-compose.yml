@@ -1,0 +1,51 @@
+services:
+  airflow:
+    build:
+      context: ..
+      dockerfile: airflow/Dockerfile
+    ports:
+      - '8080:8080' # Airflow API server (UI + REST)
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
+      # FAB auth (replaces default Simple Auth in Airflow 3)
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+
+      # Airflow metadata DB (SQLite — dev only; Phase 5 → RDS PostgreSQL)
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
+
+      # StockLens backend connections
+      DATABASE_URL: postgresql+asyncpg://stocklens:stocklens@postgres:5432/stocklens
+      MLFLOW_TRACKING_URI: http://mlflow:5001
+      MODEL_ARTIFACT_DIR: /model_artifacts/champion
+      AWS_REGION: eu-west-2
+      ENVIRONMENT: development
+      PYTHONPATH: /app:/opt/airflow/dags
+
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - airflow_db:/opt/airflow
+      - model_artifacts:/model_artifacts # Read champion model path
+      - mlflow_data:/mlflow # Read MLflow artifacts
+      - ./config:/opt/airflow/config
+      - ../backend:/app/backend # Mount backend source for PythonOperator imports
+      - ../backend/ml:/app/ml # Mount ML module for ml.pipeline imports
+
+    # Connect to the backend's Docker network (created by root docker-compose.yml)
+    networks:
+      - stocklens_backend
+
+    restart: unless-stopped
+
+volumes:
+  airflow_db:
+  model_artifacts:
+    external: true
+    name: stocklens_model_artifacts
+  mlflow_data:
+    external: true
+    name: stocklens_mlflow_data
+
+networks:
+  stocklens_backend:
+    external: true
+    name: stocklens_default

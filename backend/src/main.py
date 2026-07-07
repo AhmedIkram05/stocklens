@@ -118,6 +118,7 @@ async def health():
 from src.auth.router import router as auth_router  # noqa: E402
 from src.cash_flows.router import router as cash_flows_router  # noqa: E402
 from src.categories.router import router as category_router  # noqa: E402
+from src.drift.router import router as drift_router  # noqa: E402
 from src.holdings.router import router as holdings_router  # noqa: E402
 from src.market.router import router as market_router  # noqa: E402
 from src.performance.router import router as performance_router  # noqa: E402
@@ -134,4 +135,5 @@ app.include_router(market_router, prefix="/market", tags=["market"])
 app.include_router(cash_flows_router, tags=["cash_flows"])
 app.include_router(performance_router, tags=["performance"])
 app.include_router(prediction_router, prefix="/predict", tags=["prediction"])
+app.include_router(drift_router, prefix="/drift", tags=["drift"])
 app.include_router(transaction_router, tags=["transactions"])

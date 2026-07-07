@@ -97,7 +97,7 @@ class PredictionService:
 
     def _compute_features(
         self, ohlcv_rows: list[dict], spy_ohlcv_rows: list[dict] | None = None
-    ) -> torch.Tensor | None:
+    ) -> tuple[torch.Tensor, np.ndarray | None, np.ndarray | None] | None:
         """Compute feature window from OHLCV data and standardise.
 
         When ``spy_ohlcv_rows`` is provided, also computes cross-sectional
@@ -105,11 +105,15 @@ class PredictionService:
 
         Args:
             ohlcv_rows: List of OHLCV dicts for the target ticker.
-            spy_ohlcv_rows: Optional list of OHLCV dicts for SPY.
+            spy_ohlcv_rows: Optional list of SPY OHLCV dicts for
+                cross-sectional features.
 
         Returns:
-            (1, 30, n_features) tensor ready for model input, or None if
-            insufficient data.
+            ``(tensor, raw_feature_values, feature_window)`` where:
+            - ``tensor``: (1, 30, n_features) tensor ready for model input
+            - ``raw_feature_values``: (T, n_features) pre-standardisation raw features
+            - ``feature_window``: (30, n_features) standardised sliding window
+            Returns None if insufficient data.
         """
         if len(ohlcv_rows) < ml_config.SEQUENCE_LENGTH + 30:
             logger.warning(
@@ -158,6 +162,9 @@ class PredictionService:
                 axis=-1,
             )
 
+        # Save pre-standardisation raw features for drift logging
+        raw_feature_values = feature_values.copy()
+
         # 5. Standardise using training stats
         if (
             self.model is not None
@@ -193,7 +200,7 @@ class PredictionService:
         # 6. Take last SEQUENCE_LENGTH rows and add batch dim
         feature_window = feature_values[-ml_config.SEQUENCE_LENGTH :]
         tensor = torch.tensor(feature_window, dtype=torch.float32).unsqueeze(0)
-        return tensor
+        return tensor, raw_feature_values, feature_window
 
     def predict(
         self, ticker: str, ohlcv_rows: list[dict], spy_ohlcv_rows: list[dict] | None = None
@@ -220,21 +227,37 @@ class PredictionService:
         ticker_idx = torch.tensor([ticker_idx_val], dtype=torch.long)
 
         # Compute features
-        features = self._compute_features(ohlcv_rows, spy_ohlcv_rows)
-        if features is None:
+        result = self._compute_features(ohlcv_rows, spy_ohlcv_rows)
+        if result is None:
             return None
+
+        features_tensor, raw_feature_values, feature_window = result
 
         # Run inference
         with torch.no_grad():
-            features = features.to(self.device)
+            features_tensor = features_tensor.to(self.device)
             ticker_idx = ticker_idx.to(self.device)
-            logits = self.model(features, ticker_idx)
+            logits = self.model(features_tensor, ticker_idx)
             probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
 
         # Parse results
         pred_class = int(np.argmax(probs))
         confidence = float(probs[pred_class])
         probabilities = {CLASS_NAMES[i]: float(probs[i]) for i in range(len(CLASS_NAMES))}
+
+        # Fire-and-forget: log prediction for drift monitoring
+        from src.prediction.prediction_logger import _logger_executor, log_prediction_sync
+
+        _logger_executor.submit(
+            log_prediction_sync,
+            ticker,
+            self.model_version,
+            CLASS_NAMES[pred_class],
+            confidence,
+            probabilities,
+            raw_feature_values,  # Full (T, 17) pre-window matrix
+            feature_window,  # (30, 17) actual model input
+        )
 
         return {
             "ticker": ticker.upper(),
