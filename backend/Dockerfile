@@ -26,7 +26,7 @@ ENV UV_COMPILE_BYTECODE=1
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 WORKDIR /app
-COPY pyproject.toml uv.lock .
+COPY pyproject.toml uv.lock ./
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --no-dev --index-strategy unsafe-best-match
@@ -64,9 +64,12 @@ COPY ml/ ml/
 COPY alembic/ alembic/
 COPY alembic.ini pyproject.toml uv.lock ./
 
+# Ensure model artifacts directory exists (for shared volume permissions)
+RUN mkdir -p /model_artifacts/champion
+
 # Non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser -u 1000 appuser \
-    && chown -R appuser:appuser /app
+    && chown -R appuser:appuser /app /model_artifacts
 
 USER appuser
 
