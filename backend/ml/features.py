@@ -94,9 +94,10 @@ def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
 
     The Rust backend produces 19 features total (13 V1 + 6 V2 extras).
     V2 extras (bb_pctb, bb_width, atr_14, obv, williams_r_14, roc_10) are
-    dropped after compute — tested and hurt performance (35%→19% directional).
+    dropped after compute — tested multiple times and each one hurts
+    performance (turns the model into a single-class predictor).
     """
-    v1_features = [
+    feature_cols = [
         "log_ret_1d",
         "log_ret_5d",
         "log_ret_21d",
@@ -116,7 +117,7 @@ def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
     low = _safe_array(df, "low")
     volume = _safe_array(df, "volume")
     result = _dict_to_df(_rust.compute_all_features(close, high, low, volume), df.index)
-    result = result[v1_features]
+    result = result[feature_cols]
 
     if "ticker" in df.columns:
         result["ticker"] = df["ticker"]

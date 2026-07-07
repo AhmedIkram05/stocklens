@@ -477,7 +477,6 @@ async def _run_lstm_pipeline(
             registered_model_name="GlobalLSTM",
         )[1]
 
-        mlflow_mgr.set_champion_alias(version=lstm_version)
         mlflow_mgr.set_model_description("GlobalLSTM", model_description)
         # ponytail: tags fixed — previously read "conv1d_bilstm_attention_
         # regimegate_v2" (V2 arch that was abandoned). Now accurate: V1 LSTM
@@ -504,18 +503,23 @@ async def _run_lstm_pipeline(
                 "data_source": "yahoo_finance_ohlcv",
             }
         )
-        mlflow_mgr.tag_best_run(metric="test_directional_accuracy")
 
-        # Save champion
-        champion_path = mlflow_mgr.save_champion_to_disk(
-            model,
-            vocab=vocab,
-            feature_means=global_means,
-            feature_stds=global_stds,
-        )
-
-        # Record in DB
-        await _record_in_db(run_id, lstm_version, test_metrics)
+        # Only promote to champion if this run is the best so far
+        is_best_run = mlflow_mgr.tag_best_run(metric="test_directional_accuracy")
+        if is_best_run:
+            mlflow_mgr.set_champion_alias(version=lstm_version)
+            champion_path = mlflow_mgr.save_champion_to_disk(
+                model,
+                vocab=vocab,
+                feature_means=global_means,
+                feature_stds=global_stds,
+            )
+            await _record_in_db(run_id, lstm_version, test_metrics)
+        else:
+            champion_path = None
+            logger.info(
+                "Champion unchanged — run did not beat best on %s", "test_directional_accuracy"
+            )
 
     finally:
         mlflow_mgr.end_run()

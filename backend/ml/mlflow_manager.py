@@ -293,7 +293,7 @@ class MLflowManager:
                 client.set_experiment_tag(experiment.experiment_id, key, value)
         logger.info("Experiment tags set", extra={"tags": tags})
 
-    def tag_best_run(self, metric: str = "test_accuracy") -> None:
+    def tag_best_run(self, metric: str = "test_accuracy") -> bool:
         """Find the best run in this experiment by *metric* and tag it.
 
         Sets ``best_run=true``, ``best_metric=<metric>``, and
@@ -301,12 +301,15 @@ class MLflowManager:
 
         Args:
             metric: Metric name to rank by (descending).
+
+        Returns:
+            True if the current run IS the best run, False otherwise.
         """
         client = mlflow.tracking.MlflowClient()
         experiment = client.get_experiment_by_name(self.experiment_name)
         if not experiment:
             logger.warning("Experiment %s not found — skipping best-run tag", self.experiment_name)
-            return
+            return False
 
         runs = mlflow.search_runs(
             experiment_ids=[experiment.experiment_id],
@@ -315,14 +318,14 @@ class MLflowManager:
         )
         if runs.empty:
             logger.warning("No runs found — skipping best-run tag")
-            return
+            return False
 
         best_run = runs.iloc[0]
         best_run_id = best_run.get("run_id")
 
         if not best_run_id or not isinstance(best_run_id, str):
             logger.warning("Invalid run_id in search results — skipping best-run tag")
-            return
+            return False
 
         best_value = best_run.get(f"metrics.{metric}", "unknown")
 
@@ -335,6 +338,7 @@ class MLflowManager:
             current_id = self.active_run.info.run_id
             if current_id == best_run_id:
                 client.set_tag(current_id, "run_quality", "best")
+                return True
             else:
                 client.set_tag(current_id, "run_quality", "challenger")
                 client.set_tag(
@@ -342,6 +346,9 @@ class MLflowManager:
                     "delta_from_best",
                     str(best_value),
                 )
+                return False
+
+        return False
 
         logger.info(
             "Best-run tag set",
