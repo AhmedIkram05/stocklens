@@ -59,22 +59,41 @@ def preprocess_image(image_bytes: bytes) -> np.ndarray:
     # ── Step 2: Grayscale ───────────────────────────────────────────────────
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    # ── Step 3: Denoise (before thresholding to reduce noise amplification) ─
-    denoised = cv2.fastNlMeansDenoising(gray, h=10)
+    # ── Step 3: Scale to a Tesseract-friendly size ─────────────────────────
+    # Phone photos can be 12 MP+ (text too small) or tiny crops (too little
+    # detail).  Normalise the long edge so characters land near ~300 DPI.
+    h, w = gray.shape[:2]
+    long_side = max(h, w)
+    if long_side < 900:
+        scale = 900.0 / long_side
+        gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    elif long_side > 3000:
+        scale = 3000.0 / long_side
+        gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
 
-    # ── Step 4: Adaptive thresholding ───────────────────────────────────────
-    # Gaussian method is more robust than simple global threshold for
-    # receipts, which often have shadows, folds, and variable lighting.
-    thresholded = cv2.adaptiveThreshold(
-        denoised,
-        maxValue=255,
-        adaptiveMethod=cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        thresholdType=cv2.THRESH_BINARY,
-        blockSize=31,
-        C=2,
-    )
+    # ── Step 4: Auto-invert so text is dark on a light background ──────────
+    # Amateur photos often have a dark background; Tesseract assumes dark
+    # text on light.  Flip when the mean luminance is low.
+    if gray.mean() < 127:
+        gray = cv2.bitwise_not(gray)
 
-    # ── Step 5: Deskew ──────────────────────────────────────────────────────
+    # ── Step 5: Light blur + Otsu binarisation ─────────────────────────────
+    # Gaussian blur is cheaper than non-local means and preserves strokes
+    # while killing photographic noise.  Otsu picks a global threshold that
+    # is robust to the uneven lighting common on crumpled receipts.
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+    _, thresholded = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+
+    # Reconnect strokes broken up by noisy scans.
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+    thresholded = cv2.morphologyEx(thresholded, cv2.MORPH_CLOSE, kernel)
+
+    # Binarisation occasionally yields an all-white (no foreground) image
+    # when the polarity is still wrong — flip once and retry.
+    if np.count_nonzero(thresholded == 0) < 0.01 * thresholded.size:
+        thresholded = cv2.bitwise_not(thresholded)
+
+    # ── Step 6: Deskew ──────────────────────────────────────────────────────
     deskewed = _deskew(thresholded)
 
     return deskewed
@@ -83,9 +102,9 @@ def preprocess_image(image_bytes: bytes) -> np.ndarray:
 def _deskew(image: np.ndarray) -> np.ndarray:
     """Rotate the image to correct a tilted scan.
 
-    Finds the minimum-area rotated rectangle of all foreground pixels
-    and computes the skew angle from it.  Images with an angle below
-    0.5° are returned unchanged.
+    Finds the minimum-area rotated rectangle of all *text* pixels (dark on
+    a light background) and computes the skew angle from it.  Images with an
+    angle below 0.5° are returned unchanged.
 
     Parameters
     ----------
@@ -97,7 +116,8 @@ def _deskew(image: np.ndarray) -> np.ndarray:
     np.ndarray
         Deskewed image (same dimensions as input).
     """
-    coords = np.column_stack(np.where(image > 0))
+    # Text pixels are dark (value < 128) after binarisation.
+    coords = np.column_stack(np.where(image < 128))
     if len(coords) < 5:
         # Not enough foreground pixels to calculate a reliable angle.
         return image
@@ -178,6 +198,22 @@ TOTAL_PATTERNS: list[re.Pattern] = [
     re.compile(r"[£$€]\s*([\d,]+\.\d{2})\s*$", re.MULTILINE),
 ]
 
+# Tolerant keyword matcher for the line that holds the total.  Allows OCR
+# corruption of "total" (t0tal, t o t a l), and covers multilingual labels
+# (Lidl/German receipts: SUMME, GESAMT, BETRA G, ZWISCHENSUMME).
+_TOTAL_KEYWORD: re.Pattern = re.compile(
+    r"(?:grand\s+)?t[\s]*[o0][\s]*t[\s]*[a0][\s]*l"
+    r"|summe|gesamt|betrag|zwischensumme"
+    r"|amount\s+(?:due|paid)|balance\s+due|to\s+pay"
+    r"|sub[\s]*total",
+    re.IGNORECASE,
+)
+
+# A monetary amount: digits with an optional decimal comma/point.  The dot
+# or comma is required so bare integers (e.g. a clock time "17:34") are
+# never mistaken for money.
+_MONEY_TOKEN: re.Pattern = re.compile(r"\d[\d\s]*[.,]\s*\d{1,2}")
+
 DATE_PATTERNS: list[re.Pattern] = [
     re.compile(r"\b(\d{2})/(\d{2})/(\d{4})\b"),
     re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b"),
@@ -225,15 +261,58 @@ MONTH_NAMES: dict[str, int] = {
 }
 
 
+def _clean_number(raw: str) -> Decimal | None:
+    """Parse a possibly-noisy numeric token into a ``Decimal``.
+
+    Handles the artefacts Tesseract produces on receipts:
+    - spaces inside numbers (``2 . 8 8`` → ``2.88``)
+    - decimal commas (``2,88`` → ``2.88``; European ``1.234,56``)
+    - thousands separators
+    """
+    s = raw.strip().replace(" ", "")
+    if not s:
+        return None
+
+    has_dot, has_comma = "." in s, "," in s
+    if has_dot and has_comma:
+        # European style when the comma is the rightmost separator.
+        s = s.replace(".", "") if s.rfind(",") > s.rfind(".") else s.replace(",", "")
+    elif has_comma:
+        parts = s.split(",")
+        # Decimal comma only when not a 3-digit thousands group.
+        s = s.replace(",", ".") if len(parts) == 2 and len(parts[1]) != 3 else s.replace(",", "")
+
+    if not re.search(r"\d", s):
+        return None
+    try:
+        return Decimal(s)
+    except ValueError, decimal.InvalidOperation:
+        return None
+
+
 def parse_total(text: str) -> Decimal | None:
+    # 1. Strict keyword patterns (original behaviour — fast path).
     for pattern in TOTAL_PATTERNS:
         matches = pattern.findall(text)
-        if matches:
-            amount_str = matches[-1].replace(",", "")
-            try:
-                return Decimal(amount_str)
-            except ValueError, decimal.InvalidOperation:
-                continue
+        for raw in reversed(matches):
+            amount = _clean_number(raw)
+            if amount is not None:
+                return amount
+
+    # 2. Fuzzy keyword scan — tolerate OCR corruption & multilingual labels.
+    #    On the matching line, take the last monetary value.
+    for line in text.splitlines():
+        if not _TOTAL_KEYWORD.search(line):
+            continue
+        tokens = _MONEY_TOKEN.findall(line)
+        for raw in reversed(tokens):
+            amount = _clean_number(raw)
+            if amount is not None:
+                return amount
+
+    # No recognizable total line → return None so the cascade can escalate to
+    # the LLM or the caller can prompt for manual entry, rather than guessing
+    # a wrong amount from a line item.
     return None
 
 
