@@ -105,7 +105,11 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
       if (!skipOverlay) setProcessing(true);
       try {
         const result = await receiptService.scan(photoUri);
-        const amount = result.extraction?.total ?? null;
+        const extraction = result.extraction;
+        const amount = extraction?.total ?? null;
+        const merchant = extraction?.merchant_name ?? null;
+        const extractedDate = extraction?.date ?? null;
+        const items = extraction?.items ?? [];
         const rawText = result.raw_text ?? null;
 
         setOcrRaw(rawText);
@@ -125,7 +129,9 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
             navigation.navigate('ReceiptDetails' as any, {
               receiptId: result.id,
               totalAmount: amount ?? 0,
-              date: result.extraction?.date ?? new Date().toISOString(),
+              merchantName: merchant ?? undefined,
+              date: extractedDate ?? new Date().toISOString(),
+              lineItems: items,
               image: photoUri ?? undefined,
               source: result.source,
               confidence: result.confidence,

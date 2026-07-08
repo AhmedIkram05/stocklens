@@ -16,7 +16,11 @@ type Handlers = {
 };
 
 /** Show a confirmation dialog for the detected amount. */
-export function showConfirmationPrompt(displayAmount: string, handlers: Handlers) {
+export function showConfirmationPrompt(
+  displayAmount: string,
+  handlers: Handlers,
+  merchant?: string | null,
+) {
   const buttons: any[] = [
     {
       text: 'Confirm',
@@ -44,9 +48,10 @@ export function showConfirmationPrompt(displayAmount: string, handlers: Handlers
     },
   ];
 
+  const merchantLine = merchant && merchant.trim() ? `\nMerchant: ${merchant}` : '';
   const message =
     typeof displayAmount === 'string' && displayAmount.trim()
-      ? `We detected ${displayAmount} from this receipt.`
+      ? `We detected ${displayAmount} from this receipt.${merchantLine}`
       : 'No amount detected. Enter the total manually or rescan the receipt.';
 
   Alert.alert('Confirm scanned total', message, buttons, { cancelable: true });
