@@ -173,10 +173,11 @@ def validate(
 def train(
     model: GlobalLSTM,
     train_loader: DataLoader,
-    val_loader: DataLoader,
+    val_loader: DataLoader | None = None,
     n_epochs: int = ML_CONFIG.EPOCHS,
     lr: float = ML_CONFIG.LEARNING_RATE,
     weight_decay: float = ML_CONFIG.WEIGHT_DECAY,
+    focal_gamma: float = ML_CONFIG.FOCAL_GAMMA,
     patience: int = ML_CONFIG.PATIENCE,
     min_delta: float = ML_CONFIG.MIN_DELTA,
     device: torch.device | None = None,
@@ -192,10 +193,11 @@ def train(
     Args:
         model: GlobalLSTM instance.
         train_loader: Training DataLoader.
-        val_loader: Validation DataLoader.
+        val_loader: Validation DataLoader (None to skip validation + early stopping).
         n_epochs: Maximum number of epochs.
         lr: Learning rate.
         weight_decay: AdamW weight decay.
+        focal_gamma: Focal loss gamma — down-weights well-classified FLAT samples.
         patience: Early stopping patience.
         min_delta: Minimum directional accuracy improvement.
         device: Target device. Auto-detected if None.
@@ -221,7 +223,7 @@ def train(
     # Focal Loss with class weights — focuses on hard directional samples
     # instead of letting well-classified FLAT samples dominate the gradient.
     # Gamma=2.0 down-weights easy examples; alpha handles class imbalance.
-    criterion = FocalLoss(alpha=class_weights, gamma=ML_CONFIG.FOCAL_GAMMA).to(device)
+    criterion = FocalLoss(alpha=class_weights, gamma=focal_gamma).to(device)
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=lr,
@@ -247,47 +249,57 @@ def train(
 
     for epoch in range(1, n_epochs + 1):
         train_loss = train_epoch(model, train_loader, criterion, optimizer, device)
-        val_loss, val_acc, val_dir_acc = validate(model, val_loader, criterion, device)
 
         history["train_losses"].append(train_loss)
-        history["val_losses"].append(val_loss)
-        history["val_accuracies"].append(val_acc)
-        history["val_directional_accuracies"].append(val_dir_acc)
         history["learning_rates"].append(scheduler.get_last_lr()[0])
 
-        logger.info(
-            "Epoch %d/%d - train_loss: %.4f, val_loss: %.4f, val_acc: %.4f, "
-            "val_dir_acc: %.4f, lr: %.6f",
-            epoch,
-            n_epochs,
-            train_loss,
-            val_loss,
-            val_acc,
-            val_dir_acc,
-            scheduler.get_last_lr()[0],
-        )
+        if val_loader is not None:
+            val_loss, val_acc, val_dir_acc = validate(model, val_loader, criterion, device)
+            history["val_losses"].append(val_loss)
+            history["val_accuracies"].append(val_acc)
+            history["val_directional_accuracies"].append(val_dir_acc)
+
+            logger.info(
+                "Epoch %d/%d - train_loss: %.4f, val_loss: %.4f, val_acc: %.4f, "
+                "val_dir_acc: %.4f, lr: %.6f",
+                epoch,
+                n_epochs,
+                train_loss,
+                val_loss,
+                val_acc,
+                val_dir_acc,
+                scheduler.get_last_lr()[0],
+            )
+
+            # Early stopping on directional accuracy
+            if val_dir_acc > best_dir_acc + min_delta:
+                best_dir_acc = val_dir_acc
+                best_epoch = epoch
+                patience_counter = 0
+                best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+                logger.info("New best val_dir_acc: %.4f at epoch %d", val_dir_acc, epoch)
+            else:
+                patience_counter += 1
+                if patience_counter >= patience:
+                    logger.info(
+                        "Early stopping at epoch %d (best epoch %d, val_dir_acc %.4f)",
+                        epoch,
+                        best_epoch,
+                        best_dir_acc,
+                    )
+                    break
+        else:
+            logger.info(
+                "Epoch %d/%d - train_loss: %.4f, lr: %.6f",
+                epoch,
+                n_epochs,
+                train_loss,
+                scheduler.get_last_lr()[0],
+            )
 
         scheduler.step()
 
-        # Early stopping on directional accuracy
-        if val_dir_acc > best_dir_acc + min_delta:
-            best_dir_acc = val_dir_acc
-            best_epoch = epoch
-            patience_counter = 0
-            best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
-            logger.info("New best val_dir_acc: %.4f at epoch %d", val_dir_acc, epoch)
-        else:
-            patience_counter += 1
-            if patience_counter >= patience:
-                logger.info(
-                    "Early stopping at epoch %d (best epoch %d, val_dir_acc %.4f)",
-                    epoch,
-                    best_epoch,
-                    best_dir_acc,
-                )
-                break
-
-    # Restore best model
+    # Restore best model when early stopping ran
     if best_state is not None:
         model.load_state_dict(best_state)
     model.to(device)

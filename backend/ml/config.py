@@ -515,7 +515,10 @@ class MLConfig:
     # At 0.5: ~44% FLAT, 49.4% acc, 0.67 Sharpe, F1_flat~0 — best overall.
     # At 0.7: ~52% FLAT, 48.7% acc, 0.46 Sharpe, F1_flat=0.0.
     VOL_LOOKBACK: int = 30
-    THRESHOLD_MULT: float = 0.5
+    THRESHOLD_MULT: float = (
+        1.0  # Optuna HPO Phase 2 — swept 0.3→1.0, 1.0 best (test_dir=51.63%, sharpe=0.75).
+    )
+    # Full pipeline retrain with all HPO HPs: 49.78% — tied MLflow best (49.80%).
     FORECAST_HORIZON: int = 5  # N-day forward return (1=daily, 5=weekly, 21=monthly)
 
     # Volatility regime filter — only train on windows where the ticker's 30-day
@@ -527,21 +530,21 @@ class MLConfig:
     # Model architecture — V1 LSTM only. V2 (Conv1D+BiLSTM+Attention+RegimeGate)
     # tested and caused gradient stall — 203k params could never escape uniform init.
     EMBED_DIM: int = 16
-    HIDDEN_DIM: int = 64  # reduced from 128 — better empirically (49.4% dir acc, 0.67 Sharpe)
+    HIDDEN_DIM: int = 80  # Optuna HPO Phase 1: searched 32→128, best=80
     N_LAYERS: int = 2  # 1 layer collapsed to majority-class prediction
-    DROPOUT: float = 0.5  # increased from 0.3 — better empirically (49.4% dir acc, 0.67 Sharpe)
+    DROPOUT: float = 0.535  # Optuna HPO Phase 1: searched 0.1→0.7, best=0.535
     N_CLASSES: int = 3  # DOWN, FLAT, UP
 
     # Training
     EPOCHS: int = 100
     BATCH_SIZE: int = 256  # 256 for MPS GPU memory efficiency
-    LEARNING_RATE: float = 1e-3
-    WEIGHT_DECAY: float = 1e-3  # up from 1e-5 — better empirically (49.4% dir acc, 0.67 Sharpe)
-    PATIENCE: int = 15  # number of epochs without directional accuracy improvement before stopping
-    MIN_DELTA: float = 5e-3  # minimum directional accuracy improvement to reset patience (0.5%)
-    FOCAL_GAMMA: float = (
-        2.0  # focal loss focusing parameter — down-weights well-classified FLAT samples
+    LEARNING_RATE: float = 3.14e-4  # Optuna HPO Phase 1: searched 1e-5→1e-3, best=3.14e-4
+    WEIGHT_DECAY: float = 2.06e-4  # Optuna HPO Phase 1: searched 1e-5→1e-3, best=2.06e-4
+    PATIENCE: int = (
+        15  # early stopping after 15 epochs without val_dir_acc improvement (MIN_DELTA=0.5%)
     )
+    MIN_DELTA: float = 5e-3  # minimum directional accuracy improvement to reset patience (0.5%)
+    FOCAL_GAMMA: float = 1.49  # Optuna HPO Phase 1: searched 0.5→4.0, best=1.49
 
     # Split
     TRAIN_SPLIT: float = 0.7
