@@ -93,6 +93,7 @@ services:
       mlflow:
         condition: service_healthy
     volumes:
+      - ./backend/ml:/app/ml
       - model_artifacts:/model_artifacts
       - mlflow_data:/mlflow
     # No ports - runs on-demand via: docker compose run ml python -m ml.pipeline
