@@ -8,6 +8,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
+  TextInput,
   StyleSheet,
   Alert,
   ScrollView,
@@ -29,6 +30,7 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import DangerButton from '../components/DangerButton';
 import ResponsiveContainer from '../components/ResponsiveContainer';
 import { receiptService } from '../services/receipts';
+import { categoryService, type Category } from '../services/categories';
 import { portfolioService, Portfolio } from '../services/portfolios';
 import { useTheme } from '../contexts/ThemeContext';
 import { formatCurrencyRounded } from '../utils/formatters';
@@ -69,14 +71,95 @@ export default function ReceiptDetailsScreen() {
     image,
     confidence,
     processingTimeMs,
+    merchantName: initialMerchant,
+    lineItems: initialItems,
   } = route.params;
   const source = route.params.source as SourceBadgeKey | undefined;
 
   const [selectedYears, setSelectedYears] = useState<YEAR_OPTIONS>(5);
   const [selectedFutureYears, setSelectedFutureYears] = useState<YEAR_OPTIONS>(5);
-  const [amount] = useState<number>(initialAmount ?? 0);
 
-  const totalAmount = amount;
+  // Load the authoritative receipt (merchant + line items) from the backend.
+  // The scan endpoint already persisted these; route params are only a fast path.
+  const [receipt, setReceipt] = useState<any>(null);
+  useEffect(() => {
+    if (!receiptId) return;
+    let mounted = true;
+    receiptService
+      .getById(receiptId)
+      .then((r) => {
+        if (mounted && r) setReceipt(r);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, [receiptId]);
+
+  const totalAmount = receipt?.total_amount ?? initialAmount ?? 0;
+  const merchantName: string | null = receipt?.merchant_name ?? initialMerchant ?? null;
+  const lineItems: any[] = receipt?.line_items ?? initialItems ?? [];
+
+  // Category list (for display + user correction of the OCR-assigned category).
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
+  const [categorySaving, setCategorySaving] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    categoryService
+      .listCategories()
+      .then((cs) => {
+        if (mounted) setCategories(cs);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Merchant edit modal state
+  const [merchantModalVisible, setMerchantModalVisible] = useState(false);
+  const [merchantEditValue, setMerchantEditValue] = useState('');
+  const [merchantSaving, setMerchantSaving] = useState(false);
+
+  const categoryName: string | null = categories.length
+    ? (categories.find((c) => c.id === (receipt?.category_id ?? null))?.name ?? null)
+    : null;
+
+  async function handleSelectCategory(catId: string) {
+    if (!receiptId) return;
+    setCategorySaving(true);
+    try {
+      await receiptService.update(receiptId, { category_id: catId });
+      setReceipt((prev: any) => (prev ? { ...prev, category_id: catId } : prev));
+      try {
+        emit('receipts-changed', { id: receiptId, action: 'updated' });
+      } catch (e) {}
+      setCategoryModalVisible(false);
+    } catch {
+      Alert.alert('Error', 'Could not update category');
+    } finally {
+      setCategorySaving(false);
+    }
+  }
+  async function handleUpdateMerchant() {
+    if (!receiptId || !merchantEditValue.trim()) return;
+    setMerchantSaving(true);
+    try {
+      await receiptService.update(receiptId, { merchant_name: merchantEditValue.trim() });
+      setReceipt((prev: any) =>
+        prev ? { ...prev, merchant_name: merchantEditValue.trim() } : prev,
+      );
+      try {
+        emit('receipts-changed', { id: receiptId, action: 'updated' });
+      } catch (e) {}
+      setMerchantModalVisible(false);
+    } catch {
+      Alert.alert('Error', 'Could not update merchant');
+    } finally {
+      setMerchantSaving(false);
+    }
+  }
   const { contentHorizontalPadding, sectionVerticalSpacing, isSmallPhone, isTablet, width } =
     useBreakpoint();
   const { theme } = useTheme();
@@ -264,7 +347,7 @@ export default function ReceiptDetailsScreen() {
 
   const formattedAmount = formatCurrencyGBP(totalAmount || 0);
 
-  const formattedEditableAmount = formatCurrencyGBP(amount || 0);
+  const formattedEditableAmount = formatCurrencyGBP(totalAmount || 0);
 
   const formattedYearsLabel = `${selectedYears} ${selectedYears === 1 ? 'year' : 'years'}`;
   const formattedFutureYearsLabel = `${selectedFutureYears} ${
@@ -445,6 +528,57 @@ export default function ReceiptDetailsScreen() {
                 confidence={confidence}
               />
             </View>
+
+            {merchantName && (
+              <TouchableOpacity
+                style={[styles.metaPanel, { backgroundColor: theme.surface }]}
+                onPress={() => {
+                  setMerchantEditValue(merchantName);
+                  setMerchantModalVisible(true);
+                }}
+                activeOpacity={0.7}
+                accessibilityLabel="Edit merchant name"
+              >
+                <Text style={[styles.metaLabel, { color: theme.textSecondary }]}>Merchant</Text>
+                <View style={styles.categoryValueTouch}>
+                  <Text style={[styles.metaValue, { color: theme.text }]}>{merchantName}</Text>
+                  <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {lineItems.length > 0 && (
+              <View style={[styles.itemsPanel, { backgroundColor: theme.surface }]}>
+                <Text style={[styles.cascadeTitle, { color: theme.text }]}>
+                  Items ({lineItems.length})
+                </Text>
+                {lineItems.map((it, i) => (
+                  <View key={i} style={styles.itemRow}>
+                    <Text style={[styles.itemName, { color: theme.text }]}>
+                      {it.name ?? it.description ?? 'Item'}
+                    </Text>
+                    <Text style={[styles.itemPrice, { color: theme.text }]}>
+                      {formatCurrencyGBP(it.price ?? it.amount ?? 0)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.metaPanel, { backgroundColor: theme.surface }]}
+              onPress={() => setCategoryModalVisible(true)}
+              activeOpacity={0.7}
+              accessibilityLabel="Edit category"
+            >
+              <Text style={[styles.metaLabel, { color: theme.textSecondary }]}>Category</Text>
+              <View style={styles.categoryValueTouch}>
+                <Text style={[styles.metaValue, { color: theme.text }]}>
+                  {categoryName ?? 'Uncategorised'}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+              </View>
+            </TouchableOpacity>
 
             {source && (
               <View style={[styles.cascadePanel, { backgroundColor: theme.surface }]}>
@@ -728,6 +862,104 @@ export default function ReceiptDetailsScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={categoryModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCategoryModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle2, { color: theme.text }]}>Select category</Text>
+
+            {categorySaving ? (
+              <View style={styles.modalLoading}>
+                <ActivityIndicator size="large" color={theme.primary} />
+              </View>
+            ) : (
+              <FlatList
+                data={categories}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[styles.modalPortfolioItem, { backgroundColor: theme.background }]}
+                    onPress={() => handleSelectCategory(item.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.modalPortfolioName, { color: theme.text }]}>
+                      {item.name}
+                    </Text>
+                    {item.id === (receipt?.category_id ?? null) && (
+                      <Ionicons name="checkmark" size={18} color={theme.primary} />
+                    )}
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+
+            <TouchableOpacity
+              style={[styles.modalCloseBtn, { backgroundColor: theme.background }]}
+              onPress={() => setCategoryModalVisible(false)}
+            >
+              <Text style={[styles.modalCloseText, { color: theme.secondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={merchantModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMerchantModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle2, { color: theme.text }]}>Edit merchant name</Text>
+
+            {merchantSaving ? (
+              <View style={styles.modalLoading}>
+                <ActivityIndicator size="large" color={theme.primary} />
+              </View>
+            ) : (
+              <>
+                <TextInput
+                  style={[
+                    styles.merchantInput,
+                    {
+                      backgroundColor: theme.background,
+                      color: theme.text,
+                      borderColor: theme.textSecondary + '40',
+                    },
+                  ]}
+                  value={merchantEditValue}
+                  onChangeText={setMerchantEditValue}
+                  placeholder="Enter merchant name"
+                  placeholderTextColor={theme.textSecondary}
+                  autoFocus
+                />
+                <TouchableOpacity
+                  style={[styles.modalSaveBtn, { backgroundColor: theme.primary }]}
+                  onPress={handleUpdateMerchant}
+                  activeOpacity={0.8}
+                >
+                  <Text style={{ color: '#fff', ...typography.button, textAlign: 'center' }}>
+                    Save
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            <TouchableOpacity
+              style={[styles.modalCloseBtn, { backgroundColor: theme.background }]}
+              onPress={() => setMerchantModalVisible(false)}
+            >
+              <Text style={[styles.modalCloseText, { color: theme.secondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScreenContainer>
   );
 }
@@ -764,6 +996,14 @@ type Styles = {
   warningBoxCompact: ViewStyle;
   cascadePanel: ViewStyle;
   cascadeTitle: TextStyle;
+  metaPanel: ViewStyle;
+  metaLabel: TextStyle;
+  metaValue: TextStyle;
+  categoryValueTouch: ViewStyle;
+  itemsPanel: ViewStyle;
+  itemRow: ViewStyle;
+  itemName: TextStyle;
+  itemPrice: TextStyle;
   cascadeRow: ViewStyle;
   cascadeLabel: TextStyle;
   cascadeValue: TextStyle;
@@ -784,6 +1024,8 @@ type Styles = {
   modalLoading: ViewStyle;
   modalCloseBtn: ViewStyle;
   modalCloseText: TextStyle;
+  merchantInput: TextStyle;
+  modalSaveBtn: ViewStyle;
 };
 
 // Stylesheet
@@ -898,6 +1140,46 @@ const styles = StyleSheet.create<Styles>({
     ...typography.sectionTitle,
     marginBottom: spacing.md,
   },
+  metaPanel: {
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  metaLabel: {
+    ...typography.body,
+  },
+  metaValue: {
+    ...typography.bodyStrong,
+  },
+  categoryValueTouch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  itemsPanel: {
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(0,0,0,0.08)',
+  },
+  itemName: {
+    ...typography.body,
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  itemPrice: {
+    ...typography.bodyStrong,
+  },
   cascadeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1006,5 +1288,17 @@ const styles = StyleSheet.create<Styles>({
   },
   modalCloseText: {
     ...typography.button,
+  },
+  merchantInput: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    fontSize: 16,
+    marginBottom: spacing.md,
+  },
+  modalSaveBtn: {
+    borderRadius: radii.md,
+    paddingVertical: spacing.md + 2,
+    marginBottom: spacing.sm,
   },
 });
