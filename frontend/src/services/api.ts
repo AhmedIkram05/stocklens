@@ -120,7 +120,14 @@ async function parseError(response: Response): Promise<string> {
     if (typeof body.message === 'string') return body.message;
     return JSON.stringify(body);
   } catch {
-    return response.statusText || 'Unknown error';
+    // Non-JSON error body (e.g. plain-text 500). Surface the raw text so the
+    // user never sees a generic "Unknown error".
+    try {
+      const text = await response.text();
+      return text || response.statusText || 'Unknown error';
+    } catch {
+      return response.statusText || 'Unknown error';
+    }
   }
 }
 
@@ -236,17 +243,47 @@ export const apiService = {
   /**
    * Upload a file via multipart/form-data.
    * Content-Type is omitted so fetch sets the correct boundary automatically.
+   * Bypasses api() to avoid JSON.stringify on FormData.
    */
-  upload: <T = unknown>(endpoint: string, formData: FormData, options?: ApiOptions) => {
-    const headers = { ...options?.headers };
+  upload: async <T = unknown>(
+    endpoint: string,
+    formData: FormData,
+    options?: ApiOptions,
+  ): Promise<T> => {
+    const headers: Record<string, string> = { ...options?.headers };
     // Let fetch set Content-Type with the correct boundary
     delete headers['Content-Type'];
-    return api<T>(endpoint, {
-      ...options,
+
+    // Inject auth token (same logic as api())
+    if (!options?.skipAuth) {
+      let accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
+      if (accessToken && isTokenExpired(accessToken)) {
+        if (!refreshPromise) refreshPromise = refreshTokens();
+        const refreshed = await refreshPromise;
+        refreshPromise = null;
+        if (refreshed) {
+          accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
+        } else {
+          throw new ApiAuthError('Session expired');
+        }
+      }
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+    }
+
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'POST',
       headers,
-      body: formData as unknown as Record<string, unknown>,
+      body: formData,
     });
+
+    if (!response.ok) {
+      const msg = await parseError(response);
+      throw new ApiError(response.status, msg);
+    }
+
+    return response.status === 204 ? (undefined as unknown as T) : response.json();
   },
 
   // ── Token management ──
