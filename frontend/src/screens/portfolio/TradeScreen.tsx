@@ -40,6 +40,7 @@ export default function TradeScreen() {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [freeCash, setFreeCash] = useState<number | null>(null);
 
   const shares = parseFloat(sharesText) || 0;
   const total = quote && shares > 0 ? shares * quote.price : 0;
@@ -52,6 +53,13 @@ export default function TradeScreen() {
         .catch(() => {});
     }
   }, [localMode, portfolioId]);
+
+  useEffect(() => {
+    portfolioService
+      .getPerformance(portfolioId)
+      .then((p) => setFreeCash(p.free_cash_balance))
+      .catch(() => setFreeCash(null));
+  }, [portfolioId]);
 
   const handleFetchQuote = useCallback(async () => {
     const trimmed = ticker.trim().toUpperCase();
@@ -73,6 +81,9 @@ export default function TradeScreen() {
   const getValidationError = (): string | null => {
     if (!ticker.trim()) return null;
     if (shares <= 0) return 'Shares must be greater than 0';
+    if (localMode === 'buy' && freeCash !== null && total > freeCash) {
+      return `Insufficient funds: $${total.toFixed(2)} exceeds available $${freeCash.toFixed(2)}`;
+    }
     if (localMode === 'sell') {
       const holding = holdings.find((h) => h.ticker.toUpperCase() === ticker.trim().toUpperCase());
       if (!holding) return `You don't own any shares of ${ticker.trim().toUpperCase()}`;

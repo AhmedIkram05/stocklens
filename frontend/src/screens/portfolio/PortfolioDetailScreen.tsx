@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 
@@ -88,9 +88,11 @@ export default function PortfolioDetailScreen() {
     [portfolioId],
   );
 
-  useEffect(() => {
-    fetchPerformance();
-  }, [fetchPerformance]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchPerformance();
+    }, [fetchPerformance]),
+  );
 
   const handleRefresh = useCallback(() => {
     fetchPerformance(true);
