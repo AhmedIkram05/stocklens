@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { receiptService } from '../services/receipts';
 import { subscribe } from '../services/eventBus';
 import { formatRelativeDate } from '../utils/formatters';
@@ -82,6 +83,15 @@ export default function useReceipts() {
       clearInterval(id);
     };
   }, [fetch]);
+
+  // Refetch immediately whenever the screen gains focus (e.g. returning from
+  // the scanner/details) so a freshly saved receipt appears without waiting
+  // for the 30s poll.
+  useFocusEffect(
+    useCallback(() => {
+      fetch({ silent: true }).catch(() => {});
+    }, [fetch]),
+  );
 
   return { receipts, loading, error } as const;
 }

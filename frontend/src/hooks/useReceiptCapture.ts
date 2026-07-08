@@ -120,6 +120,7 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
         const displayAmount = amount != null ? formatCurrencyGBP(amount) : 'No amount detected';
         showConfirmationPrompt(displayAmount, {
           onConfirm: async () => {
+            emit('receipts-changed', { id: result.id });
             resetWorkflowState();
             navigation.navigate('ReceiptDetails' as any, {
               receiptId: result.id,
@@ -140,9 +141,14 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
         });
       } catch (err: any) {
         if (!skipOverlay) {
+          const msg = err?.message?.toLowerCase() ?? '';
+          // Backend 422: "Could not extract the total amount…" → manual entry
+          // Backend 422: "Could not extract text…" → prompt retake
+          // Legacy strings kept for backward compat
           if (
-            err?.message?.includes('No total amount') ||
-            err?.message?.includes('no receipt text')
+            msg.includes('total amount') ||
+            msg.includes('no total amount') ||
+            msg.includes('no amount')
           ) {
             Alert.alert(
               'Could not read receipt',
@@ -150,6 +156,15 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
             );
             if (onSuggestion) onSuggestion(null, null);
             handleManualEntry(null);
+          } else if (
+            msg.includes('extract text') ||
+            msg.includes('no receipt text') ||
+            msg.includes('better lighting')
+          ) {
+            Alert.alert(
+              'Could not read receipt',
+              'No text was detected. Please retake the photo with better lighting.',
+            );
           } else {
             Alert.alert(
               'Scan Error',
