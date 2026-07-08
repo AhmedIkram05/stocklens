@@ -6,9 +6,10 @@ Flow
 1. Run ``process_receipt()`` (existing regex parsing) via ``asyncio.to_thread()``.
 2. Score each extracted field with a heuristic confidence.
 3. Compute ``overall_confidence`` as the average of merchant, total, and date.
-4. If ``overall_confidence >= threshold`` → return regex result immediately
-   (source = ``"regex"``).
-5. If below threshold → escalate to ``extract_with_llm()``.
+4. If the regex result is trustworthy (``overall`` above threshold, OCR read
+   quality acceptable, and the merchant confirmed against known merchants)
+   → return it immediately (source = ``"regex"``).
+5. Otherwise escalate to ``extract_with_llm()`` (correction backstop).
 6. If LLM fails → return regex result (source = ``"degraded"``).
 7. Detect discrepancies between regex and LLM.
 8. Merge per-field by picking the higher-confidence value.
@@ -49,6 +50,10 @@ logger = structlog.get_logger()
 # ── Known merchants loaded once at module load ───────────────────────────
 
 KNOWN_MERCHANTS: list[str] = [kw for cat in SEED_CATEGORIES for kw in cat["merchant_keywords"]]
+
+# ponytail: merchant at/above this conf was fuzzy-verified vs known merchants;
+# below it, the regex found a name but couldn't confirm it → worth an LLM check.
+MERCHANT_VERIFIED_CONFIDENCE = 0.95
 
 
 # ── Heuristic confidence scoring ─────────────────────────────────────────
@@ -180,6 +185,50 @@ def _compute_overall_confidence(field_confidences: dict[str, FieldConfidence]) -
         if fc is not None:
             scores.append(fc.confidence)
     return round(sum(scores) / len(scores), 4) if scores else 0.0
+
+
+# ── Escalation decision ──────────────────────────────────────────────────
+
+
+def _should_escalate(
+    overall: float,
+    field_confs: dict[str, FieldConfidence],
+    ocr_confidence: float | None,
+) -> tuple[bool, str]:
+    """Decide whether to escalate the regex result to the LLM correction layer.
+
+    The fast regex path is kept only when the read is trustworthy AND every
+    core field is confirmed.  Escalate when ANY of:
+
+    * ``overall`` confidence is below ``CASCADE_CONFIDENCE_THRESHOLD``
+      (a core field is missing or low).
+    * the OCR engine's own confidence (``ocr_confidence``) is below
+      ``CASCADE_OCR_CONFIDENCE_FLOOR`` — the image read itself is poor, so a
+      misread is likely even if all fields were "found".
+    * the merchant was extracted but NOT fuzzy-verified against known
+      merchants (confidence ``< MERCHANT_VERIFIED_CONFIDENCE``) — let the LLM
+      confirm/correct the name.
+
+    Returns ``(escalate, reasons)`` where ``reasons`` is a comma-joined string
+    for logging.
+    """
+    reasons: list[str] = []
+
+    if overall < settings.CASCADE_CONFIDENCE_THRESHOLD:
+        reasons.append("low_overall")
+
+    if ocr_confidence is not None and ocr_confidence < settings.CASCADE_OCR_CONFIDENCE_FLOOR:
+        reasons.append("low_ocr_quality")
+
+    merchant = field_confs.get("merchant")
+    if (
+        merchant is not None
+        and merchant.value is not None
+        and merchant.confidence < MERCHANT_VERIFIED_CONFIDENCE
+    ):
+        reasons.append("unverified_merchant")
+
+    return (len(reasons) > 0, ",".join(reasons))
 
 
 # ── Discrepancy detection ────────────────────────────────────────────────
@@ -461,8 +510,11 @@ async def cascade_extract(
         items=_raw_items_to_model(raw_items),
     )
 
-    # ── 4. Check threshold — regex only if high confidence ─────────────
-    if overall >= settings.CASCADE_CONFIDENCE_THRESHOLD:
+    # ── 4. Decide whether the fast regex path is good enough ──────────
+    # Escalate to the LLM when overall is low, the OCR read quality is poor,
+    # or the merchant was extracted but not confirmed against known merchants.
+    should_escalate, reasons = _should_escalate(overall, field_confs, result.get("ocr_confidence"))
+    if not should_escalate:
         logger.info(
             "cascade_regex_only",
             overall_confidence=overall,
@@ -477,11 +529,12 @@ async def cascade_extract(
             raw_text=raw_text,
         )
 
-    # ── 5. Below threshold — escalate to LLM ───────────────────────────
+    # ── 5. Escalate to LLM ─────────────────────────────────────────────
     logger.info(
         "cascade_escalating_to_llm",
         overall_confidence=overall,
         threshold=settings.CASCADE_CONFIDENCE_THRESHOLD,
+        reasons=reasons,
     )
 
     llm_result = await extract_with_llm(raw_text)

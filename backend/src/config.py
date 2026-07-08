@@ -59,6 +59,7 @@ class Settings(BaseSettings):
 
     # NLP Cascade OCR
     CASCADE_CONFIDENCE_THRESHOLD: float = 0.7
+    CASCADE_OCR_CONFIDENCE_FLOOR: float = 0.6  # escalate if engine read quality is lower
     LLM_MAX_TOKENS: int = 1024
     LLM_MAX_RETRIES: int = 2
     LLM_RETRY_BACKOFF: float = 1.0  # seconds, doubles each retry

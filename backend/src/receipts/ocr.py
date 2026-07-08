@@ -176,10 +176,21 @@ def extract_text(
         pytesseract.tesseract_cmd = cmd
 
     # ── Run OCR ─────────────────────────────────────────────────────────────
-    config = "--oem 3 --psm 6"
-    text: str = pytesseract.image_to_string(image, config=config)
+    # Try several page-segmentation modes and keep the most text.  --psm 6
+    # (uniform block) is the common case; --psm 4 (single column) and --psm 11
+    # (sparse text) recover receipts where 6 yields almost nothing.
+    best = ""
+    for config in ("--oem 3 --psm 6", "--oem 3 --psm 4", "--oem 3 --psm 11"):
+        try:
+            text = pytesseract.image_to_string(image, config=config)
+        except Exception:
+            continue
+        if len(text.strip()) > len(best.strip()):
+            best = text
+        if len(best.strip()) > 20:
+            break
 
-    cleaned = text.strip()
+    cleaned = best.strip()
     logger.debug(
         "ocr_extracted",
         char_count=len(cleaned),
@@ -215,9 +226,9 @@ _TOTAL_KEYWORD: re.Pattern = re.compile(
 _MONEY_TOKEN: re.Pattern = re.compile(r"\d[\d\s]*[.,]\s*\d{1,2}")
 
 DATE_PATTERNS: list[re.Pattern] = [
-    re.compile(r"\b(\d{2})/(\d{2})/(\d{4})\b"),
-    re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b"),
-    re.compile(r"\b(\d{2})-(\d{2})-(\d{4})\b"),
+    re.compile(r"\b(\d{2})/(\d{2})/(\d{4})\b"),  # DD/MM/YYYY
+    re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b"),  # YYYY-MM-DD
+    re.compile(r"\b(\d{2})-(\d{2})-(\d{4})\b"),  # DD-MM-YYYY
     re.compile(
         r"\b(\d{1,2})\s+(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May"
         r"|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?"
@@ -230,6 +241,8 @@ DATE_PATTERNS: list[re.Pattern] = [
         r"|Dec(?:ember)?)\s+(\d{1,2}),?\s+(\d{4})\b",
         re.IGNORECASE,
     ),
+    re.compile(r"\b(\d{1,2})[.](\d{1,2})[.](\d{2,4})\b"),  # DD.MM.YYYY
+    re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{2})\b"),  # DD/MM/YY
 ]
 
 PRICE_PATTERN: re.Pattern = re.compile(r"(\d+\.\d{2})\s*$")
@@ -316,26 +329,57 @@ def parse_total(text: str) -> Decimal | None:
     return None
 
 
+# Lines that look like store addresses / contact details rather than a name.
+_MERCHANT_NOISE: re.Pattern = re.compile(
+    r"(street|road|lane|avenue|ave|st\.|drive|dr\.|court|ct\.|close|way|"
+    r"http|www|\.com|tel:|phone|fax|e-?mail|"
+    r"\b\d{3,5}\s*\d{3,5}\b"  # phone-like number cluster
+    r"|[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d?[A-Z]{2})",  # UK-style postcode
+    re.IGNORECASE,
+)
+
+
 def parse_merchant(text: str) -> str | None:
     raw_lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
 
-    for line in raw_lines:
+    # Only the top of the receipt is a candidate for the merchant name.
+    candidates: list[str] = []
+    for line in raw_lines[:8]:
+        if len(line) < 3 or len(line) > 40:
+            continue
         if re.search(r"\d", line):
+            continue  # store numbers, dates, prices — not the name
+        if _MERCHANT_NOISE.search(line):
             continue
         if re.match(
             r"^(receipt|invoice|thank|welcome|store|vat|tax|subtotal|sub\s*total"
-            r"|total|amount|due|balance|change|payment|card|credit|debit|cash)",
+            r"|total|amount|due|balance|change|payment|card|credit|debit|cash"
+            r"|date|time)",
             line,
             re.IGNORECASE,
         ):
             continue
-        if len(line) < 3:
-            continue
         if re.match(r"^\d{1,2}[/-]\d{1,2}", line):
             continue
-        return line
+        candidates.append(line)
 
-    return None
+    # Prefer a candidate that fuzzy-matches a known merchant (raw text kept).
+    try:
+        from src.receipts.merchant_match import fuzzy_match_merchant
+
+        known_candidates = [c for c in candidates if fuzzy_match_merchant(c)[1] >= 80]
+        if known_candidates:
+            return known_candidates[0]
+
+        # Rescuer: the merchant may be embedded in a greeting line
+        # ("WELCOME TO SAINSBURY S") that was filtered from candidates.
+        for line in raw_lines[:5]:
+            if fuzzy_match_merchant(line)[1] >= 80:
+                return line
+    except Exception:
+        pass
+
+    return candidates[0] if candidates else None
 
 
 def parse_line_items(text: str) -> list[dict]:
@@ -411,6 +455,16 @@ def parse_date(text: str) -> date | None:
             if pattern == DATE_PATTERNS[4]:
                 month_str, day, year = groups[0].lower()[:3], int(groups[1]), int(groups[2])
                 return date(year, MONTH_NAMES[month_str], day)
+            if pattern == DATE_PATTERNS[5]:
+                day, month, year = int(groups[0]), int(groups[1]), int(groups[2])
+                if year < 100:
+                    year += 2000
+                day, month = _normalise_day_month(day, month)
+                return date(year, month, day)
+            if pattern == DATE_PATTERNS[6]:
+                day, month, year = int(groups[0]), int(groups[1]), int(groups[2]) + 2000
+                day, month = _normalise_day_month(day, month)
+                return date(year, month, day)
         except ValueError, KeyError:
             continue
 
