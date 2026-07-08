@@ -317,7 +317,7 @@ When updating this file, agents must follow these rules:
 ### Phase 5 — Production AWS Deployment
 
 **Goal:** Migrate from local Docker Compose stack to EC2/VPC production deployment. Airflow, MLflow, PostgreSQL, Redis, and the FastAPI backend each run on appropriate compute (EC2, RDS, ElastiCache) with IAM roles, security groups, and CloudWatch monitoring.
-**Plan doc:** Not yet written. This tracker captures Phase 4 architectural review findings that define Phase 5's constraints.
+**Plan doc:** `docs/PHASE5_IMPLEMENTATION.md` — verbose, 8 chronological Rounds (R1–R8). This section preserves the Phase 4 architectural-review constraints that define Phase 5's compatibility requirements.
 **Dependency:** Phase 4 (drift detection, prediction logging, Airflow DAG) must be implemented and stable before Phase 5 migration begins.
 
 ### Compatibility Tracker
@@ -350,11 +350,56 @@ The following Phase 4 modules are infrastructure-agnostic and migrate identicall
 
 - **Phase 4 dev-only ponytail items must be resolved for Phase 5**: (a) Airflow single container with scheduler+webserver — must split into separate containers or processes with supervisord/systemd. (b) Airflow SQLite metadata — must migrate to RDS PostgreSQL (P3). (c) Manual S3 bucket creation — must be Terraform-managed. (d) Pre-signed URLs with UUID-only scoping — acceptable for Phase 5 if S3 bucket policy restricts access by IAM role (no user-level ownership required).
 - **Terraform state**: Currently local-only (`*.tfstate` gitignored). Must migrate to S3 backend + DynamoDB locking before production `terraform apply`.
-- **Terraform readiness**: Phase 1.11 created VPC+S3+ECR+Secrets Manager modules with conditional VPC creation. Secrets Manager already has `DATABASE_URL`, `JWT_SECRET_KEY`, `BEDROCK_API_KEY`, `REDIS_PASSWORD`, `DB_PASSWORD` defined in `secrets.tf`. Migration checklists for RDS encryption, Redis encryption, and ECR immutable tags are already verified in Phase 1's security checklist.
+- **Terraform readiness**: Phase 1.11 created VPC+S3+ECR+Secrets Manager modules with conditional VPC creation. Secrets Manager defines `DATABASE_URL`, `JWT_SECRET_KEY`, `REDIS_PASSWORD`, `DB_PASSWORD`, `BEDROCK_MODEL_ID` in `secrets.tf`. **`BEDROCK_API_KEY` does NOT exist** — it is a doc/reality mismatch; the app authenticates to Bedrock via IAM-role boto3 + the `BEDROCK_MODEL_ID` plain env var. Removed from plan per **ADR 007**. Migration checklists for RDS encryption, Redis encryption, and ECR immutable tags are already verified in Phase 1's security checklist.
 - **CI workflow**: No `.github/workflows/` exists yet. Phase 5 should create CI pipeline with `docker compose build`, test run, Terraform plan/apply gating.
 - **DAG metadata risk**: Airflow's SQLite metadata is ephemeral; all DAG runs, task history, and connections are lost on container restart. This is acceptable for Phase 4 (dev) but **must** be on RDS PostgreSQL before any production use.
 - **MLflow backend**: Currently SQLite at `mlflow_data/mlflow.db` on a Docker volume. Phase 5 should move to RDS PostgreSQL or S3-backed tracking server for durability.
-- **Budget/cost estimate**: Not yet assessed. t3.medium for Airflow, t3.small for MLflow, db.t3.medium for RDS, cache.t3.micro for Redis ElastiCache. Rough monthly estimate: ~$150–200/mo for dev, ~$300–400/mo for prod with reserved instances.
+- **Budget/cost estimate**: Not yet assessed. t3.medium for Airflow, t3.small for MLflow, db.t3.medium for RDS, cache.t3.micro for Redis ElastiCache. Rough monthly estimate: ~$150–200/mo for dev, ~$300–400/mo for prod with reserved instances. **Reality check (2026-07-08):** the prod stack with **Multi-AZ RDS + ElastiCache + 2× Fargate (2 vCPU) + ALB + NAT + WAF** runs ~**$90–130/mo at rest**; auto-scaling to 6 tasks exceeds that. Production is the **only** AWS environment (no dev/staging). The MASTER_PLAN $50/mo budget is unrealistic — raise threshold to a realistic value (e.g. $150) or Multi-AZ stays ON (user directive — see PHASE5 Risks).
+
+### Phase 5 Step Tracker
+
+Chronological implementation rounds from `docs/PHASE5_IMPLEMENTATION.md`. Each round is independently verifiable.
+
+| Round | Objective                                  | Key Deliverables                                                                                                                                                                                                                                                                               | Status               |
+| ----- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| R1    | Terraform Foundation Hardening             | Remote state (S3+DynamoDB, ADR 008); drop `BEDROCK_API_KEY` (ADR 007); inject `REDIS_PASSWORD` + fix `REDIS_URL`; `.env` guard; RDS `multi_az`→`true` (production); ACM+HTTPS+SG; `modules/waf` (rate 200/IP + SQLi/XSS) + `modules/monitoring` skeletons + `acm.tf`; champion S3 bucket + var | 📋 Planned           |
+| R2    | Champion Model Delivery (S3 bootstrap)     | `save_champion_to_disk`→S3; `docker/bootstrap.py` downloads champion before `load_model`; ADR 006; fast-fail on missing URI in prod; ARM64 maturin wheel                                                                                                                                       | 📋 Planned           |
+| R3    | ECS Auto Scaling + Observability           | `autoscaling.tf` (CPU + request count); CloudWatch alarms + dashboard (p50/p90/p99, error rate, RDS/ECS); SNS; drift metric filter                                                                                                                                                             | 📋 Planned           |
+| R4    | Budgets + Cost Anomaly                     | `aws_budgets_budget` ($50 threshold, 80% alert); `aws_ce_anomaly_monitor` + subscription                                                                                                                                                                                                       | 📋 Planned           |
+| R5    | MLflow + Airflow on RDS PostgreSQL (P1–P6) | `terraform/mlflow.tf` (RDS-backed store, retires SQLite); Airflow metadata→RDS; IAM/KMS (P5); CloudWatch alerting (P6)                                                                                                                                                                         | 📋 Planned           |
+| R6    | CI/CD OIDC Deploy Pipeline                 | `.github/workflows/deploy.yml`: ruff→pytest→checkov+tfsec→arm64 docker→ECR→terraform→ECS; `aws_iam_openid_connect_provider` + pinned deploy role                                                                                                                                               | 📋 Planned           |
+| R7    | SageMaker Optional Serving Path            | Config-gated `PREDICTION_SERVING_BACKEND=fargate\|sagemaker`; boto3 `InvokeEndpoint` alt route (stretch)                                                                                                                                                                                       | 📋 Planned (stretch) |
+| R8    | Polish, Tests & Verification               | Drift S3 bucket Terraform-managed; ruff/pytest/checkov/tfsec clean; prod smoke; docs (this TRACKER + CONTEXT) updated                                                                                                                                                                          | 📋 Planned           |
+
+### Phase 5 Deviations
+
+| #   | Deviation                                                                                                | Rationale                                                                                                                         | Reference              |
+| --- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| D1  | Champion delivered via **S3 bootstrap**, not MLflow runtime load                                         | Lean runtime image (no MLflow dep); reuse existing S3 pattern; `load_model` unchanged                                             | ADR 006                |
+| D2  | **`BEDROCK_API_KEY` removed** from plan + docs                                                           | Phantom secret; app uses IAM-role boto3 + `BEDROCK_MODEL_ID` plain env                                                            | ADR 007                |
+| D3  | Terraform **remote state** (S3 + DynamoDB) before first prod apply                                       | Local state unsafe; required for OIDC CI deploy                                                                                   | ADR 008                |
+| D4  | Backend image built **`--platform linux/arm64`** (buildx)                                                | ECS task forces ARM64 (`ecs.tf`); amd64 image = exec format error                                                                 | ADR 009                |
+| D5  | `REDIS_URL` assembled in `config.py` from `REDIS_HOST`+`REDIS_PASSWORD`; prod raises if password missing | ElastiCache requires `auth_token`; never fall back to plaintext                                                                   | R1 (code-architect M3) |
+| D6  | `multi_az=true` in production (never disabled)                                                           | User directive: HA over cost; production is the only environment; $50/mo budget unrealistic at Multi-AZ — raise threshold instead | R1 + Risks             |
+| D7  | `BEDROCK_MODEL_ID` stays plain `environment` var (secret resource removed)                               | It is a model identifier, not a credential                                                                                        | R1 (Minor#9)           |
+
+### Phase 5 Verification Checklist
+
+- [ ] `terraform init` migrates local → remote S3+DynamoDB state; `terraform validate` clean
+- [ ] `terraform plan` shows WAF WebACL + association, ACM cert, monitoring resources (no empty-skeleton refs)
+- [ ] `REDIS_URL` built with auth in prod; `config.py` raises if `REDIS_PASSWORD` missing and `ENVIRONMENT=production`
+- [ ] No `.env` loaded in prod (`SettingsConfigDict(env_file=None)`); config from injected env/secrets only
+- [ ] `docker/bootstrap.py` exits 1 when `CHAMPION_S3_URI` empty and `ENVIRONMENT=production`; downloads champion to `/model_artifacts/champion/`
+- [ ] `GET /predict/AAPL` serves from S3-delivered champion on a fresh Fargate task (no baked-in `.pt`)
+- [ ] ALB returns 200 on HTTPS (443); HTTP→HTTPS redirect; ACM cert valid
+- [ ] WAF blocks >200 req/min/IP and SQLi/XSS test payloads
+- [ ] ECS auto-scales on CPU >70% and `RequestCountPerTarget` >N; dashboard shows p50/p90/p99 + error rate + RDS/ECS
+- [ ] SNS alarm fires on drift alert + bootstrap failure
+- [ ] `aws_budgets_budget` + `aws_ce_anomaly_monitor` created; alert topic subscribed
+- [ ] MLflow + Airflow metadata on RDS PostgreSQL (no SQLite); `champion` alias durable
+- [ ] `deploy.yml` OIDC role assumed; `docker buildx --platform linux/arm64` pushed to ECR; `terraform apply` uses remote state; ECS force-new-deployment pulls new task
+- [ ] `ruff check` + `pytest` + `checkov` + `tfsec` clean in CI
+- [ ] SageMaker path optional/config-gated (R7 only if pursued)
 
 ### Phase 6 — Conversational Agent
 
