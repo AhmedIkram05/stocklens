@@ -9,6 +9,7 @@ Endpoints:
 
 from __future__ import annotations
 
+from decimal import Decimal
 from uuid import UUID
 
 import structlog
@@ -126,6 +127,57 @@ def _row_to_response(row: dict) -> TransactionResponse:
     )
 
 
+async def _apply_buy_to_holdings(conn, portfolio_id, ticker, shares, price) -> None:
+    """Insert a new holding or update an existing one with a weighted-average cost basis."""
+    existing = await conn.fetchrow(
+        "SELECT shares, average_cost_basis FROM holdings "
+        "WHERE portfolio_id = $1::uuid AND ticker = $2",
+        portfolio_id,
+        ticker,
+    )
+    if existing is None:
+        await conn.execute(
+            "INSERT INTO holdings (portfolio_id, ticker, shares, average_cost_basis) "
+            "VALUES ($1::uuid, $2, $3, $4)",
+            portfolio_id,
+            ticker,
+            shares,
+            price,
+        )
+        return
+    new_shares = existing["shares"] + shares
+    new_cost = (existing["shares"] * existing["average_cost_basis"] + shares * price) / new_shares
+    await conn.execute(
+        "UPDATE holdings SET shares = $3, average_cost_basis = $4, updated_at = now() "
+        "WHERE portfolio_id = $1::uuid AND ticker = $2",
+        portfolio_id,
+        ticker,
+        new_shares,
+        new_cost,
+    )
+
+
+async def _apply_sell_to_holdings(conn, portfolio_id, ticker, shares) -> None:
+    """Reduce a holding on SELL. Rejects selling more shares than currently held."""
+    current = await conn.fetchval(
+        "SELECT shares FROM holdings WHERE portfolio_id = $1::uuid AND ticker = $2",
+        portfolio_id,
+        ticker,
+    )
+    if current is None or current < shares:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot sell more shares than currently held.",
+        )
+    await conn.execute(
+        "UPDATE holdings SET shares = shares - $3, updated_at = now() "
+        "WHERE portfolio_id = $1::uuid AND ticker = $2",
+        portfolio_id,
+        ticker,
+        shares,
+    )
+
+
 @router.post(
     "/portfolios/{portfolio_id}/transactions",
     response_model=TransactionResponse,
@@ -153,22 +205,54 @@ async def create_transaction(
     total_amount = body.shares * body.price_per_share
 
     async with connection_ctx() as conn:
-        row = await conn.fetchrow(
-            "INSERT INTO transactions "
-            "(portfolio_id, ticker, type, shares, price_per_share, "
-            " total_amount, transaction_date, notes) "
-            "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8) "
-            "RETURNING id, portfolio_id, ticker, type, shares, price_per_share, "
-            "total_amount, transaction_date, notes, created_at",
-            portfolio_id,
-            body.ticker,
-            body.type,
-            body.shares,
-            body.price_per_share,
-            total_amount,
-            body.transaction_date,
-            body.notes,
-        )
+        # Server-side affordability guard for BUY (free cash = deposits - net invested)
+        if body.type == "BUY":
+            total_deposits = await conn.fetchval(
+                "SELECT COALESCE(SUM(amount), 0) FROM cash_flows WHERE portfolio_id = $1::uuid",
+                portfolio_id,
+            )
+            net_invested = await conn.fetchval(
+                "SELECT COALESCE(SUM(CASE WHEN type = 'BUY' THEN total_amount "
+                "WHEN type = 'SELL' THEN -total_amount ELSE 0 END), 0) "
+                "FROM transactions WHERE portfolio_id = $1::uuid",
+                portfolio_id,
+            )
+            free_cash = Decimal(str(total_deposits)) - Decimal(str(net_invested))
+            if total_amount > free_cash:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Insufficient funds: this purchase costs {total_amount} "
+                        f"but only {free_cash} is available."
+                    ),
+                )
+
+        # Atomic: the transaction row and the holdings update commit together.
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                "INSERT INTO transactions "
+                "(portfolio_id, ticker, type, shares, price_per_share, "
+                " total_amount, transaction_date, notes) "
+                "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8) "
+                "RETURNING id, portfolio_id, ticker, type, shares, price_per_share, "
+                "total_amount, transaction_date, notes, created_at",
+                portfolio_id,
+                body.ticker,
+                body.type,
+                body.shares,
+                body.price_per_share,
+                total_amount,
+                body.transaction_date,
+                body.notes,
+            )
+
+            # Keep holdings in sync with transactions
+            if body.type == "BUY":
+                await _apply_buy_to_holdings(
+                    conn, portfolio_id, body.ticker, body.shares, body.price_per_share
+                )
+            elif body.type == "SELL":
+                await _apply_sell_to_holdings(conn, portfolio_id, body.ticker, body.shares)
 
     result = _row_to_response(dict(row))
 
