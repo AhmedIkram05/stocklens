@@ -3,7 +3,7 @@
 # Development commands for the FastAPI backend.
 # All Docker Compose operations assume docker-compose.yml at repo root.
 
-.PHONY: up down rebuild test logs migrate alembic-autogenerate backend-ml train deploy-model train-all seed
+.PHONY: up down rebuild test logs migrate alembic-autogenerate backend-ml train train-all seed hpo hpo-phase2
 
 up: ## Build & start all services (backend, ml, postgres, redis, mlflow, test DB)
 	docker compose --profile ml --profile test up -d
@@ -44,13 +44,19 @@ train: backend-ml ## Train LSTM model on macOS MPS GPU (host venv, ~19s/epoch, 5
 	docker compose restart backend
 	@echo "=== Model trained and deployed ==="
 
-deploy-model: ## Copy trained model from host into Docker volume & restart backend
-	@echo "Copying model to Docker volume..."
-	docker compose cp /tmp/model_artifacts/champion/model.pt backend:/model_artifacts/champion/model.pt
-	docker compose exec -u root backend chown appuser:appuser /model_artifacts/champion/model.pt
-	@echo "Restarting backend to load the new model..."
-	docker compose restart backend
-	@echo "Model deployed. Backend reloaded and serving."
+hpo: backend-ml ## Run Optuna HPO Phase 1 on macOS MPS GPU (host /tmp/ml_venv)
+	PYTHONPATH=/Users/ahmedikram/GitHub\ Repos/stocklens/backend \
+	DATABASE_URL=postgresql+asyncpg://stocklens:stocklens@localhost:5432/stocklens \
+	MLFLOW_TRACKING_URI=http://localhost:5001 \
+	MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING=true \
+	/tmp/ml_venv/bin/python -m ml.hpo
+
+hpo-phase2: backend-ml ## Sweep threshold_mult using Phase 1 best HPs on macOS MPS GPU
+	PYTHONPATH=/Users/ahmedikram/GitHub\ Repos/stocklens/backend \
+	DATABASE_URL=postgresql+asyncpg://stocklens:stocklens@localhost:5432/stocklens \
+	MLFLOW_TRACKING_URI=http://localhost:5001 \
+	MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING=true \
+	/tmp/ml_venv/bin/python -m ml.hpo --phase 2
 
 train-all: backend-ml ## Train on full S&P 500 (~7min/epoch, hours total)
 	$(MAKE) train TRAINING_TICKERS="$$(python3 -c "from ml.config import _ALL_SP500; print(','.join(_ALL_SP500))")"
