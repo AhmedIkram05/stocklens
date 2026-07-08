@@ -47,7 +47,7 @@ export interface ReceiptUpdate {
 }
 
 export interface ReceiptListResponse {
-  items: Receipt[];
+  receipts: Receipt[];
   total: number;
   limit: number;
   offset: number;
@@ -96,7 +96,7 @@ export const receiptService = {
     const response = await apiService.get<ReceiptListResponse>(
       `/receipts?limit=${limit}&offset=${offset}`,
     );
-    return response.items;
+    return response.receipts;
   },
 
   /**
