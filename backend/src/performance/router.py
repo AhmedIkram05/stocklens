@@ -23,7 +23,7 @@ from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
 from src.market.provider import fetch_ohlcv, fetch_quote
-from src.market.repository import get_earliest_ohlcv_date, get_ohlcv, upsert_ohlcv
+from src.market.repository import get_earliest_ohlcv_date, get_ohlcv_batch, upsert_ohlcv
 from src.market.router import _refresh_ohlcv_if_stale
 from src.performance.calculations import (
     compute_benchmark_comparison,
@@ -112,32 +112,24 @@ async def _build_price_map(
     tickers: list[str],
     start_date: date,
     end_date: date,
+    *,
+    limit: int = 50000,
 ) -> dict[str, dict[date, Decimal]]:
     """Build a nested price map {ticker: {date: adjusted_close}} for the given range.
 
-    Uses ``asyncio.gather`` to fetch all tickers in parallel.
+    Uses a single batched query to fetch all tickers in parallel.
     """
-    import asyncio
-
-    # ponytail: gather with return_exceptions=True means results are list[Any | BaseException]
-    ohlcv_tasks = [
-        get_ohlcv(ticker, start_date=start_date, end_date=end_date, limit=2000)
-        for ticker in tickers
-    ]
-    results = await asyncio.gather(  # type: ignore[assignment]
-        *ohlcv_tasks,
-        return_exceptions=True,
+    # Fetch all tickers in one batched query
+    batch_results = await get_ohlcv_batch(
+        tickers, start_date=start_date, end_date=end_date, limit=limit
     )
 
     price_map: dict[str, dict[date, Decimal]] = {}
-    for ticker, rows in zip(tickers, results):
-        if isinstance(rows, Exception):
-            logger.warning("price_map_fetch_failed", ticker=ticker, error=str(rows))
-            price_map[ticker] = {}
-        else:
-            price_map[ticker] = {
-                r["date"]: r["adjusted_close"] for r in rows if r["adjusted_close"] is not None
-            }
+    for ticker in tickers:
+        rows = batch_results.get(ticker, [])
+        price_map[ticker] = {
+            r["date"]: r["adjusted_close"] for r in rows if r["adjusted_close"] is not None
+        }
     return price_map
 
 
@@ -310,7 +302,7 @@ async def _get_benchmark_comparison_inner(
             inserted = await upsert_ohlcv(benchmark, rows)
             logger.info("coverage_upsert", benchmark=benchmark, rows_inserted=inserted)
 
-    price_map = await _build_price_map(all_tickers, start_date, end_date)
+    price_map = await _build_price_map(all_tickers, start_date, end_date, limit=50000)
 
     if not price_map.get(benchmark):
         raise HTTPException(
