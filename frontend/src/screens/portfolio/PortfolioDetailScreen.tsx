@@ -35,25 +35,30 @@ const formatPercent = (value: number | null | undefined) => {
 const formatWeight = (value: number) => `${value.toFixed(1)}%`;
 
 const COL_WIDTHS = {
-  ticker: 80,
-  shares: 80,
-  avgCost: 100,
-  price: 100,
-  marketValue: 110,
-  pnl: 110,
-  pnlPct: 90,
-  weight: 70,
+  ticker: 70,
+  shares: 65,
+  avgCost: 85,
+  price: 85,
+  marketValue: 95,
+  pnl: 95,
+  pnlPct: 80,
+  weight: 60,
 };
 
 const tableColumns = [
-  { label: 'Ticker', key: 'ticker', width: COL_WIDTHS.ticker },
-  { label: 'Shares', key: 'shares', width: COL_WIDTHS.shares },
-  { label: 'Avg Cost', key: 'avgCost', width: COL_WIDTHS.avgCost },
-  { label: 'Price', key: 'price', width: COL_WIDTHS.price },
-  { label: 'Mkt Value', key: 'marketValue', width: COL_WIDTHS.marketValue },
-  { label: 'P&L $', key: 'pnl', width: COL_WIDTHS.pnl },
-  { label: 'P&L %', key: 'pnlPct', width: COL_WIDTHS.pnlPct },
-  { label: 'Wt %', key: 'weight', width: COL_WIDTHS.weight },
+  { label: 'Ticker', key: 'ticker', width: COL_WIDTHS.ticker, align: 'left' as const },
+  { label: 'Shares', key: 'shares', width: COL_WIDTHS.shares, align: 'right' as const },
+  { label: 'Avg Cost', key: 'avgCost', width: COL_WIDTHS.avgCost, align: 'right' as const },
+  { label: 'Price', key: 'price', width: COL_WIDTHS.price, align: 'right' as const },
+  {
+    label: 'Mkt Value',
+    key: 'marketValue',
+    width: COL_WIDTHS.marketValue,
+    align: 'right' as const,
+  },
+  { label: 'P&L $', key: 'pnl', width: COL_WIDTHS.pnl, align: 'right' as const },
+  { label: 'P&L %', key: 'pnlPct', width: COL_WIDTHS.pnlPct, align: 'right' as const },
+  { label: 'Wt %', key: 'weight', width: COL_WIDTHS.weight, align: 'right' as const },
 ];
 
 export default function PortfolioDetailScreen() {
@@ -140,7 +145,6 @@ export default function PortfolioDetailScreen() {
     twr_end_date,
     free_cash_balance,
     data_quality,
-    total_holdings,
     holdings,
   } = performance;
 
@@ -148,6 +152,7 @@ export default function PortfolioDetailScreen() {
   const isDayChangePositive = day_change != null && day_change >= 0;
   const isTwrPositive = twr != null && twr >= 0;
   const isDataPartial = data_quality === 'partial';
+  const activeHoldings = holdings.filter((h) => h.shares > 0);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
@@ -235,28 +240,28 @@ export default function PortfolioDetailScreen() {
 
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            Holdings ({total_holdings})
+            Holdings ({activeHoldings.length})
           </Text>
         </View>
 
-        {holdings.length > 0 ? (
+        {activeHoldings.length > 0 ? (
           <View style={styles.tableSection}>
             <ScrollView horizontal showsHorizontalScrollIndicator>
-              <View>
+              <View style={{ paddingRight: 20 }}>
                 <View style={[styles.tableHeader, { borderBottomColor: theme.border }]}>
                   {tableColumns.map((col) => (
                     <Text
                       key={col.key}
                       style={[
                         styles.tableHeaderCell,
-                        { width: col.width, color: theme.textSecondary },
+                        { width: col.width, color: theme.textSecondary, textAlign: col.align },
                       ]}
                     >
                       {col.label}
                     </Text>
                   ))}
                 </View>
-                {holdings.map((h, i) => {
+                {activeHoldings.map((h, i) => {
                   const pl = h.unrealised_pl;
                   const isPositive = pl != null && pl >= 0;
                   return (
@@ -358,16 +363,10 @@ export default function PortfolioDetailScreen() {
             <Text style={styles.actionButtonText}>+Deposit</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: brandColors.green }]}
+            style={[styles.actionButton, { backgroundColor: theme.primary }]}
             onPress={() => navigation.navigate('Trade', { portfolioId, mode: 'buy' })}
           >
-            <Text style={styles.actionButtonText}>+Buy</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: brandColors.red }]}
-            onPress={() => navigation.navigate('Trade', { portfolioId, mode: 'sell' })}
-          >
-            <Text style={styles.actionButtonText}>Sell</Text>
+            <Text style={styles.actionButtonText}>Trade</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionButton, { backgroundColor: theme.textSecondary, opacity: 0.7 }]}
