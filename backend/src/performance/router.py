@@ -22,7 +22,8 @@ from src.auth.schemas import UserInDB
 from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
-from src.market.repository import get_ohlcv
+from src.market.provider import fetch_ohlcv
+from src.market.repository import get_ohlcv, upsert_ohlcv
 from src.market.router import _refresh_ohlcv_if_stale
 from src.performance.calculations import (
     compute_benchmark_comparison,
@@ -221,6 +222,27 @@ async def get_benchmark_comparison(
 
     Returns alpha (excess return), tracking error, and information ratio.
     """
+    import logging
+
+    _logger = logging.getLogger("performance.benchmark")
+    try:
+        return await _get_benchmark_comparison_inner(
+            portfolio_id, benchmark, start_date, end_date, current_user
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _logger.exception("Benchmark comparison failed: %s", exc)
+        raise
+
+
+async def _get_benchmark_comparison_inner(
+    portfolio_id: UUID,
+    benchmark: str,
+    start_date: Optional[date],
+    end_date: Optional[date],
+    current_user,
+) -> BenchmarkComparisonResponse:
     portfolio = await _verify_portfolio_ownership(str(portfolio_id), current_user.id)
     if portfolio is None:
         raise HTTPException(
@@ -247,8 +269,17 @@ async def get_benchmark_comparison(
 
     all_tickers = list(set(tickers + [benchmark]))
 
-    # Ensure benchmark OHLCV data is fresh (fixes QQQ 404 when data was never fetched)
+    # Ensure benchmark OHLCV data covers the requested start_date.
+    # _refresh_ohlcv_if_stale only checks recency (1-3 days), not depth.
+    # yfinance defaults to 1 year when start_date=None, so longer periods
+    # may need a wider fetch.
     await _refresh_ohlcv_if_stale(benchmark)
+    existing = await get_ohlcv(benchmark, start_date=start_date, limit=1)
+    if not existing:
+        # No data at start_date — fetch the full range and upsert
+        rows = await fetch_ohlcv(benchmark, start_date=start_date, end_date=end_date)
+        if rows:
+            await upsert_ohlcv(benchmark, rows)
 
     price_map = await _build_price_map(all_tickers, start_date, end_date)
 

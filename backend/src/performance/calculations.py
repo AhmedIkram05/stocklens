@@ -341,10 +341,14 @@ def _compute_twr(
 
     twr = cumulative_return - Decimal(1)
     days = (end_date - start_date).days
+    twr_annualised = None
     if days > 0:
-        twr_annualised = (Decimal(1) + twr) ** (Decimal(365) / Decimal(days)) - Decimal(1)
-    else:
-        twr_annualised = None
+        try:
+            base = Decimal(1) + twr
+            if base > 0:
+                twr_annualised = base ** (Decimal(365) / Decimal(days)) - Decimal(1)
+        except Exception:
+            pass  # ponytail: negative base to fractional power
 
     return twr, twr_annualised
 
