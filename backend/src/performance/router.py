@@ -23,6 +23,7 @@ from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
 from src.market.repository import get_ohlcv
+from src.market.router import _refresh_ohlcv_if_stale
 from src.performance.calculations import (
     compute_benchmark_comparison,
     compute_portfolio_performance,
@@ -245,6 +246,10 @@ async def get_benchmark_comparison(
     tickers = list({h["ticker"] for h in holdings})
 
     all_tickers = list(set(tickers + [benchmark]))
+
+    # Ensure benchmark OHLCV data is fresh (fixes QQQ 404 when data was never fetched)
+    await _refresh_ohlcv_if_stale(benchmark)
+
     price_map = await _build_price_map(all_tickers, start_date, end_date)
 
     if not price_map.get(benchmark):
@@ -276,7 +281,7 @@ async def get_benchmark_comparison(
             benchmark_daily_returns.append((curr_price - prev_price) / prev_price)
 
     # Compute portfolio daily returns
-    portfolio_daily_returns = _compute_portfolio_daily_returns(
+    portfolio_dates, portfolio_daily_returns = _compute_portfolio_daily_returns(
         holdings=holdings,
         transactions=transactions,
         price_map=price_map,
@@ -284,7 +289,19 @@ async def get_benchmark_comparison(
         end_date=end_date,
     )
 
-    return compute_benchmark_comparison(
+    # Build cumulative return series for charting
+    def _cumulative_series(dates: list[date], returns: list[Decimal]) -> list[dict[str, Any]]:
+        cum = Decimal(1)
+        series: list[dict[str, Any]] = []
+        for i, r in enumerate(returns):
+            cum *= Decimal(1) + r
+            series.append({"date": str(dates[i + 1]), "value": float(cum - 1)})
+        return series
+
+    portfolio_cum = _cumulative_series(portfolio_dates, portfolio_daily_returns)
+    benchmark_cum = _cumulative_series(benchmark_dates, benchmark_daily_returns)
+
+    comparison = compute_benchmark_comparison(
         portfolio_id=str(portfolio_id),
         portfolio_twr=perf_response.twr,
         benchmark_ticker=benchmark,
@@ -293,6 +310,9 @@ async def get_benchmark_comparison(
         period_start=start_date,
         period_end=end_date,
     )
+    comparison.portfolio_cumulative_returns = portfolio_cum
+    comparison.benchmark_cumulative_returns = benchmark_cum
+    return comparison
 
 
 def _compute_portfolio_daily_returns(
@@ -301,20 +321,20 @@ def _compute_portfolio_daily_returns(
     price_map: dict[str, dict[date, Decimal]],
     start_date: date,
     end_date: date,
-) -> list[Decimal]:
+) -> tuple[list[date], list[Decimal]]:
     """Compute daily portfolio returns for tracking error calculation.
 
     Reconstructs holdings at each trading day and computes day-over-day
-    percentage return. Returns empty list if insufficient price data.
+    percentage return. Returns (trading_days, daily_returns).
     """
     all_dates: set[date] = set()
     for ticker_prices in price_map.values():
         all_dates.update(ticker_prices.keys())
     if not all_dates:
-        return []
+        return [], []
     trading_days = sorted(d for d in all_dates if start_date <= d <= end_date)
     if len(trading_days) < 2:
-        return []
+        return [], []
 
     txns_by_date: dict[date, list[dict]] = defaultdict(list)
     for t in transactions:
@@ -350,4 +370,4 @@ def _compute_portfolio_daily_returns(
 
         previous_value = value
 
-    return daily_returns
+    return trading_days, daily_returns
