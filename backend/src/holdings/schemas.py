@@ -59,6 +59,9 @@ class HoldingResponse(HoldingBase):
     created_at: datetime
     updated_at: datetime
 
+    # Allow zero shares in responses (e.g., after selling all shares)
+    shares: DecimalAsFloat = Field(..., ge=0)
+
 
 class HoldingListResponse(BaseModel):
     holdings: list[HoldingResponse]
