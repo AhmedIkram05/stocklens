@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -33,6 +33,16 @@ const formatPercent = (value: number | null | undefined) => {
 };
 
 const formatWeight = (value: number) => `${value.toFixed(1)}%`;
+
+const relativeTime = (iso: string) => {
+  const diff = Date.now() - new Date(iso).getTime();
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  return `${h}h ago`;
+};
 
 const COL_WIDTHS = {
   ticker: 70,
@@ -71,27 +81,44 @@ export default function PortfolioDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
 
   const fetchPerformance = useCallback(
-    async (isRefresh = false) => {
+    async (isRefresh = false, silent = false) => {
       try {
-        if (isRefresh) {
-          setRefreshing(true);
-        } else {
-          setLoading(true);
+        if (!silent) {
+          if (isRefresh) {
+            setRefreshing(true);
+          } else {
+            setLoading(true);
+          }
         }
-        setError(null);
+        if (!silent) setError(null);
         const data = await portfolioService.getPerformance(portfolioId);
-        setPerformance(data);
+        if (mountedRef.current) setPerformance(data);
       } catch (err: any) {
-        setError(err?.message || 'Failed to load portfolio performance');
+        if (!silent) setError(err?.message || 'Failed to load portfolio performance');
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (!silent) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     [portfolioId],
   );
+
+  // Silent 30s polling for intraday price updates
+  useEffect(() => {
+    mountedRef.current = true;
+    const id = setInterval(() => {
+      fetchPerformance(false, true).catch(() => {});
+    }, 30000);
+    return () => {
+      mountedRef.current = false;
+      clearInterval(id);
+    };
+  }, [fetchPerformance]);
 
   useFocusEffect(
     useCallback(() => {
@@ -237,6 +264,10 @@ export default function PortfolioDetailScreen() {
             </Text>
           </View>
         )}
+
+        <Text style={[styles.freshnessText, { color: theme.textSecondary }]}>
+          Prices updated {relativeTime(performance.calculated_at)}
+        </Text>
 
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
@@ -454,6 +485,11 @@ const styles = StyleSheet.create({
     color: '#856404',
     fontSize: 13,
     textAlign: 'center',
+  },
+  freshnessText: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 12,
   },
   sectionHeader: {
     marginBottom: 8,
