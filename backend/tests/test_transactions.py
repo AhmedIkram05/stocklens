@@ -88,6 +88,20 @@ class TestCreateTransaction:
 
     async def test_create_sell(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
         p = await _create_portfolio(client, auth_headers)
+        # Must first buy shares before selling
+        await _create_cash_flow(client, p["id"], auth_headers, amount=8000.0)
+        buy_resp = await client.post(
+            f"/portfolios/{p['id']}/transactions",
+            json={
+                "ticker": "TSLA",
+                "type": "BUY",
+                "shares": "10.0",
+                "price_per_share": "700.0",
+                "transaction_date": "2026-06-10",
+            },
+            headers=auth_headers,
+        )
+        assert buy_resp.status_code == 201
         response = await client.post(
             f"/portfolios/{p['id']}/transactions",
             json={
