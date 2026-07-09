@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, ScrollView, RefreshControl, TouchableOpacity, StyleSheet } from 'react-native';
 import Svg, { Polyline, Line, Text as SvgText } from 'react-native-svg';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -201,23 +201,32 @@ export default function BenchmarkScreen() {
   const [data, setData] = useState<BenchmarkComparison | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const mountedRef = useRef(true);
+  const pollRef = useRef({ ticker: activeBenchmark, period });
+
+  // Keep pollRef in sync with current params
+  pollRef.current = { ticker: activeBenchmark, period };
 
   const fetchBenchmark = useCallback(
-    async (ticker: string, p: string, isRefresh = false) => {
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
+    async (ticker: string, p: string, isRefresh = false, silent = false) => {
+      if (!silent) {
+        if (isRefresh) setRefreshing(true);
+        else setLoading(true);
+      }
 
       try {
         const endDate = new Date();
         const startDate = periodToStartDate(p, endDate);
         const result = await portfolioService.getBenchmark(portfolioId, ticker, startDate);
-        setData(result);
+        if (mountedRef.current) setData(result);
       } catch (err) {
         console.warn('benchmark fetch error:', err);
         // keep stale data on refresh failure
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (!silent) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     [portfolioId],
@@ -226,6 +235,19 @@ export default function BenchmarkScreen() {
   useEffect(() => {
     fetchBenchmark(activeBenchmark, period);
   }, [activeBenchmark, period, fetchBenchmark]);
+
+  // Silent 30s polling for intraday benchmark updates
+  useEffect(() => {
+    mountedRef.current = true;
+    const id = setInterval(() => {
+      const { ticker, period: p } = pollRef.current;
+      fetchBenchmark(ticker, p, false, true).catch(() => {});
+    }, 30000);
+    return () => {
+      mountedRef.current = false;
+      clearInterval(id);
+    };
+  }, [fetchBenchmark]);
 
   const handleRefresh = useCallback(() => {
     fetchBenchmark(activeBenchmark, period, true);
