@@ -26,7 +26,13 @@ export default function PageHeader({ children, subtitle, style }: Props) {
 
   return (
     <View style={[styles.header, style]}>
-      <View style={styles.left}>{children}</View>
+      <View style={styles.left}>
+        {typeof children === 'string' ? (
+          <AppText style={typography.sectionTitle}>{children}</AppText>
+        ) : (
+          children
+        )}
+      </View>
       {subtitle ? (
         <AppText style={[styles.subtitle, { color: theme.text, opacity: 0.7 }]}>{subtitle}</AppText>
       ) : null}
