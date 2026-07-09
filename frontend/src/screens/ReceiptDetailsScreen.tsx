@@ -120,6 +120,16 @@ export default function ReceiptDetailsScreen() {
   const [merchantEditValue, setMerchantEditValue] = useState('');
   const [merchantSaving, setMerchantSaving] = useState(false);
 
+  // Total amount edit modal state
+  const [amountModalVisible, setAmountModalVisible] = useState(false);
+  const [amountEditValue, setAmountEditValue] = useState('');
+  const [amountSaving, setAmountSaving] = useState(false);
+
+  // Date edit modal state
+  const [dateModalVisible, setDateModalVisible] = useState(false);
+  const [dateEditValue, setDateEditValue] = useState('');
+  const [dateSaving, setDateSaving] = useState(false);
+
   const categoryName: string | null = categories.length
     ? (categories.find((c) => c.id === (receipt?.category_id ?? null))?.name ?? null)
     : null;
@@ -158,6 +168,52 @@ export default function ReceiptDetailsScreen() {
       setMerchantSaving(false);
     }
   }
+
+  async function handleUpdateAmount() {
+    if (!receiptId || !amountEditValue.trim()) return;
+    const parsed = parseFloat(amountEditValue.trim());
+    if (isNaN(parsed) || parsed <= 0) {
+      Alert.alert('Invalid amount', 'Enter a valid positive number');
+      return;
+    }
+    setAmountSaving(true);
+    try {
+      await receiptService.update(receiptId, { total_amount: parsed });
+      setReceipt((prev: any) => (prev ? { ...prev, total_amount: parsed } : prev));
+      try {
+        emit('receipts-changed', { id: receiptId, action: 'updated' });
+      } catch (e) {}
+      setAmountModalVisible(false);
+    } catch {
+      Alert.alert('Error', 'Could not update amount');
+    } finally {
+      setAmountSaving(false);
+    }
+  }
+
+  async function handleUpdateDate() {
+    if (!receiptId || !dateEditValue.trim()) return;
+    // Basic date validation: must be YYYY-MM-DD
+    const trimmed = dateEditValue.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      Alert.alert('Invalid date', 'Enter date as YYYY-MM-DD');
+      return;
+    }
+    setDateSaving(true);
+    try {
+      await receiptService.update(receiptId, { transaction_date: trimmed });
+      setReceipt((prev: any) => (prev ? { ...prev, transaction_date: trimmed } : prev));
+      try {
+        emit('receipts-changed', { id: receiptId, action: 'updated' });
+      } catch (e) {}
+      setDateModalVisible(false);
+    } catch {
+      Alert.alert('Error', 'Could not update date');
+    } finally {
+      setDateSaving(false);
+    }
+  }
+
   const { contentHorizontalPadding, sectionVerticalSpacing, isSmallPhone, isTablet, width } =
     useBreakpoint();
   const { theme } = useTheme();
@@ -528,6 +584,44 @@ export default function ReceiptDetailsScreen() {
               />
             </View>
 
+            {/* Total Amount — tappable to edit */}
+            <TouchableOpacity
+              style={[styles.metaPanel, { backgroundColor: theme.surface }]}
+              onPress={() => {
+                setAmountEditValue(totalAmount > 0 ? totalAmount.toFixed(2) : '');
+                setAmountModalVisible(true);
+              }}
+              activeOpacity={0.7}
+              accessibilityLabel="Edit total amount"
+            >
+              <Text style={[styles.metaLabel, { color: theme.textSecondary }]}>Total Amount</Text>
+              <View style={styles.categoryValueTouch}>
+                <Text style={[styles.metaValue, { color: theme.text }]}>
+                  {formatCurrencyGBP(totalAmount || 0)}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+              </View>
+            </TouchableOpacity>
+
+            {/* Date — tappable to edit */}
+            <TouchableOpacity
+              style={[styles.metaPanel, { backgroundColor: theme.surface }]}
+              onPress={() => {
+                setDateEditValue(receipt?.transaction_date ?? date ?? '');
+                setDateModalVisible(true);
+              }}
+              activeOpacity={0.7}
+              accessibilityLabel="Edit transaction date"
+            >
+              <Text style={[styles.metaLabel, { color: theme.textSecondary }]}>Date</Text>
+              <View style={styles.categoryValueTouch}>
+                <Text style={[styles.metaValue, { color: theme.text }]}>
+                  {formatRelativeDate(receipt?.transaction_date ?? date)}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+              </View>
+            </TouchableOpacity>
+
             {merchantName && (
               <TouchableOpacity
                 style={[styles.metaPanel, { backgroundColor: theme.surface }]}
@@ -645,6 +739,9 @@ export default function ReceiptDetailsScreen() {
                 )}
               </View>
             )}
+
+            {/* Spacer before investment projections */}
+            <View style={{ height: spacing.xl }} />
 
             <PageHeader>
               <View>
@@ -953,6 +1050,115 @@ export default function ReceiptDetailsScreen() {
             <TouchableOpacity
               style={[styles.modalCloseBtn, { backgroundColor: theme.background }]}
               onPress={() => setMerchantModalVisible(false)}
+            >
+              <Text style={[styles.modalCloseText, { color: theme.secondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Total Amount edit modal */}
+      <Modal
+        visible={amountModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAmountModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle2, { color: theme.text }]}>Edit total amount</Text>
+
+            {amountSaving ? (
+              <View style={styles.modalLoading}>
+                <ActivityIndicator size="large" color={theme.primary} />
+              </View>
+            ) : (
+              <>
+                <TextInput
+                  style={[
+                    styles.merchantInput,
+                    {
+                      backgroundColor: theme.background,
+                      color: theme.text,
+                      borderColor: theme.textSecondary + '40',
+                    },
+                  ]}
+                  value={amountEditValue}
+                  onChangeText={setAmountEditValue}
+                  placeholder="0.00"
+                  placeholderTextColor={theme.textSecondary}
+                  keyboardType="decimal-pad"
+                  autoFocus
+                />
+                <TouchableOpacity
+                  style={[styles.modalSaveBtn, { backgroundColor: theme.primary }]}
+                  onPress={handleUpdateAmount}
+                  activeOpacity={0.8}
+                >
+                  <Text style={{ color: '#fff', ...typography.button, textAlign: 'center' }}>
+                    Save
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            <TouchableOpacity
+              style={[styles.modalCloseBtn, { backgroundColor: theme.background }]}
+              onPress={() => setAmountModalVisible(false)}
+            >
+              <Text style={[styles.modalCloseText, { color: theme.secondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Date edit modal */}
+      <Modal
+        visible={dateModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDateModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle2, { color: theme.text }]}>Edit transaction date</Text>
+
+            {dateSaving ? (
+              <View style={styles.modalLoading}>
+                <ActivityIndicator size="large" color={theme.primary} />
+              </View>
+            ) : (
+              <>
+                <TextInput
+                  style={[
+                    styles.merchantInput,
+                    {
+                      backgroundColor: theme.background,
+                      color: theme.text,
+                      borderColor: theme.textSecondary + '40',
+                    },
+                  ]}
+                  value={dateEditValue}
+                  onChangeText={setDateEditValue}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={theme.textSecondary}
+                  autoFocus
+                />
+                <TouchableOpacity
+                  style={[styles.modalSaveBtn, { backgroundColor: theme.primary }]}
+                  onPress={handleUpdateDate}
+                  activeOpacity={0.8}
+                >
+                  <Text style={{ color: '#fff', ...typography.button, textAlign: 'center' }}>
+                    Save
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            <TouchableOpacity
+              style={[styles.modalCloseBtn, { backgroundColor: theme.background }]}
+              onPress={() => setDateModalVisible(false)}
             >
               <Text style={[styles.modalCloseText, { color: theme.secondary }]}>Cancel</Text>
             </TouchableOpacity>
