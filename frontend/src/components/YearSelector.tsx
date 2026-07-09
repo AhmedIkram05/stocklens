@@ -1,36 +1,29 @@
 /**
  * YearSelector
  *
- * Animated segmented control for selecting year horizons (1Y, 5Y, etc.).
+ * Animated segmented control for selecting time periods (1M, 3M, 6M, 1Y, 3Y, 5Y, 10Y, 20Y, YTD).
  */
 
 import React, { useRef, useEffect, useState, Dispatch, SetStateAction } from 'react';
 import { View, TouchableOpacity, Animated, ViewStyle, StyleProp } from 'react-native';
 import AppText from './AppText';
 import { spacing, typography, radii } from '../styles/theme';
-import { brandColors } from '../contexts/ThemeContext';
-import { useTheme } from '../contexts/ThemeContext';
+import { brandColors, useTheme } from '../contexts/ThemeContext';
 
-type Props<T extends number> = {
-  /** Array of year options (e.g., [1, 5, 10, 20]) */
-  options: T[];
-  /** Currently selected year value */
-  value: T;
+type Props = {
+  /** Array of period labels (e.g., ['1M', '3M', '6M', '1Y', '3Y', '5Y', '10Y', '20Y', 'YTD']) */
+  options: string[];
+  /** Currently selected period label */
+  value: string;
   /** Callback or setState function triggered when selection changes */
-  onChange: ((v: T) => void) | Dispatch<SetStateAction<T>>;
+  onChange: ((v: string) => void) | Dispatch<SetStateAction<string>>;
   /** When true, uses smaller padding and sizing */
   compact?: boolean;
   /** Optional custom styling for the container */
   style?: StyleProp<ViewStyle>;
 };
 
-export default function YearSelector<T extends number = number>({
-  options,
-  value,
-  onChange,
-  compact = false,
-  style,
-}: Props<T>) {
+export default function YearSelector({ options, value, onChange, compact = false, style }: Props) {
   const { theme } = useTheme();
   const containerWidthRef = useRef<number>(0);
   const containerHeightRef = useRef<number>(0);
@@ -106,10 +99,7 @@ export default function YearSelector<T extends number = number>({
       {options.map((o) => (
         <TouchableOpacity
           key={o}
-          onPress={() => {
-            // @ts-ignore
-            onChange(o);
-          }}
+          onPress={() => onChange(o)}
           style={{
             flex: 1,
             alignItems: 'center',
@@ -127,7 +117,7 @@ export default function YearSelector<T extends number = number>({
               },
             ]}
           >
-            {o}Y
+            {o}
           </AppText>
         </TouchableOpacity>
       ))}
