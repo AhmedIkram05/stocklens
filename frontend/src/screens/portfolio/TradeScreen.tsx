@@ -38,6 +38,8 @@ export default function TradeScreen() {
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [holdings, setHoldings] = useState<Holding[]>([]);
+  const [holdingsLoading, setHoldingsLoading] = useState(false);
+  const [holdingsError, setHoldingsError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [freeCash, setFreeCash] = useState<number | null>(null);
@@ -47,10 +49,19 @@ export default function TradeScreen() {
 
   useEffect(() => {
     if (localMode === 'sell') {
+      setHoldingsLoading(true);
+      setHoldingsError(null);
       portfolioService
         .listHoldings(portfolioId)
-        .then(setHoldings)
-        .catch(() => {});
+        .then((data) => {
+          setHoldings(data);
+        })
+        .catch(() => {
+          setHoldingsError('Failed to load holdings. Check your connection.');
+        })
+        .finally(() => {
+          setHoldingsLoading(false);
+        });
     }
   }, [localMode, portfolioId]);
 
@@ -85,6 +96,8 @@ export default function TradeScreen() {
       return `Insufficient funds: $${total.toFixed(2)} exceeds available $${freeCash.toFixed(2)}`;
     }
     if (localMode === 'sell') {
+      if (holdingsLoading) return null; // ponytail: skip validation while loading; prevents flash-before-fetch
+      if (holdingsError) return 'Unable to verify holdings. Try again.';
       const holding = holdings.find((h) => h.ticker.toUpperCase() === ticker.trim().toUpperCase());
       if (!holding) return `You don't own any shares of ${ticker.trim().toUpperCase()}`;
       if (shares > holding.shares) {
@@ -99,6 +112,7 @@ export default function TradeScreen() {
     shares > 0 &&
     quote !== null &&
     !quoteLoading &&
+    !holdingsLoading &&
     !getValidationError();
 
   const validationError = getValidationError();
@@ -219,6 +233,19 @@ export default function TradeScreen() {
                 <Text style={{ fontWeight: '700' }}>${total.toFixed(2)}</Text>
               </Text>
             </View>
+          )}
+
+          {localMode === 'sell' && holdingsLoading && (
+            <View style={styles.quoteRow}>
+              <ActivityIndicator size="small" color={theme.primary} />
+              <Text style={[styles.quoteLoadingText, { color: theme.textSecondary }]}>
+                Loading holdings…
+              </Text>
+            </View>
+          )}
+
+          {holdingsError && (
+            <Text style={[styles.errorText, { color: theme.error }]}>{holdingsError}</Text>
           )}
 
           {validationError && (
