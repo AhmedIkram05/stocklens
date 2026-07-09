@@ -18,6 +18,23 @@ async def _create_portfolio(client: httpx.AsyncClient, headers: dict[str, str]) 
     return resp.json()
 
 
+async def _create_cash_flow(
+    client: httpx.AsyncClient,
+    pid: str,
+    headers: dict[str, str],
+    amount: float = 10000.0,
+) -> dict:
+    """Create a cash flow deposit to fund BUY transactions."""
+    payload = {
+        "amount": amount,
+        "source": "deposit",
+        "notes": "Test deposit for transaction tests",
+    }
+    resp = await client.post(f"/portfolios/{pid}/cash-flows", json=payload, headers=headers)
+    assert resp.status_code == 201
+    return resp.json()
+
+
 async def _create_transaction(
     client: httpx.AsyncClient,
     pid: str,
@@ -33,6 +50,11 @@ async def _create_transaction(
         "notes": "Test purchase",
     }
     payload.update(overrides)
+    # Ensure cash is available for BUY transactions
+    if payload.get("type") == "BUY":
+        shares = float(payload.get("shares", "10.0"))
+        price = float(payload.get("price_per_share", "150.50"))
+        await _create_cash_flow(client, pid, headers, amount=shares * price * 1.1)
     resp = await client.post(f"/portfolios/{pid}/transactions", json=payload, headers=headers)
     assert resp.status_code == 201
     return resp.json()
