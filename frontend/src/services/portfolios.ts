@@ -133,6 +133,8 @@ export interface BenchmarkComparison {
   methodology: string;
   daily_returns_count: number;
   calculated_at: string;
+  portfolio_cumulative_returns: { date: string; value: number }[];
+  benchmark_cumulative_returns: { date: string; value: number }[];
 }
 
 // ── Wrapped list response types ───────────────────────────────────────────────
@@ -258,8 +260,17 @@ export const portfolioService = {
     return apiService.get<PortfolioPerformance>(`/portfolio/performance/${portfolioId}`);
   },
 
-  async getBenchmark(portfolioId: string, benchmarkTicker?: string): Promise<BenchmarkComparison> {
-    const query = benchmarkTicker ? `?benchmark=${benchmarkTicker}` : '';
+  async getBenchmark(
+    portfolioId: string,
+    benchmarkTicker?: string,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<BenchmarkComparison> {
+    const params = new URLSearchParams();
+    if (benchmarkTicker) params.set('benchmark', benchmarkTicker);
+    if (startDate) params.set('start_date', startDate);
+    if (endDate) params.set('end_date', endDate);
+    const query = params.toString() ? `?${params.toString()}` : '';
     return apiService.get<BenchmarkComparison>(`/portfolio/benchmark/${portfolioId}${query}`);
   },
 };
