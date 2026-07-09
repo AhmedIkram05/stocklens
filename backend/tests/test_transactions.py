@@ -68,19 +68,16 @@ class TestCreateTransaction:
 
     async def test_create_buy(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
         p = await _create_portfolio(client, auth_headers)
-        response = await client.post(
-            f"/portfolios/{p['id']}/transactions",
-            json={
-                "ticker": "AAPL",
-                "type": "BUY",
-                "shares": "10.0",
-                "price_per_share": "150.50",
-                "transaction_date": "2026-06-01",
-            },
-            headers=auth_headers,
+        data = await _create_transaction(
+            client,
+            p["id"],
+            auth_headers,
+            ticker="AAPL",
+            type="BUY",
+            shares="10.0",
+            price_per_share="150.50",
+            transaction_date="2026-06-01",
         )
-        assert response.status_code == 201
-        data = response.json()
         assert data["ticker"] == "AAPL"
         assert data["type"] == "BUY"
         assert float(data["shares"]) == 10.0
@@ -110,6 +107,7 @@ class TestCreateTransaction:
         self, client: httpx.AsyncClient, auth_headers: dict[str, str]
     ):
         p = await _create_portfolio(client, auth_headers)
+        await _create_cash_flow(client, p["id"], auth_headers, amount=200.0)
         response = await client.post(
             f"/portfolios/{p['id']}/transactions",
             json={
@@ -177,6 +175,7 @@ class TestCreateTransaction:
 
     async def test_create_with_notes(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
         p = await _create_portfolio(client, auth_headers)
+        await _create_cash_flow(client, p["id"], auth_headers, amount=6000.0)
         response = await client.post(
             f"/portfolios/{p['id']}/transactions",
             json={
