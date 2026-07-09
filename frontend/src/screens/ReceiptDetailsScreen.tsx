@@ -38,10 +38,8 @@ import { formatCurrencyRounded } from '../utils/formatters';
 // Route prop for receipt details screen
 type ReceiptDetailsRouteProp = RouteProp<RootStackParamList, 'ReceiptDetails'>;
 
-// Preset options for years to project
-type YEAR_OPTIONS = 1 | 3 | 5 | 10 | 20;
-
 import { STOCK_PRESETS } from '../services/stockPresets';
+import { PERIOD_OPTIONS, periodToYears, periodLabel } from '../constants/periods';
 
 import { subscribe, emit } from '../services/eventBus';
 import { getHistoricalCAGRFromToday, getCombinedProjection } from '../services/projectionService';
@@ -76,8 +74,8 @@ export default function ReceiptDetailsScreen() {
   } = route.params;
   const source = route.params.source as SourceBadgeKey | undefined;
 
-  const [selectedYears, setSelectedYears] = useState<YEAR_OPTIONS>(5);
-  const [selectedFutureYears, setSelectedFutureYears] = useState<YEAR_OPTIONS>(5);
+  const [selectedYears, setSelectedYears] = useState<string>('5Y');
+  const [selectedFutureYears, setSelectedFutureYears] = useState<string>('5Y');
 
   // Load the authoritative receipt (merchant + line items) from the backend.
   // The scan endpoint already persisted these; route params are only a fast path.
@@ -165,9 +163,9 @@ export default function ReceiptDetailsScreen() {
   const { theme } = useTheme();
 
   const investmentOptions = useMemo(() => {
+    const yrs = periodToYears(selectedYears);
     return STOCK_PRESETS.map((stock) => {
-      // placeholder until live data replaces it asynchronously
-      const futureValue = totalAmount * Math.pow(1 + stock.returnRate, selectedYears);
+      const futureValue = totalAmount * Math.pow(1 + stock.returnRate, yrs);
       const gain = futureValue - totalAmount;
       const percentReturn = (futureValue / totalAmount - 1) * 100;
 
@@ -181,8 +179,9 @@ export default function ReceiptDetailsScreen() {
   }, [selectedYears, totalAmount]);
 
   const futureInvestmentOptions = useMemo(() => {
+    const yrs = periodToYears(selectedFutureYears);
     return STOCK_PRESETS.map((stock) => {
-      const futureValue = totalAmount * Math.pow(1 + stock.returnRate, selectedFutureYears);
+      const futureValue = totalAmount * Math.pow(1 + stock.returnRate, yrs);
       const gain = futureValue - totalAmount;
       const percentReturn = (futureValue / totalAmount - 1) * 100;
 
@@ -195,8 +194,8 @@ export default function ReceiptDetailsScreen() {
     });
   }, [selectedFutureYears, totalAmount]);
 
-  // historical CAGRs per ticker and years (e.g. { NVDA: {5: 0.18, 3: 0.22} })
-  const [historicalRates, setHistoricalRates] = useState<Record<string, Record<number, number>>>(
+  // historical CAGRs per ticker and period label (e.g. { NVDA: {"5Y": 0.18, "3Y": 0.22} })
+  const [historicalRates, setHistoricalRates] = useState<Record<string, Record<string, number>>>(
     {},
   );
   const [, setRatesLoading] = useState(false);
@@ -216,7 +215,7 @@ export default function ReceiptDetailsScreen() {
   // load historical rates whenever selectedYears changes
   useEffect(() => {
     let mounted = true;
-    async function loadHistoricalForYears(years: number) {
+    async function loadHistoricalForYears(period: string) {
       setRatesLoading(true);
       setRatesError(null);
       try {
@@ -231,10 +230,10 @@ export default function ReceiptDetailsScreen() {
 
         const results = await Promise.all(promises);
         if (!mounted) return;
-        const map: Record<string, Record<number, number>> = { ...historicalRates };
+        const map: Record<string, Record<string, number>> = { ...historicalRates };
         results.forEach((r: any) => {
           if (!map[r.ticker]) map[r.ticker] = {};
-          if (r.total !== null && r.total !== undefined) map[r.ticker][years] = r.total as number;
+          if (r.total !== null && r.total !== undefined) map[r.ticker][period] = r.total as number;
         });
         if (mounted) setHistoricalRates(map);
       } catch (err: any) {
@@ -349,19 +348,18 @@ export default function ReceiptDetailsScreen() {
 
   const formattedEditableAmount = formatCurrencyGBP(totalAmount || 0);
 
-  const formattedYearsLabel = `${selectedYears} ${selectedYears === 1 ? 'year' : 'years'}`;
-  const formattedFutureYearsLabel = `${selectedFutureYears} ${
-    selectedFutureYears === 1 ? 'year' : 'years'
-  }`;
+  const formattedYearsLabel = periodLabel(selectedYears);
+  const formattedFutureYearsLabel = periodLabel(selectedFutureYears);
 
   const renderStockCard = (
     investmentValue: (typeof investmentOptions)[number],
     isLastItem: boolean,
-    years: number = selectedYears,
+    years: string = selectedYears,
     mode: 'past' | 'future' = 'past',
   ) => {
-    // Past (historical) uses API-derived total return (last/first - 1) for the selected years when available
+    // Past (historical) uses API-derived total return (last/first - 1) for the selected period when available
     // Future uses preset annual returnRate and the formula amount * (1 + return_rate)^years
+    const yrs = periodToYears(years);
     let computedFutureValue: number;
     let computedGain: number;
     let computedPercentReturn: number;
@@ -370,15 +368,15 @@ export default function ReceiptDetailsScreen() {
       const cagr = historicalRates[investmentValue.ticker]?.[years];
       if (cagr !== undefined && cagr !== null) {
         // historical CAGR -> compute future value over the period (equivalent to last/first)
-        computedFutureValue = totalAmount * Math.pow(1 + cagr, years);
+        computedFutureValue = totalAmount * Math.pow(1 + cagr, yrs);
         computedGain = computedFutureValue - totalAmount;
         // show cumulative percent over the whole period (not annualized)
-        computedPercentReturn = (Math.pow(1 + cagr, years) - 1) * 100;
+        computedPercentReturn = (Math.pow(1 + cagr, yrs) - 1) * 100;
       } else {
         // fallback to historical calculation at render time (best-effort) or preset if unavailable
         // use projectUsingHistoricalCAGR synchronously is not possible; fallback to preset rate
         const rate = investmentValue.returnRate;
-        computedFutureValue = totalAmount * Math.pow(1 + rate, years);
+        computedFutureValue = totalAmount * Math.pow(1 + rate, yrs);
         computedGain = computedFutureValue - totalAmount;
         computedPercentReturn = (computedFutureValue / totalAmount - 1) * 100;
       }
@@ -386,7 +384,7 @@ export default function ReceiptDetailsScreen() {
       // future mode — prefer LSTM+combined rate, fall back to preset
       const pred = predictions[investmentValue.ticker];
       const rate = pred?.rate ?? investmentValue.returnRate;
-      computedFutureValue = totalAmount * Math.pow(1 + rate, years);
+      computedFutureValue = totalAmount * Math.pow(1 + rate, yrs);
       computedGain = computedFutureValue - totalAmount;
       computedPercentReturn = (computedFutureValue / totalAmount - 1) * 100;
     }
@@ -459,11 +457,12 @@ export default function ReceiptDetailsScreen() {
   // Compute best/worst performers for past based on the currently selected years
   const { bestPastTicker, worstPastTicker } = React.useMemo(() => {
     try {
+      const yrs = periodToYears(selectedYears);
       const list = investmentOptions.map((it) => {
         const cagr = historicalRates[it.ticker]?.[selectedYears];
         const percent =
           cagr !== undefined && cagr !== null
-            ? (Math.pow(1 + cagr, selectedYears) - 1) * 100
+            ? (Math.pow(1 + cagr, yrs) - 1) * 100
             : it.percentReturn;
         return { ticker: it.ticker, percent };
       });
@@ -659,7 +658,7 @@ export default function ReceiptDetailsScreen() {
             </PageHeader>
 
             <YearSelector
-              options={[1, 3, 5, 10, 20]}
+              options={[...PERIOD_OPTIONS]}
               value={selectedYears}
               onChange={setSelectedYears}
               compact={isSmallPhone}
@@ -697,7 +696,7 @@ export default function ReceiptDetailsScreen() {
             </PageHeader>
 
             <YearSelector
-              options={[1, 3, 5, 10, 20]}
+              options={[...PERIOD_OPTIONS]}
               value={selectedFutureYears}
               onChange={setSelectedFutureYears}
               compact={isSmallPhone}
