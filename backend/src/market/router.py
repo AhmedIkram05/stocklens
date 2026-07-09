@@ -36,7 +36,7 @@ logger = structlog.get_logger()
 
 router = APIRouter()
 
-QUOTE_CACHE_TTL = 60  # seconds — see ADR 003
+QUOTE_CACHE_TTL = 30  # seconds — see ADR 003
 
 
 async def _refresh_ohlcv_if_stale(ticker: str) -> bool:

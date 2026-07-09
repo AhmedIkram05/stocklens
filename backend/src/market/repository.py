@@ -61,6 +61,16 @@ async def get_latest_ohlcv_date(ticker: str) -> Optional[date]:
     return row["max_date"] if row and row["max_date"] else None
 
 
+async def get_earliest_ohlcv_date(ticker: str) -> Optional[date]:
+    """Return the oldest date in ohlcv_prices for *ticker*, or None."""
+    async with connection_ctx() as conn:
+        row = await conn.fetchrow(
+            "SELECT MIN(date) AS min_date FROM ohlcv_prices WHERE ticker = $1",
+            ticker,
+        )
+    return row["min_date"] if row and row["min_date"] else None
+
+
 async def upsert_ohlcv(ticker: str, rows: list[dict[str, Any]]) -> int:
     """Insert OHLCV rows using INSERT … ON CONFLICT DO NOTHING.
 
