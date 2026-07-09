@@ -141,18 +141,12 @@ export default function TradeScreen() {
               style={[
                 styles.modeButton,
                 styles.modeButtonLeft,
-                isBuy
-                  ? { backgroundColor: brandColors.green }
-                  : {
-                      backgroundColor: 'transparent',
-                      borderWidth: 1.5,
-                      borderColor: brandColors.green,
-                    },
+                isBuy ? { backgroundColor: brandColors.green } : { backgroundColor: theme.surface },
               ]}
               onPress={() => setLocalMode('buy')}
               activeOpacity={0.7}
             >
-              <Text style={[styles.modeButtonText, { color: isBuy ? '#fff' : brandColors.green }]}>
+              <Text style={[styles.modeButtonText, { color: isBuy ? '#fff' : theme.text }]}>
                 Buy
               </Text>
             </TouchableOpacity>
@@ -160,18 +154,12 @@ export default function TradeScreen() {
               style={[
                 styles.modeButton,
                 styles.modeButtonRight,
-                !isBuy
-                  ? { backgroundColor: brandColors.red }
-                  : {
-                      backgroundColor: 'transparent',
-                      borderWidth: 1.5,
-                      borderColor: brandColors.red,
-                    },
+                !isBuy ? { backgroundColor: brandColors.red } : { backgroundColor: theme.surface },
               ]}
               onPress={() => setLocalMode('sell')}
               activeOpacity={0.7}
             >
-              <Text style={[styles.modeButtonText, { color: !isBuy ? '#fff' : brandColors.red }]}>
+              <Text style={[styles.modeButtonText, { color: !isBuy ? '#fff' : theme.text }]}>
                 Sell
               </Text>
             </TouchableOpacity>
