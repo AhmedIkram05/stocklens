@@ -1,90 +1,220 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-  ActivityIndicator,
-  RefreshControl,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, ScrollView, RefreshControl, TouchableOpacity, StyleSheet } from 'react-native';
+import Svg, { Polyline, Line, Text as SvgText } from 'react-native-svg';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { StatusBar } from 'expo-status-bar';
+import { Ionicons } from '@expo/vector-icons';
+
+import ScreenContainer from '../../components/ScreenContainer';
+import PageHeader from '../../components/PageHeader';
+import StatCard from '../../components/StatCard';
+import YearSelector from '../../components/YearSelector';
+import ResponsiveContainer from '../../components/ResponsiveContainer';
+import AppText from '../../components/AppText';
+
 import { useTheme, brandColors } from '../../contexts/ThemeContext';
 import { PortfolioStackParamList } from '../../navigation/AppNavigator';
 import { portfolioService, BenchmarkComparison } from '../../services/portfolios';
+import { PERIOD_OPTIONS, periodToStartDate, periodLabel } from '../../constants/periods';
+import { useBreakpoint } from '../../hooks/useBreakpoint';
+import { spacing, typography, radii, shadows } from '../../styles/theme';
 
 type BenchmarkRouteProp = RouteProp<PortfolioStackParamList, 'Benchmark'>;
 type BenchmarkNavProp = StackNavigationProp<PortfolioStackParamList, 'Benchmark'>;
 
 const BENCHMARK_TICKERS = ['SPY', 'QQQ'] as const;
 
-interface InfoItem {
-  title: string;
-  description: string;
+// ── SVG Line Chart ───────────────────────────────────────────────────────────
+
+interface ChartPoint {
+  date: string;
+  value: number;
 }
 
-const INFO_ITEMS: InfoItem[] = [
-  {
-    title: 'Alpha',
-    description: 'How much better/worse the portfolio performed vs the benchmark.',
-  },
-  {
-    title: 'Tracking Error',
-    description: 'How consistently the portfolio follows the benchmark.',
-  },
-  {
-    title: 'Information Ratio',
-    description: 'Risk-adjusted excess return (alpha per unit of tracking error).',
-  },
-];
-
-interface StatCardProps {
+function ReturnChart({
+  portfolio,
+  benchmark,
+  benchmarkTicker,
+  height = 200,
+  theme,
+}: {
+  portfolio: ChartPoint[];
+  benchmark: ChartPoint[];
+  benchmarkTicker: string;
+  height?: number;
   theme: ReturnType<typeof useTheme>['theme'];
-  label: string;
-  value: string;
-  valueColor?: string;
-}
+}) {
+  const { width: screenW, contentHorizontalPadding } = useBreakpoint();
+  const chartW = screenW - contentHorizontalPadding * 2 - 32; // account for card padding
+  const chartH = height;
+  const padL = 48;
+  const padR = 8;
+  const padT = 20;
+  const padB = 28;
+  const innerW = chartW - padL - padR;
+  const innerH = chartH - padT - padB;
 
-function StatCard({ theme, label, value, valueColor }: StatCardProps) {
+  // Merge both series by date into a unified set
+  const allDates = useMemo(() => {
+    const dateSet = new Set<string>();
+    portfolio.forEach((p) => dateSet.add(p.date));
+    benchmark.forEach((b) => dateSet.add(b.date));
+    return Array.from(dateSet).sort();
+  }, [portfolio, benchmark]);
+
+  if (allDates.length < 2 || (portfolio.length < 2 && benchmark.length < 2)) {
+    return (
+      <View style={[chartStyles.empty, { height: chartH, backgroundColor: theme.surface }]}>
+        <AppText style={{ color: theme.textSecondary, ...typography.caption }}>
+          Insufficient data for chart
+        </AppText>
+      </View>
+    );
+  }
+
+  const dateIndex = new Map(allDates.map((d, i) => [d, i]));
+  const n = allDates.length;
+
+  const toPoints = (series: ChartPoint[]): { x: number; y: number }[] => {
+    const values = series.map((s) => s.value);
+    if (values.length === 0) return [];
+    const min = Math.min(0, ...values);
+    const max = Math.max(0, ...values);
+    const range = max - min || 1;
+    return series.map((s) => ({
+      x: padL + ((dateIndex.get(s.date) ?? 0) / (n - 1)) * innerW,
+      y: padT + (1 - (s.value - min) / range) * innerH,
+    }));
+  };
+
+  const portfolioPts = toPoints(portfolio);
+  const benchmarkPts = toPoints(benchmark);
+
+  const allVals = [...portfolio.map((p) => p.value), ...benchmark.map((b) => b.value)];
+  const minVal = Math.min(0, ...allVals);
+  const maxVal = Math.max(0, ...allVals);
+  const range = maxVal - minVal || 1;
+
+  const yTicks = 5;
+  const yTickValues = Array.from({ length: yTicks + 1 }, (_, i) => minVal + (range * i) / yTicks);
+
   return (
-    <View style={[styles.card, { backgroundColor: theme.surface }]}>
-      <Text style={[styles.cardLabel, { color: theme.textSecondary }]} numberOfLines={2}>
-        {label}
-      </Text>
-      <Text style={[styles.cardValue, { color: valueColor ?? theme.text }]}>{value}</Text>
-    </View>
+    <Svg width={chartW} height={chartH}>
+      {/* Zero line */}
+      {(() => {
+        const zeroY = padT + (1 - (0 - minVal) / range) * innerH;
+        return (
+          <Line
+            x1={padL}
+            y1={zeroY}
+            x2={chartW - padR}
+            y2={zeroY}
+            stroke={theme.textSecondary}
+            strokeWidth={0.5}
+            strokeDasharray="4,4"
+          />
+        );
+      })()}
+
+      {/* Y-axis labels */}
+      {yTickValues.map((v, i) => {
+        const y = padT + (1 - (v - minVal) / range) * innerH;
+        return (
+          <SvgText
+            key={i}
+            x={padL - 6}
+            y={y + 4}
+            fontSize={9}
+            fill={theme.textSecondary}
+            textAnchor="end"
+          >
+            {`${(v * 100).toFixed(0)}%`}
+          </SvgText>
+        );
+      })}
+
+      {/* Grid lines */}
+      {yTickValues.map((v, i) => {
+        const y = padT + (1 - (v - minVal) / range) * innerH;
+        return (
+          <Line
+            key={i}
+            x1={padL}
+            y1={y}
+            x2={chartW - padR}
+            y2={y}
+            stroke={theme.textSecondary}
+            strokeWidth={0.3}
+            opacity={0.3}
+          />
+        );
+      })}
+
+      {/* Lines */}
+      {portfolioPts.length > 1 && (
+        <Polyline
+          points={portfolioPts.map((p) => `${p.x},${p.y}`).join(' ')}
+          fill="none"
+          stroke={brandColors.blue}
+          strokeWidth={2}
+        />
+      )}
+      {benchmarkPts.length > 1 && (
+        <Polyline
+          points={benchmarkPts.map((p) => `${p.x},${p.y}`).join(' ')}
+          fill="none"
+          stroke={theme.textSecondary}
+          strokeWidth={2}
+        />
+      )}
+
+      {/* Legend */}
+      <SvgText x={padL + 2} y={chartH - 4} fontSize={10} fill={brandColors.blue}>
+        Portfolio
+      </SvgText>
+      <SvgText x={padL + 72} y={chartH - 4} fontSize={10} fill={theme.textSecondary}>
+        {benchmarkTicker}
+      </SvgText>
+    </Svg>
   );
 }
+
+const chartStyles = StyleSheet.create({
+  empty: {
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
+
+// ── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function BenchmarkScreen() {
   const navigation = useNavigation<BenchmarkNavProp>();
   const route = useRoute<BenchmarkRouteProp>();
   const { theme } = useTheme();
   const { portfolioId, benchmarkTicker: initialTicker } = route.params;
+  const { sectionVerticalSpacing } = useBreakpoint();
 
   const [activeBenchmark, setActiveBenchmark] = useState<string>(initialTicker ?? 'SPY');
+  const [period, setPeriod] = useState<string>('1Y');
   const [data, setData] = useState<BenchmarkComparison | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const fetchBenchmark = useCallback(
-    async (ticker: string, isRefresh = false) => {
-      if (isRefresh) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
-      setError(null);
+    async (ticker: string, p: string, isRefresh = false) => {
+      if (isRefresh) setRefreshing(true);
+      else setLoading(true);
 
       try {
-        const result = await portfolioService.getBenchmark(portfolioId, ticker);
+        const endDate = new Date();
+        const startDate = periodToStartDate(p, endDate);
+        const result = await portfolioService.getBenchmark(portfolioId, ticker, startDate);
         setData(result);
-      } catch {
-        setError('Unable to load benchmark data.');
+      } catch (err) {
+        console.warn('benchmark fetch error:', err);
+        // keep stale data on refresh failure
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -94,309 +224,234 @@ export default function BenchmarkScreen() {
   );
 
   useEffect(() => {
-    fetchBenchmark(activeBenchmark);
-  }, [activeBenchmark, fetchBenchmark]);
+    fetchBenchmark(activeBenchmark, period);
+  }, [activeBenchmark, period, fetchBenchmark]);
 
   const handleRefresh = useCallback(() => {
-    fetchBenchmark(activeBenchmark, true);
-  }, [activeBenchmark, fetchBenchmark]);
+    fetchBenchmark(activeBenchmark, period, true);
+  }, [activeBenchmark, period, fetchBenchmark]);
 
-  const toggleBenchmark = useCallback((ticker: string) => {
-    setActiveBenchmark(ticker);
-  }, []);
-
-  const formatPct = (value: number | null | undefined): string =>
-    value != null ? `${value.toFixed(2)}%` : 'N/A';
-
-  const renderContent = () => {
-    if (loading && !data) {
-      return (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={theme.primary} />
-        </View>
-      );
-    }
-
-    if ((error || !data) && !loading) {
-      return (
-        <View style={styles.center}>
-          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-            Add holdings and prices to see benchmark comparison.
-          </Text>
-        </View>
-      );
-    }
-
-    if (!data) return null;
-
-    const alpha = data.excess_return_alpha;
-    const ir = data.information_ratio;
-    const te = data.tracking_error;
-    const alphaColor = alpha != null && alpha >= 0 ? brandColors.green : brandColors.red;
-    const irColor = ir != null && ir >= 0 ? brandColors.green : brandColors.red;
-
-    return (
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={theme.primary}
-          />
-        }
-      >
-        {loading && data && (
-          <ActivityIndicator size="small" color={theme.primary} style={styles.switchLoader} />
-        )}
-
-        {data && (
-          <Text style={[styles.periodRow, { color: theme.textSecondary }]}>
-            {data.period_start} → {data.period_end} · {data.daily_returns_count} trading days
-          </Text>
-        )}
-
-        <View style={styles.pickerRow}>
-          {BENCHMARK_TICKERS.map((ticker) => {
-            const isActive = activeBenchmark === ticker;
-            return (
-              <TouchableOpacity
-                key={ticker}
-                style={[
-                  styles.pickerButton,
-                  {
-                    backgroundColor: isActive ? theme.primary : theme.surface,
-                    borderColor: isActive ? theme.primary : theme.border,
-                  },
-                ]}
-                onPress={() => toggleBenchmark(ticker)}
-                disabled={loading && !!data}
-              >
-                <Text
-                  style={[styles.pickerButtonText, { color: isActive ? '#ffffff' : theme.text }]}
-                >
-                  {ticker}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {data.daily_returns_count === 0 && (
-          <Text style={[styles.insufficientData, { color: theme.textSecondary }]}>
-            (insufficient data)
-          </Text>
-        )}
-
-        <View style={styles.cardsRow}>
-          <StatCard
-            theme={theme}
-            label="Excess Return (Alpha)"
-            value={formatPct(data.excess_return_alpha)}
-            valueColor={alphaColor}
-          />
-          <StatCard
-            theme={theme}
-            label="Tracking Error"
-            value={formatPct(te != null ? Math.abs(te) : null)}
-          />
-          <StatCard
-            theme={theme}
-            label="Information Ratio"
-            value={ir != null ? ir.toFixed(2) : 'N/A'}
-            valueColor={irColor}
-          />
-        </View>
-
-        <View
-          style={[
-            styles.comparisonBox,
-            { backgroundColor: theme.surface, borderColor: theme.border },
-          ]}
-        >
-          <View style={styles.comparisonCol}>
-            <Text style={[styles.comparisonLabel, { color: theme.textSecondary }]}>
-              Portfolio TWR
-            </Text>
-            <Text style={[styles.comparisonValue, { color: theme.text }]}>
-              {formatPct(data.portfolio_return)}
-            </Text>
-          </View>
-          <Text style={[styles.comparisonVs, { color: theme.textSecondary }]}>vs</Text>
-          <View style={styles.comparisonCol}>
-            <Text style={[styles.comparisonLabel, { color: theme.textSecondary }]}>
-              {data.benchmark_ticker} Return
-            </Text>
-            <Text style={[styles.comparisonValue, { color: theme.text }]}>
-              {formatPct(data.benchmark_return)}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.infoSection}>
-          {INFO_ITEMS.map((item) => (
-            <View key={item.title} style={styles.infoRow}>
-              <Text style={[styles.infoTitle, { color: theme.text }]}>{item.title}</Text>
-              <Text style={[styles.infoDescription, { color: theme.textSecondary }]}>
-                {item.description}
-              </Text>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
-    );
-  };
+  const alpha = data?.excess_return_alpha;
+  const ir = data?.information_ratio;
+  const te = data?.tracking_error;
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <StatusBar style={theme.background === '#000000' ? 'light' : 'dark'} />
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={[styles.headerButton, { color: theme.primary }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Benchmark Comparison</Text>
-        <View style={styles.headerButton} />
-      </View>
-      {renderContent()}
-    </SafeAreaView>
+    <ScreenContainer>
+      <ResponsiveContainer>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: spacing.xl }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={theme.primary}
+            />
+          }
+        >
+          {/* Back button */}
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={24} color={theme.text} />
+          </TouchableOpacity>
+
+          <PageHeader subtitle={`vs ${activeBenchmark}`}>Benchmark</PageHeader>
+
+          {/* Period selector */}
+          <YearSelector options={[...PERIOD_OPTIONS]} value={period} onChange={setPeriod} />
+
+          {/* Loading overlay */}
+          {loading && !data && (
+            <View style={styles.loadingBox}>
+              <AppText style={{ color: theme.textSecondary }}>Loading...</AppText>
+            </View>
+          )}
+
+          {data && (
+            <>
+              {/* Stat cards row */}
+              <View style={[styles.statRow, { marginTop: sectionVerticalSpacing }]}>
+                <StatCard
+                  value={alpha != null ? `${alpha >= 0 ? '+' : ''}${alpha.toFixed(2)}%` : 'N/A'}
+                  label="Alpha"
+                  subtitle={periodLabel(period)}
+                  variant={alpha != null && alpha >= 0 ? 'green' : 'white'}
+                />
+                <StatCard
+                  value={te != null ? `${Math.abs(te).toFixed(2)}%` : 'N/A'}
+                  label="Tracking Error"
+                  variant="white"
+                />
+                <StatCard
+                  value={ir != null ? ir.toFixed(2) : 'N/A'}
+                  label="Info Ratio"
+                  variant={ir != null && ir >= 0 ? 'blue' : 'white'}
+                />
+              </View>
+
+              {/* Return comparison */}
+              <View
+                style={[styles.returnCard, { backgroundColor: theme.surface, ...shadows.level2 }]}
+              >
+                <View style={styles.returnCol}>
+                  <AppText style={{ color: theme.textSecondary, ...typography.caption }}>
+                    Portfolio
+                  </AppText>
+                  <AppText
+                    style={[
+                      typography.metricSm,
+                      {
+                        color:
+                          data.portfolio_return != null && data.portfolio_return >= 0
+                            ? brandColors.green
+                            : brandColors.red,
+                      },
+                    ]}
+                  >
+                    {data.portfolio_return != null ? `${data.portfolio_return.toFixed(2)}%` : 'N/A'}
+                  </AppText>
+                </View>
+                <View style={styles.returnDivider} />
+                <View style={styles.returnCol}>
+                  <AppText style={{ color: theme.textSecondary, ...typography.caption }}>
+                    {activeBenchmark}
+                  </AppText>
+                  <AppText
+                    style={[
+                      typography.metricSm,
+                      {
+                        color:
+                          data.benchmark_return != null && data.benchmark_return >= 0
+                            ? brandColors.green
+                            : brandColors.red,
+                      },
+                    ]}
+                  >
+                    {data.benchmark_return != null ? `${data.benchmark_return.toFixed(2)}%` : 'N/A'}
+                  </AppText>
+                </View>
+              </View>
+
+              {/* Cumulative return chart */}
+              {(data.portfolio_cumulative_returns.length > 1 ||
+                data.benchmark_cumulative_returns.length > 1) && (
+                <View
+                  style={[styles.chartCard, { backgroundColor: theme.surface, ...shadows.level2 }]}
+                >
+                  <AppText style={[styles.chartTitle, { color: theme.text }]}>
+                    Cumulative Return — {periodLabel(period)}
+                  </AppText>
+                  <ReturnChart
+                    portfolio={data.portfolio_cumulative_returns}
+                    benchmark={data.benchmark_cumulative_returns}
+                    benchmarkTicker={activeBenchmark}
+                    theme={theme}
+                  />
+                </View>
+              )}
+
+              {/* Benchmark picker at bottom */}
+              <View style={[styles.pickerSection, { marginTop: sectionVerticalSpacing }]}>
+                <AppText style={[styles.pickerLabel, { color: theme.textSecondary }]}>
+                  Benchmark
+                </AppText>
+                <View style={styles.pickerRow}>
+                  {BENCHMARK_TICKERS.map((ticker) => {
+                    const isActive = activeBenchmark === ticker;
+                    return (
+                      <TouchableOpacity
+                        key={ticker}
+                        style={[
+                          styles.pickerBtn,
+                          {
+                            backgroundColor: isActive ? theme.primary : theme.surface,
+                            borderColor: isActive ? theme.primary : theme.border,
+                          },
+                        ]}
+                        onPress={() => setActiveBenchmark(ticker)}
+                        disabled={loading && !!data}
+                      >
+                        <AppText
+                          style={[
+                            styles.pickerBtnText,
+                            { color: isActive ? '#ffffff' : theme.text },
+                          ]}
+                        >
+                          {ticker}
+                        </AppText>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            </>
+          )}
+        </ScrollView>
+      </ResponsiveContainer>
+    </ScreenContainer>
   );
 }
 
+// ── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  backBtn: {
+    marginBottom: spacing.sm,
   },
-  header: {
+  loadingBox: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+  },
+  statRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  returnCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderRadius: radii.md,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    marginTop: spacing.md,
   },
-  headerButton: {
-    width: 60,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  center: {
+  returnCol: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32,
+    gap: spacing.xs,
   },
-  emptyText: {
-    fontSize: 15,
-    textAlign: 'center',
-    lineHeight: 22,
+  returnDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: brandColors.white,
+    opacity: 0.2,
   },
-  scroll: {
-    flex: 1,
+  chartCard: {
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginTop: spacing.md,
   },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 32,
+  chartTitle: {
+    ...typography.body,
+    fontWeight: '600',
+    marginBottom: spacing.sm,
   },
-  switchLoader: {
-    marginBottom: 8,
+  pickerSection: {
+    gap: spacing.sm,
   },
-  periodRow: {
-    fontSize: 12,
-    textAlign: 'center',
-    marginBottom: 8,
+  pickerLabel: {
+    ...typography.caption,
   },
   pickerRow: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
+    gap: spacing.md,
   },
-  pickerButton: {
+  pickerBtn: {
     flex: 1,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 12,
+    borderRadius: radii.sm,
+    paddingVertical: spacing.md,
     alignItems: 'center',
   },
-  pickerButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  insufficientData: {
-    fontSize: 12,
-    fontStyle: 'italic',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  cardsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 20,
-  },
-  card: {
-    flex: 1,
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 6,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  cardLabel: {
-    fontSize: 10,
-    fontWeight: '500',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  cardValue: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  comparisonBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingVertical: 20,
-    paddingHorizontal: 16,
-    marginBottom: 24,
-  },
-  comparisonCol: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  comparisonLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  comparisonValue: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  comparisonVs: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginHorizontal: 12,
-  },
-  infoSection: {
-    gap: 16,
-  },
-  infoRow: {
-    gap: 4,
-  },
-  infoTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  infoDescription: {
-    fontSize: 13,
-    lineHeight: 19,
+  pickerBtnText: {
+    ...typography.bodyStrong,
   },
 });
