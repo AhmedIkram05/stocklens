@@ -227,8 +227,10 @@ async def create_transaction(
                     ),
                 )
 
-        # Atomic: the transaction row and the holdings update commit together.
-        async with conn.transaction():
+        # Atomic: transaction row + holdings update commit together.
+        # Check is_in_transaction() to avoid nested tx error in tests
+        # (tests wrap each test in BEGIN/ROLLBACK).
+        if conn.is_in_transaction():
             row = await conn.fetchrow(
                 "INSERT INTO transactions "
                 "(portfolio_id, ticker, type, shares, price_per_share, "
@@ -253,6 +255,32 @@ async def create_transaction(
                 )
             elif body.type == "SELL":
                 await _apply_sell_to_holdings(conn, portfolio_id, body.ticker, body.shares)
+        else:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    "INSERT INTO transactions "
+                    "(portfolio_id, ticker, type, shares, price_per_share, "
+                    " total_amount, transaction_date, notes) "
+                    "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8) "
+                    "RETURNING id, portfolio_id, ticker, type, shares, price_per_share, "
+                    "total_amount, transaction_date, notes, created_at",
+                    portfolio_id,
+                    body.ticker,
+                    body.type,
+                    body.shares,
+                    body.price_per_share,
+                    total_amount,
+                    body.transaction_date,
+                    body.notes,
+                )
+
+                # Keep holdings in sync with transactions
+                if body.type == "BUY":
+                    await _apply_buy_to_holdings(
+                        conn, portfolio_id, body.ticker, body.shares, body.price_per_share
+                    )
+                elif body.type == "SELL":
+                    await _apply_sell_to_holdings(conn, portfolio_id, body.ticker, body.shares)
 
     result = _row_to_response(dict(row))
 
