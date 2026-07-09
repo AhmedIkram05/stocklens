@@ -133,7 +133,10 @@ export default function DepositScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: theme.background }]}
+      edges={['top', 'bottom']}
+    >
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -405,7 +408,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     paddingVertical: spacing.lg,
-    paddingBottom: spacing.xl + 10,
+    paddingBottom: 80,
   },
   confirmButton: {
     borderRadius: radii.md,
