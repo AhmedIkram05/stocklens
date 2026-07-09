@@ -197,16 +197,16 @@ async def scan_receipt(
 
     elapsed = (time.perf_counter() - start_time) * 1000
 
-    # Build line items for DB (only from regex for initial persist)
     # ── Persist to database ─────────────────────────────────────────────
     async with connection_ctx() as conn:
         db_row = await conn.fetchrow(
             "INSERT INTO receipts "
             "(user_id, total_amount, merchant_name, category_id, ocr_raw_text, "
-            " ocr_confidence, line_items, scanned_at, source) "
-            "VALUES ($1::uuid, $2, $3, $4::uuid, $5, $6, $7::jsonb, $8, $9) "
+            " ocr_confidence, line_items, scanned_at, source, transaction_date) "
+            "VALUES ($1::uuid, $2, $3, $4::uuid, $5, $6, $7::jsonb, $8, $9, $10) "
             "RETURNING id, user_id, total_amount, merchant_name, category_id, "
-            "ocr_raw_text, ocr_confidence, line_items, source, scanned_at, created_at",
+            "ocr_raw_text, ocr_confidence, line_items, source, scanned_at, "
+            "transaction_date, created_at",
             current_user.id,
             cascade_result.extraction.total,
             cascade_result.extraction.merchant_name,
@@ -216,6 +216,7 @@ async def scan_receipt(
             json.dumps([item.model_dump() for item in cascade_result.extraction.items]),
             datetime.now(timezone.utc),
             cascade_result.source,
+            cascade_result.extraction.date,
         )
     # image_bytes discarded after processing (never stored on device)
 
