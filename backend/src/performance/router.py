@@ -22,8 +22,8 @@ from src.auth.schemas import UserInDB
 from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
-from src.market.provider import fetch_ohlcv
-from src.market.repository import get_ohlcv, upsert_ohlcv
+from src.market.provider import fetch_ohlcv, fetch_quote
+from src.market.repository import get_earliest_ohlcv_date, get_ohlcv, upsert_ohlcv
 from src.market.router import _refresh_ohlcv_if_stale
 from src.performance.calculations import (
     compute_benchmark_comparison,
@@ -141,6 +141,27 @@ async def _build_price_map(
     return price_map
 
 
+async def _fetch_live_quotes(
+    tickers: list[str],
+) -> dict[str, tuple[Decimal, Decimal]]:
+    """Fetch live quotes in parallel, returning {ticker: (price, previous_close)}.
+
+    Failures are logged and silently skipped — the caller falls back to OHLCV data.
+    """
+    import asyncio
+
+    tasks = [fetch_quote(t) for t in tickers]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    quotes: dict[str, tuple[Decimal, Decimal]] = {}
+    for ticker, result in zip(tickers, results):
+        if isinstance(result, Exception):
+            logger.warning("live_quote_fetch_failed", ticker=ticker, error=str(result))
+            continue
+        quotes[ticker] = (result["price"], result["previous_close"])
+    return quotes
+
+
 @router.get(
     "/portfolio/performance/{portfolio_id}",
     response_model=PortfolioPerformanceResponse,
@@ -192,6 +213,9 @@ async def get_portfolio_performance(
 
     price_map = await _build_price_map(tickers, start_date, end_date)
 
+    # Fetch live intraday quotes to override OHLCV closing prices
+    live_quotes = await _fetch_live_quotes(tickers)
+
     return compute_portfolio_performance(
         portfolio_id=str(portfolio_id),
         portfolio_name=portfolio["name"],
@@ -202,6 +226,7 @@ async def get_portfolio_performance(
         start_date=start_date,
         end_date=end_date,
         enable_twr=settings.ENABLE_TWR,
+        live_quotes=live_quotes,
     )
 
 
@@ -274,12 +299,16 @@ async def _get_benchmark_comparison_inner(
     # yfinance defaults to 1 year when start_date=None, so longer periods
     # may need a wider fetch.
     await _refresh_ohlcv_if_stale(benchmark)
-    existing = await get_ohlcv(benchmark, start_date=start_date, limit=1)
-    if not existing:
-        # No data at start_date — fetch the full range and upsert
+    earliest = await get_earliest_ohlcv_date(benchmark)
+    logger.info(
+        "coverage_check", benchmark=benchmark, earliest=str(earliest), start_date=str(start_date)
+    )
+    if earliest is None or earliest > start_date:
         rows = await fetch_ohlcv(benchmark, start_date=start_date, end_date=end_date)
+        logger.info("coverage_fetch", benchmark=benchmark, rows_fetched=len(rows))
         if rows:
-            await upsert_ohlcv(benchmark, rows)
+            inserted = await upsert_ohlcv(benchmark, rows)
+            logger.info("coverage_upsert", benchmark=benchmark, rows_inserted=inserted)
 
     price_map = await _build_price_map(all_tickers, start_date, end_date)
 
@@ -288,6 +317,9 @@ async def _get_benchmark_comparison_inner(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No price data found for benchmark {benchmark}",
         )
+
+    # Fetch live quote for benchmark intraday price
+    live_quotes = await _fetch_live_quotes(tickers)
 
     perf_response = compute_portfolio_performance(
         portfolio_id=str(portfolio_id),
@@ -299,6 +331,7 @@ async def _get_benchmark_comparison_inner(
         start_date=start_date,
         end_date=end_date,
         enable_twr=settings.ENABLE_TWR,
+        live_quotes=live_quotes,
     )
 
     # Compute benchmark daily returns from price data

@@ -92,6 +92,7 @@ def compute_portfolio_performance(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     enable_twr: bool = True,
+    live_quotes: Optional[dict[str, tuple[Decimal, Decimal]]] = None,
 ) -> PortfolioPerformanceResponse:
     """Compute aggregate portfolio performance including TWR.
 
@@ -126,6 +127,14 @@ def compute_portfolio_performance(
             latest_prices[ticker] = ticker_prices[sorted_dates[-1]]
             if len(sorted_dates) >= 2:
                 previous_closes[ticker] = ticker_prices[sorted_dates[-2]]
+
+    # Override with live intraday quotes if available
+    if live_quotes:
+        for ticker, (price, prev_close) in live_quotes.items():
+            if price is not None:
+                latest_prices[ticker] = price
+            if prev_close is not None:
+                previous_closes[ticker] = prev_close
 
     # ── 2. Per-holding metrics ──
     holdings_with_prices = 0
