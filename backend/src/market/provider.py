@@ -163,12 +163,10 @@ async def fetch_ohlcv(
 ) -> list[dict[str, Any]]:
     """Fetch OHLCV data from yfinance in a thread pool.
 
-    Defaults to the last 1 year if no dates provided.
+    Defaults to the last 20 years if no dates provided (covers max period picker).
     """
     if start_date is None:
-        start_date = date.today() - timedelta(days=365)
-    # yfinance uses exclusive end_date semantics; defaulting to today is fine
-    # since the caller typically wants data up to yesterday (the last complete day)
+        start_date = date.today() - timedelta(days=20 * 365)
     if end_date is None:
         end_date = date.today()
 
