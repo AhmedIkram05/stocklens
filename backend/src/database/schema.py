@@ -106,6 +106,9 @@ holdings = Table(
     Column("ticker", String(10), nullable=False),
     Column("shares", Numeric(18, 6), nullable=False),
     Column("average_cost_basis", Numeric(12, 4), nullable=False),
+    Column("currency", String(8), nullable=False, server_default=text("'GBP'")),
+    Column("fx_rate_to_gbp", Numeric(18, 10), nullable=False, server_default=text("1.0")),
+    Column("average_cost_basis_gbp", Numeric(12, 4), nullable=True),
     Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
     Column("updated_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
 )
@@ -129,11 +132,26 @@ transactions = Table(
     Column("shares", Numeric(18, 6), nullable=False),
     Column("price_per_share", Numeric(12, 4), nullable=False),
     Column("total_amount", Numeric(24, 6), nullable=False),
+    Column("currency", String(8), nullable=False, server_default=text("'GBP'")),
+    Column("fx_rate_to_gbp", Numeric(18, 10), nullable=False, server_default=text("1.0")),
+    Column("total_amount_gbp", Numeric(24, 6), nullable=True),
     Column("transaction_date", Date(), nullable=False),
     Column("notes", Text()),
     Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
     CheckConstraint("type IN ('BUY', 'SELL')", name="chk_transactions_type"),
     CheckConstraint("total_amount = shares * price_per_share", name="chk_transactions_amount"),
+)
+
+# ---------------------------------------------------------------------------
+# Instruments — ticker → (currency, exchange) reference, resolved server-side
+# ---------------------------------------------------------------------------
+
+instruments = Table(
+    "instruments",
+    target_metadata,
+    Column("ticker", String(10), primary_key=True),
+    Column("currency", String(8), nullable=False, server_default=text("'GBP'")),
+    Column("exchange", String(20), nullable=True),
 )
 
 # ---------------------------------------------------------------------------
