@@ -27,6 +27,8 @@ export type ReceiptShape = {
   source?: string;
   /** OCR extraction confidence 0-100 */
   confidence?: number;
+  /** Assigned spending category ID (or null if unassigned) */
+  categoryId?: string | null;
 };
 
 /**
@@ -55,6 +57,7 @@ export default function useReceipts() {
         image: r.receipt_image_s3_key || undefined,
         source: r.source || undefined,
         confidence: r.ocr_confidence != null ? Number(r.ocr_confidence) : undefined,
+        categoryId: r.category_id ?? null,
       }));
       setReceipts(mapped);
     } catch (err: any) {

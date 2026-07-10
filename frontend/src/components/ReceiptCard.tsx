@@ -32,7 +32,32 @@ type Props = {
   source?: SourceBadgeKey;
   /** OCR extraction confidence 0-100 */
   confidence?: number;
+  /** Spending category name (displayed as a chip) */
+  category?: string | null;
+  /** Optional explicit category color; otherwise derived from the name */
+  categoryColor?: string;
 };
+
+const CATEGORY_PALETTE = [
+  '#6366f1',
+  '#ec4899',
+  '#14b8a6',
+  '#f59e0b',
+  '#8b5cf6',
+  '#ef4444',
+  '#0ea5e9',
+  '#22c55e',
+];
+
+/** Deterministic color for a category name (stable across renders). */
+function colorForCategory(name?: string | null): string {
+  if (!name) return '#6b7280';
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return CATEGORY_PALETTE[Math.abs(hash) % CATEGORY_PALETTE.length];
+}
 
 const SOURCE_BADGE: Record<string, { label: string; color: string }> = {
   regex: { label: 'Regex', color: '#22c55e' },
@@ -41,9 +66,20 @@ const SOURCE_BADGE: Record<string, { label: string; color: string }> = {
   failed: { label: 'Failed', color: '#ef4444' },
 };
 
-export default function ReceiptCard({ image, amount, label, time, onPress, style, source }: Props) {
+export default function ReceiptCard({
+  image,
+  amount,
+  label,
+  time,
+  onPress,
+  style,
+  source,
+  category,
+  categoryColor,
+}: Props) {
   const { theme } = useTheme();
   const resolvedImage = useDecryptedImage(image);
+  const catColor = categoryColor ?? colorForCategory(category);
 
   return (
     <TouchableOpacity
@@ -60,7 +96,16 @@ export default function ReceiptCard({ image, amount, label, time, onPress, style
       <View style={styles.info}>
         <AppText style={[styles.amount, { color: theme.text }]}>{amount}</AppText>
         <AppText style={[styles.label, { color: theme.textSecondary }]}>{label}</AppText>
-        <AppText style={[styles.time, { color: theme.textSecondary }]}>{time}</AppText>
+        <View style={styles.metaRow}>
+          {time ? (
+            <AppText style={[styles.time, { color: theme.textSecondary }]}>{time}</AppText>
+          ) : null}
+          {category ? (
+            <View style={[styles.categoryChip, { backgroundColor: catColor + '1f' }]}>
+              <AppText style={[styles.categoryChipText, { color: catColor }]}>{category}</AppText>
+            </View>
+          ) : null}
+        </View>
       </View>
       <AppText style={[styles.chevron, { color: theme.textSecondary }]}>›</AppText>
       {source && (
@@ -130,5 +175,23 @@ const styles = StyleSheet.create({
   chevron: {
     ...typography.metricSm,
     marginLeft: spacing.sm,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: 2,
+  },
+  categoryChip: {
+    paddingHorizontal: spacing.xs + 2,
+    paddingVertical: 2,
+    borderRadius: radii.sm,
+  },
+  categoryChipText: {
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 });
