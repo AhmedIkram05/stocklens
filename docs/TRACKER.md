@@ -256,7 +256,7 @@ When updating this file, agents must follow these rules:
 | R7   | No frontend prediction service               | prediction.ts service + PredictionCard component                  | Calls GET /predict/{ticker}, renders direction/confidence/probabilities                |
 | R13  | No HPO planned                               | Optuna study (Phase 1: 5-dim search, Phase 2: threshold sweep)    | Structured HPO replaces manual hyperparameter guessing; adds 17 unit tests             |
 
-### Phase 4 — MLOps & Automation
+## Phase 4 — MLOps & Automation
 
 **Goal:** Weekly retraining DAG (Airflow), drift detection (PSI/KS/JS), prediction logging, champion/challenger comparison, S3 drift reports. Closes the ML loop: train → log → detect drift → retrain.
 **Plan doc:** [PHASE4_IMPLEMENTATION.md](PHASE4_IMPLEMENTATION.md) (frozen spec after code-architect review)
@@ -329,7 +329,7 @@ When updating this file, agents must follow these rules:
 - **ML test harness**: ML tests run via `backend/ml/.venv` with `uv`-managed dependencies (separate venv from backend). `httpx` and `asyncpg` were added to ML venv for test conftest compatibility. Tests were run from `backend/ml/tests/` with a local conftest that overrides DB fixtures.
 - **Final verification (2026-07-07)**: **All Phase 4 DoD criteria met**. Airflow DAG parses (0 errors), web UI accessible at localhost:8080, manual DAG run executes all 5 tasks end-to-end against live backend DB with mounted source code and Airflow Connections (`postgres_default`, `mlflow_default`). MLflow tracking server at port 5001 logs champion metrics. 476 backend tests pass, 0 ruff errors, 0 pytest warnings. Backend + Airflow Docker images build successfully. S3 bucket creation (`stocklens-drift-reports`) deferred to Phase 5 Terraform.
 
-### Phase 5 — Production AWS Deployment
+## Phase 5 — Production AWS Deployment
 
 **Goal:** Migrate from local Docker Compose stack to EC2/VPC production deployment. Airflow, MLflow, PostgreSQL, Redis, and the FastAPI backend each run on appropriate compute (EC2, RDS, ElastiCache) with IAM roles, security groups, and CloudWatch monitoring.
 **Plan doc:** Not yet written. This tracker captures Phase 4 architectural review findings that define Phase 5's constraints.
@@ -371,6 +371,6 @@ The following Phase 4 modules are infrastructure-agnostic and migrate identicall
 - **MLflow backend**: Currently SQLite at `mlflow_data/mlflow.db` on a Docker volume. Phase 5 should move to RDS PostgreSQL or S3-backed tracking server for durability.
 - **Budget/cost estimate**: Not yet assessed. t3.medium for Airflow, t3.small for MLflow, db.t3.medium for RDS, cache.t3.micro for Redis ElastiCache. Rough monthly estimate: ~$150–200/mo for dev, ~$300–400/mo for prod with reserved instances.
 
-### Phase 6 — Conversational Agent
+###
 
 _Not started._ Add tracker rows when Phase 6 begins.
