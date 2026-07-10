@@ -100,6 +100,15 @@ export default function ReceiptDetailsScreen() {
   const merchantName: string | null = receipt?.merchant_name ?? initialMerchant ?? null;
   const lineItems: any[] = receipt?.line_items ?? initialItems ?? [];
 
+  // Cross-check: sum of line items vs scanned total (flags likely OCR total misread)
+  const itemsSubtotal = lineItems.reduce(
+    (sum: number, it: any) => sum + (Number(it?.price ?? it?.amount ?? 0) || 0),
+    0,
+  );
+  const totalMismatch =
+    lineItems.length > 0 &&
+    Math.abs(itemsSubtotal - totalAmount) > Math.max(0.02, (totalAmount || 0) * 0.01);
+
   // Category list (for display + user correction of the OCR-assigned category).
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
@@ -655,9 +664,14 @@ export default function ReceiptDetailsScreen() {
 
             {lineItems.length > 0 && (
               <View style={[styles.itemsPanel, { backgroundColor: theme.surface }]}>
-                <Text style={[styles.cascadeTitle, { color: theme.text }]}>
-                  Items ({lineItems.length})
-                </Text>
+                <View style={styles.itemHeaderRow}>
+                  <Text style={[styles.cascadeTitle, { color: theme.text }]}>
+                    Items ({lineItems.length})
+                  </Text>
+                  <Text style={[styles.itemSubtotal, { color: theme.text }]}>
+                    {formatCurrencyGBP(itemsSubtotal)}
+                  </Text>
+                </View>
                 {lineItems.map((it, i) => (
                   <View key={i} style={styles.itemRow}>
                     <Text style={[styles.itemName, { color: theme.text }]}>
@@ -668,6 +682,18 @@ export default function ReceiptDetailsScreen() {
                     </Text>
                   </View>
                 ))}
+                {totalMismatch && (
+                  <View
+                    style={[styles.totalMismatchBox, { backgroundColor: brandColors.red + '14' }]}
+                  >
+                    <Ionicons name="warning" size={16} color={brandColors.red} />
+                    <Text style={[styles.totalMismatchText, { color: brandColors.red }]}>
+                      Items total {formatCurrencyGBP(itemsSubtotal)} but receipt says{' '}
+                      {formatCurrencyGBP(totalAmount)}. The scanned total may be incorrect — tap
+                      Total Amount above to fix it.
+                    </Text>
+                  </View>
+                )}
               </View>
             )}
 
@@ -1222,6 +1248,10 @@ type Styles = {
   itemRow: ViewStyle;
   itemName: TextStyle;
   itemPrice: TextStyle;
+  itemHeaderRow: ViewStyle;
+  itemSubtotal: TextStyle;
+  totalMismatchBox: ViewStyle;
+  totalMismatchText: TextStyle;
   cascadeRow: ViewStyle;
   cascadeLabel: TextStyle;
   cascadeValue: TextStyle;
@@ -1397,6 +1427,28 @@ const styles = StyleSheet.create<Styles>({
   },
   itemPrice: {
     ...typography.bodyStrong,
+  },
+  itemHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  itemSubtotal: {
+    ...typography.bodyStrong,
+  },
+  totalMismatchBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    padding: spacing.sm,
+    borderRadius: radii.sm,
+  },
+  totalMismatchText: {
+    ...typography.caption,
+    flex: 1,
+    lineHeight: 18,
   },
   cascadeRow: {
     flexDirection: 'row',
