@@ -4,8 +4,8 @@
  * User preferences and account management screen.
  */
 
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Alert, Switch, ScrollView } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, Alert, Switch, ScrollView, RefreshControl } from 'react-native';
 import ScreenContainer from '../components/ScreenContainer';
 import PageHeader from '../components/PageHeader';
 import SettingRow from '../components/SettingRow';
@@ -21,6 +21,7 @@ export default function SettingsScreen() {
   const { signOutUser } = useAuth();
   const { setMode, isDark, theme } = useTheme();
   const [deviceAuthEnabled, setDeviceAuthEnabled] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const { isSmallPhone, isTablet } = useBreakpoint();
 
   const handleSignOut = async () => {
@@ -40,31 +41,37 @@ export default function SettingsScreen() {
     ]);
   };
 
-  React.useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        // First check if device authentication is available on the device
-        const available = await deviceAuth.isDeviceAuthAvailable();
+  const loadDeviceAuth = useCallback(async () => {
+    const mounted = true;
+    try {
+      // First check if device authentication is available on the device
+      const available = await deviceAuth.isDeviceAuthAvailable();
 
-        if (!available) {
-          // If device auth not available, ensure toggle is OFF and disable the setting
-          if (mounted) setDeviceAuthEnabled(false);
-          await deviceAuth.setDeviceEnabled(false);
-          return;
-        }
-
-        // If available, load the saved preference
-        const enabled = await deviceAuth.isDeviceEnabled();
-        if (mounted) setDeviceAuthEnabled(enabled);
-      } catch (err) {
+      if (!available) {
+        // If device auth not available, ensure toggle is OFF and disable the setting
         if (mounted) setDeviceAuthEnabled(false);
+        await deviceAuth.setDeviceEnabled(false);
+        return;
       }
-    })();
-    return () => {
-      mounted = false;
-    };
+
+      // If available, load the saved preference
+      const enabled = await deviceAuth.isDeviceEnabled();
+      if (mounted) setDeviceAuthEnabled(enabled);
+    } catch (err) {
+      if (mounted) setDeviceAuthEnabled(false);
+    } finally {
+      if (mounted) setRefreshing(false);
+    }
   }, []);
+
+  React.useEffect(() => {
+    loadDeviceAuth();
+  }, [loadDeviceAuth]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadDeviceAuth();
+  }, [loadDeviceAuth]);
 
   const handleToggleDeviceAuth = async (val: boolean) => {
     if (!val) {
@@ -154,6 +161,14 @@ export default function SettingsScreen() {
       <ScrollView
         contentContainerStyle={[styles.scrollContent]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={theme.primary}
+            colors={[theme.primary]}
+          />
+        }
       >
         <PageHeader>
           <View>

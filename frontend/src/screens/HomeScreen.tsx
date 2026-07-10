@@ -4,8 +4,8 @@
  * Dashboard showing spending stats and recent receipts.
  */
 
-import React, { useMemo, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl } from 'react-native';
 import { useNavigation, CompositeNavigationProp } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -42,48 +42,52 @@ export default function HomeScreen() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const { theme } = useTheme();
 
-  const { receipts: allScans, loading: receiptsLoading } = useReceipts();
+  const { receipts: allScans, loading: receiptsLoading, refetch } = useReceipts();
 
   const [portfolioAgg, setPortfolioAgg] = useState<{
     total_market_value: number;
     total_unrealised_pl: number;
   } | null>(null);
   const [portfolioLoading, setPortfolioLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadPortfolio = useCallback(async () => {
+    try {
+      const portfolios = await portfolioService.listPortfolios();
+      if (portfolios.length === 0) {
+        setPortfolioLoading(false);
+        return;
+      }
+      const results = await Promise.allSettled(
+        portfolios.map((p) => portfolioService.getPerformance(p.id)),
+      );
+      let totalMV = 0;
+      let totalPL = 0;
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          totalMV += r.value.total_market_value ?? 0;
+          totalPL += r.value.total_unrealised_pl ?? 0;
+        }
+      }
+      if (totalMV > 0) {
+        setPortfolioAgg({ total_market_value: totalMV, total_unrealised_pl: totalPL });
+      }
+    } catch {
+      // Silently fail
+    } finally {
+      setPortfolioLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const portfolios = await portfolioService.listPortfolios();
-        if (!mounted || portfolios.length === 0) {
-          if (mounted) setPortfolioLoading(false);
-          return;
-        }
-        const results = await Promise.allSettled(
-          portfolios.map((p) => portfolioService.getPerformance(p.id)),
-        );
-        if (!mounted) return;
-        let totalMV = 0;
-        let totalPL = 0;
-        for (const r of results) {
-          if (r.status === 'fulfilled') {
-            totalMV += r.value.total_market_value ?? 0;
-            totalPL += r.value.total_unrealised_pl ?? 0;
-          }
-        }
-        if (totalMV > 0) {
-          setPortfolioAgg({ total_market_value: totalMV, total_unrealised_pl: totalPL });
-        }
-      } catch {
-        // Silently fail
-      } finally {
-        if (mounted) setPortfolioLoading(false);
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    loadPortfolio();
+  }, [loadPortfolio]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.allSettled([refetch(), loadPortfolio()]);
+    setRefreshing(false);
+  }, [refetch, loadPortfolio]);
 
   const { userProfile } = useAuth();
   const firstName = useMemo(() => {
@@ -118,7 +122,18 @@ export default function HomeScreen() {
 
   return (
     <ScreenContainer contentStyle={{ paddingVertical: sectionVerticalSpacing }}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={theme.primary}
+            colors={[theme.primary]}
+          />
+        }
+      >
         {receiptsLoading ? (
           <View style={{ padding: spacing.xl, alignItems: 'center' }}>
             <ActivityIndicator size="large" color="#888" />

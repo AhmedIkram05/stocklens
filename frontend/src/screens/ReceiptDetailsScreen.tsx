@@ -4,7 +4,7 @@
  * Detailed view for a single receipt with investment projections.
  */
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,11 +16,12 @@ import {
   TouchableOpacity,
   FlatList,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import type { TextStyle, ViewStyle } from 'react-native';
 import ScreenContainer from '../components/ScreenContainer';
 import PageHeader from '../components/PageHeader';
-import IconButton from '../components/IconButton';
+import BackButton from '../components/BackButton';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import type { RootStackParamList } from '../navigation/AppNavigator';
@@ -80,19 +81,20 @@ export default function ReceiptDetailsScreen() {
   // Load the authoritative receipt (merchant + line items) from the backend.
   // The scan endpoint already persisted these; route params are only a fast path.
   const [receipt, setReceipt] = useState<any>(null);
-  useEffect(() => {
+  const [refreshing, setRefreshing] = useState(false);
+  const loadReceiptDetail = useCallback(async () => {
     if (!receiptId) return;
-    let mounted = true;
-    receiptService
-      .getById(receiptId)
-      .then((r) => {
-        if (mounted && r) setReceipt(r);
-      })
-      .catch(() => {});
-    return () => {
-      mounted = false;
-    };
+    try {
+      const r = await receiptService.getById(receiptId);
+      if (r) setReceipt(r);
+    } catch {
+      // Keep previous receipt on failure
+    }
   }, [receiptId]);
+
+  useEffect(() => {
+    loadReceiptDetail().catch(() => {});
+  }, [loadReceiptDetail]);
 
   const totalAmount = receipt?.total_amount ?? initialAmount ?? 0;
   const merchantName: string | null = receipt?.merchant_name ?? initialMerchant ?? null;
@@ -102,18 +104,18 @@ export default function ReceiptDetailsScreen() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
   const [categorySaving, setCategorySaving] = useState(false);
-  useEffect(() => {
-    let mounted = true;
-    categoryService
-      .listCategories()
-      .then((cs) => {
-        if (mounted) setCategories(cs);
-      })
-      .catch(() => {});
-    return () => {
-      mounted = false;
-    };
+  const loadCategories = useCallback(async () => {
+    try {
+      const cs = await categoryService.listCategories();
+      setCategories(cs);
+    } catch {
+      // Keep previous categories on failure
+    }
   }, []);
+
+  useEffect(() => {
+    loadCategories().catch(() => {});
+  }, [loadCategories]);
 
   // Merchant edit modal state
   const [merchantModalVisible, setMerchantModalVisible] = useState(false);
@@ -269,9 +271,8 @@ export default function ReceiptDetailsScreen() {
   const [depositingPid, setDepositingPid] = useState<string | null>(null);
 
   // load historical rates whenever selectedYears changes
-  useEffect(() => {
-    let mounted = true;
-    async function loadHistoricalForYears(period: string) {
+  const loadHistoricalForYears = useCallback(
+    async (period: string) => {
       setRatesLoading(true);
       setRatesError(null);
       try {
@@ -285,21 +286,23 @@ export default function ReceiptDetailsScreen() {
         });
 
         const results = await Promise.all(promises);
-        if (!mounted) return;
         const map: Record<string, Record<string, number>> = { ...historicalRates };
         results.forEach((r: any) => {
           if (!map[r.ticker]) map[r.ticker] = {};
           if (r.total !== null && r.total !== undefined) map[r.ticker][period] = r.total as number;
         });
-        if (mounted) setHistoricalRates(map);
+        setHistoricalRates(map);
       } catch (err: any) {
-        if (mounted) setRatesError(err?.message || String(err));
+        setRatesError(err?.message || String(err));
       } finally {
-        if (mounted) setRatesLoading(false);
+        setRatesLoading(false);
       }
-    }
+    },
+    [historicalRates],
+  );
 
-    loadHistoricalForYears(selectedYears);
+  useEffect(() => {
+    loadHistoricalForYears(selectedYears).catch(() => {});
     const unsub = subscribe('historical-updated', (payload) => {
       // payload may contain symbol/interval; refresh if it's one of our tracked tickers
       const updatedTicker = payload?.symbol as string | undefined;
@@ -308,52 +311,58 @@ export default function ReceiptDetailsScreen() {
       }
     });
     return () => {
-      mounted = false;
       unsub();
     };
-  }, [selectedYears]);
+  }, [loadHistoricalForYears, selectedYears]);
 
   // Load LSTM predictions for all tickers
-  useEffect(() => {
-    let mounted = true;
-    async function loadPredictions() {
-      try {
-        const results = await Promise.allSettled(
-          STOCK_PRESETS.map(async (s) => {
-            const pred = await getCombinedProjection(s.ticker);
-            if (!pred) return null;
-            return {
-              ticker: s.ticker,
-              direction: pred.direction,
-              rate: pred.rate,
-              confidence: pred.confidence,
-            };
-          }),
-        );
-        if (!mounted) return;
-        const map: Record<
-          string,
-          { direction: 'UP' | 'FLAT' | 'DOWN'; rate: number; confidence: number }
-        > = {};
-        results.forEach((r) => {
-          if (r.status === 'fulfilled' && r.value) {
-            map[r.value.ticker] = {
-              direction: r.value.direction,
-              rate: r.value.rate,
-              confidence: r.value.confidence,
-            };
-          }
-        });
-        setPredictions(map);
-      } catch {
-        // Keep empty — no badges shown
-      }
+  const loadPredictions = useCallback(async () => {
+    try {
+      const results = await Promise.allSettled(
+        STOCK_PRESETS.map(async (s) => {
+          const pred = await getCombinedProjection(s.ticker);
+          if (!pred) return null;
+          return {
+            ticker: s.ticker,
+            direction: pred.direction,
+            rate: pred.rate,
+            confidence: pred.confidence,
+          };
+        }),
+      );
+      const map: Record<
+        string,
+        { direction: 'UP' | 'FLAT' | 'DOWN'; rate: number; confidence: number }
+      > = {};
+      results.forEach((r) => {
+        if (r.status === 'fulfilled' && r.value) {
+          map[r.value.ticker] = {
+            direction: r.value.direction,
+            rate: r.value.rate,
+            confidence: r.value.confidence,
+          };
+        }
+      });
+      setPredictions(map);
+    } catch {
+      // Keep empty — no badges shown
     }
-    loadPredictions();
-    return () => {
-      mounted = false;
-    };
   }, []);
+
+  useEffect(() => {
+    loadPredictions().catch(() => {});
+  }, [loadPredictions]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.allSettled([
+      loadReceiptDetail(),
+      loadCategories(),
+      loadHistoricalForYears(selectedYears),
+      loadPredictions(),
+    ]);
+    setRefreshing(false);
+  }, [loadReceiptDetail, loadCategories, loadHistoricalForYears, loadPredictions, selectedYears]);
 
   async function handleOpenDeposit() {
     setDepositModalVisible(true);
@@ -561,13 +570,17 @@ export default function ReceiptDetailsScreen() {
       <ScrollView
         contentContainerStyle={[styles.content, isSmallPhone && styles.contentCompact]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={theme.primary}
+            colors={[theme.primary]}
+          />
+        }
       >
         <View style={[styles.headerRow, isSmallPhone && styles.headerRowCompact]}>
-          <IconButton
-            name="chevron-back"
-            onPress={() => navigation.goBack()}
-            accessibilityLabel="Go back"
-          />
+          <BackButton />
         </View>
 
         <ResponsiveContainer maxWidth={width - contentHorizontalPadding * 2}>

@@ -11,8 +11,8 @@ import PageHeader from '../components/PageHeader';
 import { brandColors, useTheme } from '../contexts/ThemeContext';
 import { radii, spacing, typography } from '../styles/theme';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import { useEffect, useState } from 'react';
-import { ScrollView } from 'react-native';
+import { useEffect, useState, useCallback } from 'react';
+import { ScrollView, RefreshControl } from 'react-native';
 import { subscribe } from '../services/eventBus';
 import useReceipts, { ReceiptShape } from '../hooks/useReceipts';
 import { ActivityIndicator } from 'react-native';
@@ -43,106 +43,106 @@ export default function SummaryScreen() {
   const [lstmRate, setLstmRate] = useState<number>(0.1);
   const [lstmDirection, setLstmDirection] = useState<'UP' | 'FLAT' | 'DOWN'>('UP');
 
-  const { receipts, loading: receiptsLoading } = useReceipts();
+  const { receipts, loading: receiptsLoading, refetch } = useReceipts();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadTotals = useCallback(async () => {
+    try {
+      const r = receipts || [];
+      const total = r.reduce((s, it) => s + (it.amount || 0), 0);
+      setTotalMoneySpent(total);
+      setReceiptsScanned(r.length);
+      setAvgPerReceipt(r.length > 0 ? total / r.length : 0);
+
+      const highest = r.slice().sort((a, b) => (b.amount || 0) - (a.amount || 0))[0] ?? null;
+      setHighestImpactReceipt(highest ?? null);
+
+      if (r.length > 0) {
+        const counts: Record<string, number> = {};
+        r.forEach((rr) => {
+          const d = rr.date ? new Date(rr.date) : new Date();
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          counts[key] = (counts[key] || 0) + 1;
+        });
+        const sortedMonths = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+        if (sortedMonths.length > 0) {
+          const top = sortedMonths[0];
+          const [y, m] = top.split('-');
+          const monthName = new Date(Number(y), Number(m) - 1, 1).toLocaleString('en-GB', {
+            month: 'short',
+            year: 'numeric',
+          });
+          setMostActiveMonth(monthName);
+        }
+      }
+    } catch (err) {}
+  }, [receipts, user?.uid]);
 
   useEffect(() => {
-    let mounted = true;
-    async function loadTotals() {
-      try {
-        const r = receipts || [];
-        const total = r.reduce((s, it) => s + (it.amount || 0), 0);
-        if (!mounted) return;
-        setTotalMoneySpent(total);
-        setReceiptsScanned(r.length);
-        setAvgPerReceipt(r.length > 0 ? total / r.length : 0);
-
-        const highest = r.slice().sort((a, b) => (b.amount || 0) - (a.amount || 0))[0] ?? null;
-        setHighestImpactReceipt(highest ?? null);
-
-        if (r.length > 0) {
-          const counts: Record<string, number> = {};
-          r.forEach((rr) => {
-            const d = rr.date ? new Date(rr.date) : new Date();
-            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-            counts[key] = (counts[key] || 0) + 1;
-          });
-          const sortedMonths = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
-          if (sortedMonths.length > 0) {
-            const top = sortedMonths[0];
-            const [y, m] = top.split('-');
-            const monthName = new Date(Number(y), Number(m) - 1, 1).toLocaleString('en-GB', {
-              month: 'short',
-              year: 'numeric',
-            });
-            setMostActiveMonth(monthName);
-          }
-        }
-      } catch (err) {}
-    }
-
-    loadTotals();
+    loadTotals().catch(() => {});
     const unsubHist = subscribe('historical-updated', () => {
       loadTotals().catch(() => {});
     });
     return () => {
-      mounted = false;
       try {
         unsubHist();
       } catch (e) {}
     };
-  }, [user?.uid, receipts]);
+  }, [loadTotals]);
 
   // Fetch LSTM predictions for all stock presets to get average projected rate
-  useEffect(() => {
-    let mounted = true;
-    async function loadPredictions() {
-      try {
-        const results = await Promise.allSettled(
-          STOCK_PRESETS.map(async (stock) => {
-            const proj = await getCombinedProjection(stock.ticker);
-            return { ticker: stock.ticker, ...proj };
-          }),
-        );
-        if (!mounted) return;
-        const successful = results
-          .filter(
-            (
-              r,
-            ): r is PromiseFulfilledResult<{
-              ticker: string;
-              direction: 'UP' | 'FLAT' | 'DOWN';
-              rate: number;
-              confidence: number;
-              model_version: string;
-            }> =>
-              r.status === 'fulfilled' &&
-              r.value !== null &&
-              r.value !== undefined &&
-              typeof r.value.rate === 'number' &&
-              !isNaN(r.value.rate),
-          )
-          .map((r) => r.value);
-        if (successful.length > 0) {
-          const avgRate = successful.reduce((s, p) => s + p.rate, 0) / successful.length;
-          // Pick the most common direction
-          const dirCounts: Record<string, number> = {};
-          successful.forEach((p) => {
-            dirCounts[p.direction] = (dirCounts[p.direction] || 0) + 1;
-          });
-          const topDir = Object.entries(dirCounts).sort((a, b) => b[1] - a[1])[0][0] as
-            'UP' | 'FLAT' | 'DOWN';
-          setLstmRate(avgRate);
-          setLstmDirection(topDir);
-        }
-      } catch {
-        // Keep defaults (10% CAGR)
+  const loadPredictions = useCallback(async () => {
+    try {
+      const results = await Promise.allSettled(
+        STOCK_PRESETS.map(async (stock) => {
+          const proj = await getCombinedProjection(stock.ticker);
+          return { ticker: stock.ticker, ...proj };
+        }),
+      );
+      const successful = results
+        .filter(
+          (
+            r,
+          ): r is PromiseFulfilledResult<{
+            ticker: string;
+            direction: 'UP' | 'FLAT' | 'DOWN';
+            rate: number;
+            confidence: number;
+            model_version: string;
+          }> =>
+            r.status === 'fulfilled' &&
+            r.value !== null &&
+            r.value !== undefined &&
+            typeof r.value.rate === 'number' &&
+            !isNaN(r.value.rate),
+        )
+        .map((r) => r.value);
+      if (successful.length > 0) {
+        const avgRate = successful.reduce((s, p) => s + p.rate, 0) / successful.length;
+        // Pick the most common direction
+        const dirCounts: Record<string, number> = {};
+        successful.forEach((p) => {
+          dirCounts[p.direction] = (dirCounts[p.direction] || 0) + 1;
+        });
+        const topDir = Object.entries(dirCounts).sort((a, b) => b[1] - a[1])[0][0] as
+          'UP' | 'FLAT' | 'DOWN';
+        setLstmRate(avgRate);
+        setLstmDirection(topDir);
       }
+    } catch {
+      // Keep defaults (10% CAGR)
     }
-    loadPredictions();
-    return () => {
-      mounted = false;
-    };
   }, []);
+
+  useEffect(() => {
+    loadPredictions().catch(() => {});
+  }, [loadPredictions]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.allSettled([refetch(), loadTotals(), loadPredictions()]);
+    setRefreshing(false);
+  }, [refetch, loadTotals, loadPredictions]);
 
   const formatCurrency = (value: number) => formatCurrencyRounded(value);
 
@@ -439,6 +439,14 @@ export default function SummaryScreen() {
       <ScrollView
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={theme.primary}
+            colors={[theme.primary]}
+          />
+        }
       >
         <PageHeader>
           <View>

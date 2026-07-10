@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, ScrollView, RefreshControl, TouchableOpacity, StyleSheet } from 'react-native';
 import Svg, { Polyline, Line, Text as SvgText } from 'react-native-svg';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { Ionicons } from '@expo/vector-icons';
+import { useRoute, RouteProp } from '@react-navigation/native';
+import BackButton from '../../components/BackButton';
 
 import ScreenContainer from '../../components/ScreenContainer';
 import PageHeader from '../../components/PageHeader';
@@ -20,7 +19,6 @@ import { useBreakpoint } from '../../hooks/useBreakpoint';
 import { spacing, typography, radii, shadows } from '../../styles/theme';
 
 type BenchmarkRouteProp = RouteProp<PortfolioStackParamList, 'Benchmark'>;
-type BenchmarkNavProp = StackNavigationProp<PortfolioStackParamList, 'Benchmark'>;
 
 const BENCHMARK_TICKERS = ['SPY', 'QQQ'] as const;
 
@@ -190,7 +188,6 @@ const chartStyles = StyleSheet.create({
 // ── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function BenchmarkScreen() {
-  const navigation = useNavigation<BenchmarkNavProp>();
   const route = useRoute<BenchmarkRouteProp>();
   const { theme } = useTheme();
   const { portfolioId, benchmarkTicker: initialTicker } = route.params;
@@ -271,10 +268,7 @@ export default function BenchmarkScreen() {
             />
           }
         >
-          {/* Back button */}
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={24} color={theme.text} />
-          </TouchableOpacity>
+          <BackButton />
 
           <PageHeader subtitle={`vs ${activeBenchmark}`}>Benchmark</PageHeader>
 
@@ -416,9 +410,6 @@ export default function BenchmarkScreen() {
 // ── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  backBtn: {
-    marginBottom: spacing.sm,
-  },
   loadingBox: {
     alignItems: 'center',
     paddingVertical: spacing.xl,

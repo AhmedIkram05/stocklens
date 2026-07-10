@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,14 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 
 import { brandColors, useTheme } from '../../contexts/ThemeContext';
+import BackButton from '../../components/BackButton';
 import { spacing, typography, radii } from '../../styles/theme';
 import { PortfolioStackParamList } from '../../navigation/AppNavigator';
 import { portfolioService } from '../../services/portfolios';
@@ -37,6 +39,7 @@ export default function DepositScreen() {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [loading, setLoading] = useState(true);
   const [receiptError, setReceiptError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [manualAmount, setManualAmount] = useState('');
@@ -45,12 +48,9 @@ export default function DepositScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadReceipts();
-  }, []);
-
-  async function loadReceipts() {
-    setLoading(true);
+  const loadReceipts = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
     setReceiptError(null);
     try {
       const data = await receiptService.list(20, 0);
@@ -58,9 +58,18 @@ export default function DepositScreen() {
     } catch {
       setReceiptError('Could not load receipts');
     } finally {
-      setLoading(false);
+      if (isRefresh) setRefreshing(false);
+      else setLoading(false);
     }
-  }
+  }, []);
+
+  const handleRefresh = useCallback(() => {
+    loadReceipts(true);
+  }, [loadReceipts]);
+
+  useEffect(() => {
+    loadReceipts();
+  }, [loadReceipts]);
 
   const selectedAmount = selectedReceipt ? selectedReceipt.total_amount : 0;
   const manualAmountNum = parseFloat(manualAmount);
@@ -142,9 +151,7 @@ export default function DepositScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={[styles.cancelText, { color: theme.secondary }]}>Cancel</Text>
-          </TouchableOpacity>
+          <BackButton variant="text" label="Cancel" color={theme.secondary} />
           <Text style={[styles.title, { color: theme.text }]}>Add Deposit</Text>
           <View style={styles.headerSpacer} />
         </View>
@@ -193,7 +200,7 @@ export default function DepositScreen() {
             ) : receiptError ? (
               <View style={styles.center}>
                 <Text style={[styles.errorText, { color: theme.error }]}>{receiptError}</Text>
-                <TouchableOpacity onPress={loadReceipts}>
+                <TouchableOpacity onPress={() => loadReceipts()}>
                   <Text style={[styles.retryText, { color: theme.secondary }]}>Retry</Text>
                 </TouchableOpacity>
               </View>
@@ -216,6 +223,14 @@ export default function DepositScreen() {
                 renderItem={renderReceiptItem}
                 contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator={false}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={handleRefresh}
+                    tintColor={theme.primary}
+                    colors={[theme.primary]}
+                  />
+                }
               />
             )}
           </View>
@@ -300,15 +315,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  cancelText: {
-    ...typography.body,
+  headerSpacer: {
+    width: 60,
   },
   title: {
     ...typography.subtitle,
     fontWeight: '700',
-  },
-  headerSpacer: {
-    width: 60,
   },
   tabBar: {
     flexDirection: 'row',

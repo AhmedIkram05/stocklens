@@ -11,7 +11,7 @@ import FormInput from '../components/FormInput';
 import PrimaryButton from '../components/PrimaryButton';
 import AuthFooter from '../components/AuthFooter';
 import { useNavigation } from '@react-navigation/native';
-import IconButton from '../components/IconButton';
+import BackButton from '../components/BackButton';
 import { authService } from '../services/auth';
 import { ApiError } from '../services/api';
 import { promptEnableDeviceAuth } from '../utils/deviceAuthPrompt';
@@ -106,7 +106,7 @@ export default function SignUpScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: sectionVerticalSpacing }]}
       >
         <View style={[styles.headerRow, isSmallPhone && styles.headerRowCompact]}>
-          <IconButton name="chevron-back" onPress={handleBack} accessibilityLabel="Go back" />
+          <BackButton onPress={handleBack} />
         </View>
 
         <View style={[styles.titleContainer, isSmallPhone && styles.titleContainerCompact]}>

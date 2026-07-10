@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -16,6 +17,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 
 import { useTheme, brandColors } from '../../contexts/ThemeContext';
+import BackButton from '../../components/BackButton';
 import { PortfolioStackParamList } from '../../navigation/AppNavigator';
 import { portfolioService, Holding } from '../../services/portfolios';
 import { marketService, QuoteData } from '../../services/market';
@@ -43,34 +45,47 @@ export default function TradeScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [freeCash, setFreeCash] = useState<number | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const shares = parseFloat(sharesText) || 0;
   const total = quote && shares > 0 ? shares * quote.price : 0;
 
-  useEffect(() => {
-    if (localMode === 'sell') {
-      setHoldingsLoading(true);
-      setHoldingsError(null);
-      portfolioService
-        .listHoldings(portfolioId)
-        .then((data) => {
-          setHoldings(data);
-        })
-        .catch(() => {
-          setHoldingsError('Failed to load holdings. Check your connection.');
-        })
-        .finally(() => {
-          setHoldingsLoading(false);
-        });
+  const loadHoldings = useCallback(async () => {
+    if (localMode !== 'sell') return;
+    setHoldingsLoading(true);
+    setHoldingsError(null);
+    try {
+      const data = await portfolioService.listHoldings(portfolioId);
+      setHoldings(data);
+    } catch {
+      setHoldingsError('Failed to load holdings. Check your connection.');
+    } finally {
+      setHoldingsLoading(false);
     }
   }, [localMode, portfolioId]);
 
-  useEffect(() => {
-    portfolioService
-      .getPerformance(portfolioId)
-      .then((p) => setFreeCash(p.free_cash_balance))
-      .catch(() => setFreeCash(null));
+  const loadFreeCash = useCallback(async () => {
+    try {
+      const p = await portfolioService.getPerformance(portfolioId);
+      setFreeCash(p.free_cash_balance);
+    } catch {
+      setFreeCash(null);
+    }
   }, [portfolioId]);
+
+  useEffect(() => {
+    loadHoldings();
+  }, [loadHoldings]);
+
+  useEffect(() => {
+    loadFreeCash();
+  }, [loadFreeCash]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.allSettled([loadHoldings(), loadFreeCash()]);
+    setRefreshing(false);
+  }, [loadHoldings, loadFreeCash]);
 
   const handleFetchQuote = useCallback(async () => {
     const trimmed = ticker.trim().toUpperCase();
@@ -147,7 +162,19 @@ export default function TradeScreen() {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={theme.primary}
+              colors={[theme.primary]}
+            />
+          }
+        >
+          <BackButton variant="text" label="Cancel" />
           <Text style={[styles.header, { color: theme.text }]}>{isBuy ? 'Buy' : 'Sell'}</Text>
 
           <View style={styles.modeToggle}>
