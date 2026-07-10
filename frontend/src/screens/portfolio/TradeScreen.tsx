@@ -23,6 +23,7 @@ import { portfolioService, Holding } from '../../services/portfolios';
 import { marketService, QuoteData } from '../../services/market';
 import { ApiError } from '../../services/api';
 import { radii, spacing, typography } from '../../styles/theme';
+import { formatCurrency } from '../../utils/formatters';
 
 type TradeRouteProp = RouteProp<PortfolioStackParamList, 'Trade'>;
 type TradeNavigationProp = StackNavigationProp<PortfolioStackParamList, 'Trade'>;
@@ -44,7 +45,6 @@ export default function TradeScreen() {
   const [holdingsError, setHoldingsError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [freeCash, setFreeCash] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const shares = parseFloat(sharesText) || 0;
@@ -64,28 +64,15 @@ export default function TradeScreen() {
     }
   }, [localMode, portfolioId]);
 
-  const loadFreeCash = useCallback(async () => {
-    try {
-      const p = await portfolioService.getPerformance(portfolioId);
-      setFreeCash(p.free_cash_balance);
-    } catch {
-      setFreeCash(null);
-    }
-  }, [portfolioId]);
-
   useEffect(() => {
     loadHoldings();
   }, [loadHoldings]);
 
-  useEffect(() => {
-    loadFreeCash();
-  }, [loadFreeCash]);
-
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.allSettled([loadHoldings(), loadFreeCash()]);
+    await Promise.allSettled([loadHoldings()]);
     setRefreshing(false);
-  }, [loadHoldings, loadFreeCash]);
+  }, [loadHoldings]);
 
   const handleFetchQuote = useCallback(async () => {
     const trimmed = ticker.trim().toUpperCase();
@@ -107,9 +94,9 @@ export default function TradeScreen() {
   const getValidationError = (): string | null => {
     if (!ticker.trim()) return null;
     if (shares <= 0) return 'Shares must be greater than 0';
-    if (localMode === 'buy' && freeCash !== null && total > freeCash) {
-      return `Insufficient funds: $${total.toFixed(2)} exceeds available $${freeCash.toFixed(2)}`;
-    }
+    // NOTE: affordability (GBP-normalised) is enforced server-side in
+    // transactions/router.create_transaction, which has the FX rate needed
+    // to compare the native trade total against GBP free cash.
     if (localMode === 'sell') {
       if (holdingsLoading) return null; // ponytail: skip validation while loading; prevents flash-before-fetch
       if (holdingsError) return 'Unable to verify holdings. Try again.';
@@ -256,8 +243,8 @@ export default function TradeScreen() {
           {quote && !quoteLoading && (
             <View style={[styles.previewRow, { backgroundColor: theme.surface }]}>
               <Text style={[styles.previewText, { color: theme.text }]}>
-                {quote.ticker} × {sharesText || '0'} @ ${quote.price.toFixed(2)} ={' '}
-                <Text style={{ fontWeight: '700' }}>${total.toFixed(2)}</Text>
+                {quote.ticker} × {sharesText || '0'} @ {formatCurrency(quote.price, quote.currency)}{' '}
+                = <Text style={{ fontWeight: '700' }}>{formatCurrency(total, quote.currency)}</Text>
               </Text>
             </View>
           )}
@@ -296,7 +283,7 @@ export default function TradeScreen() {
               <ActivityIndicator size="small" color="#fff" />
             ) : (
               <Text style={styles.confirmButtonText}>
-                {isBuy ? 'Buy' : ' Sell'} ${total.toFixed(2)}
+                {isBuy ? 'Buy' : ' Sell'} {formatCurrency(total, quote?.currency ?? 'GBP')}
               </Text>
             )}
           </TouchableOpacity>

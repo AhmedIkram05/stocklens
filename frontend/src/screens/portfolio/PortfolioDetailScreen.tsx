@@ -17,15 +17,13 @@ import BackButton from '../../components/BackButton';
 import { brandColors, useTheme } from '../../contexts/ThemeContext';
 import type { PortfolioStackParamList } from '../../navigation/AppNavigator';
 import { portfolioService, PortfolioPerformance } from '../../services/portfolios';
+import { formatCurrency } from '../../utils/formatters';
 
 type PortfolioDetailRouteProp = RouteProp<PortfolioStackParamList, 'PortfolioDetail'>;
 type PortfolioDetailNavigationProp = StackNavigationProp<
   PortfolioStackParamList,
   'PortfolioDetail'
 >;
-
-const formatCurrency = (amount: number) =>
-  amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
 const formatPercent = (value: number | null | undefined) => {
   if (value == null) return 'N/A';
@@ -394,7 +392,7 @@ export default function PortfolioDetailScreen() {
             style={[styles.actionButton, { backgroundColor: brandColors.blue }]}
             onPress={() => navigation.navigate('Deposit', { portfolioId })}
           >
-            <Text style={styles.actionButtonText}>+Deposit</Text>
+            <Text style={styles.actionButtonText}>Deposit</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionButton, { backgroundColor: theme.primary }]}

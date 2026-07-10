@@ -43,7 +43,6 @@ export default function DepositScreen() {
 
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [manualAmount, setManualAmount] = useState('');
-  const [manualNotes, setManualNotes] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -93,7 +92,6 @@ export default function DepositScreen() {
         await portfolioService.createCashFlow(portfolioId, {
           amount: manualAmountNum,
           source: 'manual',
-          notes: manualNotes || undefined,
         });
       }
       navigation.goBack();
@@ -252,25 +250,6 @@ export default function DepositScreen() {
               value={manualAmount}
               onChangeText={setManualAmount}
             />
-            <Text style={[styles.inputLabel, { color: theme.text, marginTop: spacing.lg }]}>
-              Notes (optional)
-            </Text>
-            <TextInput
-              style={[
-                styles.notesInput,
-                {
-                  backgroundColor: theme.surface,
-                  color: theme.text,
-                  borderColor: theme.border,
-                },
-              ]}
-              placeholder="e.g. Monthly savings"
-              placeholderTextColor={theme.textSecondary}
-              value={manualNotes}
-              onChangeText={setManualNotes}
-              multiline
-              numberOfLines={3}
-            />
           </View>
         )}
 
@@ -409,14 +388,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     textAlign: 'center',
-  },
-  notesInput: {
-    ...typography.body,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    padding: spacing.md,
-    minHeight: 80,
-    textAlignVertical: 'top',
   },
   footer: {
     paddingVertical: spacing.lg,
