@@ -316,11 +316,6 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     padding: spacing.lg,
     backgroundColor: brandColors.white,
-    shadowColor: brandColors.black,
-    shadowOffset: { width: 0, height: spacing.xs },
-    shadowOpacity: 0.25,
-    shadowRadius: spacing.md,
-    elevation: 6,
   },
   modalTitle: {
     ...typography.sectionTitle,

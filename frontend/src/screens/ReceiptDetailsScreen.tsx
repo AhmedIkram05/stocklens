@@ -43,7 +43,11 @@ import { STOCK_PRESETS } from '../services/stockPresets';
 import { PERIOD_OPTIONS, periodToYears, periodLabel } from '../constants/periods';
 
 import { subscribe, emit } from '../services/eventBus';
-import { getHistoricalCAGRFromToday, getCombinedProjection } from '../services/projectionService';
+import {
+  getHistoricalCAGRFromToday,
+  getCombinedProjection,
+  getHistoricalCAGRForPeriod,
+} from '../services/projectionService';
 import { formatCurrencyGBP, formatRelativeDate } from '../utils/formatters';
 import YearSelector from '../components/YearSelector';
 import StockCard from '../components/StockCard';
@@ -273,6 +277,11 @@ export default function ReceiptDetailsScreen() {
     Record<string, { direction: 'UP' | 'FLAT' | 'DOWN'; rate: number; confidence: number }>
   >({});
 
+  // Period-specific growth rates (window CAGR) for the future projection, keyed
+  // by ticker. Recomputed when the future year picker changes so the LSTM-framed
+  // return reacts to the selected period.
+  const [futureRates, setFutureRates] = useState<Record<string, number>>({});
+
   // Deposit into portfolio
   const [depositModalVisible, setDepositModalVisible] = useState(false);
   const [portfolioList, setPortfolioList] = useState<Portfolio[]>([]);
@@ -362,6 +371,29 @@ export default function ReceiptDetailsScreen() {
     loadPredictions().catch(() => {});
   }, [loadPredictions]);
 
+  // Load window-specific future rates whenever the future period changes.
+  const loadFutureRates = useCallback(async (period: string) => {
+    try {
+      const results = await Promise.all(
+        STOCK_PRESETS.map(async (s) => ({
+          ticker: s.ticker,
+          rate: await getHistoricalCAGRForPeriod(s.ticker, period),
+        })),
+      );
+      const map: Record<string, number> = {};
+      results.forEach((r) => {
+        if (r.rate !== null && r.rate !== undefined) map[r.ticker] = r.rate;
+      });
+      setFutureRates(map);
+    } catch {
+      // Keep previous rates on failure
+    }
+  }, []);
+
+  useEffect(() => {
+    loadFutureRates(selectedFutureYears).catch(() => {});
+  }, [loadFutureRates, selectedFutureYears]);
+
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await Promise.allSettled([
@@ -369,9 +401,18 @@ export default function ReceiptDetailsScreen() {
       loadCategories(),
       loadHistoricalForYears(selectedYears),
       loadPredictions(),
+      loadFutureRates(selectedFutureYears),
     ]);
     setRefreshing(false);
-  }, [loadReceiptDetail, loadCategories, loadHistoricalForYears, loadPredictions, selectedYears]);
+  }, [
+    loadReceiptDetail,
+    loadCategories,
+    loadHistoricalForYears,
+    loadPredictions,
+    loadFutureRates,
+    selectedYears,
+    selectedFutureYears,
+  ]);
 
   async function handleOpenDeposit() {
     setDepositModalVisible(true);
@@ -455,22 +496,37 @@ export default function ReceiptDetailsScreen() {
         computedPercentReturn = (computedFutureValue / totalAmount - 1) * 100;
       }
     } else {
-      // future mode — prefer LSTM+combined rate, fall back to preset
-      const pred = predictions[investmentValue.ticker];
-      const rate = pred?.rate ?? investmentValue.returnRate;
-      computedFutureValue = totalAmount * Math.pow(1 + rate, yrs);
-      computedGain = computedFutureValue - totalAmount;
-      computedPercentReturn = (computedFutureValue / totalAmount - 1) * 100;
+      // future mode — LSTM-framed projection. The rate is the selected window's
+      // historical CAGR (period-specific, changes with the year picker); the LSTM
+      // model supplies the in-card direction/confidence. No preset/fallback copy
+      // of past returns.
+      const rate = futureRates[investmentValue.ticker];
+      if (rate === undefined) {
+        // Prediction data unavailable for this ticker — show a neutral
+        // "unavailable" state instead of a fabricated return.
+        computedFutureValue = NaN;
+        computedGain = NaN;
+        computedPercentReturn = NaN;
+      } else {
+        computedFutureValue = totalAmount * Math.pow(1 + rate, yrs);
+        computedGain = computedFutureValue - totalAmount;
+        computedPercentReturn = (computedFutureValue / totalAmount - 1) * 100;
+      }
     }
 
-    const futureDisplay = formatCurrencyGBP(computedFutureValue || 0);
+    const unavailable = Number.isNaN(computedFutureValue);
+    const futureDisplay = unavailable ? '—' : formatCurrencyGBP(computedFutureValue);
 
-    const gainDisplay = formatCurrencyGBP(computedGain || 0);
+    const gainDisplay = unavailable ? '—' : formatCurrencyGBP(computedGain);
 
-    const percentDisplay = `${computedPercentReturn.toFixed(1)}%`;
+    const percentDisplay = unavailable ? 'N/A' : `${computedPercentReturn.toFixed(1)}%`;
 
-    // color: green for positive or zero, red for negative
-    const valueColor = computedPercentReturn >= 0 ? brandColors.green : brandColors.red;
+    // color: green for positive or zero, red for negative; muted when unavailable
+    const valueColor = unavailable
+      ? theme.textSecondary
+      : computedPercentReturn >= 0
+        ? brandColors.green
+        : brandColors.red;
 
     // determine badge: show prediction direction for future mode, Over/Underperformer for past
     let badgeTextToShow: string | undefined = undefined;
@@ -479,21 +535,25 @@ export default function ReceiptDetailsScreen() {
     if (mode === 'future') {
       const pred = predictions[investmentValue.ticker];
       if (pred) {
-        badgeTextToShow =
-          pred.direction === 'UP'
-            ? `LSTM: ↑ ${(pred.confidence * 100).toFixed(0)}%`
-            : pred.direction === 'DOWN'
-              ? `LSTM: ↓ ${(pred.confidence * 100).toFixed(0)}%`
-              : `LSTM: — ${(pred.confidence * 100).toFixed(0)}%`;
-        badgeColorToShow =
-          pred.direction === 'UP'
-            ? brandColors.green
-            : pred.direction === 'DOWN'
-              ? brandColors.red
-              : brandColors.blue;
+        const conf = pred.confidence;
+        if (conf < 0.4) {
+          // Low confidence (near 3-class floor) — model is a near-tie; don't
+          // assert a direction. ponytail: threshold pinned to CONTEXT.md <0.4.
+          badgeTextToShow = `LSTM ? · ${(conf * 100).toFixed(0)}%`;
+          badgeColorToShow = theme.textSecondary;
+        } else if (pred.direction === 'UP') {
+          badgeTextToShow = `LSTM ↑ · ${(conf * 100).toFixed(0)}%`;
+          badgeColorToShow = brandColors.green;
+        } else if (pred.direction === 'DOWN') {
+          badgeTextToShow = `LSTM ↓ · ${(conf * 100).toFixed(0)}%`;
+          badgeColorToShow = brandColors.red;
+        } else {
+          badgeTextToShow = `LSTM — · ${(conf * 100).toFixed(0)}%`;
+          badgeColorToShow = brandColors.blue;
+        }
       } else {
-        if (investmentValue.ticker === bestFutureTicker) badgeTextToShow = 'Overperformer';
-        else if (investmentValue.ticker === worstFutureTicker) badgeTextToShow = 'Underperformer';
+        badgeTextToShow = 'LSTM unavailable';
+        badgeColorToShow = brandColors.blue;
       }
     } else {
       if (investmentValue.ticker === bestPastTicker) badgeTextToShow = 'Overperformer';
@@ -552,26 +612,6 @@ export default function ReceiptDetailsScreen() {
       return { bestPastTicker: undefined, worstPastTicker: undefined };
     }
   }, [investmentOptions, historicalRates, selectedYears]);
-
-  // Compute best/worst performers for future based on the currently selected future years
-  const { bestFutureTicker, worstFutureTicker } = React.useMemo(() => {
-    try {
-      const list = futureInvestmentOptions.map((it) => ({
-        ticker: it.ticker,
-        percent: it.percentReturn,
-      }));
-      if (list.length === 0) return { bestFutureTicker: undefined, worstFutureTicker: undefined };
-      let best = list[0];
-      let worst = list[0];
-      for (const p of list) {
-        if (p.percent > best.percent) best = p;
-        if (p.percent < worst.percent) worst = p;
-      }
-      return { bestFutureTicker: best.ticker, worstFutureTicker: worst.ticker };
-    } catch (e) {
-      return { bestFutureTicker: undefined, worstFutureTicker: undefined };
-    }
-  }, [futureInvestmentOptions]);
 
   // Main render
   return (
@@ -842,7 +882,7 @@ export default function ReceiptDetailsScreen() {
             <View style={styles.carouselHeader}>
               <Text style={[styles.carouselTitle, { color: theme.text }]}>Potential Growth</Text>
               <Text style={[styles.carouselSubtitle, { color: theme.textSecondary }]}>
-                Compare returns if you started now
+                LSTM badge = model's predicted direction + confidence (5 trading days)
               </Text>
             </View>
 
@@ -933,8 +973,10 @@ export default function ReceiptDetailsScreen() {
         >
           <Ionicons name="warning" size={28} color={brandColors.red} style={styles.warningIcon} />
           <Text style={[styles.warningText, { color: theme.text }]}>
-            Projections are hypothetical. Past performance does not guarantee future results. All
-            projections are simply made using the CAGR formula.
+            Projections are hypothetical and generated by a deep-learning (LSTM) model that predicts
+            each stock's likely direction and confidence. The projected growth rate reflects the
+            selected period's historical performance and is not a guarantee of future results. Past
+            performance does not predict future returns.
           </Text>
         </View>
       </ScrollView>
@@ -989,10 +1031,10 @@ export default function ReceiptDetailsScreen() {
             )}
 
             <TouchableOpacity
-              style={[styles.modalCloseBtn, { backgroundColor: theme.background }]}
+              style={[styles.modalCloseBtn, { backgroundColor: 'transparent' }]}
               onPress={() => setDepositModalVisible(false)}
             >
-              <Text style={[styles.modalCloseText, { color: theme.secondary }]}>Cancel</Text>
+              <Text style={[styles.modalCloseText, { color: theme.textSecondary }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1034,10 +1076,10 @@ export default function ReceiptDetailsScreen() {
             )}
 
             <TouchableOpacity
-              style={[styles.modalCloseBtn, { backgroundColor: theme.background }]}
+              style={[styles.modalCloseBtn, { backgroundColor: 'transparent' }]}
               onPress={() => setCategoryModalVisible(false)}
             >
-              <Text style={[styles.modalCloseText, { color: theme.secondary }]}>Cancel</Text>
+              <Text style={[styles.modalCloseText, { color: theme.textSecondary }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1087,10 +1129,10 @@ export default function ReceiptDetailsScreen() {
             )}
 
             <TouchableOpacity
-              style={[styles.modalCloseBtn, { backgroundColor: theme.background }]}
+              style={[styles.modalCloseBtn, { backgroundColor: 'transparent' }]}
               onPress={() => setMerchantModalVisible(false)}
             >
-              <Text style={[styles.modalCloseText, { color: theme.secondary }]}>Cancel</Text>
+              <Text style={[styles.modalCloseText, { color: theme.textSecondary }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1142,10 +1184,10 @@ export default function ReceiptDetailsScreen() {
             )}
 
             <TouchableOpacity
-              style={[styles.modalCloseBtn, { backgroundColor: theme.background }]}
+              style={[styles.modalCloseBtn, { backgroundColor: 'transparent' }]}
               onPress={() => setAmountModalVisible(false)}
             >
-              <Text style={[styles.modalCloseText, { color: theme.secondary }]}>Cancel</Text>
+              <Text style={[styles.modalCloseText, { color: theme.textSecondary }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1196,10 +1238,10 @@ export default function ReceiptDetailsScreen() {
             )}
 
             <TouchableOpacity
-              style={[styles.modalCloseBtn, { backgroundColor: theme.background }]}
+              style={[styles.modalCloseBtn, { backgroundColor: 'transparent' }]}
               onPress={() => setDateModalVisible(false)}
             >
-              <Text style={[styles.modalCloseText, { color: theme.secondary }]}>Cancel</Text>
+              <Text style={[styles.modalCloseText, { color: theme.textSecondary }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
