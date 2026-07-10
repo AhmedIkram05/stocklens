@@ -10,6 +10,7 @@ import { Alert } from 'react-native';
 import { receiptService, type ScanResponse } from '@/services/receipts';
 import { emit } from '@/services/eventBus';
 import { formatCurrencyGBP } from '@/utils/formatters';
+import { hasForeignCurrency } from '@/services/receiptParser';
 import showConfirmationPrompt from '@/components/ConfirmationPrompt';
 
 export type PendingReceiptState = {
@@ -113,6 +114,25 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
         const rawText = result.raw_text ?? null;
 
         setOcrRaw(rawText);
+
+        // App is GBP-only: reject receipts denominated in $ / €.
+        if (hasForeignCurrency(rawText ?? '')) {
+          try {
+            await discardDraft(result?.id);
+          } catch {
+            // best-effort cleanup; ignore if draft already gone
+          }
+          resetWorkflowState();
+          onResetCamera?.();
+          if (!skipOverlay) {
+            setProcessing(false);
+            Alert.alert(
+              'Receipt not in £',
+              'Receipts must be entered in GBP (£). Please re-enter the amount in pounds.',
+            );
+          }
+          return;
+        }
 
         if (onSuggestion) onSuggestion(amount, rawText);
 

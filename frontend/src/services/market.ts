@@ -18,6 +18,8 @@ export interface QuoteData {
   previous_close: number;
   volume: number;
   timestamp: string;
+  currency?: string;
+  exchange?: string | null;
 }
 
 interface OHLCVResponse {

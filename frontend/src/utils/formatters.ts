@@ -4,6 +4,22 @@
  * Currency and date formatting helpers (GBP, relative dates).
  */
 
+/** Format a number using an explicit ISO currency code (default GBP). */
+export function formatCurrency(amount: number, currency: string = 'GBP') {
+  try {
+    return new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount || 0);
+  } catch (e) {
+    const symbol =
+      currency === 'GBP' ? '£' : currency === 'USD' ? '$' : currency === 'EUR' ? '€' : '';
+    return `${symbol}${(amount || 0).toFixed(2)}`;
+  }
+}
+
 /** Format number as GBP (e.g., "£12.50"). */
 export function formatCurrencyGBP(amount: number) {
   try {

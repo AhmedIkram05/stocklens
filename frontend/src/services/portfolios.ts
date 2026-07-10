@@ -27,6 +27,10 @@ export interface Holding {
   ticker: string;
   shares: number;
   average_cost_basis: number;
+  /** Native trading currency of the instrument (e.g., 'USD', 'EUR', 'GBP'). */
+  currency: string;
+  /** GBP-normalised average cost basis (base currency). */
+  average_cost_basis_gbp?: number;
   created_at: string;
   updated_at: string;
 }
@@ -49,6 +53,10 @@ export interface Transaction {
   shares: number;
   price_per_share: number;
   total_amount: number;
+  /** Native trading currency of the instrument. */
+  currency: string;
+  /** GBP-normalised total (base currency). */
+  total_amount_gbp?: number;
   type: 'BUY' | 'SELL';
   transaction_date: string;
   notes?: string;
@@ -97,6 +105,8 @@ export interface HoldingPerformance {
   day_change: number | null;
   day_change_pct: number | null;
   portfolio_weight_pct: number | null;
+  /** Native trading currency of the instrument. */
+  currency?: string;
 }
 
 export interface PortfolioPerformance {
