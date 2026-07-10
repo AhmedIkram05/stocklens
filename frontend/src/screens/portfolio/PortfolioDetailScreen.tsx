@@ -13,6 +13,7 @@ import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navig
 import { StackNavigationProp } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 
+import BackButton from '../../components/BackButton';
 import { brandColors, useTheme } from '../../contexts/ThemeContext';
 import type { PortfolioStackParamList } from '../../navigation/AppNavigator';
 import { portfolioService, PortfolioPerformance } from '../../services/portfolios';
@@ -195,6 +196,8 @@ export default function PortfolioDetailScreen() {
           />
         }
       >
+        <BackButton />
+
         <Text style={[styles.portfolioName, { color: theme.text }]}>
           {performance.portfolio_name || portfolioName || `Portfolio #${portfolioId}`}
         </Text>

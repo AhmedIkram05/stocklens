@@ -174,7 +174,7 @@ export default function TradeScreen() {
             />
           }
         >
-          <BackButton variant="text" label="Cancel" />
+          <BackButton />
           <Text style={[styles.header, { color: theme.text }]}>{isBuy ? 'Buy' : 'Sell'}</Text>
 
           <View style={styles.modeToggle}>

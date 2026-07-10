@@ -151,7 +151,7 @@ export default function DepositScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.header}>
-          <BackButton variant="text" label="Cancel" color={theme.secondary} />
+          <BackButton />
           <Text style={[styles.title, { color: theme.text }]}>Add Deposit</Text>
           <View style={styles.headerSpacer} />
         </View>
