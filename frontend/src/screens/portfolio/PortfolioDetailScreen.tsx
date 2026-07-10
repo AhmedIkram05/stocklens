@@ -166,7 +166,6 @@ export default function PortfolioDetailScreen() {
     day_change,
     day_change_pct,
     twr,
-    twr_annualised,
     twr_start_date,
     twr_end_date,
     free_cash_balance,
@@ -248,12 +247,6 @@ export default function PortfolioDetailScreen() {
             </Text>
             <Text style={[styles.metricSub, { color: theme.textSecondary }]}>
               {twr_start_date && twr_end_date ? `${twr_start_date} → ${twr_end_date}` : ''}
-            </Text>
-          </View>
-          <View style={styles.metric}>
-            <Text style={[styles.metricLabel, { color: theme.textSecondary }]}>Ann. TWR</Text>
-            <Text style={[styles.metricValue, { color: theme.text }]}>
-              {formatPercent(twr_annualised)}
             </Text>
           </View>
         </View>
