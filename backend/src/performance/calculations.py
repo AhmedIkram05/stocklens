@@ -25,20 +25,34 @@ def compute_holding_performance(
     current_price: Optional[Decimal],
     previous_close: Optional[Decimal],
     total_portfolio_value: Optional[Decimal],
+    fx_rate: Optional[Decimal] = None,
 ) -> HoldingPerformance:
     """Compute performance metrics for a single holding.
+
+    All monetary outputs are normalised to the GBP base currency when
+    ``fx_rate`` (GBP per 1 native unit) is supplied, so mixed-currency
+    holdings aggregate correctly. Percentages are currency-agnostic.
 
     Args:
         ticker: Holding ticker.
         shares: Number of shares held.
-        avg_cost_basis: Average cost per share.
+        avg_cost_basis: Average cost per share (native).
         current_price: Current market price (None if unavailable).
         previous_close: Previous day's close (None if unavailable).
         total_portfolio_value: Total portfolio value for weight calculation.
+        fx_rate: GBP per 1 native unit; pre-converts per-share prices to GBP.
 
     Returns:
         HoldingPerformance with computed metrics.
     """
+    # ponytail: report everything in GBP — convert the per-share prices once.
+    if fx_rate is not None and fx_rate != Decimal(1):
+        if current_price is not None:
+            current_price = current_price * fx_rate
+        if previous_close is not None:
+            previous_close = previous_close * fx_rate
+        avg_cost_basis = avg_cost_basis * fx_rate
+
     cost_basis = shares * avg_cost_basis
 
     if current_price is not None:
@@ -93,6 +107,7 @@ def compute_portfolio_performance(
     end_date: Optional[date] = None,
     enable_twr: bool = True,
     live_quotes: Optional[dict[str, tuple[Decimal, Decimal]]] = None,
+    fx_rates: Optional[dict[str, Decimal]] = None,
 ) -> PortfolioPerformanceResponse:
     """Compute aggregate portfolio performance including TWR.
 
@@ -148,6 +163,7 @@ def compute_portfolio_performance(
         ticker = h["ticker"]
         shares = h["shares"]
         avg_cost = h["average_cost_basis"]
+        fx_rate = (fx_rates or {}).get(ticker)
 
         hp = compute_holding_performance(
             ticker=ticker,
@@ -156,6 +172,7 @@ def compute_portfolio_performance(
             current_price=latest_prices.get(ticker),
             previous_close=previous_closes.get(ticker),
             total_portfolio_value=None,  # Will recalc after we know the total
+            fx_rate=fx_rate,
         )
         if hp.market_value is not None:
             total_market_value += hp.market_value
@@ -209,9 +226,13 @@ def compute_portfolio_performance(
             total_day_change_pct = weighted_sum
 
     # ── 5. Free cash balance ──
+    # Both sides in GBP: deposits are GBP; net invested uses the GBP-normalised
+    # transaction amounts so mixed-currency holdings don't corrupt the sum.
     total_deposits = sum(cf["amount"] for cf in cash_flows)
-    net_invested = sum(t["total_amount"] for t in transactions if t["type"] == "BUY") - sum(
-        t["total_amount"] for t in transactions if t["type"] == "SELL"
+    net_invested = sum(
+        t.get("total_amount_gbp", t["total_amount"]) for t in transactions if t["type"] == "BUY"
+    ) - sum(
+        t.get("total_amount_gbp", t["total_amount"]) for t in transactions if t["type"] == "SELL"
     )
     free_cash_balance = total_deposits - net_invested
 
@@ -225,6 +246,7 @@ def compute_portfolio_performance(
             price_map=price_map,
             start_date=start_date,
             end_date=end_date,
+            fx_rates=fx_rates,
         )
 
     # ── 7. Data quality ──
@@ -257,6 +279,7 @@ def _compute_twr(
     price_map: dict[str, dict[date, Decimal]],
     start_date: date,
     end_date: date,
+    fx_rates: Optional[dict[str, Decimal]] = None,
 ) -> tuple[Optional[Decimal], Optional[Decimal]]:
     """Compute Time-Weighted Return using daily linking methodology.
 
@@ -317,7 +340,7 @@ def _compute_twr(
         sub_end = all_dates[i + 1]
 
         # 1. BMV before sub_end transactions
-        bmv = _portfolio_value(current_holdings, price_map, sub_start)
+        bmv = _portfolio_value(current_holdings, price_map, sub_start, fx_rates=fx_rates)
 
         # 2. Apply sub_end transactions (update holdings)
         for txn in txns_by_date.get(sub_end, []):
@@ -330,7 +353,7 @@ def _compute_twr(
                     del current_holdings[ticker]
 
         # 3. EMV after sub_end
-        emv = _portfolio_value(current_holdings, price_map, sub_end)
+        emv = _portfolio_value(current_holdings, price_map, sub_end, fx_rates=fx_rates)
 
         # 4. Cash flow for this sub-period = deposits on sub_end
         cf_total = cfs_by_date.get(sub_end, Decimal(0))
@@ -366,16 +389,20 @@ def _portfolio_value(
     holdings: dict[str, Decimal],
     price_map: dict[str, dict[date, Decimal]],
     valuation_date: date,
+    fx_rates: Optional[dict[str, Decimal]] = None,
 ) -> Decimal:
     """Compute total market value of holdings at a given date.
 
     Uses the closest available price (last available before the valuation date).
+    Prices are converted to GBP via ``fx_rates`` (GBP per 1 native unit)
+    so mixed-currency holdings aggregate correctly.
     """
     total = Decimal(0)
     for ticker, shares in holdings.items():
         price = _get_closest_price(price_map, ticker, valuation_date)
         if price is not None:
-            total += shares * price
+            fx = (fx_rates or {}).get(ticker, Decimal(1))
+            total += shares * price * fx
     return total
 
 

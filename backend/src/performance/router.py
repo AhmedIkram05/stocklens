@@ -52,10 +52,11 @@ async def _verify_portfolio_ownership(portfolio_id: str, user_id: str) -> dict |
 
 
 async def _get_holdings(portfolio_id: str) -> list[dict[str, Any]]:
-    """Fetch holdings for a portfolio."""
+    """Fetch holdings for a portfolio (incl. currency / GBP-normalised cols)."""
     async with connection_ctx() as conn:
         rows = await conn.fetch(
-            "SELECT id, portfolio_id, ticker, shares, average_cost_basis "
+            "SELECT id, portfolio_id, ticker, shares, average_cost_basis, "
+            "currency, fx_rate_to_gbp, average_cost_basis_gbp "
             "FROM holdings WHERE portfolio_id = $1::uuid "
             "ORDER BY ticker",
             portfolio_id,
@@ -67,7 +68,8 @@ async def _get_transactions_sorted(portfolio_id: str) -> list[dict[str, Any]]:
     """Fetch all transactions for a portfolio, sorted by date ascending."""
     async with connection_ctx() as conn:
         rows = await conn.fetch(
-            "SELECT id, ticker, type, shares, price_per_share, total_amount, transaction_date "
+            "SELECT id, ticker, type, shares, price_per_share, total_amount, "
+            "total_amount_gbp, transaction_date "
             "FROM transactions WHERE portfolio_id = $1::uuid "
             "ORDER BY transaction_date ASC, created_at ASC, id ASC",
             portfolio_id,
@@ -100,8 +102,8 @@ async def _get_free_cash_balance(portfolio_id: str) -> Decimal:
             portfolio_id,
         )
         net_invested = await conn.fetchval(
-            "SELECT COALESCE(SUM(CASE WHEN type = 'BUY' THEN total_amount "
-            "WHEN type = 'SELL' THEN -total_amount ELSE 0 END), 0) "
+            "SELECT COALESCE(SUM(CASE WHEN type = 'BUY' THEN total_amount_gbp "
+            "WHEN type = 'SELL' THEN -total_amount_gbp ELSE 0 END), 0) "
             "FROM transactions WHERE portfolio_id = $1::uuid",
             portfolio_id,
         )
@@ -203,6 +205,9 @@ async def get_portfolio_performance(
     cash_flows = await _get_cash_flows_sorted(str(portfolio_id))
     tickers = list({h["ticker"] for h in holdings})
 
+    # GBP per 1 native unit, per holding (today's rate — see currency plan).
+    fx_rates = {h["ticker"]: (h.get("fx_rate_to_gbp") or Decimal(1)) for h in holdings}
+
     price_map = await _build_price_map(tickers, start_date, end_date)
 
     # Fetch live intraday quotes to override OHLCV closing prices
@@ -219,6 +224,7 @@ async def get_portfolio_performance(
         end_date=end_date,
         enable_twr=settings.ENABLE_TWR,
         live_quotes=live_quotes,
+        fx_rates=fx_rates,
     )
 
 
@@ -284,6 +290,8 @@ async def _get_benchmark_comparison_inner(
     cash_flows = await _get_cash_flows_sorted(str(portfolio_id))
     tickers = list({h["ticker"] for h in holdings})
 
+    fx_rates = {h["ticker"]: (h.get("fx_rate_to_gbp") or Decimal(1)) for h in holdings}
+
     all_tickers = list(set(tickers + [benchmark]))
 
     # Ensure benchmark OHLCV data covers the requested start_date.
@@ -324,6 +332,7 @@ async def _get_benchmark_comparison_inner(
         end_date=end_date,
         enable_twr=settings.ENABLE_TWR,
         live_quotes=live_quotes,
+        fx_rates=fx_rates,
     )
 
     # Compute benchmark daily returns from price data
@@ -343,6 +352,7 @@ async def _get_benchmark_comparison_inner(
         price_map=price_map,
         start_date=start_date,
         end_date=end_date,
+        fx_rates=fx_rates,
     )
 
     # Build cumulative return series for charting
@@ -377,6 +387,7 @@ def _compute_portfolio_daily_returns(
     price_map: dict[str, dict[date, Decimal]],
     start_date: date,
     end_date: date,
+    fx_rates: Optional[dict[str, Decimal]] = None,
 ) -> tuple[list[date], list[Decimal]]:
     """Compute daily portfolio returns for tracking error calculation.
 
@@ -414,7 +425,8 @@ def _compute_portfolio_daily_returns(
         for ticker, shares in current.items():
             ticker_prices = price_map.get(ticker, {})
             if day in ticker_prices and ticker_prices[day] is not None:
-                value += shares * ticker_prices[day]
+                fx = (fx_rates or {}).get(ticker, Decimal(1))
+                value += shares * ticker_prices[day] * fx
 
         if i > 0:
             prev = previous_value

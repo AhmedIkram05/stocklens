@@ -20,6 +20,9 @@ class HoldingPerformance(BaseModel):
     shares: DecimalAsFloat
     average_cost_basis: DecimalAsFloat
     current_price: Optional[DecimalAsFloat] = None
+    # All monetary fields above are reported in the GBP base currency.
+    # `currency` is the holding's native market currency (informational tag).
+    currency: str = "GBP"
     market_value: Optional[DecimalAsFloat] = None
     cost_basis: DecimalAsFloat
     unrealised_pl: Optional[DecimalAsFloat] = None

@@ -29,6 +29,7 @@ from src.holdings.schemas import (
     HoldingUpdate,
 )
 from src.limiter import limiter
+from src.market.fx import get_fx_rate_to_gbp, resolve_instrument
 
 logger = structlog.get_logger()
 
@@ -53,7 +54,8 @@ async def _verify_holding_in_portfolio(
     async with connection_ctx() as conn:
         row = await conn.fetchrow(
             "SELECT h.id, h.portfolio_id, h.ticker, h.shares, "
-            "h.average_cost_basis, h.created_at, h.updated_at "
+            "h.average_cost_basis, h.currency, h.fx_rate_to_gbp, "
+            "h.average_cost_basis_gbp, h.created_at, h.updated_at "
             "FROM holdings h "
             "JOIN portfolios p ON p.id = h.portfolio_id "
             "WHERE h.id = $1::uuid AND h.portfolio_id = $2::uuid AND p.user_id = $3::uuid",
@@ -69,7 +71,8 @@ async def _fetch_holdings_from_db(portfolio_id: str, user_id: str) -> list[dict]
     async with connection_ctx() as conn:
         rows = await conn.fetch(
             "SELECT h.id, h.portfolio_id, h.ticker, h.shares, "
-            "h.average_cost_basis, h.created_at, h.updated_at "
+            "h.average_cost_basis, h.currency, h.fx_rate_to_gbp, "
+            "h.average_cost_basis_gbp, h.created_at, h.updated_at "
             "FROM holdings h "
             "JOIN portfolios p ON p.id = h.portfolio_id "
             "WHERE h.portfolio_id = $1::uuid AND p.user_id = $2::uuid "
@@ -85,7 +88,8 @@ async def _fetch_holding_by_id(holding_id: str, user_id: str) -> dict | None:
     async with connection_ctx() as conn:
         row = await conn.fetchrow(
             "SELECT h.id, h.portfolio_id, h.ticker, h.shares, "
-            "h.average_cost_basis, h.created_at, h.updated_at "
+            "h.average_cost_basis, h.currency, h.fx_rate_to_gbp, "
+            "h.average_cost_basis_gbp, h.created_at, h.updated_at "
             "FROM holdings h "
             "JOIN portfolios p ON p.id = h.portfolio_id "
             "WHERE h.id = $1::uuid AND p.user_id = $2::uuid",
@@ -103,6 +107,8 @@ def _row_to_response(row: dict) -> HoldingResponse:
         ticker=row["ticker"],
         shares=row["shares"],
         average_cost_basis=row["average_cost_basis"],
+        currency=row.get("currency", "GBP"),
+        average_cost_basis_gbp=row.get("average_cost_basis_gbp"),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -128,17 +134,28 @@ async def create_holding(
             detail="Portfolio not found",
         )
 
+    # Resolve native currency + today's GBP FX rate for this ticker.
+    currency, _ = await resolve_instrument(body.ticker)
+    fx_rate_to_gbp = await get_fx_rate_to_gbp(currency)
+    average_cost_basis_gbp = body.average_cost_basis * fx_rate_to_gbp
+
     try:
         async with connection_ctx() as conn:
             row = await conn.fetchrow(
-                "INSERT INTO holdings (portfolio_id, ticker, shares, average_cost_basis) "
-                "VALUES ($1::uuid, $2, $3::numeric, $4::numeric) "
+                "INSERT INTO holdings "
+                "(portfolio_id, ticker, shares, average_cost_basis, currency, "
+                " fx_rate_to_gbp, average_cost_basis_gbp) "
+                "VALUES ($1::uuid, $2, $3::numeric, $4::numeric, $5, $6, $7) "
                 "RETURNING id, portfolio_id, ticker, shares, average_cost_basis, "
+                "currency, fx_rate_to_gbp, average_cost_basis_gbp, "
                 "created_at, updated_at",
                 portfolio_id,
                 body.ticker,
                 body.shares,
                 body.average_cost_basis,
+                currency,
+                fx_rate_to_gbp,
+                average_cost_basis_gbp,
             )
     except asyncpg.exceptions.UniqueViolationError:
         raise HTTPException(
@@ -221,9 +238,12 @@ async def update_holding(
         idx += 1
 
     if body.average_cost_basis is not None:
-        set_clauses.append(f"average_cost_basis = ${idx}::numeric")
+        acb_idx = idx
+        set_clauses.append(f"average_cost_basis = ${acb_idx}::numeric")
         params.append(body.average_cost_basis)
         idx += 1
+        # Recompute GBP-normalised cost basis from the new native value.
+        set_clauses.append(f"average_cost_basis_gbp = ${acb_idx}::numeric * fx_rate_to_gbp")
 
     set_clauses.append("updated_at = now()")
     params.append(holding_id)
@@ -237,7 +257,8 @@ async def update_holding(
         + " AND p.id = holdings.portfolio_id"
         + f" AND p.user_id = ${idx + 1}::uuid"
         + " RETURNING holdings.id, holdings.portfolio_id, holdings.ticker,"
-        + " holdings.shares, holdings.average_cost_basis,"
+        + " holdings.shares, holdings.average_cost_basis, holdings.currency,"
+        + " holdings.fx_rate_to_gbp, holdings.average_cost_basis_gbp,"
         + " holdings.created_at, holdings.updated_at"
     )
 
@@ -350,9 +371,12 @@ async def update_portfolio_holding(
         idx += 1
 
     if body.average_cost_basis is not None:
-        set_clauses.append(f"average_cost_basis = ${idx}::numeric")
+        acb_idx = idx
+        set_clauses.append(f"average_cost_basis = ${acb_idx}::numeric")
         params.append(body.average_cost_basis)
         idx += 1
+        # Recompute GBP-normalised cost basis from the new native value.
+        set_clauses.append(f"average_cost_basis_gbp = ${acb_idx}::numeric * fx_rate_to_gbp")
 
     set_clauses.append("updated_at = now()")
     params.append(holding_id)
@@ -362,6 +386,7 @@ async def update_portfolio_holding(
         + ", ".join(set_clauses)
         + f" WHERE id = ${idx}::uuid "
         + "RETURNING id, portfolio_id, ticker, shares, average_cost_basis, "
+        + "currency, fx_rate_to_gbp, average_cost_basis_gbp, "
         + "created_at, updated_at"
     )
 

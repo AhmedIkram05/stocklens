@@ -20,6 +20,7 @@ from src.auth.schemas import UserInDB
 from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
+from src.market.fx import get_fx_rate_to_gbp, resolve_instrument
 from src.transactions.schemas import (
     TransactionCreate,
     TransactionListResponse,
@@ -56,7 +57,7 @@ async def _fetch_transactions_from_db(
     if ticker:
         query = (
             "SELECT id, portfolio_id, ticker, type, shares, price_per_share, "
-            "total_amount, transaction_date, notes, created_at "
+            "total_amount, currency, total_amount_gbp, transaction_date, notes, created_at "
             "FROM transactions "
             "WHERE portfolio_id = $1::uuid AND ticker = $2 "
             "ORDER BY transaction_date DESC, created_at DESC "
@@ -66,7 +67,7 @@ async def _fetch_transactions_from_db(
     else:
         query = (
             "SELECT id, portfolio_id, ticker, type, shares, price_per_share, "
-            "total_amount, transaction_date, notes, created_at "
+            "total_amount, currency, total_amount_gbp, transaction_date, notes, created_at "
             "FROM transactions "
             "WHERE portfolio_id = $1::uuid "
             "ORDER BY transaction_date DESC, created_at DESC "
@@ -100,7 +101,7 @@ async def _fetch_transaction_by_id(transaction_id: str) -> dict | None:
     async with connection_ctx() as conn:
         row = await conn.fetchrow(
             "SELECT id, portfolio_id, ticker, type, shares, price_per_share, "
-            "total_amount, transaction_date, notes, created_at "
+            "total_amount, currency, total_amount_gbp, transaction_date, notes, created_at "
             "FROM transactions WHERE id = $1::uuid",
             transaction_id,
         )
@@ -121,14 +122,22 @@ def _row_to_response(row: dict) -> TransactionResponse:
         shares=row["shares"],
         price_per_share=row["price_per_share"],
         total_amount=row["total_amount"],
+        currency=row.get("currency", "GBP"),
+        total_amount_gbp=row.get("total_amount_gbp"),
         transaction_date=row["transaction_date"],
         notes=row.get("notes"),
         created_at=row["created_at"],
     )
 
 
-async def _apply_buy_to_holdings(conn, portfolio_id, ticker, shares, price) -> None:
-    """Insert a new holding or update an existing one with a weighted-average cost basis."""
+async def _apply_buy_to_holdings(
+    conn, portfolio_id, ticker, shares, price, currency, fx_rate_to_gbp
+) -> None:
+    """Insert a new holding or update an existing one with a weighted-average cost basis.
+
+    Stores the native ``average_cost_basis`` plus its GBP-normalised parallel
+    ``average_cost_basis_gbp`` (native × today's ``fx_rate_to_gbp``).
+    """
     existing = await conn.fetchrow(
         "SELECT shares, average_cost_basis FROM holdings "
         "WHERE portfolio_id = $1::uuid AND ticker = $2",
@@ -137,23 +146,33 @@ async def _apply_buy_to_holdings(conn, portfolio_id, ticker, shares, price) -> N
     )
     if existing is None:
         await conn.execute(
-            "INSERT INTO holdings (portfolio_id, ticker, shares, average_cost_basis) "
-            "VALUES ($1::uuid, $2, $3, $4)",
+            "INSERT INTO holdings "
+            "(portfolio_id, ticker, shares, average_cost_basis, currency, "
+            " fx_rate_to_gbp, average_cost_basis_gbp) "
+            "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7)",
             portfolio_id,
             ticker,
             shares,
             price,
+            currency,
+            fx_rate_to_gbp,
+            price * fx_rate_to_gbp,
         )
         return
     new_shares = existing["shares"] + shares
     new_cost = (existing["shares"] * existing["average_cost_basis"] + shares * price) / new_shares
     await conn.execute(
-        "UPDATE holdings SET shares = $3, average_cost_basis = $4, updated_at = now() "
+        "UPDATE holdings SET shares = $3, average_cost_basis = $4, "
+        "currency = $5, fx_rate_to_gbp = $6, average_cost_basis_gbp = $7, "
+        "updated_at = now() "
         "WHERE portfolio_id = $1::uuid AND ticker = $2",
         portfolio_id,
         ticker,
         new_shares,
         new_cost,
+        currency,
+        fx_rate_to_gbp,
+        new_cost * fx_rate_to_gbp,
     )
 
 
@@ -204,26 +223,31 @@ async def create_transaction(
 
     total_amount = body.shares * body.price_per_share
 
+    # Resolve native currency + today's GBP FX rate for this ticker.
+    currency, _ = await resolve_instrument(body.ticker)
+    fx_rate_to_gbp = await get_fx_rate_to_gbp(currency)
+    total_amount_gbp = total_amount * fx_rate_to_gbp
+
     async with connection_ctx() as conn:
-        # Server-side affordability guard for BUY (free cash = deposits - net invested)
+        # Server-side affordability guard for BUY (free cash = deposits - net invested, all GBP)
         if body.type == "BUY":
             total_deposits = await conn.fetchval(
                 "SELECT COALESCE(SUM(amount), 0) FROM cash_flows WHERE portfolio_id = $1::uuid",
                 portfolio_id,
             )
-            net_invested = await conn.fetchval(
-                "SELECT COALESCE(SUM(CASE WHEN type = 'BUY' THEN total_amount "
-                "WHEN type = 'SELL' THEN -total_amount ELSE 0 END), 0) "
+            net_invested_gbp = await conn.fetchval(
+                "SELECT COALESCE(SUM(CASE WHEN type = 'BUY' THEN total_amount_gbp "
+                "WHEN type = 'SELL' THEN -total_amount_gbp ELSE 0 END), 0) "
                 "FROM transactions WHERE portfolio_id = $1::uuid",
                 portfolio_id,
             )
-            free_cash = Decimal(str(total_deposits)) - Decimal(str(net_invested))
-            if total_amount > free_cash:
+            free_cash = Decimal(str(total_deposits)) - Decimal(str(net_invested_gbp))
+            if total_amount_gbp > free_cash:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=(
-                        f"Insufficient funds: this purchase costs {total_amount} "
-                        f"but only {free_cash} is available."
+                        f"Insufficient funds: this purchase costs "
+                        f"{total_amount_gbp} GBP but only {free_cash} GBP is available."
                     ),
                 )
 
@@ -234,16 +258,21 @@ async def create_transaction(
             row = await conn.fetchrow(
                 "INSERT INTO transactions "
                 "(portfolio_id, ticker, type, shares, price_per_share, "
-                " total_amount, transaction_date, notes) "
-                "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8) "
+                " total_amount, currency, fx_rate_to_gbp, total_amount_gbp, "
+                " transaction_date, notes) "
+                "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) "
                 "RETURNING id, portfolio_id, ticker, type, shares, price_per_share, "
-                "total_amount, transaction_date, notes, created_at",
+                "total_amount, currency, fx_rate_to_gbp, total_amount_gbp, "
+                "transaction_date, notes, created_at",
                 portfolio_id,
                 body.ticker,
                 body.type,
                 body.shares,
                 body.price_per_share,
                 total_amount,
+                currency,
+                fx_rate_to_gbp,
+                total_amount_gbp,
                 body.transaction_date,
                 body.notes,
             )
@@ -251,7 +280,13 @@ async def create_transaction(
             # Keep holdings in sync with transactions
             if body.type == "BUY":
                 await _apply_buy_to_holdings(
-                    conn, portfolio_id, body.ticker, body.shares, body.price_per_share
+                    conn,
+                    portfolio_id,
+                    body.ticker,
+                    body.shares,
+                    body.price_per_share,
+                    currency,
+                    fx_rate_to_gbp,
                 )
             elif body.type == "SELL":
                 await _apply_sell_to_holdings(conn, portfolio_id, body.ticker, body.shares)
@@ -260,16 +295,21 @@ async def create_transaction(
                 row = await conn.fetchrow(
                     "INSERT INTO transactions "
                     "(portfolio_id, ticker, type, shares, price_per_share, "
-                    " total_amount, transaction_date, notes) "
-                    "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8) "
+                    " total_amount, currency, fx_rate_to_gbp, total_amount_gbp, "
+                    " transaction_date, notes) "
+                    "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) "
                     "RETURNING id, portfolio_id, ticker, type, shares, price_per_share, "
-                    "total_amount, transaction_date, notes, created_at",
+                    "total_amount, currency, fx_rate_to_gbp, total_amount_gbp, "
+                    "transaction_date, notes, created_at",
                     portfolio_id,
                     body.ticker,
                     body.type,
                     body.shares,
                     body.price_per_share,
                     total_amount,
+                    currency,
+                    fx_rate_to_gbp,
+                    total_amount_gbp,
                     body.transaction_date,
                     body.notes,
                 )
@@ -277,7 +317,13 @@ async def create_transaction(
                 # Keep holdings in sync with transactions
                 if body.type == "BUY":
                     await _apply_buy_to_holdings(
-                        conn, portfolio_id, body.ticker, body.shares, body.price_per_share
+                        conn,
+                        portfolio_id,
+                        body.ticker,
+                        body.shares,
+                        body.price_per_share,
+                        currency,
+                        fx_rate_to_gbp,
                     )
                 elif body.type == "SELL":
                     await _apply_sell_to_holdings(conn, portfolio_id, body.ticker, body.shares)

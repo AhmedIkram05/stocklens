@@ -99,7 +99,7 @@ def _fetch_quote(ticker: str) -> dict[str, Any]:
     """Synchronous quote fetch from yfinance Ticker.info.
 
     Returns a dict with keys: price, change, change_pct, previous_close,
-    volume, timestamp.
+    volume, timestamp, currency, exchange.
     """
     t = yf.Ticker(ticker)
     info = t.info or {}
@@ -123,6 +123,9 @@ def _fetch_quote(ticker: str) -> dict[str, Any]:
         "change_pct": _maybe_decimal(change_pct),
         "previous_close": _maybe_decimal(prev_close),
         "volume": _maybe_int(volume),
+        # Market currency / exchange — used to normalise to the GBP base.
+        "currency": info.get("currency") or "GBP",
+        "exchange": info.get("exchange"),
         "timestamp": datetime.now(timezone.utc),
     }
 
@@ -184,3 +187,45 @@ async def fetch_quote(ticker: str) -> dict[str, Any]:
     """Fetch current quote from yfinance in a thread pool."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _fetch_quote, ticker)
+
+
+# ── FX: native currency → GBP ──────────────────────────────────────────────
+# fx_rate_to_gbp = GBP per 1 unit of the native currency (GBP = 1.0).
+# Yahoo FX pair "GBP{cur}=X" quotes the native-per-GBP rate, so we invert it.
+
+
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=2, min=2, max=60),
+    retry=retry_if_exception(_is_retryable),
+    reraise=True,
+)
+def _fetch_fx(currency: str) -> Decimal:
+    """Synchronous FX fetch: GBP per 1 unit of ``currency``.
+
+    Returns ``Decimal("1.0")`` for GBP (the base currency). Raises
+    ``ValueError`` if the rate cannot be resolved.
+    """
+    if not currency or currency.upper() == "GBP":
+        return Decimal("1.0")
+
+    symbol = f"GBP{currency.upper()}=X"
+    df = yf.download(symbol, period="1d", progress=False, auto_adjust=False)
+    if df is None or df.empty:
+        raise ValueError(f"FX rate unavailable for {currency}")
+
+    first_col = next(iter(df.columns), None)
+    if isinstance(first_col, tuple):
+        df.columns = [c[0] for c in df.columns]
+
+    close = df["Close"].iloc[-1]
+    value = float(close)  # native units per 1 GBP
+    if not value or value != value:  # zero or NaN
+        raise ValueError(f"FX rate unavailable for {currency}")
+    return Decimal(1) / Decimal(str(value))
+
+
+async def fetch_fx(currency: str) -> Decimal:
+    """Fetch GBP-per-unit FX rate for ``currency`` in a thread pool."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _fetch_fx, currency)
