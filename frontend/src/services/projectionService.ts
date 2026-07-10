@@ -9,6 +9,7 @@
 import { marketService, OHLCVData } from './market';
 import { PRESET_RATES } from './stockPresets';
 import { predictionService, PredictionResponse } from './prediction';
+import { periodToYears, periodToStartDate } from '../constants/periods';
 
 /**
  * Calculate CAGR from backend OHLCV data for a ticker.
@@ -63,6 +64,35 @@ export async function getHistoricalCAGRFromToday(ticker: string): Promise<number
 }
 
 /**
+ * Get the historical CAGR for a ticker over a specific lookback window.
+ *
+ * Used for LSTM-framed future projections so the growth rate reacts to the
+ * selected year/period picker (unlike the full-history CAGR used for the
+ * historical section).
+ *
+ * @param ticker - Stock ticker
+ * @param periodLabel - Period label (e.g., '3Y', '5Y') from PERIOD_OPTIONS
+ * @returns CAGR as decimal over that window, or null if insufficient data
+ */
+export async function getHistoricalCAGRForPeriod(
+  ticker: string,
+  periodLabel: string,
+): Promise<number | null> {
+  try {
+    const ohlcv = await marketService.getOHLCV(ticker, periodToStartDate(periodLabel));
+    if (ohlcv.length < 2) return null;
+    const first = ohlcv[0].adjusted_close;
+    const last = ohlcv[ohlcv.length - 1].adjusted_close;
+    if (!first || !last || first <= 0) return null;
+    const years = periodToYears(periodLabel);
+    if (!(years > 0)) return null;
+    return (last / first) ** (1 / years) - 1;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Project future value using historical CAGR with preset fallback.
  *
  * @param amount - Principal amount
@@ -102,26 +132,31 @@ export async function getLSTMPrediction(ticker: string): Promise<PredictionRespo
  * @param ticker - Stock ticker symbol
  * @returns Object with direction, rate, confidence, or null
  */
-export async function getCombinedProjection(ticker: string): Promise<{
+export async function getCombinedProjection(
+  ticker: string,
+  periodLabel?: string,
+): Promise<{
   direction: 'UP' | 'FLAT' | 'DOWN';
   rate: number;
   confidence: number;
   model_version: string;
 } | null> {
   try {
-    const [prediction, cagr] = await Promise.all([
-      predictionService.getPrediction(ticker),
-      getCAGR(ticker),
-    ]);
+    const prediction = await predictionService.getPrediction(ticker);
+    const rate = periodLabel
+      ? await getHistoricalCAGRForPeriod(ticker, periodLabel)
+      : await getCAGR(ticker);
     return {
       direction: prediction.direction,
-      rate: cagr ?? 0.1,
+      rate: rate ?? 0.1,
       confidence: prediction.confidence,
       model_version: prediction.model_version,
     };
   } catch {
     // Fall back to CAGR-only
-    const cagr = await getCAGR(ticker);
+    const cagr = periodLabel
+      ? await getHistoricalCAGRForPeriod(ticker, periodLabel)
+      : await getCAGR(ticker);
     if (cagr === null) return null;
     return {
       direction: cagr > 0 ? 'UP' : cagr < 0 ? 'DOWN' : 'FLAT',
