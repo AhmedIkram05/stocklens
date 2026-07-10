@@ -52,7 +52,12 @@ describe('HomeScreen', () => {
   it('shows onboarding empty state and navigates to Scan when CTA pressed', () => {
     const navigateSpy = jest.fn();
     mockedUseNavigation.mockReturnValue({ navigate: navigateSpy } as any);
-    mockedUseReceipts.mockReturnValue({ receipts: [], loading: false, error: null });
+    mockedUseReceipts.mockReturnValue({
+      receipts: [],
+      loading: false,
+      error: null,
+      refetch: jest.fn(),
+    });
 
     const { getByText } = renderScreen();
 
@@ -110,6 +115,7 @@ describe('HomeScreen', () => {
       ],
       loading: false,
       error: null,
+      refetch: jest.fn(),
     });
 
     const { getByText, getAllByTestId } = renderScreen();
