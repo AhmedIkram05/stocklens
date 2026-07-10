@@ -310,16 +310,12 @@ def _compute_twr(
     for t in relevant_txns:
         txns_by_date[t["date"]].append(t)
 
-    cfs_by_date: dict[date, Decimal] = defaultdict(Decimal)
-    for cf in cash_flows:
-        cf_date = cf["created_at"].date() if hasattr(cf["created_at"], "date") else cf["created_at"]
-        if start_date <= cf_date <= end_date:
-            cfs_by_date[cf_date] += cf["amount"]
-
-    # Seed initial holdings from transactions before start_date
+    # Seed initial holdings from transactions up to and including start_date.
+    # start_date is only ever a sub-period start (never a sub_end), so a txn on
+    # start_date must be seeded here or it would never enter holdings.
     current_holdings: dict[str, Decimal] = {}
     for txn in relevant_txns:
-        if txn["date"] >= start_date:
+        if txn["date"] > start_date:
             continue
         if txn["type"] == "BUY":
             current_holdings[txn["ticker"]] = (
@@ -355,15 +351,14 @@ def _compute_twr(
         # 3. EMV after sub_end
         emv = _portfolio_value(current_holdings, price_map, sub_end, fx_rates=fx_rates)
 
-        # 4. Cash flow for this sub-period = deposits on sub_end
-        cf_total = cfs_by_date.get(sub_end, Decimal(0))
-
-        if bmv == 0 and cf_total > 0:
-            sub_return = Decimal(0)
-        elif bmv == 0:
+        # Holdings-only valuation: external cash flows sit in cash and never
+        # enter holdings, so they must not appear here. TWR already strips the
+        # effect of contributions; including `cf_total` manufactured huge fake
+        # losses when a large deposit sat uninvested against small holdings
+        # (e.g. -841% instead of the real ~+5%).
+        if bmv == 0:
             continue
-        else:
-            sub_return = (emv - bmv - cf_total) / bmv
+        sub_return = (emv - bmv) / bmv
 
         cumulative_return *= Decimal(1) + sub_return
         sub_period_count += 1
