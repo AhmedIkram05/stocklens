@@ -25,8 +25,6 @@ import ResponsiveContainer from '../components/ResponsiveContainer';
 import { EmptyStateWithOnboarding } from '../components/EmptyStateWithOnboarding';
 import IconValue from '../components/IconValue';
 import ExpandableCard from '../components/ExpandableCard';
-import { getCombinedProjection } from '../services/projectionService';
-import { STOCK_PRESETS } from '../services/stockPresets';
 
 /** Summary/analytics screen. */
 export default function SummaryScreen() {
@@ -39,9 +37,9 @@ export default function SummaryScreen() {
   const [mostActiveMonth, setMostActiveMonth] = useState<string | null>(null);
   const [expandedInsight, setExpandedInsight] = useState<string | null>(null);
   const [expandedDefinition, setExpandedDefinition] = useState<string | null>(null);
-  // LSTM prediction state
-  const [lstmRate, setLstmRate] = useState<number>(0.1);
-  const [lstmDirection, setLstmDirection] = useState<'UP' | 'FLAT' | 'DOWN'>('UP');
+  // ponytail: fixed 12% CAGR — full-history average of 10 hand-picked winners
+  // is survivorship-biased (~20%); 12% is a reasonable broad-market baseline.
+  const LSTMRATE = 0.12;
 
   const { receipts, loading: receiptsLoading, refetch } = useReceipts();
   const [refreshing, setRefreshing] = useState(false);
@@ -90,59 +88,11 @@ export default function SummaryScreen() {
     };
   }, [loadTotals]);
 
-  // Fetch LSTM predictions for all stock presets to get average projected rate
-  const loadPredictions = useCallback(async () => {
-    try {
-      const results = await Promise.allSettled(
-        STOCK_PRESETS.map(async (stock) => {
-          const proj = await getCombinedProjection(stock.ticker);
-          return { ticker: stock.ticker, ...proj };
-        }),
-      );
-      const successful = results
-        .filter(
-          (
-            r,
-          ): r is PromiseFulfilledResult<{
-            ticker: string;
-            direction: 'UP' | 'FLAT' | 'DOWN';
-            rate: number;
-            confidence: number;
-            model_version: string;
-          }> =>
-            r.status === 'fulfilled' &&
-            r.value !== null &&
-            r.value !== undefined &&
-            typeof r.value.rate === 'number' &&
-            !isNaN(r.value.rate),
-        )
-        .map((r) => r.value);
-      if (successful.length > 0) {
-        const avgRate = successful.reduce((s, p) => s + p.rate, 0) / successful.length;
-        // Pick the most common direction
-        const dirCounts: Record<string, number> = {};
-        successful.forEach((p) => {
-          dirCounts[p.direction] = (dirCounts[p.direction] || 0) + 1;
-        });
-        const topDir = Object.entries(dirCounts).sort((a, b) => b[1] - a[1])[0][0] as
-          'UP' | 'FLAT' | 'DOWN';
-        setLstmRate(avgRate);
-        setLstmDirection(topDir);
-      }
-    } catch {
-      // Keep defaults (10% CAGR)
-    }
-  }, []);
-
-  useEffect(() => {
-    loadPredictions().catch(() => {});
-  }, [loadPredictions]);
-
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.allSettled([refetch(), loadTotals(), loadPredictions()]);
+    await Promise.allSettled([refetch(), loadTotals()]);
     setRefreshing(false);
-  }, [refetch, loadTotals, loadPredictions]);
+  }, [refetch, loadTotals]);
 
   const formatCurrency = (value: number) => formatCurrencyRounded(value);
 
@@ -562,14 +512,14 @@ export default function SummaryScreen() {
                     iconName="trending-up"
                     iconSize={28}
                     iconColor={theme.primary}
-                    value={formatCurrency(totalMoneySpent * Math.pow(1 + lstmRate, 20))}
+                    value={formatCurrency(totalMoneySpent * Math.pow(1 + LSTMRATE, 20))}
                     valueStyle={[styles.projectionValue, { color: theme.text }]}
                   />
                 }
                 label="20-Year Portfolio Projection"
                 subtitle={`If your ${formatCurrency(totalMoneySpent)} grew at ${(
-                  lstmRate * 100
-                ).toFixed(1)}% per year (LSTM ${lstmDirection})`}
+                  LSTMRATE * 100
+                ).toFixed(1)}% per year`}
                 variant="white"
                 style={{ width: '100%', marginBottom: spacing.md, marginHorizontal: 0 }}
               />

@@ -31,8 +31,6 @@ When updating this file, agents must follow these rules:
 
 ---
 
----
-
 ## Phase 1 — Backend Foundation + Auth + OCR Migration
 
 **Goal:** Eliminate Firebase and Node.js. FastAPI + PostgreSQL is the single backend.
@@ -371,6 +369,8 @@ The following Phase 4 modules are infrastructure-agnostic and migrate identicall
 - **MLflow backend**: Currently SQLite at `mlflow_data/mlflow.db` on a Docker volume. Phase 5 should move to RDS PostgreSQL or S3-backed tracking server for durability.
 - **Budget/cost estimate**: Not yet assessed. t3.medium for Airflow, t3.small for MLflow, db.t3.medium for RDS, cache.t3.micro for Redis ElastiCache. Rough monthly estimate: ~$150–200/mo for dev, ~$300–400/mo for prod with reserved instances.
 
-###
+---
 
-_Not started._ Add tracker rows when Phase 6 begins.
+## Phase 6 - Conversation Tool use AI Agent
+
+_Not started._ Add tracker rows when
