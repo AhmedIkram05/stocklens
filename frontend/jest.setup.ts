@@ -141,3 +141,12 @@ if (RN?.AppState) {
   RN.AppState.addEventListener = jest.fn(() => ({ remove: jest.fn() }));
   RN.AppState.removeEventListener = jest.fn();
 }
+
+// ponytail: keep failure output short — don't dump the full component tree
+// on query errors; the assertion message is enough to diagnose.
+const RTL = require('@testing-library/react-native');
+if (RTL?.configure) {
+  RTL.configure({
+    getElementError: (message: string | null) => new Error(message ?? 'Unable to find an element.'),
+  });
+}
