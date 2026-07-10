@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,22 +9,21 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 
+import BackButton from '../../components/BackButton';
 import { brandColors, useTheme } from '../../contexts/ThemeContext';
 import type { PortfolioStackParamList } from '../../navigation/AppNavigator';
 import { portfolioService, PortfolioPerformance } from '../../services/portfolios';
+import { formatCurrency } from '../../utils/formatters';
 
 type PortfolioDetailRouteProp = RouteProp<PortfolioStackParamList, 'PortfolioDetail'>;
 type PortfolioDetailNavigationProp = StackNavigationProp<
   PortfolioStackParamList,
   'PortfolioDetail'
 >;
-
-const formatCurrency = (amount: number) =>
-  amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
 const formatPercent = (value: number | null | undefined) => {
   if (value == null) return 'N/A';
@@ -34,26 +33,41 @@ const formatPercent = (value: number | null | undefined) => {
 
 const formatWeight = (value: number) => `${value.toFixed(1)}%`;
 
+const relativeTime = (iso: string) => {
+  const diff = Date.now() - new Date(iso).getTime();
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  return `${h}h ago`;
+};
+
 const COL_WIDTHS = {
-  ticker: 80,
-  shares: 80,
-  avgCost: 100,
-  price: 100,
-  marketValue: 110,
-  pnl: 110,
-  pnlPct: 90,
-  weight: 70,
+  ticker: 70,
+  shares: 65,
+  avgCost: 85,
+  price: 85,
+  marketValue: 95,
+  pnl: 95,
+  pnlPct: 80,
+  weight: 60,
 };
 
 const tableColumns = [
-  { label: 'Ticker', key: 'ticker', width: COL_WIDTHS.ticker },
-  { label: 'Shares', key: 'shares', width: COL_WIDTHS.shares },
-  { label: 'Avg Cost', key: 'avgCost', width: COL_WIDTHS.avgCost },
-  { label: 'Price', key: 'price', width: COL_WIDTHS.price },
-  { label: 'Mkt Value', key: 'marketValue', width: COL_WIDTHS.marketValue },
-  { label: 'P&L $', key: 'pnl', width: COL_WIDTHS.pnl },
-  { label: 'P&L %', key: 'pnlPct', width: COL_WIDTHS.pnlPct },
-  { label: 'Wt %', key: 'weight', width: COL_WIDTHS.weight },
+  { label: 'Ticker', key: 'ticker', width: COL_WIDTHS.ticker, align: 'left' as const },
+  { label: 'Shares', key: 'shares', width: COL_WIDTHS.shares, align: 'right' as const },
+  { label: 'Avg Cost', key: 'avgCost', width: COL_WIDTHS.avgCost, align: 'right' as const },
+  { label: 'Price', key: 'price', width: COL_WIDTHS.price, align: 'right' as const },
+  {
+    label: 'Mkt Value',
+    key: 'marketValue',
+    width: COL_WIDTHS.marketValue,
+    align: 'right' as const,
+  },
+  { label: 'P&L $', key: 'pnl', width: COL_WIDTHS.pnl, align: 'right' as const },
+  { label: 'P&L %', key: 'pnlPct', width: COL_WIDTHS.pnlPct, align: 'right' as const },
+  { label: 'Wt %', key: 'weight', width: COL_WIDTHS.weight, align: 'right' as const },
 ];
 
 export default function PortfolioDetailScreen() {
@@ -66,31 +80,50 @@ export default function PortfolioDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
 
   const fetchPerformance = useCallback(
-    async (isRefresh = false) => {
+    async (isRefresh = false, silent = false) => {
       try {
-        if (isRefresh) {
-          setRefreshing(true);
-        } else {
-          setLoading(true);
+        if (!silent) {
+          if (isRefresh) {
+            setRefreshing(true);
+          } else {
+            setLoading(true);
+          }
         }
-        setError(null);
+        if (!silent) setError(null);
         const data = await portfolioService.getPerformance(portfolioId);
-        setPerformance(data);
+        if (mountedRef.current) setPerformance(data);
       } catch (err: any) {
-        setError(err?.message || 'Failed to load portfolio performance');
+        if (!silent) setError(err?.message || 'Failed to load portfolio performance');
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (!silent) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     [portfolioId],
   );
 
+  // Silent 30s polling for intraday price updates
   useEffect(() => {
-    fetchPerformance();
+    mountedRef.current = true;
+    const id = setInterval(() => {
+      fetchPerformance(false, true).catch(() => {});
+    }, 30000);
+    return () => {
+      mountedRef.current = false;
+      clearInterval(id);
+    };
   }, [fetchPerformance]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchPerformance();
+    }, [fetchPerformance]),
+  );
 
   const handleRefresh = useCallback(() => {
     fetchPerformance(true);
@@ -133,12 +166,10 @@ export default function PortfolioDetailScreen() {
     day_change,
     day_change_pct,
     twr,
-    twr_annualised,
     twr_start_date,
     twr_end_date,
     free_cash_balance,
     data_quality,
-    total_holdings,
     holdings,
   } = performance;
 
@@ -146,6 +177,7 @@ export default function PortfolioDetailScreen() {
   const isDayChangePositive = day_change != null && day_change >= 0;
   const isTwrPositive = twr != null && twr >= 0;
   const isDataPartial = data_quality === 'partial';
+  const activeHoldings = holdings.filter((h) => h.shares > 0);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
@@ -161,6 +193,8 @@ export default function PortfolioDetailScreen() {
           />
         }
       >
+        <BackButton />
+
         <Text style={[styles.portfolioName, { color: theme.text }]}>
           {performance.portfolio_name || portfolioName || `Portfolio #${portfolioId}`}
         </Text>
@@ -215,12 +249,6 @@ export default function PortfolioDetailScreen() {
               {twr_start_date && twr_end_date ? `${twr_start_date} → ${twr_end_date}` : ''}
             </Text>
           </View>
-          <View style={styles.metric}>
-            <Text style={[styles.metricLabel, { color: theme.textSecondary }]}>Ann. TWR</Text>
-            <Text style={[styles.metricValue, { color: theme.text }]}>
-              {formatPercent(twr_annualised)}
-            </Text>
-          </View>
         </View>
 
         {isDataPartial && (
@@ -231,30 +259,34 @@ export default function PortfolioDetailScreen() {
           </View>
         )}
 
+        <Text style={[styles.freshnessText, { color: theme.textSecondary }]}>
+          Prices updated {relativeTime(performance.calculated_at)}
+        </Text>
+
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            Holdings ({total_holdings})
+            Holdings ({activeHoldings.length})
           </Text>
         </View>
 
-        {holdings.length > 0 ? (
+        {activeHoldings.length > 0 ? (
           <View style={styles.tableSection}>
             <ScrollView horizontal showsHorizontalScrollIndicator>
-              <View>
+              <View style={{ paddingRight: 20 }}>
                 <View style={[styles.tableHeader, { borderBottomColor: theme.border }]}>
                   {tableColumns.map((col) => (
                     <Text
                       key={col.key}
                       style={[
                         styles.tableHeaderCell,
-                        { width: col.width, color: theme.textSecondary },
+                        { width: col.width, color: theme.textSecondary, textAlign: col.align },
                       ]}
                     >
                       {col.label}
                     </Text>
                   ))}
                 </View>
-                {holdings.map((h, i) => {
+                {activeHoldings.map((h, i) => {
                   const pl = h.unrealised_pl;
                   const isPositive = pl != null && pl >= 0;
                   return (
@@ -353,19 +385,13 @@ export default function PortfolioDetailScreen() {
             style={[styles.actionButton, { backgroundColor: brandColors.blue }]}
             onPress={() => navigation.navigate('Deposit', { portfolioId })}
           >
-            <Text style={styles.actionButtonText}>+Deposit</Text>
+            <Text style={styles.actionButtonText}>Deposit</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: brandColors.green }]}
+            style={[styles.actionButton, { backgroundColor: theme.primary }]}
             onPress={() => navigation.navigate('Trade', { portfolioId, mode: 'buy' })}
           >
-            <Text style={styles.actionButtonText}>+Buy</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: brandColors.red }]}
-            onPress={() => navigation.navigate('Trade', { portfolioId, mode: 'sell' })}
-          >
-            <Text style={styles.actionButtonText}>Sell</Text>
+            <Text style={styles.actionButtonText}>Trade</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionButton, { backgroundColor: theme.textSecondary, opacity: 0.7 }]}
@@ -453,6 +479,11 @@ const styles = StyleSheet.create({
     color: '#856404',
     fontSize: 13,
     textAlign: 'center',
+  },
+  freshnessText: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 12,
   },
   sectionHeader: {
     marginBottom: 8,

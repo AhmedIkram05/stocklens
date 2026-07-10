@@ -17,6 +17,7 @@ from src.receipts.cascade import (
     _detect_discrepancies,
     _merge_results,
     _score_heuristic_confidence,
+    _should_escalate,
     cascade_extract,
 )
 from src.receipts.llm_extractor import LLMExtractionResult
@@ -304,6 +305,53 @@ class TestMergeResults:
         merged = _merge_results(heuristic, llm, discrepancies)
         assert len(merged.discrepancies) == 1
         assert merged.discrepancies[0]["field"] == "merchant"
+
+
+# ── _should_escalate ────────────────────────────────────────────────────
+
+
+class TestShouldEscalate:
+    """Tests for the LLM escalation decision (confidence gating)."""
+
+    @staticmethod
+    def _confs(merchant_conf: float, has_merchant: bool = True) -> dict:
+        return {
+            "merchant": FieldConfidence(
+                value="Shop" if has_merchant else None,
+                confidence=merchant_conf if has_merchant else 0.0,
+                source="regex",
+            ),
+            "total": FieldConfidence(value=10.0, confidence=0.95, source="regex"),
+            "date": FieldConfidence(value="2026-01-01", confidence=0.85, source="regex"),
+        }
+
+    def test_no_escalation_when_verified_and_clean(self):
+        """Verified merchant + high overall + high OCR → regex only."""
+        confs = self._confs(0.95)
+        escalate, reasons = _should_escalate(0.92, confs, 0.9)
+        assert escalate is False
+        assert reasons == ""
+
+    def test_escalate_on_unverified_merchant(self):
+        """Merchant found but not fuzzy-matched → escalate for LLM confirm."""
+        confs = self._confs(0.90)
+        escalate, reasons = _should_escalate(0.90, confs, 0.9)
+        assert escalate is True
+        assert "unverified_merchant" in reasons
+
+    def test_escalate_on_low_ocr_quality(self):
+        """Poor OCR engine confidence → escalate even if fields look present."""
+        confs = self._confs(0.95)
+        escalate, reasons = _should_escalate(0.92, confs, 0.4)
+        assert escalate is True
+        assert "low_ocr_quality" in reasons
+
+    def test_escalate_on_low_overall(self):
+        """Missing/low core field → escalate."""
+        confs = self._confs(0.95, has_merchant=False)
+        escalate, reasons = _should_escalate(0.32, confs, 0.9)
+        assert escalate is True
+        assert "low_overall" in reasons
 
 
 # ── cascade_extract (mocked) ─────────────────────────────────────────────

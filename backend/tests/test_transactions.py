@@ -18,6 +18,23 @@ async def _create_portfolio(client: httpx.AsyncClient, headers: dict[str, str]) 
     return resp.json()
 
 
+async def _create_cash_flow(
+    client: httpx.AsyncClient,
+    pid: str,
+    headers: dict[str, str],
+    amount: float = 10000.0,
+) -> dict:
+    """Create a cash flow deposit to fund BUY transactions."""
+    payload = {
+        "amount": amount,
+        "source": "deposit",
+        "notes": "Test deposit for transaction tests",
+    }
+    resp = await client.post(f"/portfolios/{pid}/cash-flows", json=payload, headers=headers)
+    assert resp.status_code == 201
+    return resp.json()
+
+
 async def _create_transaction(
     client: httpx.AsyncClient,
     pid: str,
@@ -33,6 +50,11 @@ async def _create_transaction(
         "notes": "Test purchase",
     }
     payload.update(overrides)
+    # Ensure cash is available for BUY transactions
+    if payload.get("type") == "BUY":
+        shares = float(payload.get("shares", "10.0"))
+        price = float(payload.get("price_per_share", "150.50"))
+        await _create_cash_flow(client, pid, headers, amount=shares * price * 1.1)
     resp = await client.post(f"/portfolios/{pid}/transactions", json=payload, headers=headers)
     assert resp.status_code == 201
     return resp.json()
@@ -46,19 +68,16 @@ class TestCreateTransaction:
 
     async def test_create_buy(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
         p = await _create_portfolio(client, auth_headers)
-        response = await client.post(
-            f"/portfolios/{p['id']}/transactions",
-            json={
-                "ticker": "AAPL",
-                "type": "BUY",
-                "shares": "10.0",
-                "price_per_share": "150.50",
-                "transaction_date": "2026-06-01",
-            },
-            headers=auth_headers,
+        data = await _create_transaction(
+            client,
+            p["id"],
+            auth_headers,
+            ticker="AAPL",
+            type="BUY",
+            shares="10.0",
+            price_per_share="150.50",
+            transaction_date="2026-06-01",
         )
-        assert response.status_code == 201
-        data = response.json()
         assert data["ticker"] == "AAPL"
         assert data["type"] == "BUY"
         assert float(data["shares"]) == 10.0
@@ -69,6 +88,20 @@ class TestCreateTransaction:
 
     async def test_create_sell(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
         p = await _create_portfolio(client, auth_headers)
+        # Must first buy shares before selling
+        await _create_cash_flow(client, p["id"], auth_headers, amount=8000.0)
+        buy_resp = await client.post(
+            f"/portfolios/{p['id']}/transactions",
+            json={
+                "ticker": "TSLA",
+                "type": "BUY",
+                "shares": "10.0",
+                "price_per_share": "700.0",
+                "transaction_date": "2026-06-10",
+            },
+            headers=auth_headers,
+        )
+        assert buy_resp.status_code == 201
         response = await client.post(
             f"/portfolios/{p['id']}/transactions",
             json={
@@ -88,6 +121,7 @@ class TestCreateTransaction:
         self, client: httpx.AsyncClient, auth_headers: dict[str, str]
     ):
         p = await _create_portfolio(client, auth_headers)
+        await _create_cash_flow(client, p["id"], auth_headers, amount=200.0)
         response = await client.post(
             f"/portfolios/{p['id']}/transactions",
             json={
@@ -155,6 +189,7 @@ class TestCreateTransaction:
 
     async def test_create_with_notes(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
         p = await _create_portfolio(client, auth_headers)
+        await _create_cash_flow(client, p["id"], auth_headers, amount=6000.0)
         response = await client.post(
             f"/portfolios/{p['id']}/transactions",
             json={

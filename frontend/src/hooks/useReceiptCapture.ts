@@ -10,6 +10,7 @@ import { Alert } from 'react-native';
 import { receiptService, type ScanResponse } from '@/services/receipts';
 import { emit } from '@/services/eventBus';
 import { formatCurrencyGBP } from '@/utils/formatters';
+import { hasForeignCurrency } from '@/services/receiptParser';
 import showConfirmationPrompt from '@/components/ConfirmationPrompt';
 
 export type PendingReceiptState = {
@@ -105,10 +106,33 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
       if (!skipOverlay) setProcessing(true);
       try {
         const result = await receiptService.scan(photoUri);
-        const amount = result.extraction?.total ?? null;
+        const extraction = result.extraction;
+        const amount = extraction?.total ?? null;
+        const merchant = extraction?.merchant_name ?? null;
+        const extractedDate = extraction?.date ?? null;
+        const items = extraction?.items ?? [];
         const rawText = result.raw_text ?? null;
 
         setOcrRaw(rawText);
+
+        // App is GBP-only: reject receipts denominated in $ / €.
+        if (hasForeignCurrency(rawText ?? '')) {
+          try {
+            await discardDraft(result?.id);
+          } catch {
+            // best-effort cleanup; ignore if draft already gone
+          }
+          resetWorkflowState();
+          onResetCamera?.();
+          if (!skipOverlay) {
+            setProcessing(false);
+            Alert.alert(
+              'Receipt not in £',
+              'Receipts must be entered in GBP (£). Please re-enter the amount in pounds.',
+            );
+          }
+          return;
+        }
 
         if (onSuggestion) onSuggestion(amount, rawText);
 
@@ -120,11 +144,14 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
         const displayAmount = amount != null ? formatCurrencyGBP(amount) : 'No amount detected';
         showConfirmationPrompt(displayAmount, {
           onConfirm: async () => {
+            emit('receipts-changed', { id: result.id });
             resetWorkflowState();
             navigation.navigate('ReceiptDetails' as any, {
               receiptId: result.id,
               totalAmount: amount ?? 0,
-              date: result.extraction?.date ?? new Date().toISOString(),
+              merchantName: merchant ?? undefined,
+              date: extractedDate ?? new Date().toISOString(),
+              lineItems: items,
               image: photoUri ?? undefined,
               source: result.source,
               confidence: result.confidence,
@@ -140,9 +167,14 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
         });
       } catch (err: any) {
         if (!skipOverlay) {
+          const msg = err?.message?.toLowerCase() ?? '';
+          // Backend 422: "Could not extract the total amount…" → manual entry
+          // Backend 422: "Could not extract text…" → prompt retake
+          // Legacy strings kept for backward compat
           if (
-            err?.message?.includes('No total amount') ||
-            err?.message?.includes('no receipt text')
+            msg.includes('total amount') ||
+            msg.includes('no total amount') ||
+            msg.includes('no amount')
           ) {
             Alert.alert(
               'Could not read receipt',
@@ -150,6 +182,15 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
             );
             if (onSuggestion) onSuggestion(null, null);
             handleManualEntry(null);
+          } else if (
+            msg.includes('extract text') ||
+            msg.includes('no receipt text') ||
+            msg.includes('better lighting')
+          ) {
+            Alert.alert(
+              'Could not read receipt',
+              'No text was detected. Please retake the photo with better lighting.',
+            );
           } else {
             Alert.alert(
               'Scan Error',

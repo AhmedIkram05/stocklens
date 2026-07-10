@@ -10,6 +10,12 @@ import { receiptService } from '@/services/receipts';
 import { subscribe } from '@/services/eventBus';
 import { createApiReceipt } from '../fixtures';
 
+// useFocusEffect needs a NavigationContainer; the hook's focus-refetch isn't
+// under test here, so stub it to a no-op.
+jest.mock('@react-navigation/native', () => ({
+  useFocusEffect: jest.fn(),
+}));
+
 // Handler type used by the mocked event bus
 type ReceiptsChangedHandler = (payload?: Record<string, unknown>) => void;
 
@@ -71,6 +77,7 @@ describe('useReceipts', () => {
         date: '2025-01-01T10:00:00Z',
         time: '',
         image: 's3://key/1',
+        categoryId: null,
         source: undefined,
         confidence: undefined,
       },

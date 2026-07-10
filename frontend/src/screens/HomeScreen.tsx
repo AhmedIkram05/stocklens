@@ -4,8 +4,8 @@
  * Dashboard showing spending stats and recent receipts.
  */
 
-import React, { useMemo, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl } from 'react-native';
 import { useNavigation, CompositeNavigationProp } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -28,6 +28,7 @@ import { portfolioService } from '../services/portfolios';
 import { useAuth } from '../contexts/AuthContext';
 import type { MainTabParamList, RootStackParamList } from '../navigation/AppNavigator';
 import ReceiptsSorter, { SortBy, SortDirection } from '../components/ReceiptsSorter';
+import { categoryService, type Category } from '../services/categories';
 
 type HomeNavigationProp = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Dashboard'>,
@@ -40,50 +41,69 @@ export default function HomeScreen() {
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [sortBy, setSortBy] = useState<SortBy>('date');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [filterCategoryId, setFilterCategoryId] = useState<string | null>(null);
   const { theme } = useTheme();
 
-  const { receipts: allScans, loading: receiptsLoading } = useReceipts();
+  const [categories, setCategories] = useState<Category[]>([]);
+  useEffect(() => {
+    let mounted = true;
+    categoryService
+      .listCategories()
+      .then((cs) => {
+        if (mounted) setCategories(cs);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const { receipts: allScans, loading: receiptsLoading, refetch } = useReceipts();
 
   const [portfolioAgg, setPortfolioAgg] = useState<{
     total_market_value: number;
     total_unrealised_pl: number;
   } | null>(null);
   const [portfolioLoading, setPortfolioLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadPortfolio = useCallback(async () => {
+    try {
+      const portfolios = await portfolioService.listPortfolios();
+      if (portfolios.length === 0) {
+        setPortfolioLoading(false);
+        return;
+      }
+      const results = await Promise.allSettled(
+        portfolios.map((p) => portfolioService.getPerformance(p.id)),
+      );
+      let totalMV = 0;
+      let totalPL = 0;
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          totalMV += r.value.total_market_value ?? 0;
+          totalPL += r.value.total_unrealised_pl ?? 0;
+        }
+      }
+      if (totalMV > 0) {
+        setPortfolioAgg({ total_market_value: totalMV, total_unrealised_pl: totalPL });
+      }
+    } catch {
+      // Silently fail
+    } finally {
+      setPortfolioLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const portfolios = await portfolioService.listPortfolios();
-        if (!mounted || portfolios.length === 0) {
-          if (mounted) setPortfolioLoading(false);
-          return;
-        }
-        const results = await Promise.allSettled(
-          portfolios.map((p) => portfolioService.getPerformance(p.id)),
-        );
-        if (!mounted) return;
-        let totalMV = 0;
-        let totalPL = 0;
-        for (const r of results) {
-          if (r.status === 'fulfilled') {
-            totalMV += r.value.total_market_value ?? 0;
-            totalPL += r.value.total_unrealised_pl ?? 0;
-          }
-        }
-        if (totalMV > 0) {
-          setPortfolioAgg({ total_market_value: totalMV, total_unrealised_pl: totalPL });
-        }
-      } catch {
-        // Silently fail
-      } finally {
-        if (mounted) setPortfolioLoading(false);
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    loadPortfolio();
+  }, [loadPortfolio]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.allSettled([refetch(), loadPortfolio()]);
+    setRefreshing(false);
+  }, [refetch, loadPortfolio]);
 
   const { userProfile } = useAuth();
   const firstName = useMemo(() => {
@@ -116,9 +136,31 @@ export default function HomeScreen() {
     return sorted;
   }, [allScans, sortBy, sortDirection]);
 
+  const categoryMap = useMemo(() => {
+    const map = new Map<string, Category>();
+    for (const c of categories) map.set(c.id, c);
+    return map;
+  }, [categories]);
+
+  const filteredReceipts = useMemo(() => {
+    if (!filterCategoryId) return sortedReceipts;
+    return sortedReceipts.filter((r) => r.categoryId === filterCategoryId);
+  }, [sortedReceipts, filterCategoryId]);
+
   return (
     <ScreenContainer contentStyle={{ paddingVertical: sectionVerticalSpacing }}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={theme.primary}
+            colors={[theme.primary]}
+          />
+        }
+      >
         {receiptsLoading ? (
           <View style={{ padding: spacing.xl, alignItems: 'center' }}>
             <ActivityIndicator size="large" color="#888" />
@@ -207,14 +249,69 @@ export default function HomeScreen() {
                     setSortDirection(dir);
                   }}
                 />
+
+                {/* Category filter chips */}
+                {categories.length > 0 && (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.filterChips}
+                    contentContainerStyle={{ gap: spacing.xs, paddingVertical: spacing.xs }}
+                  >
+                    <TouchableOpacity
+                      style={[
+                        styles.filterChip,
+                        {
+                          backgroundColor: !filterCategoryId ? brandColors.blue : theme.background,
+                        },
+                      ]}
+                      onPress={() => setFilterCategoryId(null)}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.filterChipText,
+                          { color: !filterCategoryId ? brandColors.white : theme.text },
+                        ]}
+                      >
+                        All
+                      </Text>
+                    </TouchableOpacity>
+                    {categories.map((c) => {
+                      const active = filterCategoryId === c.id;
+                      return (
+                        <TouchableOpacity
+                          key={c.id}
+                          style={[
+                            styles.filterChip,
+                            { backgroundColor: active ? brandColors.blue : theme.background },
+                          ]}
+                          onPress={() => setFilterCategoryId(active ? null : c.id)}
+                          activeOpacity={0.7}
+                        >
+                          <Text
+                            style={[
+                              styles.filterChipText,
+                              { color: active ? brandColors.white : theme.text },
+                            ]}
+                          >
+                            {c.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                )}
+
                 {(() => {
-                  const preview = sortedReceipts.slice(0, 3);
-                  const list = showAllHistory ? sortedReceipts : preview;
+                  const preview = filteredReceipts.slice(0, 3);
+                  const list = showAllHistory ? filteredReceipts : preview;
                   const cols = 1;
 
                   return (
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
                       {list.map((scan) => {
+                        const cat = scan.categoryId ? categoryMap.get(scan.categoryId) : null;
                         return (
                           <View
                             key={scan.id}
@@ -229,6 +326,7 @@ export default function HomeScreen() {
                               time={scan.time}
                               source={scan.source as SourceBadgeKey | undefined}
                               confidence={scan.confidence}
+                              category={cat?.name ?? null}
                               onPress={() =>
                                 navigation.navigate('ReceiptDetails', {
                                   receiptId: scan.id,
@@ -347,5 +445,18 @@ const styles = StyleSheet.create({
   },
   portfolioSection: {
     paddingBottom: spacing.md,
+  },
+  filterChips: {
+    marginBottom: spacing.md,
+  },
+  filterChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+  },
+  filterChipText: {
+    ...typography.captionStrong,
   },
 });

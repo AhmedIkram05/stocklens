@@ -11,7 +11,7 @@ import FormInput from '../components/FormInput';
 import PrimaryButton from '../components/PrimaryButton';
 import AuthFooter from '../components/AuthFooter';
 import { useNavigation } from '@react-navigation/native';
-import IconButton from '../components/IconButton';
+import BackButton from '../components/BackButton';
 import { authService } from '../services/auth';
 import { ApiError } from '../services/api';
 import { promptEnableDeviceAuth } from '../utils/deviceAuthPrompt';
@@ -25,7 +25,7 @@ import { useTheme } from '../contexts/ThemeContext';
 export default function SignUpScreen() {
   const navigation = useNavigation();
   const { contentHorizontalPadding, sectionVerticalSpacing, isSmallPhone } = useBreakpoint();
-  const { startLockGrace } = useAuth();
+  const { startLockGrace, refreshUser } = useAuth();
   const { theme } = useTheme();
   const [firstName, setFirstName] = useState('');
   const [email, setEmail] = useState('');
@@ -59,6 +59,7 @@ export default function SignUpScreen() {
     try {
       await authService.signUp({ fullName: firstName, email, password });
 
+      await refreshUser();
       startLockGrace();
 
       try {
@@ -66,6 +67,7 @@ export default function SignUpScreen() {
       } catch (e) {}
     } catch (error: unknown) {
       let errorMessage = 'An error occurred during sign up';
+      if (__DEV__) console.error('signup error:', error);
       if (error instanceof ApiError) {
         if (error.status === 409) {
           errorMessage = 'An account with this email already exists';
@@ -104,7 +106,7 @@ export default function SignUpScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: sectionVerticalSpacing }]}
       >
         <View style={[styles.headerRow, isSmallPhone && styles.headerRowCompact]}>
-          <IconButton name="chevron-back" onPress={handleBack} accessibilityLabel="Go back" />
+          <BackButton onPress={handleBack} />
         </View>
 
         <View style={[styles.titleContainer, isSmallPhone && styles.titleContainerCompact]}>

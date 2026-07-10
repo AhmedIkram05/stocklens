@@ -1,4 +1,5 @@
 import { apiService, api } from './api';
+import { emit } from './eventBus';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -26,6 +27,10 @@ export interface Holding {
   ticker: string;
   shares: number;
   average_cost_basis: number;
+  /** Native trading currency of the instrument (e.g., 'USD', 'EUR', 'GBP'). */
+  currency: string;
+  /** GBP-normalised average cost basis (base currency). */
+  average_cost_basis_gbp?: number;
   created_at: string;
   updated_at: string;
 }
@@ -48,6 +53,10 @@ export interface Transaction {
   shares: number;
   price_per_share: number;
   total_amount: number;
+  /** Native trading currency of the instrument. */
+  currency: string;
+  /** GBP-normalised total (base currency). */
+  total_amount_gbp?: number;
   type: 'BUY' | 'SELL';
   transaction_date: string;
   notes?: string;
@@ -96,6 +105,8 @@ export interface HoldingPerformance {
   day_change: number | null;
   day_change_pct: number | null;
   portfolio_weight_pct: number | null;
+  /** Native trading currency of the instrument. */
+  currency?: string;
 }
 
 export interface PortfolioPerformance {
@@ -132,6 +143,8 @@ export interface BenchmarkComparison {
   methodology: string;
   daily_returns_count: number;
   calculated_at: string;
+  portfolio_cumulative_returns: { date: string; value: number }[];
+  benchmark_cumulative_returns: { date: string; value: number }[];
 }
 
 // ── Wrapped list response types ───────────────────────────────────────────────
@@ -173,15 +186,20 @@ export const portfolioService = {
   },
 
   async createPortfolio(data: CreatePortfolio): Promise<Portfolio> {
-    return apiService.post<Portfolio>('/portfolios', data);
+    const created = await apiService.post<Portfolio>('/portfolios', data);
+    emit('historical-updated', { action: 'create' });
+    return created;
   },
 
   async updatePortfolio(id: string, data: UpdatePortfolio): Promise<Portfolio> {
-    return apiService.put<Portfolio>(`/portfolios/${id}`, data);
+    const updated = await apiService.put<Portfolio>(`/portfolios/${id}`, data);
+    emit('historical-updated', { action: 'update' });
+    return updated;
   },
 
   async deletePortfolio(id: string): Promise<void> {
     await apiService.delete<void>(`/portfolios/${id}`);
+    emit('historical-updated', { action: 'delete' });
   },
 
   async listHoldings(portfolioId: string): Promise<Holding[]> {
@@ -190,15 +208,20 @@ export const portfolioService = {
   },
 
   async createHolding(portfolioId: string, data: CreateHolding): Promise<Holding> {
-    return apiService.post<Holding>(`/portfolios/${portfolioId}/holdings`, data);
+    const created = await apiService.post<Holding>(`/portfolios/${portfolioId}/holdings`, data);
+    emit('historical-updated', { action: 'create-holding', portfolioId });
+    return created;
   },
 
   async updateHolding(id: string, data: UpdateHolding): Promise<Holding> {
-    return apiService.put<Holding>(`/holdings/${id}`, data);
+    const updated = await apiService.put<Holding>(`/holdings/${id}`, data);
+    emit('historical-updated', { action: 'update-holding' });
+    return updated;
   },
 
   async deleteHolding(id: string): Promise<void> {
     await apiService.delete<void>(`/holdings/${id}`);
+    emit('historical-updated', { action: 'delete-holding' });
   },
 
   async listTransactions(portfolioId: string, limit = 50, offset = 0): Promise<Transaction[]> {
@@ -209,7 +232,7 @@ export const portfolioService = {
   },
 
   async createTransaction(portfolioId: string, data: CreateTransaction): Promise<Transaction> {
-    return apiService.post<Transaction>(`/portfolios/${portfolioId}/transactions`, {
+    const created = await apiService.post<Transaction>(`/portfolios/${portfolioId}/transactions`, {
       ticker: data.ticker,
       type: data.type,
       shares: data.shares,
@@ -217,6 +240,8 @@ export const portfolioService = {
       transaction_date: data.transaction_date ?? new Date().toISOString().split('T')[0],
       notes: data.notes,
     });
+    emit('historical-updated', { action: 'create-transaction', portfolioId });
+    return created;
   },
 
   async listCashFlows(portfolioId: string, limit = 50, offset = 0): Promise<CashFlow[]> {
@@ -227,22 +252,35 @@ export const portfolioService = {
   },
 
   async createCashFlow(portfolioId: string, data: CreateCashFlow): Promise<CashFlow> {
-    return apiService.post<CashFlow>(`/portfolios/${portfolioId}/cash-flows`, data);
+    const created = await apiService.post<CashFlow>(`/portfolios/${portfolioId}/cash-flows`, data);
+    emit('historical-updated', { action: 'create-cashflow', portfolioId });
+    return created;
   },
 
   async updateCashFlowNotes(portfolioId: string, cfId: string, notes: string): Promise<CashFlow> {
-    return api<CashFlow>(`/portfolios/${portfolioId}/cash-flows/${cfId}`, {
+    const updated = await api<CashFlow>(`/portfolios/${portfolioId}/cash-flows/${cfId}`, {
       method: 'PATCH',
       body: { notes },
     });
+    emit('historical-updated', { action: 'update-cashflow', portfolioId });
+    return updated;
   },
 
   async getPerformance(portfolioId: string): Promise<PortfolioPerformance> {
     return apiService.get<PortfolioPerformance>(`/portfolio/performance/${portfolioId}`);
   },
 
-  async getBenchmark(portfolioId: string, benchmarkTicker?: string): Promise<BenchmarkComparison> {
-    const query = benchmarkTicker ? `?benchmark=${benchmarkTicker}` : '';
+  async getBenchmark(
+    portfolioId: string,
+    benchmarkTicker?: string,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<BenchmarkComparison> {
+    const params = new URLSearchParams();
+    if (benchmarkTicker) params.set('benchmark', benchmarkTicker);
+    if (startDate) params.set('start_date', startDate);
+    if (endDate) params.set('end_date', endDate);
+    const query = params.toString() ? `?${params.toString()}` : '';
     return apiService.get<BenchmarkComparison>(`/portfolio/benchmark/${portfolioId}${query}`);
   },
 };

@@ -22,7 +22,9 @@ from src.auth.schemas import UserInDB
 from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
-from src.market.repository import get_ohlcv
+from src.market.provider import fetch_ohlcv, fetch_quote
+from src.market.repository import get_earliest_ohlcv_date, get_ohlcv_batch, upsert_ohlcv
+from src.market.router import _refresh_ohlcv_if_stale
 from src.performance.calculations import (
     compute_benchmark_comparison,
     compute_portfolio_performance,
@@ -50,10 +52,11 @@ async def _verify_portfolio_ownership(portfolio_id: str, user_id: str) -> dict |
 
 
 async def _get_holdings(portfolio_id: str) -> list[dict[str, Any]]:
-    """Fetch holdings for a portfolio."""
+    """Fetch holdings for a portfolio (incl. currency / GBP-normalised cols)."""
     async with connection_ctx() as conn:
         rows = await conn.fetch(
-            "SELECT id, portfolio_id, ticker, shares, average_cost_basis "
+            "SELECT id, portfolio_id, ticker, shares, average_cost_basis, "
+            "currency, fx_rate_to_gbp, average_cost_basis_gbp "
             "FROM holdings WHERE portfolio_id = $1::uuid "
             "ORDER BY ticker",
             portfolio_id,
@@ -65,7 +68,8 @@ async def _get_transactions_sorted(portfolio_id: str) -> list[dict[str, Any]]:
     """Fetch all transactions for a portfolio, sorted by date ascending."""
     async with connection_ctx() as conn:
         rows = await conn.fetch(
-            "SELECT id, ticker, type, shares, price_per_share, total_amount, transaction_date "
+            "SELECT id, ticker, type, shares, price_per_share, total_amount, "
+            "total_amount_gbp, transaction_date "
             "FROM transactions WHERE portfolio_id = $1::uuid "
             "ORDER BY transaction_date ASC, created_at ASC, id ASC",
             portfolio_id,
@@ -98,8 +102,8 @@ async def _get_free_cash_balance(portfolio_id: str) -> Decimal:
             portfolio_id,
         )
         net_invested = await conn.fetchval(
-            "SELECT COALESCE(SUM(CASE WHEN type = 'BUY' THEN total_amount "
-            "WHEN type = 'SELL' THEN -total_amount ELSE 0 END), 0) "
+            "SELECT COALESCE(SUM(CASE WHEN type = 'BUY' THEN total_amount_gbp "
+            "WHEN type = 'SELL' THEN -total_amount_gbp ELSE 0 END), 0) "
             "FROM transactions WHERE portfolio_id = $1::uuid",
             portfolio_id,
         )
@@ -110,33 +114,46 @@ async def _build_price_map(
     tickers: list[str],
     start_date: date,
     end_date: date,
+    *,
+    limit: int = 50000,
 ) -> dict[str, dict[date, Decimal]]:
     """Build a nested price map {ticker: {date: adjusted_close}} for the given range.
 
-    Uses ``asyncio.gather`` to fetch all tickers in parallel.
+    Uses a single batched query to fetch all tickers in parallel.
     """
-    import asyncio
-
-    # ponytail: gather with return_exceptions=True means results are list[Any | BaseException]
-    ohlcv_tasks = [
-        get_ohlcv(ticker, start_date=start_date, end_date=end_date, limit=2000)
-        for ticker in tickers
-    ]
-    results = await asyncio.gather(  # type: ignore[assignment]
-        *ohlcv_tasks,
-        return_exceptions=True,
+    # Fetch all tickers in one batched query
+    batch_results = await get_ohlcv_batch(
+        tickers, start_date=start_date, end_date=end_date, limit=limit
     )
 
     price_map: dict[str, dict[date, Decimal]] = {}
-    for ticker, rows in zip(tickers, results):
-        if isinstance(rows, Exception):
-            logger.warning("price_map_fetch_failed", ticker=ticker, error=str(rows))
-            price_map[ticker] = {}
-        else:
-            price_map[ticker] = {
-                r["date"]: r["adjusted_close"] for r in rows if r["adjusted_close"] is not None
-            }
+    for ticker in tickers:
+        rows = batch_results.get(ticker, [])
+        price_map[ticker] = {
+            r["date"]: r["adjusted_close"] for r in rows if r["adjusted_close"] is not None
+        }
     return price_map
+
+
+async def _fetch_live_quotes(
+    tickers: list[str],
+) -> dict[str, tuple[Decimal, Decimal]]:
+    """Fetch live quotes in parallel, returning {ticker: (price, previous_close)}.
+
+    Failures are logged and silently skipped — the caller falls back to OHLCV data.
+    """
+    import asyncio
+
+    tasks = [fetch_quote(t) for t in tickers]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    quotes: dict[str, tuple[Decimal, Decimal]] = {}
+    for ticker, result in zip(tickers, results):
+        if isinstance(result, Exception):
+            logger.warning("live_quote_fetch_failed", ticker=ticker, error=str(result))
+            continue
+        quotes[ticker] = (result["price"], result["previous_close"])
+    return quotes
 
 
 @router.get(
@@ -188,7 +205,13 @@ async def get_portfolio_performance(
     cash_flows = await _get_cash_flows_sorted(str(portfolio_id))
     tickers = list({h["ticker"] for h in holdings})
 
+    # GBP per 1 native unit, per holding (today's rate — see currency plan).
+    fx_rates = {h["ticker"]: (h.get("fx_rate_to_gbp") or Decimal(1)) for h in holdings}
+
     price_map = await _build_price_map(tickers, start_date, end_date)
+
+    # Fetch live intraday quotes to override OHLCV closing prices
+    live_quotes = await _fetch_live_quotes(tickers)
 
     return compute_portfolio_performance(
         portfolio_id=str(portfolio_id),
@@ -200,6 +223,8 @@ async def get_portfolio_performance(
         start_date=start_date,
         end_date=end_date,
         enable_twr=settings.ENABLE_TWR,
+        live_quotes=live_quotes,
+        fx_rates=fx_rates,
     )
 
 
@@ -220,6 +245,27 @@ async def get_benchmark_comparison(
 
     Returns alpha (excess return), tracking error, and information ratio.
     """
+    import logging
+
+    _logger = logging.getLogger("performance.benchmark")
+    try:
+        return await _get_benchmark_comparison_inner(
+            portfolio_id, benchmark, start_date, end_date, current_user
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _logger.exception("Benchmark comparison failed: %s", exc)
+        raise
+
+
+async def _get_benchmark_comparison_inner(
+    portfolio_id: UUID,
+    benchmark: str,
+    start_date: Optional[date],
+    end_date: Optional[date],
+    current_user,
+) -> BenchmarkComparisonResponse:
     portfolio = await _verify_portfolio_ownership(str(portfolio_id), current_user.id)
     if portfolio is None:
         raise HTTPException(
@@ -244,14 +290,36 @@ async def get_benchmark_comparison(
     cash_flows = await _get_cash_flows_sorted(str(portfolio_id))
     tickers = list({h["ticker"] for h in holdings})
 
+    fx_rates = {h["ticker"]: (h.get("fx_rate_to_gbp") or Decimal(1)) for h in holdings}
+
     all_tickers = list(set(tickers + [benchmark]))
-    price_map = await _build_price_map(all_tickers, start_date, end_date)
+
+    # Ensure benchmark OHLCV data covers the requested start_date.
+    # _refresh_ohlcv_if_stale only checks recency (1-3 days), not depth.
+    # yfinance defaults to 1 year when start_date=None, so longer periods
+    # may need a wider fetch.
+    await _refresh_ohlcv_if_stale(benchmark)
+    earliest = await get_earliest_ohlcv_date(benchmark)
+    logger.info(
+        "coverage_check", benchmark=benchmark, earliest=str(earliest), start_date=str(start_date)
+    )
+    if earliest is None or earliest > start_date:
+        rows = await fetch_ohlcv(benchmark, start_date=start_date, end_date=end_date)
+        logger.info("coverage_fetch", benchmark=benchmark, rows_fetched=len(rows))
+        if rows:
+            inserted = await upsert_ohlcv(benchmark, rows)
+            logger.info("coverage_upsert", benchmark=benchmark, rows_inserted=inserted)
+
+    price_map = await _build_price_map(all_tickers, start_date, end_date, limit=50000)
 
     if not price_map.get(benchmark):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No price data found for benchmark {benchmark}",
         )
+
+    # Fetch live quote for benchmark intraday price
+    live_quotes = await _fetch_live_quotes(tickers)
 
     perf_response = compute_portfolio_performance(
         portfolio_id=str(portfolio_id),
@@ -263,6 +331,8 @@ async def get_benchmark_comparison(
         start_date=start_date,
         end_date=end_date,
         enable_twr=settings.ENABLE_TWR,
+        live_quotes=live_quotes,
+        fx_rates=fx_rates,
     )
 
     # Compute benchmark daily returns from price data
@@ -276,15 +346,28 @@ async def get_benchmark_comparison(
             benchmark_daily_returns.append((curr_price - prev_price) / prev_price)
 
     # Compute portfolio daily returns
-    portfolio_daily_returns = _compute_portfolio_daily_returns(
+    portfolio_dates, portfolio_daily_returns = _compute_portfolio_daily_returns(
         holdings=holdings,
         transactions=transactions,
         price_map=price_map,
         start_date=start_date,
         end_date=end_date,
+        fx_rates=fx_rates,
     )
 
-    return compute_benchmark_comparison(
+    # Build cumulative return series for charting
+    def _cumulative_series(dates: list[date], returns: list[Decimal]) -> list[dict[str, Any]]:
+        cum = Decimal(1)
+        series: list[dict[str, Any]] = []
+        for i, r in enumerate(returns):
+            cum *= Decimal(1) + r
+            series.append({"date": str(dates[i + 1]), "value": float(cum - 1)})
+        return series
+
+    portfolio_cum = _cumulative_series(portfolio_dates, portfolio_daily_returns)
+    benchmark_cum = _cumulative_series(benchmark_dates, benchmark_daily_returns)
+
+    comparison = compute_benchmark_comparison(
         portfolio_id=str(portfolio_id),
         portfolio_twr=perf_response.twr,
         benchmark_ticker=benchmark,
@@ -293,6 +376,9 @@ async def get_benchmark_comparison(
         period_start=start_date,
         period_end=end_date,
     )
+    comparison.portfolio_cumulative_returns = portfolio_cum
+    comparison.benchmark_cumulative_returns = benchmark_cum
+    return comparison
 
 
 def _compute_portfolio_daily_returns(
@@ -301,20 +387,21 @@ def _compute_portfolio_daily_returns(
     price_map: dict[str, dict[date, Decimal]],
     start_date: date,
     end_date: date,
-) -> list[Decimal]:
+    fx_rates: Optional[dict[str, Decimal]] = None,
+) -> tuple[list[date], list[Decimal]]:
     """Compute daily portfolio returns for tracking error calculation.
 
     Reconstructs holdings at each trading day and computes day-over-day
-    percentage return. Returns empty list if insufficient price data.
+    percentage return. Returns (trading_days, daily_returns).
     """
     all_dates: set[date] = set()
     for ticker_prices in price_map.values():
         all_dates.update(ticker_prices.keys())
     if not all_dates:
-        return []
+        return [], []
     trading_days = sorted(d for d in all_dates if start_date <= d <= end_date)
     if len(trading_days) < 2:
-        return []
+        return [], []
 
     txns_by_date: dict[date, list[dict]] = defaultdict(list)
     for t in transactions:
@@ -338,7 +425,8 @@ def _compute_portfolio_daily_returns(
         for ticker, shares in current.items():
             ticker_prices = price_map.get(ticker, {})
             if day in ticker_prices and ticker_prices[day] is not None:
-                value += shares * ticker_prices[day]
+                fx = (fx_rates or {}).get(ticker, Decimal(1))
+                value += shares * ticker_prices[day] * fx
 
         if i > 0:
             prev = previous_value
@@ -350,4 +438,4 @@ def _compute_portfolio_daily_returns(
 
         previous_value = value
 
-    return daily_returns
+    return trading_days, daily_returns

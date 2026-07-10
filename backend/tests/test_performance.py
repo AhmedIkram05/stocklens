@@ -213,6 +213,79 @@ class TestPortfolioPerformance:
         assert result.twr is None
         assert result.twr_annualised is None
 
+    def test_live_quotes_override_ohlcv(self):
+        """Live quotes override OHLCV prices when provided."""
+        from src.performance.calculations import compute_portfolio_performance
+
+        ohlcv_prices = {
+            "AAPL": {date(2024, 12, 30): Decimal("190.00"), date(2024, 12, 31): Decimal("195.00")},
+        }
+        live_quotes = {"AAPL": (Decimal("200.00"), Decimal("195.00"))}
+
+        result = compute_portfolio_performance(
+            portfolio_id="test-id",
+            portfolio_name="Test",
+            holdings_data=[
+                {
+                    "ticker": "AAPL",
+                    "shares": Decimal("10"),
+                    "average_cost_basis": Decimal("150.00"),
+                },
+            ],
+            transactions=[],
+            cash_flows=[],
+            price_map=ohlcv_prices,
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 12, 31),
+            enable_twr=False,
+            live_quotes=live_quotes,
+        )
+        hp = result.holdings[0]
+        assert hp.current_price == 200.0  # Live quote overrides OHLCV 195.00
+        assert hp.day_change == 50.0  # (200 - 195) * 10
+        assert result.total_market_value == 2000.0
+        assert result.data_quality == "complete"
+
+    def test_live_quotes_partial_override(self):
+        """Only some tickers have live quotes — missing tickers fall back to OHLCV."""
+        from src.performance.calculations import compute_portfolio_performance
+
+        ohlcv_prices = {
+            "AAPL": {date(2024, 12, 31): Decimal("195.00")},
+            "GOOGL": {date(2024, 12, 31): Decimal("180.00")},
+        }
+        # Only AAPL has live quote
+        live_quotes = {"AAPL": (Decimal("200.00"), Decimal("195.00"))}
+
+        result = compute_portfolio_performance(
+            portfolio_id="test-id",
+            portfolio_name="Test",
+            holdings_data=[
+                {
+                    "ticker": "AAPL",
+                    "shares": Decimal("10"),
+                    "average_cost_basis": Decimal("150.00"),
+                },
+                {
+                    "ticker": "GOOGL",
+                    "shares": Decimal("5"),
+                    "average_cost_basis": Decimal("170.00"),
+                },
+            ],
+            transactions=[],
+            cash_flows=[],
+            price_map=ohlcv_prices,
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 12, 31),
+            enable_twr=False,
+            live_quotes=live_quotes,
+        )
+        aapl = [h for h in result.holdings if h.ticker == "AAPL"][0]
+        googl = [h for h in result.holdings if h.ticker == "GOOGL"][0]
+        assert aapl.current_price == 200.0  # Live
+        assert googl.current_price == 180.0  # OHLCV fallback
+        assert result.data_quality == "complete"
+
     def test_partial_price_data(self):
         """Some holdings missing price data → data_quality='partial'."""
         from src.performance.calculations import compute_portfolio_performance
@@ -550,6 +623,75 @@ class TestTWR:
         assert ann is not None
         # Annualised should be higher than raw for < 1 year
         assert ann > twr
+
+    def test_large_deposit_sitting_as_cash(self):
+        """A large un-invested deposit must NOT distort TWR.
+
+        Regression for the -841% / -5245% bug: the sub-period return formula
+        used to subtract the cash deposit from the numerator while the
+        holdings-only EMV never reflected it, manufacturing a fake loss of
+        deposit / holdings. TWR must isolate investment performance from
+        contributions, so external cash flows are excluded entirely.
+        """
+        from src.performance.calculations import _compute_twr
+
+        twr, ann = _compute_twr(
+            transactions=[
+                {
+                    "type": "BUY",
+                    "ticker": "AAPL",
+                    "shares": Decimal("1"),
+                    "total_amount": Decimal("200.00"),
+                    "date": date(2023, 12, 1),  # pre-period holding
+                },
+            ],
+            cash_flows=[
+                {"amount": Decimal("10000.00"), "created_at": datetime(2024, 2, 1)},
+            ],
+            price_map={
+                "AAPL": {
+                    date(2024, 1, 1): Decimal("200.00"),
+                    date(2024, 2, 1): Decimal("200.00"),
+                    date(2024, 12, 31): Decimal("210.00"),
+                },
+            },
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 12, 31),
+        )
+        assert twr is not None
+        # Holdings went 200 -> 210 (real +5%); the £10k deposit is irrelevant.
+        assert Decimal("-1") < twr < Decimal("1")
+        assert abs(twr - Decimal("0.05")) < Decimal("0.01")
+
+    def test_transaction_on_start_date_counted(self):
+        """A transaction dated exactly on start_date must enter holdings (not dropped)."""
+        from src.performance.calculations import _compute_twr
+
+        twr, ann = _compute_twr(
+            transactions=[
+                {
+                    "type": "BUY",
+                    "ticker": "AAPL",
+                    "shares": Decimal("10"),
+                    "total_amount": Decimal("2000.00"),
+                    "date": date(2024, 1, 1),  # == start_date
+                }
+            ],
+            cash_flows=[
+                {"amount": Decimal("2000.00"), "created_at": datetime(2024, 1, 1)},
+            ],
+            price_map={
+                "AAPL": {
+                    date(2024, 1, 1): Decimal("200.00"),
+                    date(2024, 12, 31): Decimal("220.00"),
+                },
+            },
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 12, 31),
+        )
+        assert twr is not None
+        # 10 shares 200 -> 220 = +10%, not None/0 from a dropped holding.
+        assert abs(twr - Decimal("0.10")) < Decimal("0.01")
 
 
 # ──────────────────────────────────────────────────────────────────────

@@ -36,7 +36,7 @@ logger = structlog.get_logger()
 
 router = APIRouter()
 
-QUOTE_CACHE_TTL = 60  # seconds — see ADR 003
+QUOTE_CACHE_TTL = 30  # seconds — see ADR 003
 
 
 async def _refresh_ohlcv_if_stale(ticker: str) -> bool:
@@ -177,6 +177,8 @@ async def get_quote_endpoint(
         previous_close=quote_data["previous_close"],
         volume=quote_data["volume"],
         timestamp=quote_data["timestamp"],
+        currency=quote_data.get("currency", "GBP"),
+        exchange=quote_data.get("exchange"),
     )
 
     # Cache in Redis (graceful degradation: skip if Redis unavailable)

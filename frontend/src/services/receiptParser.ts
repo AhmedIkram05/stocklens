@@ -1,6 +1,16 @@
 /** Receipt parsing helpers for extracting monetary amounts from OCR text. */
 
 /**
+ * Return true if the OCR text contains a non-GBP currency symbol ($ or €).
+ * Receipts are GBP-only; foreign-currency receipts should be rejected and
+ * re-entered in £.
+ */
+export function hasForeignCurrency(text: string): boolean {
+  if (!text) return false;
+  return /[$€]/.test(text);
+}
+
+/**
  * Return true if `amount` looks like a realistic receipt total.
  * @param amount - number to validate
  */

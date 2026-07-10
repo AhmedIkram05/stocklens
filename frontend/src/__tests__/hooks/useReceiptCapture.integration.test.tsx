@@ -70,7 +70,9 @@ describe('useReceiptCapture', () => {
     expect(navigation.navigate).toHaveBeenCalledWith('ReceiptDetails', {
       receiptId: 'scan-42',
       totalAmount: 12.34,
+      merchantName: 'Tesco',
       date: '2025-06-15',
+      lineItems: [{ name: 'Item', quantity: 1, price: 12.34 }],
       image: 'file://receipt.jpg',
       source: 'regex',
       confidence: 95,

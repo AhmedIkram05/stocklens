@@ -124,6 +124,18 @@ export default function ScanScreen() {
       <SafeAreaView style={{ flex: 1, backgroundColor: brandColors.black }}>
         <View style={styles.previewContainer}>
           <Image testID="scan-preview-image" source={{ uri: photo }} style={styles.previewImage} />
+          {!processing && (
+            <TouchableOpacity
+              testID="retake-button"
+              style={[styles.retakeButton, { top: insets.top + spacing.md }]}
+              onPress={() => {
+                resetWorkflowState();
+                clearPhotoPreview();
+              }}
+            >
+              <Text style={styles.retakeButtonText}>✕</Text>
+            </TouchableOpacity>
+          )}
           <Modal
             visible={manualModalVisible}
             transparent
@@ -304,11 +316,6 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     padding: spacing.lg,
     backgroundColor: brandColors.white,
-    shadowColor: brandColors.black,
-    shadowOffset: { width: 0, height: spacing.xs },
-    shadowOpacity: 0.25,
-    shadowRadius: spacing.md,
-    elevation: 6,
   },
   modalTitle: {
     ...typography.sectionTitle,
@@ -363,5 +370,21 @@ const styles = StyleSheet.create({
     backgroundColor: brandColors.green,
     borderWidth: 1,
     borderColor: brandColors.white,
+  },
+  retakeButton: {
+    position: 'absolute',
+    left: spacing.md,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 30,
+  },
+  retakeButtonText: {
+    color: brandColors.white,
+    fontSize: 20,
+    fontWeight: '600',
   },
 });

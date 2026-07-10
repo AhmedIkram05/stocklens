@@ -11,8 +11,8 @@ import PageHeader from '../components/PageHeader';
 import { brandColors, useTheme } from '../contexts/ThemeContext';
 import { radii, spacing, typography } from '../styles/theme';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import { useEffect, useState } from 'react';
-import { ScrollView } from 'react-native';
+import { useEffect, useState, useCallback } from 'react';
+import { ScrollView, RefreshControl } from 'react-native';
 import { subscribe } from '../services/eventBus';
 import useReceipts, { ReceiptShape } from '../hooks/useReceipts';
 import { ActivityIndicator } from 'react-native';
@@ -25,8 +25,6 @@ import ResponsiveContainer from '../components/ResponsiveContainer';
 import { EmptyStateWithOnboarding } from '../components/EmptyStateWithOnboarding';
 import IconValue from '../components/IconValue';
 import ExpandableCard from '../components/ExpandableCard';
-import { getCombinedProjection } from '../services/projectionService';
-import { STOCK_PRESETS } from '../services/stockPresets';
 
 /** Summary/analytics screen. */
 export default function SummaryScreen() {
@@ -39,110 +37,62 @@ export default function SummaryScreen() {
   const [mostActiveMonth, setMostActiveMonth] = useState<string | null>(null);
   const [expandedInsight, setExpandedInsight] = useState<string | null>(null);
   const [expandedDefinition, setExpandedDefinition] = useState<string | null>(null);
-  // LSTM prediction state
-  const [lstmRate, setLstmRate] = useState<number>(0.1);
-  const [lstmDirection, setLstmDirection] = useState<'UP' | 'FLAT' | 'DOWN'>('UP');
+  // ponytail: fixed 12% CAGR — full-history average of 10 hand-picked winners
+  // is survivorship-biased (~20%); 12% is a reasonable broad-market baseline.
+  const LSTMRATE = 0.12;
 
-  const { receipts, loading: receiptsLoading } = useReceipts();
+  const { receipts, loading: receiptsLoading, refetch } = useReceipts();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadTotals = useCallback(async () => {
+    try {
+      const r = receipts || [];
+      const total = r.reduce((s, it) => s + (it.amount || 0), 0);
+      setTotalMoneySpent(total);
+      setReceiptsScanned(r.length);
+      setAvgPerReceipt(r.length > 0 ? total / r.length : 0);
+
+      const highest = r.slice().sort((a, b) => (b.amount || 0) - (a.amount || 0))[0] ?? null;
+      setHighestImpactReceipt(highest ?? null);
+
+      if (r.length > 0) {
+        const counts: Record<string, number> = {};
+        r.forEach((rr) => {
+          const d = rr.date ? new Date(rr.date) : new Date();
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          counts[key] = (counts[key] || 0) + 1;
+        });
+        const sortedMonths = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+        if (sortedMonths.length > 0) {
+          const top = sortedMonths[0];
+          const [y, m] = top.split('-');
+          const monthName = new Date(Number(y), Number(m) - 1, 1).toLocaleString('en-GB', {
+            month: 'short',
+            year: 'numeric',
+          });
+          setMostActiveMonth(monthName);
+        }
+      }
+    } catch (err) {}
+  }, [receipts, user?.uid]);
 
   useEffect(() => {
-    let mounted = true;
-    async function loadTotals() {
-      try {
-        const r = receipts || [];
-        const total = r.reduce((s, it) => s + (it.amount || 0), 0);
-        if (!mounted) return;
-        setTotalMoneySpent(total);
-        setReceiptsScanned(r.length);
-        setAvgPerReceipt(r.length > 0 ? total / r.length : 0);
-
-        const highest = r.slice().sort((a, b) => (b.amount || 0) - (a.amount || 0))[0] ?? null;
-        setHighestImpactReceipt(highest ?? null);
-
-        if (r.length > 0) {
-          const counts: Record<string, number> = {};
-          r.forEach((rr) => {
-            const d = rr.date ? new Date(rr.date) : new Date();
-            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-            counts[key] = (counts[key] || 0) + 1;
-          });
-          const sortedMonths = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
-          if (sortedMonths.length > 0) {
-            const top = sortedMonths[0];
-            const [y, m] = top.split('-');
-            const monthName = new Date(Number(y), Number(m) - 1, 1).toLocaleString('en-GB', {
-              month: 'short',
-              year: 'numeric',
-            });
-            setMostActiveMonth(monthName);
-          }
-        }
-      } catch (err) {}
-    }
-
-    loadTotals();
+    loadTotals().catch(() => {});
     const unsubHist = subscribe('historical-updated', () => {
       loadTotals().catch(() => {});
     });
     return () => {
-      mounted = false;
       try {
         unsubHist();
       } catch (e) {}
     };
-  }, [user?.uid, receipts]);
+  }, [loadTotals]);
 
-  // Fetch LSTM predictions for all stock presets to get average projected rate
-  useEffect(() => {
-    let mounted = true;
-    async function loadPredictions() {
-      try {
-        const results = await Promise.allSettled(
-          STOCK_PRESETS.map(async (stock) => {
-            const proj = await getCombinedProjection(stock.ticker);
-            return { ticker: stock.ticker, ...proj };
-          }),
-        );
-        if (!mounted) return;
-        const successful = results
-          .filter(
-            (
-              r,
-            ): r is PromiseFulfilledResult<{
-              ticker: string;
-              direction: 'UP' | 'FLAT' | 'DOWN';
-              rate: number;
-              confidence: number;
-              model_version: string;
-            }> =>
-              r.status === 'fulfilled' &&
-              r.value !== null &&
-              r.value !== undefined &&
-              typeof r.value.rate === 'number' &&
-              !isNaN(r.value.rate),
-          )
-          .map((r) => r.value);
-        if (successful.length > 0) {
-          const avgRate = successful.reduce((s, p) => s + p.rate, 0) / successful.length;
-          // Pick the most common direction
-          const dirCounts: Record<string, number> = {};
-          successful.forEach((p) => {
-            dirCounts[p.direction] = (dirCounts[p.direction] || 0) + 1;
-          });
-          const topDir = Object.entries(dirCounts).sort((a, b) => b[1] - a[1])[0][0] as
-            'UP' | 'FLAT' | 'DOWN';
-          setLstmRate(avgRate);
-          setLstmDirection(topDir);
-        }
-      } catch {
-        // Keep defaults (10% CAGR)
-      }
-    }
-    loadPredictions();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.allSettled([refetch(), loadTotals()]);
+    setRefreshing(false);
+  }, [refetch, loadTotals]);
 
   const formatCurrency = (value: number) => formatCurrencyRounded(value);
 
@@ -250,6 +200,43 @@ export default function SummaryScreen() {
       term: 'Index Fund',
       icon: 'list-outline',
       shortDescription: 'A fund tracking a market index like the S&P 500',
+    },
+    {
+      term: 'Time-Weighted Return (TWR)',
+      icon: 'trending-up-outline',
+      shortDescription:
+        'Your investment performance, stripping out the effect of deposits and withdrawals',
+    },
+    {
+      term: 'Annualised TWR',
+      icon: 'calendar-outline',
+      shortDescription:
+        'TWR scaled to a one-year equivalent, so different time periods are comparable',
+    },
+    {
+      term: 'Unrealised P&L',
+      icon: 'cash-outline',
+      shortDescription: 'Profit or loss on holdings you still own, based on current prices',
+    },
+    {
+      term: 'Day Change',
+      icon: 'swap-vertical-outline',
+      shortDescription: "How much your portfolio's value moved since the previous close",
+    },
+    {
+      term: 'Free Cash Balance',
+      icon: 'wallet-outline',
+      shortDescription: 'Uninvested money sitting in the portfolio, ready to invest',
+    },
+    {
+      term: 'Market Value',
+      icon: 'pricetag-outline',
+      shortDescription: "The current total value of your holdings at today's prices",
+    },
+    {
+      term: 'Cost Basis',
+      icon: 'calculator-outline',
+      shortDescription: 'The original amount you paid for your holdings, used to compute profit',
     },
   ];
 
@@ -398,6 +385,48 @@ export default function SummaryScreen() {
       example:
         "Instead of picking individual stocks, invest £1,000 in a FTSE 100 index fund. You own pieces of the UK's 100 largest companies automatically rebalanced.",
     },
+    'Time-Weighted Return (TWR)': {
+      explanation:
+        'Time-Weighted Return (TWR) measures how well your investments performed, independent of when and how much money you added or withdrew. It links the return of each sub-period between cash flows, so a large deposit cannot make your return look artificially good or bad.',
+      example:
+        'You deposit £10,000, markets rise 5% (+£500), then you add £90,000. TWR still shows +5% for that period — the later deposit doesn’t flatter or hurt the result.',
+    },
+    'Annualised TWR': {
+      explanation:
+        'Annualised TWR converts a TWR over any window into a yearly rate using (1 + TWR)^(365 / days) − 1. This lets you compare a 3-month return against a 5-year return on equal footing. For a window of exactly one year it equals the raw TWR.',
+      example:
+        'A +2% return over 6 months annualises to about +4.04% per year. Over exactly 1 year, annualised TWR is identical to TWR.',
+    },
+    'Unrealised P&L': {
+      explanation:
+        'Unrealised (paper) profit or loss is the difference between your holdings’ current market value and what you paid (cost basis). It becomes “realised” only when you sell, and it swings daily with prices.',
+      example:
+        'You bought 100 shares at £10 (cost £1,000). At £12 today they’re worth £1,200, so unrealised P&L is +£200 (+20%).',
+    },
+    'Day Change': {
+      explanation:
+        'Day Change is how much your total portfolio value moved from the previous trading close to now, shown in both currency and percent. It reflects price moves on the shares you hold, not new deposits.',
+      example:
+        'Portfolio worth £50,000 at yesterday’s close, £51,500 now → Day Change +£1,500 (+3.0%).',
+    },
+    'Free Cash Balance': {
+      explanation:
+        'Free Cash Balance is uninvested money in the portfolio. It earns no market return but is available to buy more shares. It is excluded from holdings-based return math so it doesn’t distort TWR.',
+      example:
+        'You deposited £100,000 and invested £60,000. Free cash balance is £40,000, ready to deploy.',
+    },
+    'Market Value': {
+      explanation:
+        'Market Value is the current total worth of your holdings, calculated as shares × current price. It updates with live prices and is the figure shown as your portfolio’s total value.',
+      example:
+        '50 shares of a £20 stock + 10 shares of a £30 stock = £1,000 + £300 = £1,300 market value.',
+    },
+    'Cost Basis': {
+      explanation:
+        'Cost Basis is the total amount you originally paid for your holdings (shares × average purchase price), before fees. It is the reference point used to calculate unrealised profit or loss.',
+      example:
+        'Bought 100 shares at £10 and 100 more at £14 → cost basis £2,400 (average £12/share).',
+    },
   };
 
   const {
@@ -439,6 +468,14 @@ export default function SummaryScreen() {
       <ScrollView
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={theme.primary}
+            colors={[theme.primary]}
+          />
+        }
       >
         <PageHeader>
           <View>
@@ -475,14 +512,14 @@ export default function SummaryScreen() {
                     iconName="trending-up"
                     iconSize={28}
                     iconColor={theme.primary}
-                    value={formatCurrency(totalMoneySpent * Math.pow(1 + lstmRate, 20))}
+                    value={formatCurrency(totalMoneySpent * Math.pow(1 + LSTMRATE, 20))}
                     valueStyle={[styles.projectionValue, { color: theme.text }]}
                   />
                 }
                 label="20-Year Portfolio Projection"
                 subtitle={`If your ${formatCurrency(totalMoneySpent)} grew at ${(
-                  lstmRate * 100
-                ).toFixed(1)}% per year (LSTM ${lstmDirection})`}
+                  LSTMRATE * 100
+                ).toFixed(1)}% per year`}
                 variant="white"
                 style={{ width: '100%', marginBottom: spacing.md, marginHorizontal: 0 }}
               />

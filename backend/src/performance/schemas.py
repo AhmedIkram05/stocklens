@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -20,6 +20,9 @@ class HoldingPerformance(BaseModel):
     shares: DecimalAsFloat
     average_cost_basis: DecimalAsFloat
     current_price: Optional[DecimalAsFloat] = None
+    # All monetary fields above are reported in the GBP base currency.
+    # `currency` is the holding's native market currency (informational tag).
+    currency: str = "GBP"
     market_value: Optional[DecimalAsFloat] = None
     cost_basis: DecimalAsFloat
     unrealised_pl: Optional[DecimalAsFloat] = None
@@ -79,6 +82,14 @@ class BenchmarkComparisonResponse(BaseModel):
     methodology: str = "daily-linked"
     daily_returns_count: int = Field(0, description="Number of daily return observations used")
     calculated_at: datetime
+    portfolio_cumulative_returns: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Daily cumulative returns [{date, value}] for charting",
+    )
+    benchmark_cumulative_returns: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Daily cumulative returns [{date, value}] for charting",
+    )
 
 
 class PerformanceParams(BaseModel):

@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -16,11 +17,13 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 
 import { useTheme, brandColors } from '../../contexts/ThemeContext';
+import BackButton from '../../components/BackButton';
 import { PortfolioStackParamList } from '../../navigation/AppNavigator';
 import { portfolioService, Holding } from '../../services/portfolios';
 import { marketService, QuoteData } from '../../services/market';
 import { ApiError } from '../../services/api';
 import { radii, spacing, typography } from '../../styles/theme';
+import { formatCurrency } from '../../utils/formatters';
 
 type TradeRouteProp = RouteProp<PortfolioStackParamList, 'Trade'>;
 type TradeNavigationProp = StackNavigationProp<PortfolioStackParamList, 'Trade'>;
@@ -38,20 +41,38 @@ export default function TradeScreen() {
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [holdings, setHoldings] = useState<Holding[]>([]);
+  const [holdingsLoading, setHoldingsLoading] = useState(false);
+  const [holdingsError, setHoldingsError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const shares = parseFloat(sharesText) || 0;
   const total = quote && shares > 0 ? shares * quote.price : 0;
 
-  useEffect(() => {
-    if (localMode === 'sell') {
-      portfolioService
-        .listHoldings(portfolioId)
-        .then(setHoldings)
-        .catch(() => {});
+  const loadHoldings = useCallback(async () => {
+    if (localMode !== 'sell') return;
+    setHoldingsLoading(true);
+    setHoldingsError(null);
+    try {
+      const data = await portfolioService.listHoldings(portfolioId);
+      setHoldings(data);
+    } catch {
+      setHoldingsError('Failed to load holdings. Check your connection.');
+    } finally {
+      setHoldingsLoading(false);
     }
   }, [localMode, portfolioId]);
+
+  useEffect(() => {
+    loadHoldings();
+  }, [loadHoldings]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.allSettled([loadHoldings()]);
+    setRefreshing(false);
+  }, [loadHoldings]);
 
   const handleFetchQuote = useCallback(async () => {
     const trimmed = ticker.trim().toUpperCase();
@@ -73,7 +94,12 @@ export default function TradeScreen() {
   const getValidationError = (): string | null => {
     if (!ticker.trim()) return null;
     if (shares <= 0) return 'Shares must be greater than 0';
+    // NOTE: affordability (GBP-normalised) is enforced server-side in
+    // transactions/router.create_transaction, which has the FX rate needed
+    // to compare the native trade total against GBP free cash.
     if (localMode === 'sell') {
+      if (holdingsLoading) return null; // ponytail: skip validation while loading; prevents flash-before-fetch
+      if (holdingsError) return 'Unable to verify holdings. Try again.';
       const holding = holdings.find((h) => h.ticker.toUpperCase() === ticker.trim().toUpperCase());
       if (!holding) return `You don't own any shares of ${ticker.trim().toUpperCase()}`;
       if (shares > holding.shares) {
@@ -88,6 +114,7 @@ export default function TradeScreen() {
     shares > 0 &&
     quote !== null &&
     !quoteLoading &&
+    !holdingsLoading &&
     !getValidationError();
 
   const validationError = getValidationError();
@@ -122,7 +149,19 @@ export default function TradeScreen() {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={theme.primary}
+              colors={[theme.primary]}
+            />
+          }
+        >
+          <BackButton />
           <Text style={[styles.header, { color: theme.text }]}>{isBuy ? 'Buy' : 'Sell'}</Text>
 
           <View style={styles.modeToggle}>
@@ -130,18 +169,12 @@ export default function TradeScreen() {
               style={[
                 styles.modeButton,
                 styles.modeButtonLeft,
-                isBuy
-                  ? { backgroundColor: brandColors.green }
-                  : {
-                      backgroundColor: 'transparent',
-                      borderWidth: 1.5,
-                      borderColor: brandColors.green,
-                    },
+                isBuy ? { backgroundColor: brandColors.green } : { backgroundColor: theme.surface },
               ]}
               onPress={() => setLocalMode('buy')}
               activeOpacity={0.7}
             >
-              <Text style={[styles.modeButtonText, { color: isBuy ? '#fff' : brandColors.green }]}>
+              <Text style={[styles.modeButtonText, { color: isBuy ? '#fff' : theme.text }]}>
                 Buy
               </Text>
             </TouchableOpacity>
@@ -149,18 +182,12 @@ export default function TradeScreen() {
               style={[
                 styles.modeButton,
                 styles.modeButtonRight,
-                !isBuy
-                  ? { backgroundColor: brandColors.red }
-                  : {
-                      backgroundColor: 'transparent',
-                      borderWidth: 1.5,
-                      borderColor: brandColors.red,
-                    },
+                !isBuy ? { backgroundColor: brandColors.red } : { backgroundColor: theme.surface },
               ]}
               onPress={() => setLocalMode('sell')}
               activeOpacity={0.7}
             >
-              <Text style={[styles.modeButtonText, { color: !isBuy ? '#fff' : brandColors.red }]}>
+              <Text style={[styles.modeButtonText, { color: !isBuy ? '#fff' : theme.text }]}>
                 Sell
               </Text>
             </TouchableOpacity>
@@ -216,10 +243,23 @@ export default function TradeScreen() {
           {quote && !quoteLoading && (
             <View style={[styles.previewRow, { backgroundColor: theme.surface }]}>
               <Text style={[styles.previewText, { color: theme.text }]}>
-                {quote.ticker} × {sharesText || '0'} @ ${quote.price.toFixed(2)} ={' '}
-                <Text style={{ fontWeight: '700' }}>${total.toFixed(2)}</Text>
+                {quote.ticker} × {sharesText || '0'} @ {formatCurrency(quote.price, quote.currency)}{' '}
+                = <Text style={{ fontWeight: '700' }}>{formatCurrency(total, quote.currency)}</Text>
               </Text>
             </View>
+          )}
+
+          {localMode === 'sell' && holdingsLoading && (
+            <View style={styles.quoteRow}>
+              <ActivityIndicator size="small" color={theme.primary} />
+              <Text style={[styles.quoteLoadingText, { color: theme.textSecondary }]}>
+                Loading holdings…
+              </Text>
+            </View>
+          )}
+
+          {holdingsError && (
+            <Text style={[styles.errorText, { color: theme.error }]}>{holdingsError}</Text>
           )}
 
           {validationError && (
@@ -243,7 +283,7 @@ export default function TradeScreen() {
               <ActivityIndicator size="small" color="#fff" />
             ) : (
               <Text style={styles.confirmButtonText}>
-                {isBuy ? 'Buy' : ' Sell'} ${total.toFixed(2)}
+                {isBuy ? 'Buy' : ' Sell'} {formatCurrency(total, quote?.currency ?? 'GBP')}
               </Text>
             )}
           </TouchableOpacity>

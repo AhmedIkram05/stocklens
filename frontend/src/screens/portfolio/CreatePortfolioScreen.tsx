@@ -14,6 +14,7 @@ import { useNavigation, CompositeNavigationProp } from '@react-navigation/native
 import { StackNavigationProp } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../../contexts/ThemeContext';
+import BackButton from '../../components/BackButton';
 import { PortfolioStackParamList } from '../../navigation/AppNavigator';
 import { portfolioService } from '../../services/portfolios';
 
@@ -72,9 +73,7 @@ export default function CreatePortfolioScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} disabled={loading}>
-            <Text style={[styles.headerButton, { color: theme.primary }]}>Cancel</Text>
-          </TouchableOpacity>
+          <BackButton variant="text" label="Cancel" disabled={loading} color={theme.primary} />
           <Text style={[styles.title, { color: theme.text }]}>Create Portfolio</Text>
           <View style={styles.headerButton} />
         </View>

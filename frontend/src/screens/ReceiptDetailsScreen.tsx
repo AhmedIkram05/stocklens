@@ -4,10 +4,11 @@
  * Detailed view for a single receipt with investment projections.
  */
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
+  TextInput,
   StyleSheet,
   Alert,
   ScrollView,
@@ -15,11 +16,12 @@ import {
   TouchableOpacity,
   FlatList,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import type { TextStyle, ViewStyle } from 'react-native';
 import ScreenContainer from '../components/ScreenContainer';
 import PageHeader from '../components/PageHeader';
-import IconButton from '../components/IconButton';
+import BackButton from '../components/BackButton';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import type { RootStackParamList } from '../navigation/AppNavigator';
@@ -29,6 +31,7 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import DangerButton from '../components/DangerButton';
 import ResponsiveContainer from '../components/ResponsiveContainer';
 import { receiptService } from '../services/receipts';
+import { categoryService, type Category } from '../services/categories';
 import { portfolioService, Portfolio } from '../services/portfolios';
 import { useTheme } from '../contexts/ThemeContext';
 import { formatCurrencyRounded } from '../utils/formatters';
@@ -36,13 +39,15 @@ import { formatCurrencyRounded } from '../utils/formatters';
 // Route prop for receipt details screen
 type ReceiptDetailsRouteProp = RouteProp<RootStackParamList, 'ReceiptDetails'>;
 
-// Preset options for years to project
-type YEAR_OPTIONS = 1 | 3 | 5 | 10 | 20;
-
 import { STOCK_PRESETS } from '../services/stockPresets';
+import { PERIOD_OPTIONS, periodToYears, periodLabel } from '../constants/periods';
 
 import { subscribe, emit } from '../services/eventBus';
-import { getHistoricalCAGRFromToday, getCombinedProjection } from '../services/projectionService';
+import {
+  getHistoricalCAGRFromToday,
+  getCombinedProjection,
+  getHistoricalCAGRForPeriod,
+} from '../services/projectionService';
 import { formatCurrencyGBP, formatRelativeDate } from '../utils/formatters';
 import YearSelector from '../components/YearSelector';
 import StockCard from '../components/StockCard';
@@ -69,22 +74,169 @@ export default function ReceiptDetailsScreen() {
     image,
     confidence,
     processingTimeMs,
+    merchantName: initialMerchant,
+    lineItems: initialItems,
   } = route.params;
   const source = route.params.source as SourceBadgeKey | undefined;
 
-  const [selectedYears, setSelectedYears] = useState<YEAR_OPTIONS>(5);
-  const [selectedFutureYears, setSelectedFutureYears] = useState<YEAR_OPTIONS>(5);
-  const [amount] = useState<number>(initialAmount ?? 0);
+  const [selectedYears, setSelectedYears] = useState<string>('5Y');
+  const [selectedFutureYears, setSelectedFutureYears] = useState<string>('5Y');
 
-  const totalAmount = amount;
+  // Load the authoritative receipt (merchant + line items) from the backend.
+  // The scan endpoint already persisted these; route params are only a fast path.
+  const [receipt, setReceipt] = useState<any>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const loadReceiptDetail = useCallback(async () => {
+    if (!receiptId) return;
+    try {
+      const r = await receiptService.getById(receiptId);
+      if (r) setReceipt(r);
+    } catch {
+      // Keep previous receipt on failure
+    }
+  }, [receiptId]);
+
+  useEffect(() => {
+    loadReceiptDetail().catch(() => {});
+  }, [loadReceiptDetail]);
+
+  const totalAmount = receipt?.total_amount ?? initialAmount ?? 0;
+  const merchantName: string | null = receipt?.merchant_name ?? initialMerchant ?? null;
+  const lineItems: any[] = receipt?.line_items ?? initialItems ?? [];
+
+  // Cross-check: sum of line items vs scanned total (flags likely OCR total misread)
+  const itemsSubtotal = lineItems.reduce(
+    (sum: number, it: any) => sum + (Number(it?.price ?? it?.amount ?? 0) || 0),
+    0,
+  );
+  const totalMismatch =
+    lineItems.length > 0 &&
+    Math.abs(itemsSubtotal - totalAmount) > Math.max(0.02, (totalAmount || 0) * 0.01);
+
+  // Category list (for display + user correction of the OCR-assigned category).
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
+  const [categorySaving, setCategorySaving] = useState(false);
+  const loadCategories = useCallback(async () => {
+    try {
+      const cs = await categoryService.listCategories();
+      setCategories(cs);
+    } catch {
+      // Keep previous categories on failure
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCategories().catch(() => {});
+  }, [loadCategories]);
+
+  // Merchant edit modal state
+  const [merchantModalVisible, setMerchantModalVisible] = useState(false);
+  const [merchantEditValue, setMerchantEditValue] = useState('');
+  const [merchantSaving, setMerchantSaving] = useState(false);
+
+  // Total amount edit modal state
+  const [amountModalVisible, setAmountModalVisible] = useState(false);
+  const [amountEditValue, setAmountEditValue] = useState('');
+  const [amountSaving, setAmountSaving] = useState(false);
+
+  // Date edit modal state
+  const [dateModalVisible, setDateModalVisible] = useState(false);
+  const [dateEditValue, setDateEditValue] = useState('');
+  const [dateSaving, setDateSaving] = useState(false);
+
+  const categoryName: string | null = categories.length
+    ? (categories.find((c) => c.id === (receipt?.category_id ?? null))?.name ?? null)
+    : null;
+
+  async function handleSelectCategory(catId: string) {
+    if (!receiptId) return;
+    setCategorySaving(true);
+    try {
+      await receiptService.update(receiptId, { category_id: catId });
+      setReceipt((prev: any) => (prev ? { ...prev, category_id: catId } : prev));
+      try {
+        emit('receipts-changed', { id: receiptId, action: 'updated' });
+      } catch (e) {}
+      setCategoryModalVisible(false);
+    } catch {
+      Alert.alert('Error', 'Could not update category');
+    } finally {
+      setCategorySaving(false);
+    }
+  }
+  async function handleUpdateMerchant() {
+    if (!receiptId || !merchantEditValue.trim()) return;
+    setMerchantSaving(true);
+    try {
+      await receiptService.update(receiptId, { merchant_name: merchantEditValue.trim() });
+      setReceipt((prev: any) =>
+        prev ? { ...prev, merchant_name: merchantEditValue.trim() } : prev,
+      );
+      try {
+        emit('receipts-changed', { id: receiptId, action: 'updated' });
+      } catch (e) {}
+      setMerchantModalVisible(false);
+    } catch {
+      Alert.alert('Error', 'Could not update merchant');
+    } finally {
+      setMerchantSaving(false);
+    }
+  }
+
+  async function handleUpdateAmount() {
+    if (!receiptId || !amountEditValue.trim()) return;
+    const parsed = parseFloat(amountEditValue.trim());
+    if (isNaN(parsed) || parsed <= 0) {
+      Alert.alert('Invalid amount', 'Enter a valid positive number');
+      return;
+    }
+    setAmountSaving(true);
+    try {
+      await receiptService.update(receiptId, { total_amount: parsed });
+      setReceipt((prev: any) => (prev ? { ...prev, total_amount: parsed } : prev));
+      try {
+        emit('receipts-changed', { id: receiptId, action: 'updated' });
+      } catch (e) {}
+      setAmountModalVisible(false);
+    } catch {
+      Alert.alert('Error', 'Could not update amount');
+    } finally {
+      setAmountSaving(false);
+    }
+  }
+
+  async function handleUpdateDate() {
+    if (!receiptId || !dateEditValue.trim()) return;
+    // Basic date validation: must be YYYY-MM-DD
+    const trimmed = dateEditValue.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      Alert.alert('Invalid date', 'Enter date as YYYY-MM-DD');
+      return;
+    }
+    setDateSaving(true);
+    try {
+      await receiptService.update(receiptId, { transaction_date: trimmed });
+      setReceipt((prev: any) => (prev ? { ...prev, transaction_date: trimmed } : prev));
+      try {
+        emit('receipts-changed', { id: receiptId, action: 'updated' });
+      } catch (e) {}
+      setDateModalVisible(false);
+    } catch {
+      Alert.alert('Error', 'Could not update date');
+    } finally {
+      setDateSaving(false);
+    }
+  }
+
   const { contentHorizontalPadding, sectionVerticalSpacing, isSmallPhone, isTablet, width } =
     useBreakpoint();
   const { theme } = useTheme();
 
   const investmentOptions = useMemo(() => {
+    const yrs = periodToYears(selectedYears);
     return STOCK_PRESETS.map((stock) => {
-      // placeholder until live data replaces it asynchronously
-      const futureValue = totalAmount * Math.pow(1 + stock.returnRate, selectedYears);
+      const futureValue = totalAmount * Math.pow(1 + stock.returnRate, yrs);
       const gain = futureValue - totalAmount;
       const percentReturn = (futureValue / totalAmount - 1) * 100;
 
@@ -98,8 +250,9 @@ export default function ReceiptDetailsScreen() {
   }, [selectedYears, totalAmount]);
 
   const futureInvestmentOptions = useMemo(() => {
+    const yrs = periodToYears(selectedFutureYears);
     return STOCK_PRESETS.map((stock) => {
-      const futureValue = totalAmount * Math.pow(1 + stock.returnRate, selectedFutureYears);
+      const futureValue = totalAmount * Math.pow(1 + stock.returnRate, yrs);
       const gain = futureValue - totalAmount;
       const percentReturn = (futureValue / totalAmount - 1) * 100;
 
@@ -112,8 +265,8 @@ export default function ReceiptDetailsScreen() {
     });
   }, [selectedFutureYears, totalAmount]);
 
-  // historical CAGRs per ticker and years (e.g. { NVDA: {5: 0.18, 3: 0.22} })
-  const [historicalRates, setHistoricalRates] = useState<Record<string, Record<number, number>>>(
+  // historical CAGRs per ticker and period label (e.g. { NVDA: {"5Y": 0.18, "3Y": 0.22} })
+  const [historicalRates, setHistoricalRates] = useState<Record<string, Record<string, number>>>(
     {},
   );
   const [, setRatesLoading] = useState(false);
@@ -124,6 +277,11 @@ export default function ReceiptDetailsScreen() {
     Record<string, { direction: 'UP' | 'FLAT' | 'DOWN'; rate: number; confidence: number }>
   >({});
 
+  // Period-specific growth rates (window CAGR) for the future projection, keyed
+  // by ticker. Recomputed when the future year picker changes so the LSTM-framed
+  // return reacts to the selected period.
+  const [futureRates, setFutureRates] = useState<Record<string, number>>({});
+
   // Deposit into portfolio
   const [depositModalVisible, setDepositModalVisible] = useState(false);
   const [portfolioList, setPortfolioList] = useState<Portfolio[]>([]);
@@ -131,37 +289,37 @@ export default function ReceiptDetailsScreen() {
   const [depositingPid, setDepositingPid] = useState<string | null>(null);
 
   // load historical rates whenever selectedYears changes
-  useEffect(() => {
-    let mounted = true;
-    async function loadHistoricalForYears(years: number) {
-      setRatesLoading(true);
-      setRatesError(null);
-      try {
-        const promises = STOCK_PRESETS.map(async (s) => {
-          try {
-            const cagr = await getHistoricalCAGRFromToday(s.ticker);
-            return { ticker: s.ticker, total: cagr };
-          } catch (e: any) {
-            return { ticker: s.ticker, total: null };
-          }
-        });
+  const loadHistoricalForYears = useCallback(async (period: string) => {
+    setRatesLoading(true);
+    setRatesError(null);
+    try {
+      const promises = STOCK_PRESETS.map(async (s) => {
+        try {
+          const cagr = await getHistoricalCAGRFromToday(s.ticker);
+          return { ticker: s.ticker, total: cagr };
+        } catch (e: any) {
+          return { ticker: s.ticker, total: null };
+        }
+      });
 
-        const results = await Promise.all(promises);
-        if (!mounted) return;
-        const map: Record<string, Record<number, number>> = { ...historicalRates };
+      const results = await Promise.all(promises);
+      setHistoricalRates((prev) => {
+        const map: Record<string, Record<string, number>> = { ...prev };
         results.forEach((r: any) => {
           if (!map[r.ticker]) map[r.ticker] = {};
-          if (r.total !== null && r.total !== undefined) map[r.ticker][years] = r.total as number;
+          if (r.total !== null && r.total !== undefined) map[r.ticker][period] = r.total as number;
         });
-        if (mounted) setHistoricalRates(map);
-      } catch (err: any) {
-        if (mounted) setRatesError(err?.message || String(err));
-      } finally {
-        if (mounted) setRatesLoading(false);
-      }
+        return map;
+      });
+    } catch (err: any) {
+      setRatesError(err?.message || String(err));
+    } finally {
+      setRatesLoading(false);
     }
+  }, []);
 
-    loadHistoricalForYears(selectedYears);
+  useEffect(() => {
+    loadHistoricalForYears(selectedYears).catch(() => {});
     const unsub = subscribe('historical-updated', (payload) => {
       // payload may contain symbol/interval; refresh if it's one of our tracked tickers
       const updatedTicker = payload?.symbol as string | undefined;
@@ -170,52 +328,90 @@ export default function ReceiptDetailsScreen() {
       }
     });
     return () => {
-      mounted = false;
       unsub();
     };
-  }, [selectedYears]);
+  }, [loadHistoricalForYears, selectedYears]);
 
   // Load LSTM predictions for all tickers
-  useEffect(() => {
-    let mounted = true;
-    async function loadPredictions() {
-      try {
-        const results = await Promise.allSettled(
-          STOCK_PRESETS.map(async (s) => {
-            const pred = await getCombinedProjection(s.ticker);
-            if (!pred) return null;
-            return {
-              ticker: s.ticker,
-              direction: pred.direction,
-              rate: pred.rate,
-              confidence: pred.confidence,
-            };
-          }),
-        );
-        if (!mounted) return;
-        const map: Record<
-          string,
-          { direction: 'UP' | 'FLAT' | 'DOWN'; rate: number; confidence: number }
-        > = {};
-        results.forEach((r) => {
-          if (r.status === 'fulfilled' && r.value) {
-            map[r.value.ticker] = {
-              direction: r.value.direction,
-              rate: r.value.rate,
-              confidence: r.value.confidence,
-            };
-          }
-        });
-        setPredictions(map);
-      } catch {
-        // Keep empty — no badges shown
-      }
+  const loadPredictions = useCallback(async () => {
+    try {
+      const results = await Promise.allSettled(
+        STOCK_PRESETS.map(async (s) => {
+          const pred = await getCombinedProjection(s.ticker);
+          if (!pred) return null;
+          return {
+            ticker: s.ticker,
+            direction: pred.direction,
+            rate: pred.rate,
+            confidence: pred.confidence,
+          };
+        }),
+      );
+      const map: Record<
+        string,
+        { direction: 'UP' | 'FLAT' | 'DOWN'; rate: number; confidence: number }
+      > = {};
+      results.forEach((r) => {
+        if (r.status === 'fulfilled' && r.value) {
+          map[r.value.ticker] = {
+            direction: r.value.direction,
+            rate: r.value.rate,
+            confidence: r.value.confidence,
+          };
+        }
+      });
+      setPredictions(map);
+    } catch {
+      // Keep empty — no badges shown
     }
-    loadPredictions();
-    return () => {
-      mounted = false;
-    };
   }, []);
+
+  useEffect(() => {
+    loadPredictions().catch(() => {});
+  }, [loadPredictions]);
+
+  // Load window-specific future rates whenever the future period changes.
+  const loadFutureRates = useCallback(async (period: string) => {
+    try {
+      const results = await Promise.all(
+        STOCK_PRESETS.map(async (s) => ({
+          ticker: s.ticker,
+          rate: await getHistoricalCAGRForPeriod(s.ticker, period),
+        })),
+      );
+      const map: Record<string, number> = {};
+      results.forEach((r) => {
+        if (r.rate !== null && r.rate !== undefined) map[r.ticker] = r.rate;
+      });
+      setFutureRates(map);
+    } catch {
+      // Keep previous rates on failure
+    }
+  }, []);
+
+  useEffect(() => {
+    loadFutureRates(selectedFutureYears).catch(() => {});
+  }, [loadFutureRates, selectedFutureYears]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.allSettled([
+      loadReceiptDetail(),
+      loadCategories(),
+      loadHistoricalForYears(selectedYears),
+      loadPredictions(),
+      loadFutureRates(selectedFutureYears),
+    ]);
+    setRefreshing(false);
+  }, [
+    loadReceiptDetail,
+    loadCategories,
+    loadHistoricalForYears,
+    loadPredictions,
+    loadFutureRates,
+    selectedYears,
+    selectedFutureYears,
+  ]);
 
   async function handleOpenDeposit() {
     setDepositModalVisible(true);
@@ -264,21 +460,20 @@ export default function ReceiptDetailsScreen() {
 
   const formattedAmount = formatCurrencyGBP(totalAmount || 0);
 
-  const formattedEditableAmount = formatCurrencyGBP(amount || 0);
+  const formattedEditableAmount = formatCurrencyGBP(totalAmount || 0);
 
-  const formattedYearsLabel = `${selectedYears} ${selectedYears === 1 ? 'year' : 'years'}`;
-  const formattedFutureYearsLabel = `${selectedFutureYears} ${
-    selectedFutureYears === 1 ? 'year' : 'years'
-  }`;
+  const formattedYearsLabel = periodLabel(selectedYears);
+  const formattedFutureYearsLabel = periodLabel(selectedFutureYears);
 
   const renderStockCard = (
     investmentValue: (typeof investmentOptions)[number],
     isLastItem: boolean,
-    years: number = selectedYears,
+    years: string = selectedYears,
     mode: 'past' | 'future' = 'past',
   ) => {
-    // Past (historical) uses API-derived total return (last/first - 1) for the selected years when available
+    // Past (historical) uses API-derived total return (last/first - 1) for the selected period when available
     // Future uses preset annual returnRate and the formula amount * (1 + return_rate)^years
+    const yrs = periodToYears(years);
     let computedFutureValue: number;
     let computedGain: number;
     let computedPercentReturn: number;
@@ -287,35 +482,50 @@ export default function ReceiptDetailsScreen() {
       const cagr = historicalRates[investmentValue.ticker]?.[years];
       if (cagr !== undefined && cagr !== null) {
         // historical CAGR -> compute future value over the period (equivalent to last/first)
-        computedFutureValue = totalAmount * Math.pow(1 + cagr, years);
+        computedFutureValue = totalAmount * Math.pow(1 + cagr, yrs);
         computedGain = computedFutureValue - totalAmount;
         // show cumulative percent over the whole period (not annualized)
-        computedPercentReturn = (Math.pow(1 + cagr, years) - 1) * 100;
+        computedPercentReturn = (Math.pow(1 + cagr, yrs) - 1) * 100;
       } else {
         // fallback to historical calculation at render time (best-effort) or preset if unavailable
         // use projectUsingHistoricalCAGR synchronously is not possible; fallback to preset rate
         const rate = investmentValue.returnRate;
-        computedFutureValue = totalAmount * Math.pow(1 + rate, years);
+        computedFutureValue = totalAmount * Math.pow(1 + rate, yrs);
         computedGain = computedFutureValue - totalAmount;
         computedPercentReturn = (computedFutureValue / totalAmount - 1) * 100;
       }
     } else {
-      // future mode — prefer LSTM+combined rate, fall back to preset
-      const pred = predictions[investmentValue.ticker];
-      const rate = pred?.rate ?? investmentValue.returnRate;
-      computedFutureValue = totalAmount * Math.pow(1 + rate, years);
-      computedGain = computedFutureValue - totalAmount;
-      computedPercentReturn = (computedFutureValue / totalAmount - 1) * 100;
+      // future mode — LSTM-framed projection. The rate is the selected window's
+      // historical CAGR (period-specific, changes with the year picker); the LSTM
+      // model supplies the in-card direction/confidence. No preset/fallback copy
+      // of past returns.
+      const rate = futureRates[investmentValue.ticker];
+      if (rate === undefined) {
+        // Prediction data unavailable for this ticker — show a neutral
+        // "unavailable" state instead of a fabricated return.
+        computedFutureValue = NaN;
+        computedGain = NaN;
+        computedPercentReturn = NaN;
+      } else {
+        computedFutureValue = totalAmount * Math.pow(1 + rate, yrs);
+        computedGain = computedFutureValue - totalAmount;
+        computedPercentReturn = (computedFutureValue / totalAmount - 1) * 100;
+      }
     }
 
-    const futureDisplay = formatCurrencyGBP(computedFutureValue || 0);
+    const unavailable = Number.isNaN(computedFutureValue);
+    const futureDisplay = unavailable ? '—' : formatCurrencyGBP(computedFutureValue);
 
-    const gainDisplay = formatCurrencyGBP(computedGain || 0);
+    const gainDisplay = unavailable ? '—' : formatCurrencyGBP(computedGain);
 
-    const percentDisplay = `${computedPercentReturn.toFixed(1)}%`;
+    const percentDisplay = unavailable ? 'N/A' : `${computedPercentReturn.toFixed(1)}%`;
 
-    // color: green for positive or zero, red for negative
-    const valueColor = computedPercentReturn >= 0 ? brandColors.green : brandColors.red;
+    // color: green for positive or zero, red for negative; muted when unavailable
+    const valueColor = unavailable
+      ? theme.textSecondary
+      : computedPercentReturn >= 0
+        ? brandColors.green
+        : brandColors.red;
 
     // determine badge: show prediction direction for future mode, Over/Underperformer for past
     let badgeTextToShow: string | undefined = undefined;
@@ -324,21 +534,25 @@ export default function ReceiptDetailsScreen() {
     if (mode === 'future') {
       const pred = predictions[investmentValue.ticker];
       if (pred) {
-        badgeTextToShow =
-          pred.direction === 'UP'
-            ? `LSTM: ↑ ${(pred.confidence * 100).toFixed(0)}%`
-            : pred.direction === 'DOWN'
-              ? `LSTM: ↓ ${(pred.confidence * 100).toFixed(0)}%`
-              : `LSTM: — ${(pred.confidence * 100).toFixed(0)}%`;
-        badgeColorToShow =
-          pred.direction === 'UP'
-            ? brandColors.green
-            : pred.direction === 'DOWN'
-              ? brandColors.red
-              : brandColors.blue;
+        const conf = pred.confidence;
+        if (conf < 0.4) {
+          // Low confidence (near 3-class floor) — model is a near-tie; don't
+          // assert a direction. ponytail: threshold pinned to CONTEXT.md <0.4.
+          badgeTextToShow = `LSTM ? · ${(conf * 100).toFixed(0)}%`;
+          badgeColorToShow = theme.textSecondary;
+        } else if (pred.direction === 'UP') {
+          badgeTextToShow = `LSTM ↑ · ${(conf * 100).toFixed(0)}%`;
+          badgeColorToShow = brandColors.green;
+        } else if (pred.direction === 'DOWN') {
+          badgeTextToShow = `LSTM ↓ · ${(conf * 100).toFixed(0)}%`;
+          badgeColorToShow = brandColors.red;
+        } else {
+          badgeTextToShow = `LSTM — · ${(conf * 100).toFixed(0)}%`;
+          badgeColorToShow = brandColors.blue;
+        }
       } else {
-        if (investmentValue.ticker === bestFutureTicker) badgeTextToShow = 'Overperformer';
-        else if (investmentValue.ticker === worstFutureTicker) badgeTextToShow = 'Underperformer';
+        badgeTextToShow = 'LSTM unavailable';
+        badgeColorToShow = brandColors.blue;
       }
     } else {
       if (investmentValue.ticker === bestPastTicker) badgeTextToShow = 'Overperformer';
@@ -376,11 +590,12 @@ export default function ReceiptDetailsScreen() {
   // Compute best/worst performers for past based on the currently selected years
   const { bestPastTicker, worstPastTicker } = React.useMemo(() => {
     try {
+      const yrs = periodToYears(selectedYears);
       const list = investmentOptions.map((it) => {
         const cagr = historicalRates[it.ticker]?.[selectedYears];
         const percent =
           cagr !== undefined && cagr !== null
-            ? (Math.pow(1 + cagr, selectedYears) - 1) * 100
+            ? (Math.pow(1 + cagr, yrs) - 1) * 100
             : it.percentReturn;
         return { ticker: it.ticker, percent };
       });
@@ -397,39 +612,23 @@ export default function ReceiptDetailsScreen() {
     }
   }, [investmentOptions, historicalRates, selectedYears]);
 
-  // Compute best/worst performers for future based on the currently selected future years
-  const { bestFutureTicker, worstFutureTicker } = React.useMemo(() => {
-    try {
-      const list = futureInvestmentOptions.map((it) => ({
-        ticker: it.ticker,
-        percent: it.percentReturn,
-      }));
-      if (list.length === 0) return { bestFutureTicker: undefined, worstFutureTicker: undefined };
-      let best = list[0];
-      let worst = list[0];
-      for (const p of list) {
-        if (p.percent > best.percent) best = p;
-        if (p.percent < worst.percent) worst = p;
-      }
-      return { bestFutureTicker: best.ticker, worstFutureTicker: worst.ticker };
-    } catch (e) {
-      return { bestFutureTicker: undefined, worstFutureTicker: undefined };
-    }
-  }, [futureInvestmentOptions]);
-
   // Main render
   return (
     <ScreenContainer contentStyle={{ paddingVertical: sectionVerticalSpacing }}>
       <ScrollView
         contentContainerStyle={[styles.content, isSmallPhone && styles.contentCompact]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={theme.primary}
+            colors={[theme.primary]}
+          />
+        }
       >
         <View style={[styles.headerRow, isSmallPhone && styles.headerRowCompact]}>
-          <IconButton
-            name="chevron-back"
-            onPress={() => navigation.goBack()}
-            accessibilityLabel="Go back"
-          />
+          <BackButton />
         </View>
 
         <ResponsiveContainer maxWidth={width - contentHorizontalPadding * 2}>
@@ -445,6 +644,112 @@ export default function ReceiptDetailsScreen() {
                 confidence={confidence}
               />
             </View>
+
+            {/* Total Amount — tappable to edit */}
+            <TouchableOpacity
+              style={[styles.metaPanel, { backgroundColor: theme.surface }]}
+              onPress={() => {
+                setAmountEditValue(totalAmount > 0 ? totalAmount.toFixed(2) : '');
+                setAmountModalVisible(true);
+              }}
+              activeOpacity={0.7}
+              accessibilityLabel="Edit total amount"
+            >
+              <Text style={[styles.metaLabel, { color: theme.textSecondary }]}>Total Amount</Text>
+              <View style={styles.categoryValueTouch}>
+                <Text style={[styles.metaValue, { color: theme.text }]}>
+                  {formatCurrencyGBP(totalAmount || 0)}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+              </View>
+            </TouchableOpacity>
+
+            {/* Date — tappable to edit */}
+            <TouchableOpacity
+              style={[styles.metaPanel, { backgroundColor: theme.surface }]}
+              onPress={() => {
+                setDateEditValue(receipt?.transaction_date ?? date ?? '');
+                setDateModalVisible(true);
+              }}
+              activeOpacity={0.7}
+              accessibilityLabel="Edit transaction date"
+            >
+              <Text style={[styles.metaLabel, { color: theme.textSecondary }]}>Date</Text>
+              <View style={styles.categoryValueTouch}>
+                <Text style={[styles.metaValue, { color: theme.text }]}>
+                  {formatRelativeDate(receipt?.transaction_date ?? date)}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+              </View>
+            </TouchableOpacity>
+
+            {merchantName && (
+              <TouchableOpacity
+                style={[styles.metaPanel, { backgroundColor: theme.surface }]}
+                onPress={() => {
+                  setMerchantEditValue(merchantName);
+                  setMerchantModalVisible(true);
+                }}
+                activeOpacity={0.7}
+                accessibilityLabel="Edit merchant name"
+              >
+                <Text style={[styles.metaLabel, { color: theme.textSecondary }]}>Merchant</Text>
+                <View style={styles.categoryValueTouch}>
+                  <Text style={[styles.metaValue, { color: theme.text }]}>{merchantName}</Text>
+                  <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {lineItems.length > 0 && (
+              <View style={[styles.itemsPanel, { backgroundColor: theme.surface }]}>
+                <View style={styles.itemHeaderRow}>
+                  <Text style={[styles.cascadeTitle, { color: theme.text }]}>
+                    Items ({lineItems.length})
+                  </Text>
+                  <Text style={[styles.itemSubtotal, { color: theme.text }]}>
+                    {formatCurrencyGBP(itemsSubtotal)}
+                  </Text>
+                </View>
+                {lineItems.map((it, i) => (
+                  <View key={i} style={styles.itemRow}>
+                    <Text style={[styles.itemName, { color: theme.text }]}>
+                      {it.name ?? it.description ?? 'Item'}
+                    </Text>
+                    <Text style={[styles.itemPrice, { color: theme.text }]}>
+                      {formatCurrencyGBP(it.price ?? it.amount ?? 0)}
+                    </Text>
+                  </View>
+                ))}
+                {totalMismatch && (
+                  <View
+                    style={[styles.totalMismatchBox, { backgroundColor: brandColors.red + '14' }]}
+                  >
+                    <Ionicons name="warning" size={16} color={brandColors.red} />
+                    <Text style={[styles.totalMismatchText, { color: brandColors.red }]}>
+                      Items total {formatCurrencyGBP(itemsSubtotal)} but receipt says{' '}
+                      {formatCurrencyGBP(totalAmount)}. The scanned total may be incorrect — tap
+                      Total Amount above to fix it.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.metaPanel, { backgroundColor: theme.surface }]}
+              onPress={() => setCategoryModalVisible(true)}
+              activeOpacity={0.7}
+              accessibilityLabel="Edit category"
+            >
+              <Text style={[styles.metaLabel, { color: theme.textSecondary }]}>Category</Text>
+              <View style={styles.categoryValueTouch}>
+                <Text style={[styles.metaValue, { color: theme.text }]}>
+                  {categoryName ?? 'Uncategorised'}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+              </View>
+            </TouchableOpacity>
 
             {source && (
               <View style={[styles.cascadePanel, { backgroundColor: theme.surface }]}>
@@ -513,6 +818,9 @@ export default function ReceiptDetailsScreen() {
               </View>
             )}
 
+            {/* Spacer before investment projections */}
+            <View style={{ height: spacing.xl }} />
+
             <PageHeader>
               <View>
                 <Text style={[styles.projectionTitle, { color: theme.text }]}>
@@ -525,7 +833,7 @@ export default function ReceiptDetailsScreen() {
             </PageHeader>
 
             <YearSelector
-              options={[1, 3, 5, 10, 20]}
+              options={[...PERIOD_OPTIONS]}
               value={selectedYears}
               onChange={setSelectedYears}
               compact={isSmallPhone}
@@ -563,7 +871,7 @@ export default function ReceiptDetailsScreen() {
             </PageHeader>
 
             <YearSelector
-              options={[1, 3, 5, 10, 20]}
+              options={[...PERIOD_OPTIONS]}
               value={selectedFutureYears}
               onChange={setSelectedFutureYears}
               compact={isSmallPhone}
@@ -573,7 +881,7 @@ export default function ReceiptDetailsScreen() {
             <View style={styles.carouselHeader}>
               <Text style={[styles.carouselTitle, { color: theme.text }]}>Potential Growth</Text>
               <Text style={[styles.carouselSubtitle, { color: theme.textSecondary }]}>
-                Compare returns if you started now
+                LSTM badge = model's predicted direction + confidence (5 trading days)
               </Text>
             </View>
 
@@ -664,8 +972,10 @@ export default function ReceiptDetailsScreen() {
         >
           <Ionicons name="warning" size={28} color={brandColors.red} style={styles.warningIcon} />
           <Text style={[styles.warningText, { color: theme.text }]}>
-            Projections are hypothetical. Past performance does not guarantee future results. All
-            projections are simply made using the CAGR formula.
+            Projections are hypothetical and generated by a deep-learning (LSTM) model that predicts
+            each stock's likely direction and confidence. The projected growth rate reflects the
+            selected period's historical performance and is not a guarantee of future results. Past
+            performance does not predict future returns.
           </Text>
         </View>
       </ScrollView>
@@ -720,10 +1030,217 @@ export default function ReceiptDetailsScreen() {
             )}
 
             <TouchableOpacity
-              style={[styles.modalCloseBtn, { backgroundColor: theme.background }]}
+              style={[styles.modalCloseBtn, { backgroundColor: 'transparent' }]}
               onPress={() => setDepositModalVisible(false)}
             >
-              <Text style={[styles.modalCloseText, { color: theme.secondary }]}>Cancel</Text>
+              <Text style={[styles.modalCloseText, { color: theme.textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={categoryModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCategoryModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle2, { color: theme.text }]}>Select category</Text>
+
+            {categorySaving ? (
+              <View style={styles.modalLoading}>
+                <ActivityIndicator size="large" color={theme.primary} />
+              </View>
+            ) : (
+              <FlatList
+                data={categories}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[styles.modalPortfolioItem, { backgroundColor: theme.background }]}
+                    onPress={() => handleSelectCategory(item.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.modalPortfolioName, { color: theme.text }]}>
+                      {item.name}
+                    </Text>
+                    {item.id === (receipt?.category_id ?? null) && (
+                      <Ionicons name="checkmark" size={18} color={theme.primary} />
+                    )}
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+
+            <TouchableOpacity
+              style={[styles.modalCloseBtn, { backgroundColor: 'transparent' }]}
+              onPress={() => setCategoryModalVisible(false)}
+            >
+              <Text style={[styles.modalCloseText, { color: theme.textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={merchantModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMerchantModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle2, { color: theme.text }]}>Edit merchant name</Text>
+
+            {merchantSaving ? (
+              <View style={styles.modalLoading}>
+                <ActivityIndicator size="large" color={theme.primary} />
+              </View>
+            ) : (
+              <>
+                <TextInput
+                  style={[
+                    styles.merchantInput,
+                    {
+                      backgroundColor: theme.background,
+                      color: theme.text,
+                      borderColor: theme.textSecondary + '40',
+                    },
+                  ]}
+                  value={merchantEditValue}
+                  onChangeText={setMerchantEditValue}
+                  placeholder="Enter merchant name"
+                  placeholderTextColor={theme.textSecondary}
+                  autoFocus
+                />
+                <TouchableOpacity
+                  style={[styles.modalSaveBtn, { backgroundColor: theme.primary }]}
+                  onPress={handleUpdateMerchant}
+                  activeOpacity={0.8}
+                >
+                  <Text style={{ color: '#fff', ...typography.button, textAlign: 'center' }}>
+                    Save
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            <TouchableOpacity
+              style={[styles.modalCloseBtn, { backgroundColor: 'transparent' }]}
+              onPress={() => setMerchantModalVisible(false)}
+            >
+              <Text style={[styles.modalCloseText, { color: theme.textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Total Amount edit modal */}
+      <Modal
+        visible={amountModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAmountModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle2, { color: theme.text }]}>Edit total amount</Text>
+
+            {amountSaving ? (
+              <View style={styles.modalLoading}>
+                <ActivityIndicator size="large" color={theme.primary} />
+              </View>
+            ) : (
+              <>
+                <TextInput
+                  style={[
+                    styles.merchantInput,
+                    {
+                      backgroundColor: theme.background,
+                      color: theme.text,
+                      borderColor: theme.textSecondary + '40',
+                    },
+                  ]}
+                  value={amountEditValue}
+                  onChangeText={setAmountEditValue}
+                  placeholder="0.00"
+                  placeholderTextColor={theme.textSecondary}
+                  keyboardType="decimal-pad"
+                  autoFocus
+                />
+                <TouchableOpacity
+                  style={[styles.modalSaveBtn, { backgroundColor: theme.primary }]}
+                  onPress={handleUpdateAmount}
+                  activeOpacity={0.8}
+                >
+                  <Text style={{ color: '#fff', ...typography.button, textAlign: 'center' }}>
+                    Save
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            <TouchableOpacity
+              style={[styles.modalCloseBtn, { backgroundColor: 'transparent' }]}
+              onPress={() => setAmountModalVisible(false)}
+            >
+              <Text style={[styles.modalCloseText, { color: theme.textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Date edit modal */}
+      <Modal
+        visible={dateModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDateModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle2, { color: theme.text }]}>Edit transaction date</Text>
+
+            {dateSaving ? (
+              <View style={styles.modalLoading}>
+                <ActivityIndicator size="large" color={theme.primary} />
+              </View>
+            ) : (
+              <>
+                <TextInput
+                  style={[
+                    styles.merchantInput,
+                    {
+                      backgroundColor: theme.background,
+                      color: theme.text,
+                      borderColor: theme.textSecondary + '40',
+                    },
+                  ]}
+                  value={dateEditValue}
+                  onChangeText={setDateEditValue}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={theme.textSecondary}
+                  autoFocus
+                />
+                <TouchableOpacity
+                  style={[styles.modalSaveBtn, { backgroundColor: theme.primary }]}
+                  onPress={handleUpdateDate}
+                  activeOpacity={0.8}
+                >
+                  <Text style={{ color: '#fff', ...typography.button, textAlign: 'center' }}>
+                    Save
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            <TouchableOpacity
+              style={[styles.modalCloseBtn, { backgroundColor: 'transparent' }]}
+              onPress={() => setDateModalVisible(false)}
+            >
+              <Text style={[styles.modalCloseText, { color: theme.textSecondary }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -764,6 +1281,18 @@ type Styles = {
   warningBoxCompact: ViewStyle;
   cascadePanel: ViewStyle;
   cascadeTitle: TextStyle;
+  metaPanel: ViewStyle;
+  metaLabel: TextStyle;
+  metaValue: TextStyle;
+  categoryValueTouch: ViewStyle;
+  itemsPanel: ViewStyle;
+  itemRow: ViewStyle;
+  itemName: TextStyle;
+  itemPrice: TextStyle;
+  itemHeaderRow: ViewStyle;
+  itemSubtotal: TextStyle;
+  totalMismatchBox: ViewStyle;
+  totalMismatchText: TextStyle;
   cascadeRow: ViewStyle;
   cascadeLabel: TextStyle;
   cascadeValue: TextStyle;
@@ -784,6 +1313,8 @@ type Styles = {
   modalLoading: ViewStyle;
   modalCloseBtn: ViewStyle;
   modalCloseText: TextStyle;
+  merchantInput: TextStyle;
+  modalSaveBtn: ViewStyle;
 };
 
 // Stylesheet
@@ -898,6 +1429,68 @@ const styles = StyleSheet.create<Styles>({
     ...typography.sectionTitle,
     marginBottom: spacing.md,
   },
+  metaPanel: {
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  metaLabel: {
+    ...typography.body,
+  },
+  metaValue: {
+    ...typography.bodyStrong,
+  },
+  categoryValueTouch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  itemsPanel: {
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(0,0,0,0.08)',
+  },
+  itemName: {
+    ...typography.body,
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  itemPrice: {
+    ...typography.bodyStrong,
+  },
+  itemHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  itemSubtotal: {
+    ...typography.bodyStrong,
+  },
+  totalMismatchBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    padding: spacing.sm,
+    borderRadius: radii.sm,
+  },
+  totalMismatchText: {
+    ...typography.caption,
+    flex: 1,
+    lineHeight: 18,
+  },
   cascadeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1006,5 +1599,17 @@ const styles = StyleSheet.create<Styles>({
   },
   modalCloseText: {
     ...typography.button,
+  },
+  merchantInput: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    fontSize: 16,
+    marginBottom: spacing.md,
+  },
+  modalSaveBtn: {
+    borderRadius: radii.md,
+    paddingVertical: spacing.md + 2,
+    marginBottom: spacing.sm,
   },
 });

@@ -35,6 +35,8 @@ class HoldingUpdate(BaseModel):
 class HoldingInDB(HoldingBase):
     id: str
     portfolio_id: str
+    currency: str = "GBP"
+    average_cost_basis_gbp: Optional[DecimalAsFloat] = None
     created_at: datetime
     updated_at: datetime
 
@@ -48,6 +50,8 @@ class HoldingInDB(HoldingBase):
             ticker=row["ticker"],
             shares=row["shares"],
             average_cost_basis=row["average_cost_basis"],
+            currency=row.get("currency", "GBP"),
+            average_cost_basis_gbp=row.get("average_cost_basis_gbp"),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -56,8 +60,13 @@ class HoldingInDB(HoldingBase):
 class HoldingResponse(HoldingBase):
     id: str
     portfolio_id: str
+    currency: str = "GBP"
+    average_cost_basis_gbp: Optional[DecimalAsFloat] = None
     created_at: datetime
     updated_at: datetime
+
+    # Allow zero shares in responses (e.g., after selling all shares)
+    shares: DecimalAsFloat = Field(..., ge=0)
 
 
 class HoldingListResponse(BaseModel):

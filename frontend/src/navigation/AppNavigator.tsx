@@ -57,6 +57,8 @@ export type RootStackParamList = {
     source?: import('../components/ReceiptCard').SourceBadgeKey;
     confidence?: number;
     processingTimeMs?: number;
+    merchantName?: string;
+    lineItems?: Array<{ name: string; quantity: number; price: number }>;
   };
 };
 

@@ -68,3 +68,63 @@ describe('projectionService.projectUsingHistoricalCAGR', () => {
     expect(result.futureValue).toBeCloseTo(500 * Math.pow(1 + presetRate, 3), 5);
   });
 });
+
+jest.mock('@/services/prediction', () => ({
+  predictionService: {
+    getPrediction: jest.fn(),
+  },
+}));
+
+import { predictionService as mockedPredictionService } from '@/services/prediction';
+
+describe('projectionService.getHistoricalCAGRForPeriod', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('computes CAGR over the selected lookback window', async () => {
+    // 5y window: 100 -> 200 over 5 years => CAGR ~14.87%
+    const series = [
+      { date: '2019-01-01', adjusted_close: 100 },
+      { date: '2024-01-01', adjusted_close: 200 },
+    ] as any;
+    mockedMarketService.getOHLCV.mockResolvedValue(series);
+
+    const cagr = await projectionService.getHistoricalCAGRForPeriod('NVDA', '5Y');
+
+    expect(cagr).not.toBeNull();
+    expect(cagr!).toBeCloseTo(Math.pow(2, 1 / 5) - 1, 4);
+  });
+
+  it('returns null when fewer than two points are available', async () => {
+    mockedMarketService.getOHLCV.mockResolvedValue([
+      { date: '2024-01-01', adjusted_close: 150 },
+    ] as any);
+
+    expect(await projectionService.getHistoricalCAGRForPeriod('NVDA', '5Y')).toBeNull();
+  });
+});
+
+describe('projectionService.getCombinedProjection (period-aware)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('uses the period-specific CAGR as the rate when a period is supplied', async () => {
+    (mockedPredictionService.getPrediction as jest.Mock).mockResolvedValue({
+      direction: 'UP',
+      confidence: 0.8,
+      model_version: 'champion',
+    });
+    mockedMarketService.getOHLCV.mockResolvedValue([
+      { date: '2019-01-01', adjusted_close: 100 },
+      { date: '2024-01-01', adjusted_close: 200 },
+    ] as any);
+
+    const proj = await projectionService.getCombinedProjection('NVDA', '5Y');
+
+    expect(proj).not.toBeNull();
+    expect(proj!.direction).toBe('UP');
+    expect(proj!.rate).toBeCloseTo(Math.pow(2, 1 / 5) - 1, 4);
+  });
+});

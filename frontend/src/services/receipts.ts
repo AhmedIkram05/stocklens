@@ -44,10 +44,11 @@ export interface ReceiptUpdate {
   ocr_raw_text?: string;
   ocr_confidence?: number;
   line_items?: Record<string, unknown>;
+  transaction_date?: string;
 }
 
 export interface ReceiptListResponse {
-  items: Receipt[];
+  receipts: Receipt[];
   total: number;
   limit: number;
   offset: number;
@@ -96,7 +97,7 @@ export const receiptService = {
     const response = await apiService.get<ReceiptListResponse>(
       `/receipts?limit=${limit}&offset=${offset}`,
     );
-    return response.items;
+    return response.receipts;
   },
 
   /**

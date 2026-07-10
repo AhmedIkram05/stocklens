@@ -36,7 +36,7 @@ export default function LoginScreen() {
   const navigation = useNavigation();
   const { contentHorizontalPadding, isSmallPhone, sectionVerticalSpacing, isTablet, orientation } =
     useBreakpoint();
-  const { startLockGrace } = useAuth();
+  const { startLockGrace, refreshUser } = useAuth();
   const { theme } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -50,6 +50,7 @@ export default function LoginScreen() {
     try {
       await authService.signIn({ email, password });
 
+      await refreshUser();
       startLockGrace();
 
       try {

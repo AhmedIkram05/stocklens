@@ -531,7 +531,7 @@ class TestQuoteEndpoint:
         # Verify Redis setex was called
         mock_redis.setex.assert_called_once()
         args = mock_redis.setex.call_args
-        assert args[0][1] == 60  # TTL
+        assert args[0][1] == 30  # TTL
 
     async def test_redis_cache_hit(self, client: AsyncClient, auth_headers: dict[str, str]):
         """Returns cached quote without calling yfinance."""

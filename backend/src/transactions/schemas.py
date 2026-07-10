@@ -56,6 +56,8 @@ class TransactionInDB(TransactionBase):
     id: str
     portfolio_id: str
     total_amount: DecimalAsFloat
+    currency: str = "GBP"
+    total_amount_gbp: Optional[DecimalAsFloat] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -70,6 +72,8 @@ class TransactionInDB(TransactionBase):
             shares=row["shares"],
             price_per_share=row["price_per_share"],
             total_amount=row["total_amount"],
+            currency=row.get("currency", "GBP"),
+            total_amount_gbp=row.get("total_amount_gbp"),
             transaction_date=row["transaction_date"],
             notes=row.get("notes"),
             created_at=row["created_at"],
@@ -80,6 +84,8 @@ class TransactionResponse(TransactionBase):
     id: str
     portfolio_id: str
     total_amount: DecimalAsFloat
+    currency: str = "GBP"
+    total_amount_gbp: Optional[DecimalAsFloat] = None
     created_at: datetime
 
 
