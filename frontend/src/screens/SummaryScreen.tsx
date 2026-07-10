@@ -251,6 +251,43 @@ export default function SummaryScreen() {
       icon: 'list-outline',
       shortDescription: 'A fund tracking a market index like the S&P 500',
     },
+    {
+      term: 'Time-Weighted Return (TWR)',
+      icon: 'trending-up-outline',
+      shortDescription:
+        'Your investment performance, stripping out the effect of deposits and withdrawals',
+    },
+    {
+      term: 'Annualised TWR',
+      icon: 'calendar-outline',
+      shortDescription:
+        'TWR scaled to a one-year equivalent, so different time periods are comparable',
+    },
+    {
+      term: 'Unrealised P&L',
+      icon: 'cash-outline',
+      shortDescription: 'Profit or loss on holdings you still own, based on current prices',
+    },
+    {
+      term: 'Day Change',
+      icon: 'swap-vertical-outline',
+      shortDescription: "How much your portfolio's value moved since the previous close",
+    },
+    {
+      term: 'Free Cash Balance',
+      icon: 'wallet-outline',
+      shortDescription: 'Uninvested money sitting in the portfolio, ready to invest',
+    },
+    {
+      term: 'Market Value',
+      icon: 'pricetag-outline',
+      shortDescription: "The current total value of your holdings at today's prices",
+    },
+    {
+      term: 'Cost Basis',
+      icon: 'calculator-outline',
+      shortDescription: 'The original amount you paid for your holdings, used to compute profit',
+    },
   ];
 
   const insightDetails: Record<string, { bullets: string[]; example: string }> = {
@@ -397,6 +434,48 @@ export default function SummaryScreen() {
         'An index fund passively tracks a market index (like FTSE 100 or S&P 500) by holding the same stocks in the same proportions. They offer instant diversification, minimal fees, and historically beat 90% of actively managed funds over 15+ years.',
       example:
         "Instead of picking individual stocks, invest £1,000 in a FTSE 100 index fund. You own pieces of the UK's 100 largest companies automatically rebalanced.",
+    },
+    'Time-Weighted Return (TWR)': {
+      explanation:
+        'Time-Weighted Return (TWR) measures how well your investments performed, independent of when and how much money you added or withdrew. It links the return of each sub-period between cash flows, so a large deposit cannot make your return look artificially good or bad.',
+      example:
+        'You deposit £10,000, markets rise 5% (+£500), then you add £90,000. TWR still shows +5% for that period — the later deposit doesn’t flatter or hurt the result.',
+    },
+    'Annualised TWR': {
+      explanation:
+        'Annualised TWR converts a TWR over any window into a yearly rate using (1 + TWR)^(365 / days) − 1. This lets you compare a 3-month return against a 5-year return on equal footing. For a window of exactly one year it equals the raw TWR.',
+      example:
+        'A +2% return over 6 months annualises to about +4.04% per year. Over exactly 1 year, annualised TWR is identical to TWR.',
+    },
+    'Unrealised P&L': {
+      explanation:
+        'Unrealised (paper) profit or loss is the difference between your holdings’ current market value and what you paid (cost basis). It becomes “realised” only when you sell, and it swings daily with prices.',
+      example:
+        'You bought 100 shares at £10 (cost £1,000). At £12 today they’re worth £1,200, so unrealised P&L is +£200 (+20%).',
+    },
+    'Day Change': {
+      explanation:
+        'Day Change is how much your total portfolio value moved from the previous trading close to now, shown in both currency and percent. It reflects price moves on the shares you hold, not new deposits.',
+      example:
+        'Portfolio worth £50,000 at yesterday’s close, £51,500 now → Day Change +£1,500 (+3.0%).',
+    },
+    'Free Cash Balance': {
+      explanation:
+        'Free Cash Balance is uninvested money in the portfolio. It earns no market return but is available to buy more shares. It is excluded from holdings-based return math so it doesn’t distort TWR.',
+      example:
+        'You deposited £100,000 and invested £60,000. Free cash balance is £40,000, ready to deploy.',
+    },
+    'Market Value': {
+      explanation:
+        'Market Value is the current total worth of your holdings, calculated as shares × current price. It updates with live prices and is the figure shown as your portfolio’s total value.',
+      example:
+        '50 shares of a £20 stock + 10 shares of a £30 stock = £1,000 + £300 = £1,300 market value.',
+    },
+    'Cost Basis': {
+      explanation:
+        'Cost Basis is the total amount you originally paid for your holdings (shares × average purchase price), before fees. It is the reference point used to calculate unrealised profit or loss.',
+      example:
+        'Bought 100 shares at £10 and 100 more at £14 → cost basis £2,400 (average £12/share).',
     },
   };
 
