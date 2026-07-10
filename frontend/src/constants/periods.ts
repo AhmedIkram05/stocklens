@@ -80,10 +80,17 @@ export function periodLabel(label: string): string {
     case 'YTD':
       return 'year to date';
     case '1M':
+      return '1 month';
     case '3M':
+      return '3 months';
     case '6M':
-      return `${parseInt(label)} month${parseInt(label) > 1 ? 's' : ''}`;
-    default:
-      return label.toLowerCase();
+      return '6 months';
+    case '1Y':
+      return '1 year';
+    default: {
+      const n = parseInt(label, 10);
+      const unit = label.endsWith('Y') ? 'year' : 'month';
+      return `${n} ${unit}${n === 1 ? '' : 's'}`;
+    }
   }
 }

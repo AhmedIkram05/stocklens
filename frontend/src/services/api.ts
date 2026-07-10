@@ -278,6 +278,35 @@ export const apiService = {
       body: formData,
     });
 
+    // ── 401 → refresh → retry (mirrors api()) ──
+    if (response.status === 401 && !options?.skipAuth) {
+      if (!refreshPromise) {
+        refreshPromise = refreshTokens();
+      }
+      const refreshed = await refreshPromise;
+      refreshPromise = null;
+
+      if (refreshed) {
+        const newToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
+        headers['Authorization'] = `Bearer ${newToken}`;
+
+        const retryResponse = await fetch(`${API_BASE_URL}${endpoint}`, {
+          method: 'POST',
+          headers,
+          body: formData,
+        });
+
+        if (!retryResponse.ok) {
+          const msg = await parseError(retryResponse);
+          throw new ApiError(retryResponse.status, msg);
+        }
+
+        return retryResponse.status === 204 ? (undefined as unknown as T) : retryResponse.json();
+      }
+
+      throw new ApiAuthError('Session expired');
+    }
+
     if (!response.ok) {
       const msg = await parseError(response);
       throw new ApiError(response.status, msg);

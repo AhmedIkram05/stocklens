@@ -289,35 +289,34 @@ export default function ReceiptDetailsScreen() {
   const [depositingPid, setDepositingPid] = useState<string | null>(null);
 
   // load historical rates whenever selectedYears changes
-  const loadHistoricalForYears = useCallback(
-    async (period: string) => {
-      setRatesLoading(true);
-      setRatesError(null);
-      try {
-        const promises = STOCK_PRESETS.map(async (s) => {
-          try {
-            const cagr = await getHistoricalCAGRFromToday(s.ticker);
-            return { ticker: s.ticker, total: cagr };
-          } catch (e: any) {
-            return { ticker: s.ticker, total: null };
-          }
-        });
+  const loadHistoricalForYears = useCallback(async (period: string) => {
+    setRatesLoading(true);
+    setRatesError(null);
+    try {
+      const promises = STOCK_PRESETS.map(async (s) => {
+        try {
+          const cagr = await getHistoricalCAGRFromToday(s.ticker);
+          return { ticker: s.ticker, total: cagr };
+        } catch (e: any) {
+          return { ticker: s.ticker, total: null };
+        }
+      });
 
-        const results = await Promise.all(promises);
-        const map: Record<string, Record<string, number>> = { ...historicalRates };
+      const results = await Promise.all(promises);
+      setHistoricalRates((prev) => {
+        const map: Record<string, Record<string, number>> = { ...prev };
         results.forEach((r: any) => {
           if (!map[r.ticker]) map[r.ticker] = {};
           if (r.total !== null && r.total !== undefined) map[r.ticker][period] = r.total as number;
         });
-        setHistoricalRates(map);
-      } catch (err: any) {
-        setRatesError(err?.message || String(err));
-      } finally {
-        setRatesLoading(false);
-      }
-    },
-    [historicalRates],
-  );
+        return map;
+      });
+    } catch (err: any) {
+      setRatesError(err?.message || String(err));
+    } finally {
+      setRatesLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     loadHistoricalForYears(selectedYears).catch(() => {});
