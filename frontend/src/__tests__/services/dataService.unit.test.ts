@@ -38,11 +38,11 @@ describe('receiptService (API)', () => {
   });
 
   it('list sends GET and returns items array', async () => {
-    const items = [
+    const receipts = [
       { id: '1', total_amount: 10 },
       { id: '2', total_amount: 20 },
     ];
-    fetchMock.mockResponseOnce(JSON.stringify({ items, total: 2, limit: 50, offset: 0 }), {
+    fetchMock.mockResponseOnce(JSON.stringify({ receipts, total: 2, limit: 50, offset: 0 }), {
       status: 200,
     });
 
@@ -99,12 +99,12 @@ describe('receiptService (API)', () => {
   });
 
   it('deleteAll fetches all then deletes each', async () => {
-    const items = [
+    const receipts = [
       { id: '1', total_amount: 10 },
       { id: '2', total_amount: 20 },
     ];
     fetchMock.mockResponses(
-      [JSON.stringify({ items, total: 2, limit: 1000, offset: 0 }), { status: 200 }],
+      [JSON.stringify({ receipts, total: 2, limit: 1000, offset: 0 }), { status: 200 }],
       ['', { status: 204 }],
       ['', { status: 204 }],
     );

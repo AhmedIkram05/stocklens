@@ -131,11 +131,11 @@ describe('receiptService CRUD', () => {
   });
 
   it('list() GETs /receipts and returns items', async () => {
-    const items = [
+    const receipts = [
       { id: '1', total_amount: 10 },
       { id: '2', total_amount: 20 },
     ];
-    fetchMock.mockResponseOnce(JSON.stringify({ items, total: 2, limit: 50, offset: 0 }), {
+    fetchMock.mockResponseOnce(JSON.stringify({ receipts, total: 2, limit: 50, offset: 0 }), {
       status: 200,
     });
 
