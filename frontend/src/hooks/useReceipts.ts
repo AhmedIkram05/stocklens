@@ -93,5 +93,9 @@ export default function useReceipts() {
     }, [fetch]),
   );
 
-  return { receipts, loading, error } as const;
+  const refetch = useCallback(() => {
+    fetch({ silent: true }).catch(() => {});
+  }, [fetch]);
+
+  return { receipts, loading, error, refetch } as const;
 }
