@@ -83,6 +83,13 @@ resource "aws_s3_bucket_public_access_block" "receipts" {
   restrict_public_buckets = true
 }
 
+resource "aws_s3_bucket_versioning" "mlflow_artifacts" {
+  bucket = aws_s3_bucket.mlflow_artifacts.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 resource "aws_s3_bucket_public_access_block" "mlflow_artifacts" {
   bucket = aws_s3_bucket.mlflow_artifacts.id
 
