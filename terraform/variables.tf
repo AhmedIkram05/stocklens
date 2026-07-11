@@ -38,12 +38,6 @@ variable "container_image" {
   type        = string
 }
 
-variable "bedrock_model_id" {
-  description = "Amazon Bedrock model ID for Claude Haiku"
-  type        = string
-  default     = "anthropic.claude-3-haiku-20240307-v1:0"
-}
-
 variable "cors_origins" {
   description = "List of allowed CORS origins (e.g., https://app.stocklens.com)"
   type        = list(string)
@@ -121,4 +115,54 @@ variable "db_max_storage_gb" {
   description = "RDS maximum storage autoscaling limit in GB"
   type        = number
   default     = 100
+}
+
+# ── Remote state ──
+
+variable "tf_state_bucket" {
+  description = "S3 bucket for Terraform remote state"
+  type        = string
+  default     = ""
+}
+
+variable "tf_state_lock_table" {
+  description = "DynamoDB table for Terraform state locking"
+  type        = string
+  default     = ""
+}
+
+# ── Budgets ──
+
+variable "budget_monthly_limit" {
+  description = "Monthly budget limit in USD"
+  type        = string
+  default     = "100"
+}
+
+variable "budget_sns_arns" {
+  description = "List of SNS topic ARNs for budget alerts"
+  type        = list(string)
+  default     = []
+}
+
+variable "budget_sns_arn" {
+  description = "Single SNS topic ARN for cost anomaly alerts"
+  type        = string
+  default     = ""
+}
+
+# ── Monitoring ──
+
+variable "alert_email" {
+  description = "Email address for CloudWatch alarm notifications"
+  type        = string
+  default     = ""
+}
+
+# ── Champion S3 delivery ──
+
+variable "champion_s3_uri" {
+  description = "S3 URI for champion model artifacts (e.g. s3://stocklens-champion-prod/)"
+  type        = string
+  default     = ""
 }
