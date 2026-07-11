@@ -283,11 +283,61 @@ resource "aws_ecs_service" "main" {
   enable_ecs_managed_tags = true
   force_new_deployment    = false
 
+  # Automatic rollback on failed health check (R5)
+  deployment_controller {
+    type = "ECS"
+  }
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
   depends_on = [
     aws_lb_listener.http,
   ]
 
   tags = {
     Name = "${var.app_name}-service-${var.environment}"
+  }
+}
+
+# ── Auto Scaling (R3) ──────────────────────────────────────────────────
+# Target-tracking scaling on CPU utilisation and request count per target.
+
+resource "aws_appautoscaling_target" "ecs" {
+  max_capacity       = var.ecs_max_capacity
+  min_capacity       = var.ecs_min_capacity
+  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.main.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "cpu" {
+  name               = "${var.app_name}-cpu-target-${var.environment}"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs.resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+    target_value = var.ecs_cpu_target
+  }
+}
+
+resource "aws_appautoscaling_policy" "ecs_rps" {
+  name               = "${var.app_name}-rps-target-${var.environment}"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs.resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageRequestCountPerTarget"
+    }
+    target_value = var.ecs_rps_target
   }
 }

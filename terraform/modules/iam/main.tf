@@ -126,3 +126,165 @@ resource "aws_iam_role_policy_attachment" "ecs_task_champion_s3" {
   role       = aws_iam_role.ecs_task.name
   policy_arn = aws_iam_policy.ecs_task_champion_s3[0].arn
 }
+
+# ── MLflow Fargate task role (R4) ────────────────────────────────────
+# Needs S3 GetObject/PutObject on mlflow-artifacts and KMS decrypt.
+
+resource "aws_iam_role" "mlflow_task" {
+  name = "${var.app_name}-mlflow-task-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "ecs-tasks.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_policy" "mlflow_task_s3_kms" {
+  count       = var.mlflow_artifacts_bucket_arn != "" ? 1 : 0
+  name        = "${var.app_name}-mlflow-task-s3-kms-${var.environment}"
+  description = "Allow MLflow task to read/write artifacts to S3 and use KMS"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:ListBucket",
+          "s3:GetObjectVersion",
+        ]
+        Resource = [
+          var.mlflow_artifacts_bucket_arn,
+          "${var.mlflow_artifacts_bucket_arn}/*",
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+        ]
+        Resource = var.s3_kms_key_arn
+      },
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "mlflow_task_s3_kms" {
+  count      = var.mlflow_artifacts_bucket_arn != "" ? 1 : 0
+  role       = aws_iam_role.mlflow_task.name
+  policy_arn = aws_iam_policy.mlflow_task_s3_kms[0].arn
+}
+
+# ── Airflow Fargate task role (R4) ───────────────────────────────────
+# Needs S3 access + KMS + ecs:RunTask + iam:PassRole for retraining.
+
+resource "aws_iam_role" "airflow_task" {
+  name = "${var.app_name}-airflow-task-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "ecs-tasks.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_policy" "airflow_task_s3_kms_ecs" {
+  name        = "${var.app_name}-airflow-task-s3-kms-ecs-${var.environment}"
+  description = "Allow Airflow task to access S3 artifacts, use KMS, and run retraining via ECS"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:ListBucket",
+          "s3:GetObjectVersion",
+        ]
+        Resource = compact([
+          var.mlflow_artifacts_bucket_arn != "" ? var.mlflow_artifacts_bucket_arn : "",
+          var.mlflow_artifacts_bucket_arn != "" ? "${var.mlflow_artifacts_bucket_arn}/*" : "",
+          var.drift_reports_bucket_arn != "" ? var.drift_reports_bucket_arn : "",
+          var.drift_reports_bucket_arn != "" ? "${var.drift_reports_bucket_arn}/*" : "",
+        ])
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+        ]
+        Resource = var.s3_kms_key_arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecs:RunTask",
+          "iam:PassRole",
+        ]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "airflow_task_s3_kms_ecs" {
+  role       = aws_iam_role.airflow_task.name
+  policy_arn = aws_iam_policy.airflow_task_s3_kms_ecs.arn
+}
+
+# ── EventBridge ECS Run Role (P7) ────────────────────────────────────
+# Allows EventBridge to run ECS tasks for the drift-retrain trigger.
+
+resource "aws_iam_role" "eventbridge_ecs" {
+  name = "${var.app_name}-eventbridge-ecs-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "events.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_policy" "eventbridge_ecs_run" {
+  name        = "${var.app_name}-eventbridge-ecs-run-${var.environment}"
+  description = "Allow EventBridge to run ECS tasks"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "ecs:RunTask",
+        "iam:PassRole",
+      ]
+      Resource = "*"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "eventbridge_ecs_run" {
+  role       = aws_iam_role.eventbridge_ecs.name
+  policy_arn = aws_iam_policy.eventbridge_ecs_run.arn
+}

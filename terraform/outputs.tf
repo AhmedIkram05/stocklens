@@ -122,3 +122,43 @@ output "mlflow_artifacts_bucket_versioning" {
   description = "Versioning status on mlflow-artifacts bucket"
   value       = "Enabled"
 }
+
+output "mlflow_service_name" {
+  description = "Name of the MLflow ECS service"
+  value       = module.mlflow.mlflow_service_name
+}
+
+output "mlflow_task_definition_arn" {
+  description = "ARN of the MLflow task definition"
+  value       = module.mlflow.mlflow_task_definition_arn
+}
+
+output "mlflow_upgrade_task_definition_arn" {
+  description = "ARN of the MLflow DB upgrade one-off task definition"
+  value       = module.mlflow.mlflow_upgrade_task_definition_arn
+}
+
+output "mlflow_log_group_name" {
+  description = "Name of the MLflow CloudWatch log group"
+  value       = module.mlflow.mlflow_log_group_name
+}
+
+output "airflow_webserver_service_name" {
+  description = "Name of the Airflow webserver ECS service"
+  value       = module.airflow.airflow_webserver_service_name
+}
+
+output "airflow_scheduler_service_name" {
+  description = "Name of the Airflow scheduler ECS service"
+  value       = module.airflow.airflow_scheduler_service_name
+}
+
+output "trigger_retrain_task_definition_arn" {
+  description = "ARN of the trigger-retrain ECS task definition (EventBridge P7)"
+  value       = module.airflow.trigger_retrain_task_definition_arn
+}
+
+output "airflow_log_group_name" {
+  description = "Name of the Airflow CloudWatch log group"
+  value       = module.airflow.airflow_log_group_name
+}

@@ -8,6 +8,16 @@ output "ecs_cluster_name" {
   value       = aws_ecs_cluster.main.name
 }
 
+output "ecs_cluster_arn" {
+  description = "ARN of the ECS cluster"
+  value       = aws_ecs_cluster.main.arn
+}
+
+output "ecs_cluster_id" {
+  description = "ID of the ECS cluster"
+  value       = aws_ecs_cluster.main.id
+}
+
 output "ecs_service_name" {
   description = "Name of the ECS service"
   value       = aws_ecs_service.main.name
@@ -38,7 +48,17 @@ output "log_group_arn" {
   value       = aws_cloudwatch_log_group.app.arn
 }
 
+output "log_group_name" {
+  description = "Name of the CloudWatch log group"
+  value       = aws_cloudwatch_log_group.app.name
+}
+
 output "ecs_task_role_name" {
   description = "Name of the ECS task IAM role (used by compute for CW policy attachment)"
   value       = var.ecs_task_role_name
+}
+
+output "autoscaling_target_id" {
+  description = "Resource ID of the ECS auto scaling target"
+  value       = aws_appautoscaling_target.ecs.resource_id
 }

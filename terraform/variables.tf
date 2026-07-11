@@ -166,3 +166,29 @@ variable "champion_s3_uri" {
   type        = string
   default     = ""
 }
+
+# ── Auto Scaling (R3) ──
+
+variable "ecs_min_capacity" {
+  description = "Minimum number of ECS tasks (HA requires ≥ 2 for AZ spread)"
+  type        = number
+  default     = 2
+}
+
+variable "ecs_max_capacity" {
+  description = "Maximum number of ECS tasks (cost-bounded by budget guardrail)"
+  type        = number
+  default     = 6
+}
+
+variable "ecs_cpu_target" {
+  description = "Target CPU utilisation percentage for auto scaling"
+  type        = number
+  default     = 70
+}
+
+variable "ecs_rps_target" {
+  description = "Target request count per task for auto scaling"
+  type        = number
+  default     = 100
+}
