@@ -23,3 +23,23 @@ variable "alb_name_suffix" {
   type        = string
   description = "ALB name suffix for alarm dimensions (e.g. stocklens-alb-dev)"
 }
+
+variable "alb_arn_suffix" {
+  type        = string
+  description = "ALB ARN suffix for target group dimension"
+  default     = ""
+}
+
+# RDS inputs for RDS-specific alarms
+variable "rds_instance_id" {
+  type        = string
+  description = "RDS DB instance identifier for alarm dimensions"
+  default     = ""
+}
+
+# Log group for drift metric filter
+variable "ecs_log_group_name" {
+  type        = string
+  description = "CloudWatch log group name for ECS tasks (drift metric filter)"
+  default     = ""
+}

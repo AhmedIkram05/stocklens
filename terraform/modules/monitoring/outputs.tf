@@ -17,3 +17,18 @@ output "alb_5xx_alarm_arn" {
   value       = aws_cloudwatch_metric_alarm.alb_5xx.arn
   description = "ARN of the ALB 5xx alarm"
 }
+
+output "dashboard_name" {
+  value       = aws_cloudwatch_dashboard.main.dashboard_name
+  description = "Name of the CloudWatch dashboard"
+}
+
+output "drift_alarm_name" {
+  value       = try(aws_cloudwatch_metric_alarm.drift_alert[0].alarm_name, "")
+  description = "Name of the drift alert alarm"
+}
+
+output "drift_alarm_arn" {
+  value       = try(aws_cloudwatch_metric_alarm.drift_alert[0].arn, "")
+  description = "ARN of the drift alert alarm"
+}

@@ -1,3 +1,18 @@
+# ── KMS key for S3 SSE-KMS (R4) ──────────────────────────────────────
+
+resource "aws_kms_key" "s3" {
+  description             = "KMS key for StockLens S3 bucket SSE-KMS encryption"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+}
+
+resource "aws_kms_alias" "s3" {
+  name          = "alias/${var.app_name}-s3-${var.environment}"
+  target_key_id = aws_kms_key.s3.key_id
+}
+
+# ── S3 buckets ────────────────────────────────────────────────────────
+
 resource "aws_s3_bucket" "receipts" {
   bucket = "${var.app_name}-receipts-${var.environment}"
 
@@ -59,9 +74,48 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "mlflow_artifacts"
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.s3.arn
     }
+    bucket_key_enabled = true
   }
+}
+
+# Bucket policy: enforce SecureTransport + KMS encryption on mlflow-artifacts
+resource "aws_s3_bucket_policy" "mlflow_artifacts" {
+  bucket = aws_s3_bucket.mlflow_artifacts.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource = [
+          aws_s3_bucket.mlflow_artifacts.arn,
+          "${aws_s3_bucket.mlflow_artifacts.arn}/*",
+        ]
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
+          }
+        }
+      },
+      {
+        Sid       = "DenyNonKMSEncryption"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:PutObject"
+        Resource  = "${aws_s3_bucket.mlflow_artifacts.arn}/*"
+        Condition = {
+          StringNotEquals = {
+            "s3:x-amz-server-side-encryption" = "aws:kms"
+          }
+        }
+      },
+    ]
+  })
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "drift_reports" {

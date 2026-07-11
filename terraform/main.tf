@@ -126,7 +126,10 @@ module "iam" {
     module.secrets.redis_pass_secret_arn,
     module.database.db_secret_arn,
   ]
-  champion_s3_uri = var.champion_s3_uri
+  champion_s3_uri             = var.champion_s3_uri
+  mlflow_artifacts_bucket_arn = module.s3.mlflow_artifacts_bucket_arn
+  drift_reports_bucket_arn    = module.s3.drift_reports_bucket_arn
+  s3_kms_key_arn              = module.s3.s3_kms_key_arn
 }
 
 # ── Compute ──────────────────────────────────────────────────────────
@@ -155,6 +158,46 @@ module "compute" {
   jwt_secret_arn          = module.secrets.jwt_secret_arn
   redis_pass_secret_arn   = module.secrets.redis_pass_secret_arn
   champion_s3_uri         = var.champion_s3_uri
+  ecs_min_capacity        = var.ecs_min_capacity
+  ecs_max_capacity        = var.ecs_max_capacity
+  ecs_cpu_target          = var.ecs_cpu_target
+  ecs_rps_target          = var.ecs_rps_target
+}
+
+# ── MLflow tracking server (R4) ─────────────────────────────────────
+
+module "mlflow" {
+  source                   = "./modules/mlflow"
+  app_name                 = var.app_name
+  environment              = var.environment
+  aws_region               = var.aws_region
+  ecs_cluster_id           = module.compute.ecs_cluster_id
+  ecs_execution_role_arn   = module.iam.ecs_execution_role_arn
+  mlflow_task_role_arn     = module.iam.mlflow_task_role_arn
+  private_subnet_ids       = local.private_subnet_ids
+  mlflow_sg_id             = module.network.mlflow_sg_id
+  mlflow_backend_store_uri = local.mlflow_db_uri
+  mlflow_artifact_root     = local.mlflow_artifact_root
+  sd_namespace_id          = module.network.sd_namespace_id
+}
+
+# ── Airflow (R4) ─────────────────────────────────────────────────────
+
+module "airflow" {
+  source                   = "./modules/airflow"
+  app_name                 = var.app_name
+  environment              = var.environment
+  aws_region               = var.aws_region
+  ecs_cluster_id           = module.compute.ecs_cluster_id
+  ecs_execution_role_arn   = module.iam.ecs_execution_role_arn
+  airflow_task_role_arn    = module.iam.airflow_task_role_arn
+  airflow_sg_id            = module.network.airflow_sg_id
+  private_subnet_ids       = local.private_subnet_ids
+  airflow_sql_alchemy_conn = local.airflow_db_uri
+  mlflow_tracking_uri      = module.mlflow.mlflow_tracking_uri
+  drift_alarm_name         = module.monitoring.drift_alarm_name
+  ecs_cluster_arn          = module.compute.ecs_cluster_arn
+  eventbridge_ecs_role_arn = module.iam.eventbridge_ecs_role_arn
 }
 
 # ── WAF ──────────────────────────────────────────────────────────────
@@ -170,12 +213,14 @@ module "waf" {
 # ── Monitoring ───────────────────────────────────────────────────────
 
 module "monitoring" {
-  source           = "./modules/monitoring"
-  env              = var.environment
-  alert_email      = var.alert_email
-  ecs_cluster_name = module.compute.ecs_cluster_name
-  ecs_service_name = module.compute.ecs_service_name
-  alb_name_suffix  = module.compute.alb_name
+  source             = "./modules/monitoring"
+  env                = var.environment
+  alert_email        = var.alert_email
+  ecs_cluster_name   = module.compute.ecs_cluster_name
+  ecs_service_name   = module.compute.ecs_service_name
+  alb_name_suffix    = module.compute.alb_name
+  rds_instance_id    = module.database.db_instance_id
+  ecs_log_group_name = module.compute.log_group_name
 }
 
 # ── Budgets ──────────────────────────────────────────────────────────

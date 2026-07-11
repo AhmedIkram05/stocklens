@@ -23,3 +23,22 @@ variable "champion_s3_uri" {
   type        = string
   default     = ""
 }
+
+# R4: MLflow / Airflow / retraining roles
+variable "mlflow_artifacts_bucket_arn" {
+  description = "ARN of the MLflow artifacts S3 bucket"
+  type        = string
+  default     = ""
+}
+
+variable "drift_reports_bucket_arn" {
+  description = "ARN of the drift reports S3 bucket"
+  type        = string
+  default     = ""
+}
+
+variable "s3_kms_key_arn" {
+  description = "ARN of the KMS key for S3 SSE-KMS"
+  type        = string
+  default     = ""
+}
