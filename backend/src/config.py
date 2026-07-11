@@ -1,3 +1,6 @@
+import os
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
 
 
@@ -8,8 +11,11 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://stocklens:stocklens@postgres_test:5432/stocklens_test"
     )
 
-    # Redis
-    REDIS_URL: str = "redis://redis:6379/0"
+    # Redis — derived from host/port/password when REDIS_URL not set directly
+    REDIS_HOST: str = "redis"
+    REDIS_PORT: int = 6379
+    REDIS_PASSWORD: str = ""
+    REDIS_URL: str = ""  # set below
 
     # JWT
     JWT_SECRET_KEY: str  # required, no default
@@ -43,6 +49,9 @@ class Settings(BaseSettings):
     # Performance
     ENABLE_TWR: bool = True
 
+    # Champion S3 delivery
+    CHAMPION_S3_URI: str = ""
+
     # Prediction
     PREDICTION_MODEL_PATH: str = "/model_artifacts/champion/model.pt"
     PREDICTION_CACHE_TTL: int = 21600
@@ -69,4 +78,23 @@ class Settings(BaseSettings):
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
+# ── .env guard — fail fast if .env is missing in non-dev environments ──
+env_path = Path(".env")
+if not env_path.exists() and os.environ.get("ENVIRONMENT", "development") != "development":
+    raise RuntimeError(
+        f".env file not found at {env_path.resolve()}. "
+        "Create one from .env.example or set all env vars directly."
+    )
+
 settings = Settings()
+
+# Derive REDIS_URL from host/port/password if not set directly
+# Uses rediss:// (TLS) because ElastiCache forces in-transit encryption.
+# ponytail: self-signed certs — redis-py handles these by default on rediss://
+if not settings.REDIS_URL:
+    if settings.REDIS_PASSWORD:
+        settings.REDIS_URL = (
+            f"rediss://:{settings.REDIS_PASSWORD}@{settings.REDIS_HOST}:{settings.REDIS_PORT}/0"
+        )
+    else:
+        settings.REDIS_URL = f"rediss://{settings.REDIS_HOST}:{settings.REDIS_PORT}/0"

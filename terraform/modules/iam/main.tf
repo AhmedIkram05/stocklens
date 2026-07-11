@@ -1,9 +1,17 @@
 /**
- * iam.tf
+ * iam/main.tf
  * StockLens — IAM roles and policies for ECS task execution and runtime.
  *
  * Follows least-privilege: each role gets only the permissions it needs.
+ * The cloudwatch policy lives in the compute module since it needs the
+ * log group ARN, breaking the circular dependency between iam and compute.
  */
+
+locals {
+  # Extract bucket and optional prefix from s3://bucket/prefix URIs
+  champion_bucket = var.champion_s3_uri != "" ? regex("^s3://([^/]+)", var.champion_s3_uri)[0] : ""
+  champion_prefix = var.champion_s3_uri != "" ? try(regex("^s3://[^/]+/(.+)", var.champion_s3_uri)[0], "") : ""
+}
 
 # ── ECS task execution role ──────────────────────────────────────────
 # Used by the ECS agent to pull images, send logs, and fetch secrets.
@@ -28,10 +36,10 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_managed" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# Grant read access to the two Secrets Manager secrets we created.
+# Grant read access to Secrets Manager secrets.
 resource "aws_iam_policy" "ecs_execution_secrets" {
   name        = "${var.app_name}-ecs-execution-secrets-${var.environment}"
-  description = "Allow ECS task execution role to read DB password and JWT secret from Secrets Manager"
+  description = "Allow ECS task execution role to read secrets from Secrets Manager"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -41,13 +49,7 @@ resource "aws_iam_policy" "ecs_execution_secrets" {
         "secretsmanager:GetSecretValue",
         "secretsmanager:DescribeSecret",
       ]
-      Resource = [
-        aws_secretsmanager_secret.db_password.arn,
-        aws_secretsmanager_secret.jwt_secret.arn,
-        aws_secretsmanager_secret.database_url.arn,
-        aws_secretsmanager_secret.bedrock_model_id.arn,
-        aws_secretsmanager_secret.redis_pass.arn,
-      ]
+      Resource = var.secret_arns
     }]
   })
 }
@@ -86,7 +88,7 @@ resource "aws_iam_policy" "ecs_task_bedrock" {
       Effect = "Allow"
       Action = "bedrock:InvokeModel"
       Resource = [
-        "arn:aws:bedrock:${var.aws_region}::foundation-model/${var.bedrock_model_id}"
+        "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"
       ]
     }]
   })
@@ -97,26 +99,30 @@ resource "aws_iam_role_policy_attachment" "ecs_task_bedrock" {
   policy_arn = aws_iam_policy.ecs_task_bedrock.arn
 }
 
-# Allow writing application logs to CloudWatch.
-resource "aws_iam_policy" "ecs_task_cloudwatch" {
-  name        = "${var.app_name}-ecs-task-cloudwatch-${var.environment}"
-  description = "Allow ECS task role to send logs to CloudWatch Logs"
+# Allow reading champion model artifacts from S3.
+resource "aws_iam_policy" "ecs_task_champion_s3" {
+  count       = var.champion_s3_uri != "" ? 1 : 0
+  name        = "${var.app_name}-ecs-task-champion-s3-${var.environment}"
+  description = "Allow ECS task role to read champion model artifacts from S3"
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect = "Allow"
       Action = [
-        "logs:CreateLogStream",
-        "logs:PutLogEvents",
-        "logs:DescribeLogStreams",
+        "s3:GetObject",
+        "s3:ListBucket",
       ]
-      Resource = "${aws_cloudwatch_log_group.app.arn}:*"
+      Resource = [
+        "arn:aws:s3:::${local.champion_bucket}",
+        local.champion_prefix != "" ? "arn:aws:s3:::${local.champion_bucket}/${local.champion_prefix}*" : "arn:aws:s3:::${local.champion_bucket}/*",
+      ]
     }]
   })
 }
 
-resource "aws_iam_role_policy_attachment" "ecs_task_cloudwatch" {
+resource "aws_iam_role_policy_attachment" "ecs_task_champion_s3" {
+  count      = var.champion_s3_uri != "" ? 1 : 0
   role       = aws_iam_role.ecs_task.name
-  policy_arn = aws_iam_policy.ecs_task_cloudwatch.arn
+  policy_arn = aws_iam_policy.ecs_task_champion_s3[0].arn
 }

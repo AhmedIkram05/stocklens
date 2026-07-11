@@ -1,5 +1,5 @@
 /**
- * elasticache.tf
+ * cache/main.tf
  * StockLens — ElastiCache Redis for caching and rate-limiting.
  *
  * Clustered Mode is disabled (single shard) which is sufficient for
@@ -10,7 +10,7 @@
 resource "aws_elasticache_subnet_group" "main" {
   name        = "${var.app_name}-${var.environment}"
   description = "Subnet group for StockLens ElastiCache Redis"
-  subnet_ids  = local.private_subnet_ids
+  subnet_ids  = var.private_subnet_ids
 }
 
 resource "aws_elasticache_replication_group" "main" {
@@ -26,13 +26,9 @@ resource "aws_elasticache_replication_group" "main" {
 
   # Network
   subnet_group_name  = aws_elasticache_subnet_group.main.name
-  security_group_ids = [aws_security_group.redis.id]
+  security_group_ids = [var.redis_sg_id]
 
-  # Cluster Mode disabled (single shard, no replicas).
-  # To enable clustered mode: set num_node_groups + replicas_per_node_group
-  # and switch to a node type that supports clustering (e.g., cache.r6g.*).
-  # Multi-AZ auto-failover disabled for single-node dev.
-  # Set num_cache_clusters = 2 and multi_az_enabled = true for HA.
+  # Single-node dev — Multi-AZ enabled when num_cache_clusters >= 2
   multi_az_enabled           = false
   automatic_failover_enabled = false
 
@@ -44,7 +40,7 @@ resource "aws_elasticache_replication_group" "main" {
 
   at_rest_encryption_enabled = true
   transit_encryption_enabled = true
-  auth_token                 = var.redis_pass != "" ? var.redis_pass : random_password.redis.result
+  auth_token                 = var.redis_pass
 
   tags = {
     Name = "${var.app_name}-redis-${var.environment}"

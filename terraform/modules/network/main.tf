@@ -1,5 +1,5 @@
 /**
- * security_groups.tf
+ * network/main.tf
  * StockLens — Security groups and rules for all tiers.
  *
  * Using aws_security_group_rule resources (not inline rules)
@@ -11,7 +11,7 @@
 resource "aws_security_group" "alb" {
   name        = "${var.app_name}-alb-${var.environment}"
   description = "Controls access to the StockLens ALB"
-  vpc_id      = local.vpc_id
+  vpc_id      = var.vpc_id
 }
 
 resource "aws_security_group_rule" "alb_ingress_http" {
@@ -50,7 +50,7 @@ resource "aws_security_group_rule" "alb_egress_all" {
 resource "aws_security_group" "ecs_tasks" {
   name        = "${var.app_name}-ecs-tasks-${var.environment}"
   description = "Controls access to StockLens ECS tasks"
-  vpc_id      = local.vpc_id
+  vpc_id      = var.vpc_id
 }
 
 resource "aws_security_group_rule" "ecs_tasks_ingress_alb" {
@@ -78,7 +78,7 @@ resource "aws_security_group_rule" "ecs_tasks_egress_all" {
 resource "aws_security_group" "rds" {
   name        = "${var.app_name}-rds-${var.environment}"
   description = "Controls access to StockLens RDS PostgreSQL"
-  vpc_id      = local.vpc_id
+  vpc_id      = var.vpc_id
 }
 
 resource "aws_security_group_rule" "rds_ingress_ecs" {
@@ -96,7 +96,7 @@ resource "aws_security_group_rule" "rds_ingress_ecs" {
 resource "aws_security_group" "redis" {
   name        = "${var.app_name}-redis-${var.environment}"
   description = "Controls access to StockLens ElastiCache Redis"
-  vpc_id      = local.vpc_id
+  vpc_id      = var.vpc_id
 }
 
 resource "aws_security_group_rule" "redis_ingress_ecs" {
