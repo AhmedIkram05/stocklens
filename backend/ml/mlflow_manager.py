@@ -20,6 +20,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
+import boto3
 import mlflow
 import mlflow.pytorch
 import numpy as np
@@ -349,12 +350,12 @@ class MLflowManager:
                 )
                 return False
 
-        return False
-
         logger.info(
             "Best-run tag set",
             extra={"run_id": best_run_id, "metric": metric, "value": best_value},
         )
+
+        return False
 
     # ------------------------------------------------------------------
     # Champion metrics
@@ -427,7 +428,7 @@ class MLflowManager:
         save_dir = Path(ML_CONFIG.MODEL_ARTIFACT_DIR)
         try:
             save_dir.mkdir(parents=True, exist_ok=True)
-        except (OSError, PermissionError):  # noqa: UP040
+        except (OSError, PermissionError):
             fallback = Path(tempfile.gettempdir()) / "stocklens_model"
             logger.warning(
                 "Cannot write to %s, falling back to %s",
@@ -456,4 +457,18 @@ class MLflowManager:
                 os.unlink(tmp_path)
 
         logger.info("Champion model saved to disk (atomic)", extra={"path": save_path})
+        
+        # -- Publish to champion S3 bucket if configured --
+        champion_s3_uri = os.environ.get("CHAMPION_S3_URI", "")
+        if champion_s3_uri:
+            s3 = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "eu-west-2"))
+            # s3://bucket/prefix/ → bucket, prefix
+            parts = champion_s3_uri.removeprefix("s3://").rstrip("/").split("/", 1)
+            bucket = parts[0]
+            key_prefix = f"{parts[1]}/" if len(parts) > 1 else ""
+            s3_key = f"{key_prefix}model.pt"
+            s3.upload_file(save_path, bucket, s3_key)
+            logger.info("Champion model published to S3", extra={"bucket": bucket, "key": s3_key})
+
         return save_path
+        
