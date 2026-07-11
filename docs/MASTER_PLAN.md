@@ -49,7 +49,7 @@ StockLens scans receipts via OCR, maps merchants to stock tickers, tracks portfo
 │  Biometric auth (Face ID / Touch ID)                      │
 │  Secure Store for JWT tokens                              │
 └──────────────────────────┬──────────────────────────────┘
-                           │ HTTPS
+                            │ HTTP
 ┌──────────────────────────▼──────────────────────────────┐
 │                    FastAPI Backend                        │
 │  ┌──────┐  ┌──────┐  ┌──────┐  ┌────────┐  ┌────────┐  │
@@ -108,15 +108,15 @@ StockLens scans receipts via OCR, maps merchants to stock tickers, tracks portfo
 | ML framework        | PyTorch                                   | 2.12.x                                                                            |
 | Experiment tracking | MLflow                                    | 3.14.x (custom Docker image)                                                      |
 | Model registry      | MLflow Model Registry                     | Alias-based (champion/challenger)                                                 |
-| Orchestration       | Airflow                                   | Docker Compose on EC2 t3.small                                                    |
+| Orchestration       | Airflow                                   | Fargate (ECS), LocalExecutor, RDS metadata                                        |
 | Drift detection     | Evidently AI                              | HTML reports → S3                                                                 |
 | IaC                 | Terraform                                 | 1.15.x, AWS provider, IaC scanning (checkov + tfsec)                              |
 | CI/CD               | GitHub Actions                            | OIDC federation, ruff → pytest → IaC scan → build → deploy                        |
-| Secrets management  | AWS Secrets Manager                       | 4+ secrets: JWT key, DB URL, Bedrock key, Redis password                          |
-| Observability       | structlog + CloudWatch                    | Structured JSON logging, p50/p95/p99 dashboards, metric alarms                    |
+| Secrets management  | AWS Secrets Manager                       | 3 secrets: JWT key, DB URL, Redis password                                        |
+| Observability       | structlog + CloudWatch                    | Structured JSON logging, p50/p90/p99 dashboards, metric alarms                    |
 | IaC security        | checkov + tfsec                           | 40+ rules enforced in CI (pre-apply)                                              |
 | WAF                 | AWS WAF                                   | Rate-based rules (200/min per IP), SQL injection + XSS protection attached to ALB |
-| Cost management     | AWS Budgets + Cost Anomaly Detection      | $50 monthly budget alert, anomaly detection on RDS + ECS                          |
+| Cost management     | AWS Budgets + Cost Anomaly Detection      | realistic $120 warn / $300 hard budget alert, anomaly detection on RDS + ECS      |
 | Container scaling   | ECS Service Auto Scaling                  | Target tracking on CPU + request count per target                                 |
 | Agent framework     | LangChain                                 | 1.3.x, ReAct with 5 tools                                                         |
 | Container runtime   | Docker Compose (dev) / ECS Fargate (prod) |                                                                                   |
@@ -371,7 +371,7 @@ Applied to `users`, `portfolios`, `holdings` via `CREATE TRIGGER ... BEFORE UPDA
 
 **Key deliverables:**
 
-- Airflow DAG (weekly Docker Compose on EC2 t3.medium): fetch new OHLCV → retrain LSTM → log to MLflow → compare challenger vs champion → promote if >2pp accuracy improvement
+- Airflow DAG (weekly, on Fargate with LocalExecutor): fetch new OHLCV → retrain LSTM → log to MLflow → compare challenger vs champion → promote if >2pp accuracy improvement
 - **LSTM track — data drift:** PSI (Population Stability Index) and KS-test on input features (log returns, technical indicators). Reports distribution shift per feature per ticker → HTML → S3 (public-read). Alert if JS divergence > 0.3 on any feature.
 - **LSTM track — prediction drift:** Forecast distribution shift over time — tracks the predicted class distribution (UP/FLAT/DOWN) and confidence scores across inference batches. Detects silent model degradation when live distribution diverges from training-time distribution.
 
@@ -386,13 +386,13 @@ Applied to `users`, `portfolios`, `holdings` via `CREATE TRIGGER ... BEFORE UPDA
 **Key deliverables:**
 
 - `/predict` endpoint: loads champion LSTM from MLflow, cached in Redis (6h TTL)
-- SageMaker serverless inference as optional serving path
-- Terraform: ECS Fargate, ALB + WAF, ACM, IAM (least privilege), CloudWatch log groups + metric alarms — VPC already provisioned in Phase 1
+- SageMaker serverless inference as a required alternative serving path
+- Terraform: ECS Fargate, ALB HTTP + WAF, IAM (least privilege), CloudWatch log groups + metric alarms — VPC already provisioned in Phase 1
 - **ECS Service Auto Scaling:** target tracking on CPU + request count per target. Handles traffic spikes without manual scaling.
 - **WAF:** rate-based rules (200 req/min per IP), SQL injection + XSS protection on ALB. FinTech security posture.
-- **AWS Budgets + Cost Anomaly Detection:** monthly budget alert at $50, anomaly detection on RDS + ECS spend. Cost-aware operations.
-- Secrets Manager: production-grade secrets injected into ECS task definition (DATABASE_URL, JWT_SECRET_KEY, BEDROCK_API_KEY, REDIS_PASSWORD). No `.env` files in production.
-- CloudWatch dashboard: p50/p95/p99 latency, error rate, RDS connections, ECS CPU/memory
+- **AWS Budgets + Cost Anomaly Detection:** monthly budget alert at $120 warn / $300 hard, anomaly detection on RDS + ECS spend. Cost-aware operations.
+- Secrets Manager: production-grade secrets injected into ECS task definition (DATABASE_URL, JWT_SECRET_KEY, REDIS_PASSWORD). No `.env` files in production.
+- CloudWatch dashboard: p50/p90/p99 latency, error rate, RDS connections, ECS CPU/memory
 - GitHub Actions CI/CD: ruff → pytest → checkov + tfsec → docker build → ECR → ECS deploy (OIDC auth)
 
 **Depends on:** Phase 3 (model to serve). Terraform provisioning can begin in parallel with Phase 3.
@@ -466,7 +466,7 @@ Applied to `users`, `portfolios`, `holdings` via `CREATE TRIGGER ... BEFORE UPDA
 - Deployment blocked if any pytest fails or IaC scan finds critical/high findings
 - Secrets Manager: ECS task definition injects secrets as environment variables at container start (DevSync pattern via `jq` or Terraform `aws_ecs_task_definition` secrets block)
 - CloudWatch: structured JSON logs from structlog collected via `awslogs` driver, custom dashboard with p50/p95/p99 latency, RDS connections, ECS CPU/memory, error rate
-- AWS Budgets alarm at $50/month with cost anomaly detection — alerts on unexpected RDS/ECS spend
+- AWS Budgets alarm at $120 warn / $300 hard with cost anomaly detection — alerts on unexpected RDS/ECS spend
 - Manual approval gate before Terraform apply in production
 
 ### AWS Resources (provisioned over phases)
@@ -477,13 +477,13 @@ Applied to `users`, `portfolios`, `holdings` via `CREATE TRIGGER ... BEFORE UPDA
 | ECR                          | Phase 1 | Scan on push, keep 25 images                                                 |
 | VPC + networking             | Phase 1 | /16 with public/private subnets (LAAD pattern)                               |
 | RDS (PostgreSQL 18)          | Phase 1 | db.t3.micro → Multi-AZ in Phase 5, 20GB gp3, encrypted                       |
-| Secrets Manager              | Phase 1 | 4 secrets: DB URL, JWT key, Bedrock key, Redis password                      |
+| Secrets Manager              | Phase 1 | 3 secrets: DB URL, JWT key, Redis password                                   |
 | ECS Fargate (API)            | Phase 5 | Auto-scaling (CPU + request count), secrets injection, CloudWatch log driver |
-| ALB + ACM + WAF              | Phase 5 | HTTPS, rate-based rules (200/min per IP), SQLi/XSS protection                |
-| CloudWatch                   | Phase 5 | Log groups, custom dashboard (p50/p95/p99), metric alarms                    |
-| SageMaker serverless         | Phase 5 | Optional LSTM serving path                                                   |
-| AWS Budgets + Cost Anomaly   | Phase 5 | $50 monthly budget alert, anomaly detection on RDS + ECS                     |
-| EC2 (Airflow)                | Phase 4 | t3.medium, Docker Compose, weekly retraining DAG                             |
+| ALB + WAF (HTTP)             | Phase 5 | HTTP (port 80), rate-based rules (200/min per IP), SQLi/XSS protection       |
+| CloudWatch                   | Phase 5 | Log groups, custom dashboard (p50/p90/p99), metric alarms                    |
+| SageMaker serverless         | Phase 5 | Required LSTM serving path (config-gated alt to Fargate)                     |
+| AWS Budgets + Cost Anomaly   | Phase 5 | realistic $120 warn / $300 hard budget alert, anomaly detection on RDS + ECS |
+| Fargate (Airflow + MLflow)   | Phase 5 | ECS Fargate, LocalExecutor, RDS metadata, ~$15/mo                            |
 
 ---
 
