@@ -14,8 +14,9 @@
 # ── CloudWatch log group ─────────────────────────────────────────────
 
 resource "aws_cloudwatch_log_group" "app" {
+  # checkov:skip=CKV_AWS_158:dev — KMS key not provisioned yet
   name              = "/ecs/${var.app_name}-${var.environment}"
-  retention_in_days = 30
+  retention_in_days = 365
 }
 
 # Allow writing application logs to CloudWatch.
@@ -45,6 +46,8 @@ resource "aws_iam_role_policy_attachment" "ecs_task_cloudwatch" {
 # ── ECR repository ───────────────────────────────────────────────────
 
 resource "aws_ecr_repository" "app" {
+  # checkov:skip=CKV_AWS_51:dev — mutable tags for fast iteration (ponytail)
+  # checkov:skip=CKV_AWS_136:dev — KMS key not provisioned yet for ECR encryption
   name = "${var.app_name}-${var.environment}"
   # ponytail: dev — mutable tags for fast iteration
   image_tag_mutability = "MUTABLE"
@@ -94,6 +97,7 @@ resource "aws_lb" "main" {
   subnets            = var.public_subnet_ids
   ip_address_type    = "ipv4"
 
+  drop_invalid_header_fields = true
   enable_deletion_protection = true
 
   tags = {
@@ -276,6 +280,7 @@ resource "aws_ecs_service" "main" {
   }
 
   network_configuration {
+    # checkov:skip=CKV_AWS_333:dev — no NAT gateway in dev VPC (ponytail)
     subnets         = var.private_subnet_ids
     security_groups = [var.ecs_tasks_sg_id]
     # ponytail: dev — public IPs needed since subnets have no NAT gateway.

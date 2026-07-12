@@ -19,8 +19,9 @@ locals {
 # ── CloudWatch log group ─────────────────────────────────────────────
 
 resource "aws_cloudwatch_log_group" "mlflow" {
+  # checkov:skip=CKV_AWS_158:dev — KMS key not provisioned yet
   name              = "/ecs/${local.family}"
-  retention_in_days = 30
+  retention_in_days = 365
 }
 
 # ── ECS task definition ──────────────────────────────────────────────
@@ -124,6 +125,7 @@ resource "aws_ecs_service" "mlflow" {
   deployment_maximum_percent         = 200
 
   network_configuration {
+    # checkov:skip=CKV_AWS_333:dev — no NAT gateway in dev VPC (ponytail)
     subnets         = var.private_subnet_ids
     security_groups = [var.mlflow_sg_id]
     # ponytail: dev — no NAT gateway, use public IPs

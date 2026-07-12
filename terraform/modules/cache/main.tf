@@ -38,6 +38,7 @@ resource "aws_elasticache_replication_group" "main" {
   snapshot_retention_limit   = 3
   auto_minor_version_upgrade = true
 
+  # checkov:skip=CKV_AWS_191:dev — KMS CMK not provisioned yet for ElastiCache
   at_rest_encryption_enabled = true
   transit_encryption_enabled = true
   auth_token                 = var.redis_pass
