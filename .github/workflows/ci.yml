@@ -115,6 +115,8 @@ jobs:
           ./venv/bin/ruff check backend/
           ./venv/bin/ruff format --check backend/
       - name: Build Rust extension
+        env:
+          VIRTUAL_ENV: ${{ github.workspace }}/venv
         run: |
           ./venv/bin/pip install maturin
           cd backend/ml/features-engine
@@ -135,6 +137,8 @@ jobs:
           directory: terraform/
       - name: tfsec
         uses: aquasecurity/tfsec-action@v1.0.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           working_directory: terraform/
 
