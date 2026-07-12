@@ -213,18 +213,6 @@ def train(
 
     model = model.to(device)
 
-    # torch.compile for CPU speedup (PyTorch 2.0+) — ~30-50% faster on CPU
-    if device.type == "cpu":
-        try:
-            model = torch.compile(model, mode="reduce-overhead")
-            logger.info("Enabled torch.compile (mode=reduce-overhead) for CPU")
-        except Exception as e:
-            logger.warning("torch.compile failed, continuing without: %s", e)
-
-    # Use all CPU cores for intra-op parallelism
-    if device.type == "cpu":
-        torch.set_num_threads(torch.get_num_threads())
-
     # Compute class weights from training data
     all_labels = []
     for _, labels, _ in train_loader:

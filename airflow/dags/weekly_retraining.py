@@ -6,7 +6,7 @@ Runs via Airflow LocalExecutor (single container, SQLite metadata).
 
 Tasks:
   1. check_new_ohlcv_data — Check if new OHLCV data exists since last run
-  2. train_challenger      — Run the ML training pipeline via ECS GPU task (EcsRunTaskOperator)
+  2. train_challenger      — Run the ML training pipeline (PythonOperator, direct import)
   3. detect_new_champion   — If champion was promoted, recompute reference distributions
   4. run_drift_detection   — PSI/KS/JS on portfolio tickers, Evidently report, S3 upload
   5. cleanup               — Prune old prediction_log (>90d) and drift_metrics (>365d)
@@ -15,13 +15,11 @@ Tasks:
 from __future__ import annotations
 
 import asyncio
-import os
 from datetime import datetime, timedelta
 
-from airflow.models import DAG
+from airflow import DAG
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import BranchPythonOperator, PythonOperator
-
 
 # ── Default arguments ──────────────────────────────────────────────────────────
 default_args = {
@@ -31,7 +29,7 @@ default_args = {
     "email_on_retry": False,
     "retries": 1,
     "retry_delay": timedelta(minutes=15),
-    "execution_timeout": timedelta(hours=4),
+    "execution_timeout": timedelta(hours=4),  # Training can take 2-3h
 }
 
 
@@ -65,58 +63,15 @@ def _check_new_ohlcv_data(**context) -> str:
 
 
 def _train_challenger(**context) -> None:
-    """Launch ML training on ECS Fargate via boto3 and wait for completion."""
-    import boto3
-    from airflow.models import Variable
+    """Run the ML training pipeline directly.
 
-    v = Variable.get
-    client = boto3.client("ecs", region_name=v("aws_region"))
-
-    resp = client.run_task(
-        cluster=v("ecs_cluster_name"),
-        taskDefinition=v("ml_training_task_definition"),
-        launchType="EC2",
-        networkConfiguration={
-            "awsvpcConfiguration": {
-                "subnets": v("private_subnet_ids").split(","),
-                "securityGroups": [v("airflow_sg_id")],
-                "assignPublicIp": "ENABLED",
-            }
-        },
-        overrides={
-            "containerOverrides": [
-                {
-                    "name": "ml-training",
-                    "environment": [
-                        {"name": "DATABASE_URL", "value": v("database_url")},
-                        {"name": "MLFLOW_TRACKING_URI", "value": v("mlflow_tracking_uri")},
-                        {"name": "MODEL_ARTIFACT_DIR", "value": "/model_artifacts/champion"},
-                        {"name": "MLFLOW_ARTIFACT_ROOT", "value": "/mlflow/artifacts"},
-                        {"name": "MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING", "value": "true"},
-                        {"name": "ENVIRONMENT", "value": v("environment")},
-                        {"name": "AWS_REGION", "value": v("aws_region")},
-                    ],
-                }
-            ]
-        },
-    )
-
-    failures = resp.get("failures", [])
-    if failures:
-        raise RuntimeError(f"ECS RunTask failed: {failures}")
-
-    task_arn = resp["tasks"][0]["taskArn"]
-    print(f"ECS training task launched: {task_arn}")
-
-    # Wait for ECS task to finish so downstream tasks (detect_new_champion)
-    # see the promoted model. Polls every 30s for up to 3h.
-    waiter = client.get_waiter("tasks_stopped")
-    waiter.wait(
-        cluster=v("ecs_cluster_name"),
-        tasks=[task_arn],
-        WaiterConfig={"Delay": 30, "MaxAttempts": 360},
-    )
-    print(f"ECS training task completed: {task_arn}")
+    Airflow container has backend source mounted and all ML deps
+    from the stocklens-ml base image.
+    """
+    import sys
+    sys.path.insert(0, "/app")
+    from ml.pipeline import run_pipeline  # type: ignore[import-untyped]
+    asyncio.run(run_pipeline())
 
 
 def _detect_new_champion(**context) -> str:
@@ -294,11 +249,10 @@ with DAG(
 
     skip_retraining = EmptyOperator(task_id="skip_retraining")
 
-    # ── Task 2: Train challenger (runs on GPU via ECS, invoked via boto3) ──
+    # ── Task 2: Train challenger ──
     train_challenger = PythonOperator(
         task_id="train_challenger",
         python_callable=_train_challenger,
-        execution_timeout=timedelta(hours=3),
     )
 
     # ── Branch: detect champion change ──

@@ -1,13 +1,14 @@
 /**
- * secrets/main.tf
+ * secrets.tf
  * StockLens — Secrets Manager secrets for sensitive configuration.
  *
- * The random_password resources serve two purposes:
- *   1. Generate values during initial provisioning.
- *   2. Store them in Secrets Manager where the application reads them.
+ * The random_password resources here serve two purposes:
+ *   1. They generate the values during initial provisioning.
+ *   2. They are then stored in Secrets Manager where the application
+ *      reads them at runtime.
  *
  * For existing deployments, promote the Secrets Manager value to be
- * the authoritative source.
+ * the authoritative source (import or set via the AWS console).
  */
 
 # ── DB password ──────────────────────────────────────────────────────
@@ -19,10 +20,9 @@ resource "random_password" "db" {
 }
 
 resource "aws_secretsmanager_secret" "db_password" {
-  # checkov:skip=CKV_AWS_149:dev — no KMS CMK; use default encryption
-  # checkov:skip=CKV2_AWS_57:dev — secret rotation not configured; add Lambda in prod
-  name                    = "${var.app_name}-db-password-${var.environment}"
-  description             = "StockLens RDS PostgreSQL master password"
+  name        = "${var.app_name}-db-password-${var.environment}"
+  description = "StockLens RDS PostgreSQL master password"
+  # Force secret recreation if the random password changes
   recovery_window_in_days = 7
 }
 
@@ -39,11 +39,22 @@ resource "random_password" "jwt" {
 }
 
 resource "aws_secretsmanager_secret" "jwt_secret" {
-  # checkov:skip=CKV_AWS_149:dev — no KMS CMK; use default encryption
-  # checkov:skip=CKV2_AWS_57:dev — secret rotation not configured; add Lambda in prod
   name                    = "${var.app_name}-jwt-secret-${var.environment}"
   description             = "StockLens JWT signing secret key"
   recovery_window_in_days = 7
+}
+
+# ── Full DATABASE_URL ─────────────────────────────────────────────
+
+resource "aws_secretsmanager_secret" "database_url" {
+  name                    = "${var.app_name}-database-url-${var.environment}"
+  description             = "StockLens full DATABASE_URL with embedded password"
+  recovery_window_in_days = 7
+}
+
+resource "aws_secretsmanager_secret_version" "database_url" {
+  secret_id     = aws_secretsmanager_secret.database_url.id
+  secret_string = "postgresql+asyncpg://${var.app_name}:${var.db_password != "" ? var.db_password : random_password.db.result}@${aws_db_instance.main.endpoint}/${var.app_name}"
 }
 
 resource "aws_secretsmanager_secret_version" "jwt_secret" {
@@ -51,7 +62,20 @@ resource "aws_secretsmanager_secret_version" "jwt_secret" {
   secret_string = var.jwt_secret_key != "" ? var.jwt_secret_key : random_password.jwt.result
 }
 
-# ── Redis AUTH password ──────────────────────────────────────────────
+# ── Bedrock model ID ──────────────────────────────────────────────────
+
+resource "aws_secretsmanager_secret" "bedrock_model_id" {
+  name                    = "${var.app_name}-bedrock-model-id-${var.environment}"
+  description             = "StockLens Bedrock model ID"
+  recovery_window_in_days = 7
+}
+
+resource "aws_secretsmanager_secret_version" "bedrock_model_id" {
+  secret_id     = aws_secretsmanager_secret.bedrock_model_id.id
+  secret_string = var.bedrock_model_id
+}
+
+# ── Redis AUTH password ──────────────────────────────────────────────────
 
 resource "random_password" "redis" {
   length  = 24
@@ -59,8 +83,6 @@ resource "random_password" "redis" {
 }
 
 resource "aws_secretsmanager_secret" "redis_pass" {
-  # checkov:skip=CKV_AWS_149:dev — no KMS CMK; use default encryption
-  # checkov:skip=CKV2_AWS_57:dev — secret rotation not configured; add Lambda in prod
   name                    = "${var.app_name}-redis-pass-${var.environment}"
   description             = "StockLens ElastiCache Redis AUTH token"
   recovery_window_in_days = 7
