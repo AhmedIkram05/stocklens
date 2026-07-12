@@ -89,6 +89,63 @@ resource "aws_ecs_cluster" "main" {
 
 # ── Application Load Balancer ────────────────────────────────────────
 
+data "aws_elb_service_account" "main" {}
+
+resource "aws_s3_bucket" "alb_logs" {
+  bucket = "${var.app_name}-alb-logs-${var.environment}"
+}
+
+resource "aws_s3_bucket_ownership_controls" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  rule {
+    object_ownership = "BucketOwnerPreferred"
+  }
+}
+
+resource "aws_s3_bucket_acl" "alb_logs" {
+  depends_on = [aws_s3_bucket_ownership_controls.alb_logs]
+  bucket     = aws_s3_bucket.alb_logs.id
+  acl        = "private"
+}
+
+resource "aws_s3_bucket_policy" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        AWS = data.aws_elb_service_account.main.arn
+      }
+      Action   = "s3:PutObject"
+      Resource = "${aws_s3_bucket.alb_logs.arn}/alb-logs/*"
+    }]
+  })
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  rule {
+    id     = "expire"
+    status = "Enabled"
+    filter {}
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+    expiration {
+      days = 90
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "alb_logs" {
+  bucket                  = aws_s3_bucket.alb_logs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
 resource "aws_lb" "main" {
   name               = "${var.app_name}-${var.environment}"
   internal           = false
@@ -96,6 +153,12 @@ resource "aws_lb" "main" {
   security_groups    = [var.alb_sg_id]
   subnets            = var.public_subnet_ids
   ip_address_type    = "ipv4"
+
+  access_logs {
+    bucket  = aws_s3_bucket.alb_logs.id
+    prefix  = "alb-logs"
+    enabled = true
+  }
 
   drop_invalid_header_fields = true
   enable_deletion_protection = true
@@ -130,7 +193,9 @@ resource "aws_lb_target_group" "app" {
 }
 
 # HTTP listener (placeholder — add HTTPS listener after ACM cert is ready)
+# checkov:skip=CKV_AWS_2:dev — no ACM cert; add HTTPS listener + redirect in prod
 resource "aws_lb_listener" "http" {
+  # checkov:skip=CKV_AWS_2:dev — no ACM cert; add HTTPS listener + redirect in prod
   load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"

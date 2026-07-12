@@ -39,7 +39,7 @@ variable "mlflow_sg_id" {
 }
 
 variable "mlflow_backend_store_uri" {
-  description = "PostgreSQL URI for MLflow backend store (e.g. postgresql://user:pass@endpoint/dbname)"
+  description = "PostgreSQL URI for MLflow backend store (e.g. postgresql://host/dbname)"
   type        = string
 }
 

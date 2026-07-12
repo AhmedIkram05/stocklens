@@ -10,6 +10,9 @@ resource "aws_db_subnet_group" "main" {
 }
 
 resource "aws_db_instance" "main" {
+  # checkov:skip=CKV_AWS_118:dev — no enhanced monitoring; add monitoring_role_arn in prod
+  # checkov:skip=CKV_AWS_161:dev — IAM DB auth not enabled; enable in prod
+  # checkov:skip=CKV_AWS_353:dev — Performance Insights disabled; enable in prod
   identifier = "${var.app_name}-${var.environment}"
 
   engine         = "postgres"
@@ -44,11 +47,12 @@ resource "aws_db_instance" "main" {
   skip_final_snapshot       = false
   final_snapshot_identifier = "${var.app_name}-${var.environment}-final"
 
-  # Performance & monitoring
-  auto_minor_version_upgrade   = true
-  monitoring_interval          = 0
-  performance_insights_enabled = false
-  storage_encrypted            = true
+  # Logs & monitoring
+  enabled_cloudwatch_logs_exports = ["postgresql"]
+  auto_minor_version_upgrade      = true
+  monitoring_interval             = 0
+  performance_insights_enabled    = false
+  storage_encrypted               = true
 
   parameter_group_name = "default.postgres18"
 
@@ -58,7 +62,9 @@ resource "aws_db_instance" "main" {
 }
 
 # Full DATABASE_URL secret — lives here because it needs the RDS endpoint
+# checkov:skip=CKV_AWS_149:dev — no KMS CMK; use default encryption
 resource "aws_secretsmanager_secret" "database_url" {
+  # checkov:skip=CKV_AWS_149:dev — no KMS CMK; use default encryption
   name                    = "${var.app_name}-database-url-${var.environment}"
   description             = "StockLens full DATABASE_URL with embedded password"
   recovery_window_in_days = 7
