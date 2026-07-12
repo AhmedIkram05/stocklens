@@ -107,21 +107,20 @@ jobs:
       - name: Set up virtual environment
         run: |
           python -m venv venv
-          source venv/bin/activate
       - name: Ruff check
         run: |
-          pip install ruff
-          ruff check backend/
-          ruff format --check backend/
+          ./venv/bin/pip install ruff
+          ./venv/bin/ruff check backend/
+          ./venv/bin/ruff format --check backend/
       - name: Build Rust extension
         run: |
-          pip install maturin
+          ./venv/bin/pip install maturin
           cd backend/ml/features-engine
-          maturin develop
+          ./venv/bin/maturin develop
       - name: Pytest
         run: |
-          pip install ".[dev]"
-          cd backend && pytest -q
+          ./venv/bin/pip install ".[dev]"
+          cd backend && ./venv/bin/pytest -q
 
   iac:
     name: IaC Security Scan
