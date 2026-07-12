@@ -79,8 +79,11 @@ class Settings(BaseSettings):
 
 
 # ── .env guard — fail fast if .env is missing in non-dev environments ──
+# Also treat "dev" as a development env (Terraform uses "dev" as env name).
+
 env_path = Path(".env")
-if not env_path.exists() and os.environ.get("ENVIRONMENT", "development") != "development":
+_env = os.environ.get("ENVIRONMENT", "development")
+if not env_path.exists() and _env not in ("development", "dev"):
     raise RuntimeError(
         f".env file not found at {env_path.resolve()}. "
         "Create one from .env.example or set all env vars directly."
