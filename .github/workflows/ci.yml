@@ -1,14 +1,13 @@
 # CI
 #
-# Runs in parallel across four concerns: linting, type checking, testing
-# with coverage, and security auditing. Every check must pass before merge.
+# Runs in parallel across all concerns: linting, type checking, testing
+# with coverage, security auditing, Python backend checks, IaC scanning,
+# and secret scanning. Every check must pass before merge.
 name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -95,3 +94,44 @@ jobs:
         run: cargo clippy --all-features -- -D warnings
       - name: Tests
         run: cargo test
+
+  python:
+    name: Python Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Ruff check
+        run: |
+          pip install ruff
+          ruff check backend/
+          ruff format --check backend/
+      - name: Pytest
+        run: |
+          pip install -r backend/requirements.txt
+          pip install pytest pytest-asyncio
+          cd backend && pytest -q
+
+  iac:
+    name: IaC Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: terraform/
+      - name: tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: terraform/
+
+  secrets:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
