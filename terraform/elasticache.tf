@@ -1,5 +1,5 @@
 /**
- * cache/main.tf
+ * elasticache.tf
  * StockLens — ElastiCache Redis for caching and rate-limiting.
  *
  * Clustered Mode is disabled (single shard) which is sufficient for
@@ -10,11 +10,10 @@
 resource "aws_elasticache_subnet_group" "main" {
   name        = "${var.app_name}-${var.environment}"
   description = "Subnet group for StockLens ElastiCache Redis"
-  subnet_ids  = var.private_subnet_ids
+  subnet_ids  = local.private_subnet_ids
 }
 
 resource "aws_elasticache_replication_group" "main" {
-  # checkov:skip=CKV2_AWS_50:dev — Multi-AZ failover not needed for dev
   replication_group_id = "${var.app_name}-${var.environment}"
   description          = "StockLens Redis ${var.environment}"
 
@@ -27,9 +26,13 @@ resource "aws_elasticache_replication_group" "main" {
 
   # Network
   subnet_group_name  = aws_elasticache_subnet_group.main.name
-  security_group_ids = [var.redis_sg_id]
+  security_group_ids = [aws_security_group.redis.id]
 
-  # Single-node dev — Multi-AZ enabled when num_cache_clusters >= 2
+  # Cluster Mode disabled (single shard, no replicas).
+  # To enable clustered mode: set num_node_groups + replicas_per_node_group
+  # and switch to a node type that supports clustering (e.g., cache.r6g.*).
+  # Multi-AZ auto-failover disabled for single-node dev.
+  # Set num_cache_clusters = 2 and multi_az_enabled = true for HA.
   multi_az_enabled           = false
   automatic_failover_enabled = false
 
@@ -39,10 +42,9 @@ resource "aws_elasticache_replication_group" "main" {
   snapshot_retention_limit   = 3
   auto_minor_version_upgrade = true
 
-  # checkov:skip=CKV_AWS_191:dev — KMS CMK not provisioned yet for ElastiCache
   at_rest_encryption_enabled = true
   transit_encryption_enabled = true
-  auth_token                 = var.redis_pass
+  auth_token                 = var.redis_pass != "" ? var.redis_pass : random_password.redis.result
 
   tags = {
     Name = "${var.app_name}-redis-${var.environment}"

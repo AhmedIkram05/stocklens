@@ -1,8 +1,0 @@
-# Gitleaks config for StockLens
-# Allowlist pre-existing findings that have been remediated.
-
-[allowlist]
-  # GCP API key in .env — removed in f04ea30, only persists in history.
-  description = "Pre-existing GCP API key, removed from current .env"
-  commits = ["8296c351980c60ed6df6bfb8d2fb139d3c97484f"]
-  paths = [".env"]

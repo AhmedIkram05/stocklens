@@ -23,10 +23,6 @@ async def get_redis() -> Redis:
     global _pool
     if _pool is None:
         url_kwargs = parse_url(settings.REDIS_URL)
-        if settings.REDIS_URL.startswith("rediss://"):
-            # ElastiCache uses AWS-managed self-signed certs —
-            # skip client-side verification (cannot pin a cert that rotates).
-            url_kwargs["ssl_cert_reqs"] = None
         _pool = ConnectionPool(**url_kwargs)
         logger.info("redis_pool_initialised", url=settings.REDIS_URL)
     return Redis(connection_pool=_pool)
