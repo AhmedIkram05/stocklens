@@ -88,8 +88,7 @@ jobs:
           components: clippy
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
-      - run: pip install numpy
+          python-version: '3.14'
       - name: Clippy
         run: cargo clippy --all-features -- -D warnings
       - name: Tests
@@ -102,7 +101,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: '3.14'
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Set up virtual environment
         run: |
@@ -145,25 +144,7 @@ jobs:
           chmod +x /tmp/tfsec
           /tmp/tfsec terraform/ \
             --soft-fail \
-            --ignore-rule aws-elb-http-not-used \
-            --ignore-rule aws-ecs-no-plaintext-secrets \
-            --ignore-rule aws-ec2-no-public-egress-sgr \
-            --ignore-rule aws-ec2-no-public-ingress-sgr \
-            --ignore-rule aws-elb-alb-not-public \
-            --ignore-rule aws-iam-no-policy-wildcards \
-            --ignore-rule aws-ecr-enforce-immutable-repository \
-            --ignore-rule aws-s3-enable-bucket-encryption \
-            --ignore-rule aws-s3-encryption-customer-key \
-            --ignore-rule aws-sns-topic-encryption-use-cmk \
-            --ignore-rule aws-ec2-no-public-ip-subnet \
-            --ignore-rule aws-s3-enable-bucket-logging \
-            --ignore-rule aws-s3-enable-versioning \
-            --ignore-rule aws-rds-specify-backup-retention \
-            --ignore-rule aws-ec2-require-vpc-flow-logs-for-all-vpcs \
-            --ignore-rule aws-cloudwatch-log-group-customer-key \
-            --ignore-rule aws-ecr-repository-customer-key \
-            --ignore-rule aws-rds-enable-performance-insights \
-            --ignore-rule aws-ssm-secret-use-customer-key
+            -e aws-elb-http-not-used,aws-ecs-no-plaintext-secrets,aws-ec2-no-public-egress-sgr,aws-ec2-no-public-ingress-sgr,aws-elb-alb-not-public,aws-iam-no-policy-wildcards,aws-ecr-enforce-immutable-repository,aws-s3-enable-bucket-encryption,aws-s3-encryption-customer-key,aws-sns-topic-encryption-use-cmk,aws-ec2-no-public-ip-subnet,aws-s3-enable-bucket-logging,aws-s3-enable-versioning,aws-rds-specify-backup-retention,aws-ec2-require-vpc-flow-logs-for-all-vpcs,aws-cloudwatch-log-group-customer-key,aws-ecr-repository-customer-key,aws-rds-enable-performance-insights,aws-ssm-secret-use-customer-key
 
   secrets:
     name: Secret Scan
