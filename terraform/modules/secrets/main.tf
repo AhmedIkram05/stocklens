@@ -58,7 +58,6 @@ resource "random_password" "redis" {
   special = false
 }
 
-# checkov:skip=CKV_AWS_149:dev — no KMS CMK; use default encryption
 resource "aws_secretsmanager_secret" "redis_pass" {
   # checkov:skip=CKV_AWS_149:dev — no KMS CMK; use default encryption
   # checkov:skip=CKV2_AWS_57:dev — secret rotation not configured; add Lambda in prod

@@ -104,6 +104,10 @@ jobs:
         with:
           python-version: '3.12'
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Set up virtual environment
+        run: |
+          python -m venv venv
+          source venv/bin/activate
       - name: Ruff check
         run: |
           pip install ruff
@@ -138,6 +142,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - name: Gitleaks
         uses: gitleaks/gitleaks-action@v2
         env:

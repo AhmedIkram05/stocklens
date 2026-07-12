@@ -195,7 +195,6 @@ resource "aws_lb_target_group" "app" {
 }
 
 # HTTP listener (placeholder — add HTTPS listener after ACM cert is ready)
-# checkov:skip=CKV_AWS_2:dev — no ACM cert; add HTTPS listener + redirect in prod
 resource "aws_lb_listener" "http" {
   # checkov:skip=CKV_AWS_2:dev — no ACM cert; add HTTPS listener + redirect in prod
   # checkov:skip=CKV2_AWS_20:dev — no ACM cert; add HTTPS redirect in prod
