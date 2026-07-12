@@ -138,9 +138,9 @@ resource "aws_cloudwatch_metric_alarm" "latency_p99" {
 }
 
 # ── RDS free storage alarm (R3) ──────────────────────────────────────
+# ponytail: always created — Terraform handles unknown dimension at apply.
 
 resource "aws_cloudwatch_metric_alarm" "rds_free_storage" {
-  count               = var.rds_instance_id != "" ? 1 : 0
   alarm_name          = "${var.env}-stocklens-rds-free-storage"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = 1
@@ -161,7 +161,6 @@ resource "aws_cloudwatch_metric_alarm" "rds_free_storage" {
 # ── RDS connections > 80% alarm (R3) ─────────────────────────────────
 
 resource "aws_cloudwatch_metric_alarm" "rds_connections" {
-  count               = var.rds_instance_id != "" ? 1 : 0
   alarm_name          = "${var.env}-stocklens-rds-connections"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
@@ -183,7 +182,6 @@ resource "aws_cloudwatch_metric_alarm" "rds_connections" {
 # Matches structlog drift alert lines: {"alert_triggered": true, ...}
 
 resource "aws_cloudwatch_log_metric_filter" "drift_alert" {
-  count          = var.ecs_log_group_name != "" ? 1 : 0
   name           = "${var.env}-stocklens-drift-alert"
   pattern        = "{ $.alert_triggered = true }"
   log_group_name = var.ecs_log_group_name
@@ -197,7 +195,6 @@ resource "aws_cloudwatch_log_metric_filter" "drift_alert" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "drift_alert" {
-  count               = var.ecs_log_group_name != "" ? 1 : 0
   alarm_name          = "${var.env}-stocklens-drift-alert"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1

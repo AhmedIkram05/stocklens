@@ -8,9 +8,14 @@ output "airflow_scheduler_service_name" {
   value       = aws_ecs_service.scheduler.name
 }
 
-output "airflow_task_definition_arn" {
-  description = "ARN of the Airflow task definition"
-  value       = aws_ecs_task_definition.airflow.arn
+output "airflow_webserver_task_definition_arn" {
+  description = "ARN of the Airflow webserver task definition"
+  value       = aws_ecs_task_definition.webserver.arn
+}
+
+output "airflow_scheduler_task_definition_arn" {
+  description = "ARN of the Airflow scheduler task definition"
+  value       = aws_ecs_task_definition.scheduler.arn
 }
 
 output "trigger_retrain_task_definition_arn" {
@@ -26,4 +31,15 @@ output "trigger_retrain_task_definition_family" {
 output "airflow_log_group_name" {
   description = "Name of the Airflow CloudWatch log group"
   value       = aws_cloudwatch_log_group.airflow.name
+}
+
+# GPU ML Training task definition (conditional)
+output "ml_training_task_definition_arn" {
+  description = "ARN of the GPU ML training task definition (if created)"
+  value       = length(aws_ecs_task_definition.ml_training) > 0 ? aws_ecs_task_definition.ml_training[0].arn : null
+}
+
+output "ml_training_task_definition_family" {
+  description = "Family name of the GPU ML training task definition (if created)"
+  value       = length(aws_ecs_task_definition.ml_training) > 0 ? aws_ecs_task_definition.ml_training[0].family : null
 }

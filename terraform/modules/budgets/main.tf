@@ -28,22 +28,15 @@ resource "aws_budgets_budget" "monthly" {
   }
 }
 
-resource "aws_ce_anomaly_monitor" "main" {
-  name         = "${var.environment}-stocklens-anomaly"
-  monitor_type = "DIMENSIONAL"
-  monitor_specification = jsonencode({
-    MonitorDimensions = ["SERVICE"]
-  })
-}
-
-resource "aws_ce_anomaly_subscription" "main" {
-  name      = "${var.environment}-stocklens-anomaly-sub"
-  frequency = "IMMEDIATE"
-
-  monitor_arn_list = [aws_ce_anomaly_monitor.main.arn]
-
-  subscriber {
-    type    = "SNS"
-    address = var.budget_sns_arn
-  }
-}
+# ponytail: skip cost anomaly for dev — re-enable when monitoring costs matter.
+# resource "aws_ce_anomaly_monitor" "main" {
+#   name         = "${var.environment}-stocklens-anomaly"
+#   monitor_type = "CUSTOM"
+#   monitor_specification = jsonencode({ MonitorType = "CUSTOM" })
+# }
+# resource "aws_ce_anomaly_subscription" "main" {
+#   name = "${var.environment}-stocklens-anomaly-sub"
+#   frequency = "IMMEDIATE"
+#   monitor_arn_list = [aws_ce_anomaly_monitor.main.arn]
+#   subscriber { type = "SNS" address = var.budget_sns_arn }
+# }

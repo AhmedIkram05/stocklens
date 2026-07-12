@@ -67,13 +67,13 @@ variable "cors_origins" {
 variable "ecs_cpu" {
   description = "ECS task CPU units (Fargate)"
   type        = string
-  default     = "256"
+  default     = "512"
 }
 
 variable "ecs_memory" {
   description = "ECS task memory in MiB (Fargate)"
   type        = string
-  default     = "512"
+  default     = "1024"
 }
 
 variable "desired_count" {
@@ -137,4 +137,9 @@ variable "ecs_rps_target" {
   description = "Target request count per task for auto scaling"
   type        = number
   default     = 100
+}
+
+variable "s3_kms_key_arn" {
+  description = "ARN of the KMS key for S3 encryption"
+  type        = string
 }

@@ -26,4 +26,13 @@ locals {
   airflow_db_uri = "postgresql+psycopg2://${module.database.db_username}:${module.secrets.db_password_value}@${module.database.db_address}:5432/${module.database.db_name}"
 
   mlflow_artifact_root = "s3://${module.s3.mlflow_artifacts_bucket_name}/mlflow/"
+
+  # EFS filesystem for model artifacts and MLflow data (created in compute module)
+  efs_filesystem_id = module.compute.efs_filesystem_id
+
+  # Database URL for asyncpg (used by ML training task)
+  database_url = "postgresql://${module.database.db_username}:${module.secrets.db_password_value}@${module.database.db_address}:5432/${module.database.db_name}"
+
+  # Private subnet IDs as JSON string for Airflow variable
+  private_subnet_ids_json = jsonencode(local.private_subnet_ids)
 }

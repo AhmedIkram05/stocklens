@@ -62,3 +62,8 @@ output "autoscaling_target_id" {
   description = "Resource ID of the ECS auto scaling target"
   value       = aws_appautoscaling_target.ecs.resource_id
 }
+
+output "efs_filesystem_id" {
+  description = "EFS filesystem ID for model artifacts and MLflow data"
+  value       = aws_efs_file_system.model_artifacts.id
+}

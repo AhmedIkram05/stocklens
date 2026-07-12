@@ -29,8 +29,8 @@ resource "aws_ecs_task_definition" "mlflow" {
   family                   = local.family
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = "256"
-  memory                   = "512"
+  cpu                      = "512"
+  memory                   = "1024"
   execution_role_arn       = var.ecs_execution_role_arn
   task_role_arn            = var.mlflow_task_role_arn
   runtime_platform {
@@ -43,13 +43,7 @@ resource "aws_ecs_task_definition" "mlflow" {
       name      = "mlflow"
       image     = "ghcr.io/mlflow/mlflow:v2.20.3"
       essential = true
-      command = ["mlflow", "server",
-        "--host", "0.0.0.0",
-        "--port", "5000",
-        "--backend-store-uri", var.mlflow_backend_store_uri,
-        "--default-artifact-root", var.mlflow_artifact_root,
-        "--artifacts-destination", var.mlflow_artifact_root,
-      ]
+      command = ["sh", "-c", "pip install -q psycopg2-binary && exec mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri ${var.mlflow_backend_store_uri} --default-artifact-root ${var.mlflow_artifact_root} --artifacts-destination ${var.mlflow_artifact_root}"]
 
       portMappings = [
         {
@@ -130,15 +124,15 @@ resource "aws_ecs_service" "mlflow" {
   deployment_maximum_percent         = 200
 
   network_configuration {
-    subnets          = var.private_subnet_ids
-    security_groups  = [var.mlflow_sg_id]
-    assign_public_ip = false
+    subnets         = var.private_subnet_ids
+    security_groups = [var.mlflow_sg_id]
+    # ponytail: dev — no NAT gateway, use public IPs
+    assign_public_ip = true
   }
 
   service_registries {
     registry_arn   = aws_service_discovery_service.mlflow.arn
     container_name = "mlflow"
-    container_port = 5000
   }
 
   enable_ecs_managed_tags = true
@@ -171,7 +165,7 @@ resource "aws_ecs_task_definition" "mlflow_upgrade" {
       name      = "mlflow-upgrade"
       image     = "ghcr.io/mlflow/mlflow:v2.20.3"
       essential = true
-      command   = ["mlflow", "db", "upgrade", var.mlflow_backend_store_uri]
+      command = ["sh", "-c", "pip install -q psycopg2-binary && python3 -c \"import psycopg2; c = psycopg2.connect('${var.mlflow_backend_store_uri}'); c.cursor().execute('DROP TABLE IF EXISTS alembic_version'); c.commit(); c.close()\" && exec mlflow db upgrade ${var.mlflow_backend_store_uri}"]
 
       environment = [
         {

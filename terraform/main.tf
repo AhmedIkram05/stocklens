@@ -27,12 +27,14 @@ terraform {
 
   # ── Remote state ──
   # Run scripts/bootstrap-state.sh <env> <region> before first apply.
+  # Values hardcoded — bootstrap script always creates these names.
+  # Change manually if you use a different env/region.
   backend "s3" {
-    bucket         = var.tf_state_bucket
-    key            = "stocklens/${var.environment}/terraform.tfstate"
-    region         = var.aws_region
-    dynamodb_table = var.tf_state_lock_table
-    encrypt        = true
+    bucket       = "stocklens-tfstate"
+    key          = "stocklens/production/terraform.tfstate"
+    region       = "eu-west-2"
+    use_lockfile = true
+    encrypt      = true
   }
 }
 
@@ -158,6 +160,7 @@ module "compute" {
   jwt_secret_arn          = module.secrets.jwt_secret_arn
   redis_pass_secret_arn   = module.secrets.redis_pass_secret_arn
   champion_s3_uri         = var.champion_s3_uri
+  s3_kms_key_arn          = module.s3.s3_kms_key_arn
   ecs_min_capacity        = var.ecs_min_capacity
   ecs_max_capacity        = var.ecs_max_capacity
   ecs_cpu_target          = var.ecs_cpu_target
@@ -184,20 +187,27 @@ module "mlflow" {
 # ── Airflow (R4) ─────────────────────────────────────────────────────
 
 module "airflow" {
-  source                   = "./modules/airflow"
-  app_name                 = var.app_name
-  environment              = var.environment
-  aws_region               = var.aws_region
-  ecs_cluster_id           = module.compute.ecs_cluster_id
-  ecs_execution_role_arn   = module.iam.ecs_execution_role_arn
-  airflow_task_role_arn    = module.iam.airflow_task_role_arn
-  airflow_sg_id            = module.network.airflow_sg_id
-  private_subnet_ids       = local.private_subnet_ids
-  airflow_sql_alchemy_conn = local.airflow_db_uri
-  mlflow_tracking_uri      = module.mlflow.mlflow_tracking_uri
-  drift_alarm_name         = module.monitoring.drift_alarm_name
-  ecs_cluster_arn          = module.compute.ecs_cluster_arn
-  eventbridge_ecs_role_arn = module.iam.eventbridge_ecs_role_arn
+  source                         = "./modules/airflow"
+  app_name                       = var.app_name
+  environment                    = var.environment
+  aws_region                     = var.aws_region
+  ecs_cluster_id                 = module.compute.ecs_cluster_id
+  ecs_execution_role_arn         = module.iam.ecs_execution_role_arn
+  airflow_task_role_arn          = module.iam.airflow_task_role_arn
+  airflow_sg_id                  = module.network.airflow_sg_id
+  private_subnet_ids             = local.private_subnet_ids
+  airflow_sql_alchemy_conn       = local.airflow_db_uri
+  mlflow_tracking_uri            = module.mlflow.mlflow_tracking_uri
+  drift_alarm_name               = module.monitoring.drift_alarm_name
+  ecs_cluster_arn                = module.compute.ecs_cluster_arn
+  eventbridge_ecs_role_arn       = module.iam.eventbridge_ecs_role_arn
+  airflow_image                  = var.airflow_image
+  ml_training_task_role_arn      = module.iam.ml_training_task_role_arn
+  ml_training_image              = var.ml_training_image
+  efs_filesystem_id              = local.efs_filesystem_id
+  ecs_cluster_name               = module.compute.ecs_cluster_name
+  ml_training_task_definition_family = module.airflow.ml_training_task_definition_family
+  database_url                   = local.database_url
 }
 
 # ── WAF ──────────────────────────────────────────────────────────────

@@ -46,7 +46,8 @@ resource "aws_iam_role_policy_attachment" "ecs_task_cloudwatch" {
 
 resource "aws_ecr_repository" "app" {
   name                 = "${var.app_name}-${var.environment}"
-  image_tag_mutability = "IMMUTABLE"
+  # ponytail: dev — mutable tags for fast iteration
+  image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
     scan_on_push = true
@@ -91,7 +92,7 @@ resource "aws_lb" "main" {
   load_balancer_type = "application"
   security_groups    = [var.alb_sg_id]
   subnets            = var.public_subnet_ids
-  ip_address_type    = "dualstack"
+  ip_address_type    = "ipv4"
 
   enable_deletion_protection = true
 
@@ -275,9 +276,11 @@ resource "aws_ecs_service" "main" {
   }
 
   network_configuration {
-    subnets          = var.private_subnet_ids
-    security_groups  = [var.ecs_tasks_sg_id]
-    assign_public_ip = false
+    subnets         = var.private_subnet_ids
+    security_groups = [var.ecs_tasks_sg_id]
+    # ponytail: dev — public IPs needed since subnets have no NAT gateway.
+    # Switch to false + NAT GW or VPC endpoint for Secrets Manager in prod.
+    assign_public_ip = true
   }
 
   enable_ecs_managed_tags = true
@@ -336,8 +339,36 @@ resource "aws_appautoscaling_policy" "ecs_rps" {
 
   target_tracking_scaling_policy_configuration {
     predefined_metric_specification {
-      predefined_metric_type = "ECSServiceAverageRequestCountPerTarget"
+      predefined_metric_type = "ALBRequestCountPerTarget"
+      # format: app/<alb-name>/<alb-id>/targetgroup/<tg-name>/<tg-id>
+      resource_label = "${aws_lb.main.arn_suffix}/${aws_lb_target_group.app.arn_suffix}"
     }
-    target_value = var.ecs_rps_target
+    target_value     = var.ecs_rps_target
+    disable_scale_in = false
   }
+}
+
+# ── EFS filesystem for model artifacts and MLflow data ────────────────
+
+resource "aws_efs_file_system" "model_artifacts" {
+  creation_token = "${var.app_name}-${var.environment}-model-artifacts"
+
+  encrypted  = true
+  kms_key_id = var.s3_kms_key_arn
+
+  lifecycle_policy {
+    transition_to_ia = "AFTER_30_DAYS"
+  }
+
+  tags = {
+    Name = "${var.app_name}-model-artifacts-${var.environment}"
+  }
+}
+
+resource "aws_efs_mount_target" "model_artifacts" {
+  count = length(var.private_subnet_ids)
+
+  file_system_id  = aws_efs_file_system.model_artifacts.id
+  subnet_id       = var.private_subnet_ids[count.index]
+  security_groups = [var.ecs_tasks_sg_id]
 }

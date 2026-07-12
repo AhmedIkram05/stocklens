@@ -145,8 +145,8 @@ resource "aws_iam_role" "mlflow_task" {
   })
 }
 
+# ponytail: always created; Terraform handles unknown ARN at apply time.
 resource "aws_iam_policy" "mlflow_task_s3_kms" {
-  count       = var.mlflow_artifacts_bucket_arn != "" ? 1 : 0
   name        = "${var.app_name}-mlflow-task-s3-kms-${var.environment}"
   description = "Allow MLflow task to read/write artifacts to S3 and use KMS"
 
@@ -179,9 +179,8 @@ resource "aws_iam_policy" "mlflow_task_s3_kms" {
 }
 
 resource "aws_iam_role_policy_attachment" "mlflow_task_s3_kms" {
-  count      = var.mlflow_artifacts_bucket_arn != "" ? 1 : 0
   role       = aws_iam_role.mlflow_task.name
-  policy_arn = aws_iam_policy.mlflow_task_s3_kms[0].arn
+  policy_arn = aws_iam_policy.mlflow_task_s3_kms.arn
 }
 
 # ── Airflow Fargate task role (R4) ───────────────────────────────────
@@ -288,3 +287,95 @@ resource "aws_iam_role_policy_attachment" "eventbridge_ecs_run" {
   role       = aws_iam_role.eventbridge_ecs.name
   policy_arn = aws_iam_policy.eventbridge_ecs_run.arn
 }
+
+# ── GPU ML Training task role ────────────────────────────────────────
+# Used by the ML training ECS task (runs on GPU instances via EC2 launch type).
+# Needs S3 for model artifacts, KMS, CloudWatch Logs, and Secrets Manager.
+
+resource "aws_iam_role" "ml_training_task" {
+  name = "${var.app_name}-ml-training-task-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "ecs-tasks.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_policy" "ml_training_task_s3_kms" {
+  name        = "${var.app_name}-ml-training-task-s3-kms-${var.environment}"
+  description = "Allow ML training task to access S3 artifacts, use KMS, and read secrets"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:ListBucket",
+          "s3:GetObjectVersion",
+        ]
+        Resource = compact([
+          var.mlflow_artifacts_bucket_arn != "" ? var.mlflow_artifacts_bucket_arn : "",
+          var.mlflow_artifacts_bucket_arn != "" ? "${var.mlflow_artifacts_bucket_arn}/*" : "",
+          var.drift_reports_bucket_arn != "" ? var.drift_reports_bucket_arn : "",
+          var.drift_reports_bucket_arn != "" ? "${var.drift_reports_bucket_arn}/*" : "",
+        ])
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+        ]
+        Resource = var.s3_kms_key_arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret",
+        ]
+        Resource = var.secret_arns
+      },
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ml_training_task_s3_kms" {
+  role       = aws_iam_role.ml_training_task.name
+  policy_arn = aws_iam_policy.ml_training_task_s3_kms.arn
+}
+
+# CloudWatch Logs for ML training task
+resource "aws_iam_policy" "ml_training_task_logs" {
+  name        = "${var.app_name}-ml-training-task-logs-${var.environment}"
+  description = "Allow ML training task to write logs to CloudWatch"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogStreams",
+      ]
+      Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${var.app_name}-ml-training-${var.environment}:*"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ml_training_task_logs" {
+  role       = aws_iam_role.ml_training_task.name
+  policy_arn = aws_iam_policy.ml_training_task_logs.arn
+}
+
+data "aws_caller_identity" "current" {}

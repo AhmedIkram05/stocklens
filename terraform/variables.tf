@@ -38,6 +38,18 @@ variable "container_image" {
   type        = string
 }
 
+variable "airflow_image" {
+  description = "ECR image tag for the Airflow container (e.g., account.dkr.ecr.eu-west-2.amazonaws.com/stocklens-dev:airflow-latest)"
+  type        = string
+  default     = "apache/airflow:2.11.0"
+}
+
+variable "ml_training_image" {
+  description = "ECR image tag for the GPU ML training container (e.g., account.dkr.ecr.eu-west-2.amazonaws.com/stocklens-dev:ml-training-latest)"
+  type        = string
+  default     = ""
+}
+
 variable "cors_origins" {
   description = "List of allowed CORS origins (e.g., https://app.stocklens.com)"
   type        = list(string)
@@ -115,20 +127,6 @@ variable "db_max_storage_gb" {
   description = "RDS maximum storage autoscaling limit in GB"
   type        = number
   default     = 100
-}
-
-# ── Remote state ──
-
-variable "tf_state_bucket" {
-  description = "S3 bucket for Terraform remote state"
-  type        = string
-  default     = ""
-}
-
-variable "tf_state_lock_table" {
-  description = "DynamoDB table for Terraform state locking"
-  type        = string
-  default     = ""
 }
 
 # ── Budgets ──

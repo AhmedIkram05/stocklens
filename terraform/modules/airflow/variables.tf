@@ -82,3 +82,41 @@ variable "eventbridge_ecs_role_arn" {
   type        = string
   default     = ""
 }
+
+# GPU ML Training task
+variable "ml_training_task_role_arn" {
+  description = "ARN of the GPU ML training task IAM role"
+  type        = string
+  default     = ""
+}
+
+variable "ml_training_image" {
+  description = "Docker image for ML training (GPU-enabled)"
+  type        = string
+  default     = ""
+}
+
+variable "efs_filesystem_id" {
+  description = "EFS filesystem ID for model artifacts and MLflow data"
+  type        = string
+  default     = ""
+}
+
+# Airflow Variables (passed via environment)
+variable "ecs_cluster_name" {
+  description = "ECS cluster name for EcsRunTaskOperator"
+  type        = string
+  default     = ""
+}
+
+variable "ml_training_task_definition_family" {
+  description = "ML training task definition family name"
+  type        = string
+  default     = ""
+}
+
+variable "database_url" {
+  description = "Database URL for ML training container"
+  type        = string
+  default     = ""
+}

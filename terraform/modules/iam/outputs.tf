@@ -39,3 +39,14 @@ output "eventbridge_ecs_role_arn" {
   description = "ARN of the IAM role for EventBridge to run ECS tasks"
   value       = aws_iam_role.eventbridge_ecs.arn
 }
+
+# GPU ML Training task role
+output "ml_training_task_role_arn" {
+  description = "ARN of the GPU ML training task IAM role"
+  value       = aws_iam_role.ml_training_task.arn
+}
+
+output "ml_training_task_role_name" {
+  description = "Name of the GPU ML training task IAM role"
+  value       = aws_iam_role.ml_training_task.name
+}

@@ -24,11 +24,11 @@ output "dashboard_name" {
 }
 
 output "drift_alarm_name" {
-  value       = try(aws_cloudwatch_metric_alarm.drift_alert[0].alarm_name, "")
+  value       = try(aws_cloudwatch_metric_alarm.drift_alert.alarm_name, "")
   description = "Name of the drift alert alarm"
 }
 
 output "drift_alarm_arn" {
-  value       = try(aws_cloudwatch_metric_alarm.drift_alert[0].arn, "")
+  value       = try(aws_cloudwatch_metric_alarm.drift_alert.arn, "")
   description = "ARN of the drift alert alarm"
 }
