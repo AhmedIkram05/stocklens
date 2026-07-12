@@ -116,7 +116,7 @@ jobs:
         run: |
           ./venv/bin/pip install maturin
           cd backend/ml/features-engine
-          ./venv/bin/maturin develop
+          ./venv/bin/python -m maturin develop
       - name: Pytest
         run: |
           ./venv/bin/pip install ".[dev]"
