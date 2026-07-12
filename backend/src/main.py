@@ -42,19 +42,30 @@ logger = structlog.get_logger()
 
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
+    import sys
+
+    print(f"LIFESPAN START: environment={settings.ENVIRONMENT}", file=sys.stderr, flush=True)
     logger.info("app_starting", environment=settings.ENVIRONMENT)
 
     # Run pending Alembic migrations at startup so the database schema is
     # always up to date before the first request is served.
     try:
+        print("LIFESPAN: running migrations...", file=sys.stderr, flush=True)
         await run_migrations()
+        print("LIFESPAN: migrations complete", file=sys.stderr, flush=True)
         logger.info("migrations_complete")
-    except Exception:
+    except Exception as e:
+        print(f"LIFESPAN ERROR in migrations: {e}", file=sys.stderr, flush=True)
+        import traceback
+
+        traceback.print_exc(file=sys.stderr)
         logger.exception("migrations_failed")
         raise
 
     # Initialise raw asyncpg connection pool for runtime queries.
+    print("LIFESPAN: init pool...", file=sys.stderr, flush=True)
     await init_pool(settings.DATABASE_URL)
+    print("LIFESPAN: pool initialized", file=sys.stderr, flush=True)
     logger.info("database_pool_initialised")
 
     # Seed categories on first startup
@@ -73,6 +84,7 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("prediction_model_not_found", path=settings.PREDICTION_MODEL_PATH)
 
+    print("LIFESPAN: yielding...", file=sys.stderr, flush=True)
     yield
 
     logger.info("app_shutting_down")

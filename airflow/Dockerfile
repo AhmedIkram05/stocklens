@@ -62,8 +62,9 @@ RUN pip install --no-cache-dir \
 COPY --from=rust-builder /wheels /wheels
 RUN pip install --no-deps /wheels/features_engine*.whl
 
-# Copy DAGs and config
+# Copy DAGs, migration helpers, and config
 COPY airflow/dags/ /opt/airflow/dags/
+COPY airflow/scripts/ /opt/airflow/scripts/
 COPY airflow/config/airflow.cfg /opt/airflow/config/
 
 # Airflow env defaults
@@ -73,9 +74,6 @@ ENV AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
 ENV AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL=30
 
 WORKDIR ${AIRFLOW_HOME}
-
-# Initialise Airflow metadata DB at build time
-RUN airflow db migrate
 
 # Backend source code is mounted at runtime via docker-compose volumes
 # (not copied into the image) so DAGs can import backend modules directly.

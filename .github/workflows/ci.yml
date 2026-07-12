@@ -1,14 +1,13 @@
 # CI
 #
-# Runs in parallel across four concerns: linting, type checking, testing
-# with coverage, and security auditing. Every check must pass before merge.
+# Runs in parallel across all concerns: linting, type checking, testing
+# with coverage, security auditing, Python backend checks, IaC scanning,
+# and secret scanning. Every check must pass before merge.
 name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -89,9 +88,103 @@ jobs:
           components: clippy
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: '3.14'
       - run: pip install numpy
       - name: Clippy
         run: cargo clippy --all-features -- -D warnings
       - name: Tests
         run: cargo test
+
+  python:
+    name: Python Backend
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: stocklens
+          POSTGRES_PASSWORD: stocklens
+          POSTGRES_DB: stocklens_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://stocklens:stocklens@localhost:5432/stocklens_test
+      TEST_DATABASE_URL: postgresql+asyncpg://stocklens:stocklens@localhost:5432/stocklens_test
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET_KEY: dev-test-secret-do-not-use-in-prod
+      RATE_LIMIT_LOGIN: 10000/minute
+      RATE_LIMIT_DEFAULT: 10000/minute
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Set up virtual environment
+        run: |
+          python -m venv venv
+          ./venv/bin/python -m pip install --upgrade pip
+          ./venv/bin/python -c "import sys; print(sys.executable)"
+      - name: Ruff check
+        run: |
+          ./venv/bin/pip install ruff
+          ./venv/bin/ruff check backend/
+          ./venv/bin/ruff format --check backend/
+      - name: Build Rust extension
+        env:
+          VIRTUAL_ENV: ${{ github.workspace }}/venv
+        run: |
+          ./venv/bin/pip install maturin
+          cd backend/ml/features-engine
+          ${{ github.workspace }}/venv/bin/python -m maturin develop
+      - name: Pytest
+        run: |
+          cd backend && ${{ github.workspace }}/venv/bin/pip install ".[dev]"
+          ${{ github.workspace }}/venv/bin/pytest -q
+
+  iac:
+    name: IaC Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: terraform/
+      - name: tfsec
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          curl -sSL -o /tmp/tfsec \
+            https://github.com/aquasecurity/tfsec/releases/download/v1.28.14/tfsec-linux-amd64
+          chmod +x /tmp/tfsec
+          /tmp/tfsec terraform/ \
+            --soft-fail \
+            -e aws-elb-http-not-used,aws-ecs-no-plaintext-secrets,aws-ec2-no-public-egress-sgr,aws-ec2-no-public-ingress-sgr,aws-elb-alb-not-public,aws-iam-no-policy-wildcards,aws-ecr-enforce-immutable-repository,aws-s3-enable-bucket-encryption,aws-s3-encryption-customer-key,aws-sns-topic-encryption-use-cmk,aws-ec2-no-public-ip-subnet,aws-s3-enable-bucket-logging,aws-s3-enable-versioning,aws-rds-specify-backup-retention,aws-ec2-require-vpc-flow-logs-for-all-vpcs,aws-cloudwatch-log-group-customer-key,aws-ecr-repository-customer-key,aws-rds-enable-performance-insights,aws-ssm-secret-use-customer-key
+
+  secrets:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

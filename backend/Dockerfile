@@ -5,6 +5,7 @@ FROM python:3.14-slim AS rust-builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     build-essential \
+    gcc-aarch64-linux-gnu \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust via rustup
@@ -15,7 +16,10 @@ RUN pip install maturin --no-cache-dir
 
 WORKDIR /src
 COPY ml/features-engine /src
-RUN maturin build --release --features extension --out /wheels
+# Cross-compile for ARM64 (ADR 009) — required for Fargate Graviton runtime.
+# Without --target the wheel matches the build host arch and import-crashes.
+ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+RUN maturin build --release --target aarch64-unknown-linux-gnu --features extension --out /wheels
 
 
 # Stage 1: Build dependencies with uv
@@ -61,6 +65,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 WORKDIR /app
 COPY src/ src/
 COPY ml/ ml/
+COPY docker/ docker/
 COPY alembic/ alembic/
 COPY alembic.ini pyproject.toml uv.lock ./
 
@@ -78,4 +83,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+ENTRYPOINT ["python", "docker/bootstrap.py"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
