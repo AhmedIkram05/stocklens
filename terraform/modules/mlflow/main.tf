@@ -20,6 +20,7 @@ locals {
 
 resource "aws_cloudwatch_log_group" "mlflow" {
   # checkov:skip=CKV_AWS_158:dev — KMS key not provisioned yet
+  # tfsec:ignore:aws-cloudwatch-log-group-encrypted:dev — KMS key not provisioned yet
   name              = "/ecs/${local.family}"
   retention_in_days = 365
 }

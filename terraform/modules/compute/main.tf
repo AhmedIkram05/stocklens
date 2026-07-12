@@ -15,6 +15,7 @@
 
 resource "aws_cloudwatch_log_group" "app" {
   # checkov:skip=CKV_AWS_158:dev — KMS key not provisioned yet
+  # tfsec:ignore:aws-cloudwatch-log-group-encrypted:dev — KMS key not provisioned yet
   name              = "/ecs/${var.app_name}-${var.environment}"
   retention_in_days = 365
 }
