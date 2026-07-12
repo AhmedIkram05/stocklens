@@ -17,6 +17,7 @@ resource "aws_security_group" "alb" {
 
 resource "aws_security_group_rule" "alb_ingress_http" {
   # checkov:skip=CKV_AWS_260:dev — public ALB needs port 80 from internet; add CloudFront + restrict in prod
+  # tfsec:ignore:aws-ec2-no-public-ingress-sgr:dev — public ALB needs port 80 from internet
   security_group_id = aws_security_group.alb.id
   type              = "ingress"
   from_port         = 80
@@ -39,6 +40,7 @@ resource "aws_security_group_rule" "alb_ingress_http" {
 
 resource "aws_security_group_rule" "alb_egress_all" {
   # checkov:skip=CKV_AWS_382:dev — unrestricted egress for dev; scope per-service in prod
+  # tfsec:ignore:aws-ec2-no-public-egress-sgr:dev — unrestricted egress for dev; scope per-service in prod
   security_group_id = aws_security_group.alb.id
   type              = "egress"
   from_port         = 0
@@ -69,6 +71,7 @@ resource "aws_security_group_rule" "ecs_tasks_ingress_alb" {
 
 resource "aws_security_group_rule" "ecs_tasks_egress_all" {
   # checkov:skip=CKV_AWS_382:dev — unrestricted egress for dev; scope per-service in prod
+  # tfsec:ignore:aws-ec2-no-public-egress-sgr:dev — unrestricted egress for dev; scope per-service in prod
   security_group_id = aws_security_group.ecs_tasks.id
   type              = "egress"
   from_port         = 0
@@ -147,6 +150,7 @@ resource "aws_security_group_rule" "mlflow_ingress_rds" {
 
 resource "aws_security_group_rule" "mlflow_egress_all" {
   # checkov:skip=CKV_AWS_382:dev — unrestricted egress for dev; scope per-service in prod
+  # tfsec:ignore:aws-ec2-no-public-egress-sgr:dev — unrestricted egress for dev; scope per-service in prod
   security_group_id = aws_security_group.mlflow.id
   type              = "egress"
   from_port         = 0
@@ -177,6 +181,7 @@ resource "aws_security_group_rule" "airflow_ingress_rds" {
 
 resource "aws_security_group_rule" "airflow_egress_all" {
   # checkov:skip=CKV_AWS_382:dev — unrestricted egress for dev; scope per-service in prod
+  # tfsec:ignore:aws-ec2-no-public-egress-sgr:dev — unrestricted egress for dev; scope per-service in prod
   security_group_id = aws_security_group.airflow.id
   type              = "egress"
   from_port         = 0

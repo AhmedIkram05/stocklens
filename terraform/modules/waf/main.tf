@@ -1,7 +1,7 @@
 # WAF logging to CloudWatch (CKV_AWS_192)
 resource "aws_cloudwatch_log_group" "waf" {
   # checkov:skip=CKV_AWS_158:dev — KMS key not provisioned yet
-  # tfsec:ignore:aws-cloudwatch-log-group-encrypted:dev — KMS key not provisioned yet
+  # tfsec:ignore:aws-cloudwatch-log-group-customer-key:dev — KMS key not provisioned yet
   name              = "/aws/waf/${var.env}-stocklens"
   retention_in_days = 365
 }
