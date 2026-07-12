@@ -98,6 +98,33 @@ jobs:
   python:
     name: Python Backend
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: stocklens
+          POSTGRES_PASSWORD: stocklens
+          POSTGRES_DB: stocklens_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://stocklens:stocklens@localhost:5432/stocklens_test
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET_KEY: dev-test-secret-do-not-use-in-prod
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -122,10 +149,6 @@ jobs:
           cd backend/ml/features-engine
           ${{ github.workspace }}/venv/bin/python -m maturin develop
       - name: Pytest
-        env:
-          JWT_SECRET_KEY: dev-test-secret-do-not-use-in-prod
-          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test
-          REDIS_URL: redis://localhost:6379/0
         run: |
           cd backend && ${{ github.workspace }}/venv/bin/pip install ".[dev]"
           ${{ github.workspace }}/venv/bin/pytest -q
