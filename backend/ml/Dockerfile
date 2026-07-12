@@ -43,10 +43,6 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 
-# Install CUDA-enabled PyTorch first (for x86_64 GPU training)
-# Uses PyTorch's CUDA 12.1 index; on ARM64 this falls back to CPU-only
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu121
-
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --no-dev
 
@@ -55,22 +51,17 @@ COPY --from=rust-builder /wheels /wheels
 RUN uv pip install --no-deps /wheels/features_engine*.whl
 
 # Stage 3: Runtime image
-FROM nvidia/cuda:12.4-runtime-ubuntu22.04 AS runtime
+FROM python:3.14-slim AS runtime
 
-# Install curl for healthcheck, python3, libgomp for torch parallelism
+# Install curl for healthcheck, libgomp for torch parallelism
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    python3 \
-    python3-venv \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create virtual environment and copy from builder
-RUN python3 -m venv /app/.venv
-ENV PATH="/app/.venv/bin:$PATH"
-
-# Copy virtual environment from builder (includes torch + deps)
+# Copy virtual environment from builder
 COPY --from=builder /app/.venv /app/.venv
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Copy uv for dep management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
