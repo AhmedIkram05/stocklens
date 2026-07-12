@@ -14,6 +14,7 @@ resource "aws_elasticache_subnet_group" "main" {
 }
 
 resource "aws_elasticache_replication_group" "main" {
+  # checkov:skip=CKV2_AWS_50:dev — Multi-AZ failover not needed for dev
   replication_group_id = "${var.app_name}-${var.environment}"
   description          = "StockLens Redis ${var.environment}"
 

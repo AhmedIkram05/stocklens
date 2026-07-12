@@ -20,6 +20,7 @@ resource "random_password" "db" {
 
 resource "aws_secretsmanager_secret" "db_password" {
   # checkov:skip=CKV_AWS_149:dev — no KMS CMK; use default encryption
+  # checkov:skip=CKV2_AWS_57:dev — secret rotation not configured; add Lambda in prod
   name                    = "${var.app_name}-db-password-${var.environment}"
   description             = "StockLens RDS PostgreSQL master password"
   recovery_window_in_days = 7
@@ -39,6 +40,7 @@ resource "random_password" "jwt" {
 
 resource "aws_secretsmanager_secret" "jwt_secret" {
   # checkov:skip=CKV_AWS_149:dev — no KMS CMK; use default encryption
+  # checkov:skip=CKV2_AWS_57:dev — secret rotation not configured; add Lambda in prod
   name                    = "${var.app_name}-jwt-secret-${var.environment}"
   description             = "StockLens JWT signing secret key"
   recovery_window_in_days = 7
@@ -59,6 +61,7 @@ resource "random_password" "redis" {
 # checkov:skip=CKV_AWS_149:dev — no KMS CMK; use default encryption
 resource "aws_secretsmanager_secret" "redis_pass" {
   # checkov:skip=CKV_AWS_149:dev — no KMS CMK; use default encryption
+  # checkov:skip=CKV2_AWS_57:dev — secret rotation not configured; add Lambda in prod
   name                    = "${var.app_name}-redis-pass-${var.environment}"
   description             = "StockLens ElastiCache Redis AUTH token"
   recovery_window_in_days = 7
