@@ -428,7 +428,7 @@ class MLflowManager:
         save_dir = Path(ML_CONFIG.MODEL_ARTIFACT_DIR)
         try:
             save_dir.mkdir(parents=True, exist_ok=True)
-        except (OSError, PermissionError):
+        except (OSError, PermissionError):  # fmt: skip
             fallback = Path(tempfile.gettempdir()) / "stocklens_model"
             logger.warning(
                 "Cannot write to %s, falling back to %s",
@@ -457,7 +457,7 @@ class MLflowManager:
                 os.unlink(tmp_path)
 
         logger.info("Champion model saved to disk (atomic)", extra={"path": save_path})
-        
+
         # -- Publish to champion S3 bucket if configured --
         champion_s3_uri = os.environ.get("CHAMPION_S3_URI", "")
         if champion_s3_uri:
@@ -471,4 +471,3 @@ class MLflowManager:
             logger.info("Champion model published to S3", extra={"bucket": bucket, "key": s3_key})
 
         return save_path
-        

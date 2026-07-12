@@ -190,3 +190,11 @@ variable "ecs_rps_target" {
   type        = number
   default     = 100
 }
+
+# ── OIDC Deploy (R5) ──
+
+variable "github_repo" {
+  description = "GitHub repository in owner/repo format for OIDC deploy role trust policy"
+  type        = string
+  default     = "ahmedikram/stocklens"
+}

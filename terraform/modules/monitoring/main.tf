@@ -8,7 +8,8 @@
 # ── SNS topic and subscription ────────────────────────────────────────
 
 resource "aws_sns_topic" "alerts" {
-  name = "${var.env}-stocklens-alerts"
+  name              = "${var.env}-stocklens-alerts"
+  kms_master_key_id = "alias/aws/sns"
 }
 
 resource "aws_sns_topic_subscription" "email" {

@@ -19,8 +19,10 @@ locals {
 # ── CloudWatch log group ─────────────────────────────────────────────
 
 resource "aws_cloudwatch_log_group" "mlflow" {
+  # checkov:skip=CKV_AWS_158:dev — KMS key not provisioned yet
+  # tfsec:ignore:aws-cloudwatch-log-group-encrypted:dev — KMS key not provisioned yet
   name              = "/ecs/${local.family}"
-  retention_in_days = 30
+  retention_in_days = 365
 }
 
 # ── ECS task definition ──────────────────────────────────────────────
@@ -43,7 +45,7 @@ resource "aws_ecs_task_definition" "mlflow" {
       name      = "mlflow"
       image     = "ghcr.io/mlflow/mlflow:v2.20.3"
       essential = true
-      command = ["sh", "-c", "pip install -q psycopg2-binary && exec mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri ${var.mlflow_backend_store_uri} --default-artifact-root ${var.mlflow_artifact_root} --artifacts-destination ${var.mlflow_artifact_root}"]
+      command   = ["sh", "-c", "pip install -q psycopg2-binary && exec mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri ${var.mlflow_backend_store_uri} --default-artifact-root ${var.mlflow_artifact_root} --artifacts-destination ${var.mlflow_artifact_root}"]
 
       portMappings = [
         {
@@ -124,6 +126,7 @@ resource "aws_ecs_service" "mlflow" {
   deployment_maximum_percent         = 200
 
   network_configuration {
+    # checkov:skip=CKV_AWS_333:dev — no NAT gateway in dev VPC (ponytail)
     subnets         = var.private_subnet_ids
     security_groups = [var.mlflow_sg_id]
     # ponytail: dev — no NAT gateway, use public IPs
@@ -165,7 +168,7 @@ resource "aws_ecs_task_definition" "mlflow_upgrade" {
       name      = "mlflow-upgrade"
       image     = "ghcr.io/mlflow/mlflow:v2.20.3"
       essential = true
-      command = ["sh", "-c", "pip install -q psycopg2-binary && python3 -c \"import psycopg2; c = psycopg2.connect('${var.mlflow_backend_store_uri}'); c.cursor().execute('DROP TABLE IF EXISTS alembic_version'); c.commit(); c.close()\" && exec mlflow db upgrade ${var.mlflow_backend_store_uri}"]
+      command   = ["sh", "-c", "pip install -q psycopg2-binary && python3 -c \"import psycopg2; c = psycopg2.connect('${var.mlflow_backend_store_uri}'); c.cursor().execute('DROP TABLE IF EXISTS alembic_version'); c.commit(); c.close()\" && exec mlflow db upgrade ${var.mlflow_backend_store_uri}"]
 
       environment = [
         {

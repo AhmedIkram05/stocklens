@@ -379,8 +379,9 @@ Chronological implementation rounds from `docs/PHASE5_IMPLEMENTATION.md`. Each r
 | R2    | Champion Model Delivery (S3 bootstrap)     | `save_champion_to_disk`→S3; `docker/bootstrap.py` downloads champion before `load_model`; ADR 006; fast-fail on missing URI in prod; ARM64 maturin wheel                                                                                                                                                                                                                                                | ✅ Complete |
 | R3    | ECS Auto Scaling + Observability           | `autoscaling.tf` (CPU + request count); CloudWatch alarms + dashboard (p50/p90/p99, error rate, RDS/ECS); SNS; drift metric filter                                                                                                                                                                                                                                                                      | ✅ Complete |
 | R4    | MLflow + Airflow on RDS PostgreSQL (P1–P7) | `terraform/mlflow.tf` (RDS-backed store, retires SQLite); Airflow metadata→RDS; IAM/KMS (P5); CloudWatch alerting (P6); closed-loop drift→auto-retrain (P7)                                                                                                                                                                                                                                             | ✅ Complete |
-| R5    | CI/CD OIDC Deploy Pipeline                 | `.github/workflows/deploy.yml`: ruff→pytest→checkov+tfsec→**trivy**→**gitleaks**→docker `--platform linux/arm64` (with QEMU step)→ECR→terraform→ECS; `aws_iam_openid_connect_provider` + pinned deploy role; ECS circuit breaker auto-rollback                                                                                                                                                          | 📋 Planned  |
+| R5    | CI/CD OIDC Deploy Pipeline                 | `.github/workflows/deploy.yml`: ruff→pytest→checkov+tfsec→**trivy**→**gitleaks**→docker `--platform linux/arm64` (with QEMU step)→ECR→terraform→ECS; `aws_iam_openid_connect_provider` + pinned deploy role; ECS circuit breaker auto-rollback                                                                                                                                                          | ✅ Complete |
 | R6    | Polish, SageMaker & Verification           | Drift S3 bucket Terraform-managed; SageMaker alternate path (thin handler `import`s `service.py`, config-gated via `PREDICTION_SERVING_BACKEND`); ruff/pytest/checkov/tfsec clean; prod smoke; docs updated                                                                                                                                                                                             | 📋 Planned  |
+| R7    | GPU ML Training Infrastructure             | ML Dockerfile with CUDA PyTorch (x86_64); ECS GPU task definition (g5.xlarge, 1 GPU, 4 vCPU, 16 GB); EFS filesystem for model artifacts + MLflow data; Airflow DAG uses `PythonOperator` + boto3 `ecs.run_task` for GPU training (deviation D12); IAM role for ML training task with S3/KMS/Secrets/CloudWatch access                                                                                   | ✅ Complete |
 
 ### Phase 5 Deviations
 
@@ -396,6 +397,8 @@ Chronological implementation rounds from `docs/PHASE5_IMPLEMENTATION.md`. Each r
 | D8  | **WAF rate limit: 2000 requests/5min** (not 200 req/min as planned)                                      | 2000/5min is standard AWS rate-rule pattern; effective rate 400/min vs planned 200/min — still adequate for single-user app; tightening is a one-line change              | R1 audit               |
 | D9  | **Single `aws_budgets_budget`** (not separate warn + hard budgets)                                       | One budget with dual notifications (80% actual + 100% forecasted) achieves same effect with less resource noise                                                           | R1 audit               |
 | D10 | **`config.py` always sets `env_file=".env"`** (not `env_file=None` in prod)                              | `.env` guard raises `RuntimeError` in non-dev before config reads it; dev still uses `.env` as intended. Ponytail: same guard, fewer env-conditional code paths           | R1 audit               |
+| D11 | **GPU training runs on x86_64 EC2 (g5.xlarge) via ECS EC2 launch type**                                  | ARM64 (Graviton) has no NVIDIA GPU; CUDA PyTorch only available on x86_64. Separate task definition with X86_64 architecture.                                             | R7                     |
+| D12 | **`EcsRunTaskOperator` replaced with `PythonOperator` + boto3 `ecs.run_task`**                           | `apache-airflow-providers-amazon` has version incompatibilities with Airflow 3.x. Using boto3 directly avoids the provider dep and is functionally equivalent.            | R7                     |
 
 ### Phase 5 Implementation Notes (R1+R2)
 
@@ -413,6 +416,20 @@ Chronological implementation rounds from `docs/PHASE5_IMPLEMENTATION.md`. Each r
   3. Three minor intentional deviations from plan spec (see D8-D10): rate limit 2000/5min (not 200/min), single budget with dual notifications (not separate budgets), `env_file` always set with guard (not `env_file=None` in prod).
      `scripts/bootstrap-state.sh` restored to original (env var defaults, head-bucket idempotency, KMS encryption). **No known blockers for deployment.**
 
+- **R5 — CI/CD OIDC Deploy Pipeline**: Created `.github/workflows/deploy.yml` with 6 sequential jobs: `test` (ruff check/format + pytest), `iac-scan` (checkov + tfsec), `secret-scan` (gitleaks), `build-push` (OIDC auth via `configure-aws-credentials@v4`, docker buildx with QEMU for `linux/arm64`, ECR push via `amazon-ecr-login@v2` + `build-push-action@v5` with GHA cache), `container-scan` (trivy CRITICAL/HIGH, `needs: [build-push]`), `deploy` (terraform init + apply with remote state, `needs: [test, iac-scan, secret-scan, container-scan, build-push]`, `environment: production` requiring manual approval gate). Workflow uses OIDC `id-token: write` permission and `secrets.ECS_DEPLOY_ROLE_ARN` for AWS auth — no long-lived keys. Added `aws_iam_openid_connect_provider` for `token.actions.githubusercontent.com` + `aws_iam_role.github_deploy` with trust policy pinning `repo:${var.github_repo}:ref:refs/heads/main` in `modules/iam/main.tf`. Deploy role has broad apply perms (ecr, ecs, s3, dynamodb, kms, iam, cloudwatch, sns, budgets, ce, wafv2, elasticache, rds, autoscaling, logs, elb, lambda). Added `ecs_deploy_role_arn` output in both IAM module and root `outputs.tf`. Added `github_repo` variable (default `ahmedikram/stocklens`) to root and IAM module `variables.tf`, wired through root `main.tf`. ECS deployment circuit breaker with `rollback = true` already existed in `modules/compute/main.tf` (lines 289-296 from R3). `terraform validate` passes. Circuit breaker auto-rollback (already in place) + manual `production` approval gate yields safe zero-downtime deploys.
+
+### Phase 5 Implementation Notes (R7 Deployment — 2026-07-12)
+
+- **Deployment result**: All 4 ECS services deployed and RUNNING on Fargate — API 2/2 tasks, MLflow 1/1, Airflow webserver 1/1, Airflow scheduler 1/1.
+- **DAG parsing**: `weekly_retraining.py` parses cleanly in production (1 DAG, 0 errors). Scheduler DagFileProcessorManager confirms parsing via logs.
+- **Deployment blockers fixed** (not logged as tracker items — bug fixes only):
+  - Airflow 3.x requires standalone `airflow dag-processor` process — added to scheduler entrypoint.
+  - Shell `&&` vs `&` operator precedence: migration chain was running in background. Fixed with subshell.
+  - Migration FK conflict: `DROP SCHEMA public CASCADE; CREATE SCHEMA public` for clean Airflow migration.
+  - Nested quote bug in inline `python3 -c` one-liner: moved to `scripts/drop_alembic_version.py` script.
+  - Duplicate env vars in Airflow terraform module cleaned up.
+- **Key deviation applied during deployment**: `EcsRunTaskOperator` → `PythonOperator` + boto3 (see D12). Avoids `apache-airflow-providers-amazon` dependency which has Airflow 3.x version incompatibilities.
+
 ### Phase 5 Verification Checklist
 
 - [x] **`terraform validate` clean** (fmt + validate pass; remote state configured but `terraform init` with real creds+S3 bucket is a pre-deploy step)
@@ -422,7 +439,7 @@ Chronological implementation rounds from `docs/PHASE5_IMPLEMENTATION.md`. Each r
 - [x] **`docker/bootstrap.py` exits 1 when `CHAMPION_S3_URI` empty and `ENVIRONMENT=production`; downloads champion to `/model_artifacts/champion/`**
 - [ ] `GET /predict/AAPL` serves from S3-delivered champion on a fresh Fargate task (no baked-in `.pt`)
 - [ ] ALB returns 200 on HTTP (80) via `alb_dns_name` output; no ACM cert / HTTP→HTTPS redirect (internal Expo Go client)
-- [ ] WAF blocks >200 req/min/IP and SQLi/XSS test payloads (blocking from day 1, no metrics-only phase)
+- [ ] WAF blocks >2000 req/5min/IP and SQLi/XSS test payloads (blocking from day 1, no metrics-only phase)
 - [x] **ECS auto-scaling configured in code** (CPU 70% + request count 100/target; min=2, max=6)
 - [x] **CloudWatch dashboard with 6 widgets** (latency p50/p99, HTTP 4xx/5xx, ECS CPU/Mem, RDS, Redis, drift alerts)
 - [x] **8 CloudWatch alarms** (CPU/Mem high, 4xx/5xx, latency p50/p99, RDS storage/connections) + drift metric filter
@@ -432,10 +449,24 @@ Chronological implementation rounds from `docs/PHASE5_IMPLEMENTATION.md`. Each r
 - [x] **MLflow/Airflow IAM roles** (mlflow_task S3+KMS, airflow_task S3+KMS+ecs:RunTask, eventbridge_ecs ECS RunTask)
 - [x] **MLflow/Airflow security groups** (RDS ingress from both, port 5000 self for MLflow)
 - [x] **P7 closed-loop drift→retrain trigger** (EventBridge rule on drift alarm ALARM state → ECS RunTask trigger_retrain)
+- [x] **`deploy.yml` created** with 6 jobs: test, iac-scan, secret-scan, build-push (OIDC+QEMU+ARM64), container-scan (trivy), deploy (terraform+remote state, manual approval gate)
+- [x] **`aws_iam_openid_connect_provider` for GitHub created** with pinned trust policy (`repo:ahmedikram/stocklens:ref:refs/heads/main`)
+- [x] **`ecs_deploy_role_arn` output** in IAM module + root `outputs.tf` for `gh secret set ECS_DEPLOY_ROLE_ARN`
+- [x] **`github_repo` variable** in root + IAM module `variables.tf` (default `ahmedikram/stocklens`)
+- [x] **ECS circuit breaker enabled** (already in `modules/compute/main.tf` from R3: `deployment_circuit_breaker { enable = true; rollback = true }`)
+- [x] **`terraform validate` passes** with OIDC provider + deploy role
 - [ ] `deploy.yml` OIDC role assumed; `docker buildx --platform linux/arm64` (with QEMU step) pushed to ECR; `terraform apply` uses remote state; ECS force-new-deployment pulls new task; circuit breaker auto-rollback
 - [ ] `ruff check` + `pytest` + `checkov` + `tfsec` clean in CI
 - [ ] SageMaker serverless endpoint deployed + `/predict` routes to it via `PREDICTION_SERVING_BACKEND=sagemaker` (R6); thin handler `import`s `service.py`
 - [x] **Redis TLS: `rediss://` configured for ElastiCache in `config.py`**
+- [x] **R7 GPU ML Training: ML Dockerfile uses `nvidia/cuda:12.4-runtime-ubuntu22.04` base + CUDA PyTorch index (cu121); x86_64 build**
+- [x] **R7 GPU ML Training: ECS task definition (g5.xlarge, 4 vCPU, 16 GB, 1 GPU, X86_64, EFS volumes for model artifacts + MLflow data)**
+- [x] **R7 GPU ML Training: EFS filesystem created with mount targets in private subnets; IAM role for ML training task with S3/KMS/Secrets/CloudWatch access**
+- [x] **R7 GPU ML Training: Airflow DAG uses `PythonOperator` + boto3 `ecs.run_task` (not `EcsRunTaskOperator` — see D12) targeting GPU task definition**
+- [x] **R7 GPU ML Training: Airflow Variables injected via ECS env vars (`AIRFLOW_VAR_*`) for cluster name, task definition, subnets, SG, DB URL, MLflow URI**
+- [ ] `docker buildx --platform linux/amd64` GPU training image pushed to ECR; `ml_training_image` variable set in Terraform
+- [x] **R7 GPU ML Training: Airflow DAG parses in production — `weekly_retraining.py` (1 DAG, 0 errors) confirmed via scheduler logs**
+- [ ] Manual DAG run triggers GPU task on g5.xlarge; training completes in ~30-60 min (vs 2-3h CPU); MLflow logs metrics; champion artifact saved to EFS/S3
 
 ---
 

@@ -14,6 +14,7 @@ resource "aws_elasticache_subnet_group" "main" {
 }
 
 resource "aws_elasticache_replication_group" "main" {
+  # checkov:skip=CKV2_AWS_50:dev — Multi-AZ failover not needed for dev
   replication_group_id = "${var.app_name}-${var.environment}"
   description          = "StockLens Redis ${var.environment}"
 
@@ -38,6 +39,7 @@ resource "aws_elasticache_replication_group" "main" {
   snapshot_retention_limit   = 3
   auto_minor_version_upgrade = true
 
+  # checkov:skip=CKV_AWS_191:dev — KMS CMK not provisioned yet for ElastiCache
   at_rest_encryption_enabled = true
   transit_encryption_enabled = true
   auth_token                 = var.redis_pass
