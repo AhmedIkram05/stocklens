@@ -48,5 +48,5 @@ variable "s3_kms_key_arn" {
 variable "github_repo" {
   description = "GitHub repository in owner/repo format for OIDC deploy role trust policy"
   type        = string
-  default     = "ahmedikram/stocklens"
+  default     = "AhmedIkram05/stocklens"
 }

@@ -196,5 +196,5 @@ variable "ecs_rps_target" {
 variable "github_repo" {
   description = "GitHub repository in owner/repo format for OIDC deploy role trust policy"
   type        = string
-  default     = "ahmedikram/stocklens"
+  default     = "AhmedIkram05/stocklens"
 }

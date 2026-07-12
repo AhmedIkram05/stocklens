@@ -154,7 +154,18 @@ jobs:
       - name: Pytest
         run: |
           cd backend && ${{ github.workspace }}/venv/bin/pip install ".[dev]"
-          ${{ github.workspace }}/venv/bin/pytest -q
+          ${{ github.workspace }}/venv/bin/pytest -q \
+            --cov=src \
+            --cov-report=xml:coverage.xml \
+            --cov-report=lcov:coverage/lcov.info \
+            --cov-report=term-missing
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v6
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./backend/coverage/lcov.info,./backend/coverage.xml
+          flags: backend
+          fail_ci_if_error: true
 
   iac:
     name: IaC Security Scan

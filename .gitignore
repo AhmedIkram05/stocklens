@@ -71,6 +71,7 @@ android/
 
 # ─── Terraform (contains secrets and environment-specific values) ──────────────
 *.tfvars
+*.tfplan
 !*.tfvars.example
 *.tfstate
 *.tfstate.*
