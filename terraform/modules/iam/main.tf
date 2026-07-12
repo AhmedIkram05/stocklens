@@ -378,4 +378,65 @@ resource "aws_iam_role_policy_attachment" "ml_training_task_logs" {
   policy_arn = aws_iam_policy.ml_training_task_logs.arn
 }
 
+# ── GitHub OIDC Provider & Deploy Role (R5) ───────────────────────────
+# Allows GitHub Actions to assume an IAM role via OIDC for CI/CD deploys.
+# Trust policy pins the repo + branch so no other repo/branch can assume it.
+
+resource "aws_iam_openid_connect_provider" "github" {
+  url             = "https://token.actions.githubusercontent.com"
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+  # ponytail: GitHub rotates OIDC thumbprints occasionally; check
+  # https://github.blog/changelog/ for updates.
+}
+
+data "aws_iam_policy_document" "github_oidc_assume" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.github_repo}:ref:refs/heads/main"]
+    }
+  }
+}
+
+resource "aws_iam_role" "github_deploy" {
+  name               = "${var.app_name}-github-deploy-${var.environment}"
+  assume_role_policy = data.aws_iam_policy_document.github_oidc_assume.json
+  description        = "GitHub Actions OIDC deploy role for ${var.github_repo} (main branch)"
+}
+
+resource "aws_iam_role_policy" "github_deploy" {
+  name = "${var.app_name}-deploy"
+  role = aws_iam_role.github_deploy.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:*", "ecs:*", "s3:*", "dynamodb:*", "kms:*",
+          "iam:PassRole", "iam:GetRole", "iam:CreateRole", "iam:PutRolePolicy",
+          "iam:AttachRolePolicy",
+          "cloudwatch:*", "events:*", "sns:*", "budgets:*", "ce:*", "wafv2:*",
+          "elasticache:*", "rds:*", "application-autoscaling:*", "logs:*",
+          "elasticloadbalancing:*", "lambda:*"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 data "aws_caller_identity" "current" {}

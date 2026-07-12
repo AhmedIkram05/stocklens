@@ -50,3 +50,10 @@ output "ml_training_task_role_name" {
   description = "Name of the GPU ML training task IAM role"
   value       = aws_iam_role.ml_training_task.name
 }
+
+# ── OIDC Deploy (R5) ──
+
+output "ecs_deploy_role_arn" {
+  description = "ARN of the GitHub Actions OIDC deploy role"
+  value       = aws_iam_role.github_deploy.arn
+}

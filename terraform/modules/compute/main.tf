@@ -45,7 +45,7 @@ resource "aws_iam_role_policy_attachment" "ecs_task_cloudwatch" {
 # ── ECR repository ───────────────────────────────────────────────────
 
 resource "aws_ecr_repository" "app" {
-  name                 = "${var.app_name}-${var.environment}"
+  name = "${var.app_name}-${var.environment}"
   # ponytail: dev — mutable tags for fast iteration
   image_tag_mutability = "MUTABLE"
 

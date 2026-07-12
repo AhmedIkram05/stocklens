@@ -162,3 +162,10 @@ output "airflow_log_group_name" {
   description = "Name of the Airflow CloudWatch log group"
   value       = module.airflow.airflow_log_group_name
 }
+
+# ── OIDC Deploy (R5) ──
+
+output "ecs_deploy_role_arn" {
+  description = "ARN of the GitHub Actions OIDC deploy role (used by CI/CD pipeline via gh secret)"
+  value       = module.iam.ecs_deploy_role_arn
+}
