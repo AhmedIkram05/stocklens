@@ -456,19 +456,12 @@ resource "aws_iam_role_policy" "github_deploy" {
         Effect = "Allow"
         Action = [
           "ecr:*", "ecs:*", "s3:*", "dynamodb:*", "kms:*",
-          "iam:PassRole", "iam:GetRole", "iam:CreateRole", "iam:PutRolePolicy",
-          "iam:AttachRolePolicy", "iam:GetPolicy", "iam:ListRolePolicies",
-          "iam:GetOpenIDConnectProvider",
+          "iam:*",
           "cloudwatch:*", "events:*", "sns:*", "budgets:*", "ce:*", "wafv2:*",
           "elasticache:*", "rds:*", "application-autoscaling:*", "logs:*",
           "elasticloadbalancing:*", "lambda:*",
-          "ec2:DescribeSecurityGroups", "ec2:DescribeVpcs", "ec2:DescribeSubnets",
-          "ec2:DescribeNetworkInterfaces", "ec2:DescribeRouteTables",
-          "ec2:DescribeInternetGateways", "ec2:DescribeNatGateways",
-          "secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue",
-          "elasticfilesystem:DescribeFileSystems",
-          "servicediscovery:GetNamespace", "servicediscovery:ListNamespaces",
-          "servicediscovery:ListServices", "servicediscovery:GetService"
+          "ec2:*", "secretsmanager:*", "elasticfilesystem:*",
+          "servicediscovery:*"
         ]
         Resource = "*"
       }
