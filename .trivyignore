@@ -1,0 +1,9 @@
+# CVE-2026-42496: perl-Archive-Tar path traversal via crafted symlinks.
+# fix_deferred by Debian; no patch available. Only exploitable when
+# extracting untrusted tar archives with Archive-Tar — our Python app
+# never invokes Perl tar extraction.
+CVE-2026-42496
+
+# CVE-2026-8376: perl heap buffer overflow in regex compilation.
+# Only exploitable on 32-bit builds. Our ECS target is ARM64 (64-bit).
+CVE-2026-8376
