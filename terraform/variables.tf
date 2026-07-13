@@ -22,15 +22,17 @@ variable "app_name" {
 }
 
 variable "db_password" {
-  description = "RDS PostgreSQL master password (sensitive)"
+  description = "RDS PostgreSQL master password (sensitive — auto-generated if empty)"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "jwt_secret_key" {
-  description = "Secret key used to sign JWT tokens (sensitive)"
+  description = "Secret key used to sign JWT tokens (sensitive — auto-generated if empty)"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "container_image" {
