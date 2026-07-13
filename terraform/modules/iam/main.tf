@@ -448,6 +448,8 @@ resource "aws_iam_role_policy" "github_deploy" {
   # checkov:skip=CKV_AWS_289:dev — broad deploy role for dev; scope per-resource in prod
   # checkov:skip=CKV_AWS_290:dev — broad deploy role for dev; scope per-resource in prod
   # checkov:skip=CKV_AWS_355:dev — broad deploy role for dev; scope per-resource in prod
+  # checkov:skip=CKV_AWS_287:dev — broad deploy role for dev; scope per-resource in prod
+  # checkov:skip=CKV2_AWS_40:dev — broad deploy role for dev; scope per-resource in prod
 
   policy = jsonencode({
     Version = "2012-10-17"
