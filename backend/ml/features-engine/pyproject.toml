@@ -6,3 +6,9 @@ build-backend = "maturin"
 name = "features_engine"
 version = "0.1.0"
 requires-python = ">=3.12"
+
+[tool.maturin]
+# Cargo.toml declares name = "features-engine" (hyphen), which is standard
+# for Rust crates. maturin rejects hyphens in its Python ident check, so
+# we pin the module name to the underscored form here.
+module-name = "features_engine"

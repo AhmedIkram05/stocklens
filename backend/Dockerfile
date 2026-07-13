@@ -1,30 +1,33 @@
 # Stage 0: Rust native module builder (features-engine)
-# Use same Debian base as python:3.14-slim (bookworm/trixie) — required so the
-# produced wheel matches the runtime ABI. Cross-compile for ARM64 (ADR 009).
-FROM rust:1.83-slim-bookworm AS rust-builder
+# Use python:3.14-slim so maturin builds a wheel matching the runtime ABI
+# (python:3.14-slim in builder/runtime stages). The official rust image ships
+# without Python; installing Python from Debian Bookworm gives us 3.11, which
+# produces a cp311-tagged wheel — uninstallable on Python 3.14.
+# Rust is installed via rustup (~60s on first build, layer-cached thereafter).
+# Cross-compilation is unnecessary: buildx QEMU emulation makes ARM64 look
+# native, so the default Rust target is aarch64-unknown-linux-gnu.
+FROM python:3.14-slim AS rust-builder
 
-# Toolchain: gcc-aarch64-linux-gnu for cross-link, pkg-config + libssl for pyo3/pyo3-ffi.
-# apt cache mount is reused across pipeline runs (see --mount flags below).
+# Build toolchain: C compiler for pyo3/numpy link, pkg-config/libssl for pyo3,
+# curl for rustup.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
-        gcc-aarch64-linux-gnu \
         pkg-config \
         libssl-dev \
-        python3-pip \
-    && ln -sf /usr/bin/aarch64-linux-gnu-gcc /usr/local/bin/aarch64-unknown-linux-gnu-gcc
+        curl \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-# Persist cargo registry/git/target across RUN steps in this stage so that
-# pyo3/numpy/ndarray are not recompiled when only the features-engine source
-# changes. sharing=locked serialises concurrent mounts at the same path.
-ENV CARGO_NET_GIT_FETCH_WITH_CLI=true \
-    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+# Install Rust via rustup — host is ARM64 under QEMU, so --target is implicit.
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Install maturin once and cache it; wheels go to /wheels outside the cache
-# so the stage export stays small.
+# Install maturin via pip (python:3.14-slim ships with pip pre-installed).
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir maturin
+    pip install maturin
 
 WORKDIR /src
 
@@ -32,7 +35,7 @@ WORKDIR /src
 # change. Cargo validates the lib path exists during manifest parsing, even
 # for fetch — so create a dummy lib.rs that Layer B overwrites with the real
 # source.
-COPY ml/features-engine/Cargo.toml ml/features-engine/Cargo.lock ./
+COPY ml/features-engine/Cargo.toml ml/features-engine/Cargo.lock ml/features-engine/pyproject.toml ./
 RUN mkdir -p src && touch src/lib.rs
 RUN --mount=type=cache,target=/root/.cargo/git \
     --mount=type=cache,target=/root/.cargo/registry \
@@ -44,8 +47,7 @@ COPY ml/features-engine/src ./src
 RUN --mount=type=cache,target=/root/.cargo/git \
     --mount=type=cache,target=/root/.cargo/registry \
     --mount=type=cache,target=/src/target,sharing=locked \
-    maturin build --release --target aarch64-unknown-linux-gnu \
-        --features extension --out /wheels
+    maturin build --release --features extension --out /wheels
 
 
 # Stage 1: Python deps via uv.

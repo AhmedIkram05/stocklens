@@ -139,48 +139,46 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
-          # standard GHA wheel cache, keyed on pyproject.toml+uv.lock.
-          # Avoids re-downloading ~1.7GB of torch+CUDA+Cython deps each run.
-          cache: 'pip'
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: Swatinem/rust-cache@v2
         with:
-          # Shared cache key for cargo+target. Same key reused below by the
-          # maturin develop step so both jobs warm the same lockfile.
           shared-key: ${{ runner.os }}-host
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
       - name: Set up virtual environment
         run: |
           python -m venv venv
           ./venv/bin/python -m pip install --upgrade pip
           ./venv/bin/python -c "import sys; print(sys.executable)"
       - name: Ruff check
+        env:
+          VIRTUAL_ENV: ${{ github.workspace }}/venv
         run: |
-          ./venv/bin/pip install ruff
+          uv pip install ruff
           ./venv/bin/ruff check backend/
           ./venv/bin/ruff format --check backend/
       - name: Build Rust extension
         env:
           VIRTUAL_ENV: ${{ github.workspace }}/venv
+          UV_LINK_MODE: copy # symlink fails inside venv/maturin
         run: |
-          ./venv/bin/pip install maturin
+          uv pip install maturin
           cd backend/ml/features-engine
-          ${{ github.workspace }}/venv/bin/python -m maturin develop
+          "${{ github.workspace }}/venv/bin/python" -m maturin develop
       - name: Pytest
+        env:
+          VIRTUAL_ENV: ${{ github.workspace }}/venv
         run: |
           set -euo pipefail
           cd backend
-          # Install CPU-only torch into a constraints file. pip ignores
-          # [tool.uv.sources], so we mirror it explicitly here. This avoids
-          # pulling the ~1.7 GB CUDA stack on GPU-less CI runners.
-          cat > /tmp/torch-cpu-constraint.txt <<'EOF'
-          torch==2.13.0+cpu
-          EOF
-          PYTHONPATH=$(pwd) \
-            ${{ github.workspace }}/venv/bin/pip install \
-              --constraint /tmp/torch-cpu-constraint.txt \
-              --extra-index-url https://download.pytorch.org/whl/cpu \
-              ".[dev]"
-          ${{ github.workspace }}/venv/bin/pytest -q \
+          # uv honors [tool.uv.sources] from pyproject.toml automatically,
+          # so the CPU-only torch index is already configured. No
+          # --constraint file needed; .[dev] extras come from the venv's
+          # VIRTUAL_ENV context.
+          UV_LINK_MODE=copy uv sync --dev --frozen --active
+          uv run pytest -q \
             --cov=src \
             --cov-report=xml:coverage.xml \
             --cov-report=lcov:coverage/lcov.info \
