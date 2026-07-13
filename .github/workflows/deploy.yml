@@ -175,12 +175,6 @@ jobs:
           role-to-assume: ${{ secrets.ECS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Download plan artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: tfplan-${{ github.sha }}
-          path: ${{ env.TERRAFORM_DIR }}
-
       - name: Terraform init
         run: terraform init
         working-directory: ${{ env.TERRAFORM_DIR }}
@@ -190,11 +184,14 @@ jobs:
         run: terraform force-unlock -force 7ccbf15c-8f14-661c-1afb-5e19a18e16af
         working-directory: ${{ env.TERRAFORM_DIR }}
 
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ github.sha }}
+          path: ${{ env.TERRAFORM_DIR }}
+
       - name: Terraform apply
-        run: |
-          for i in 1 2 3; do
-            terraform apply tfplan && break
-            echo "Attempt $i failed, retrying in $((i * 5))s..."
-            sleep $((i * 5))
-          done
+        # Applies the reviewed plan. No retry loop — if it fails, fix the
+        # issue and re-run (fresh plan generated for review).
+        run: terraform apply tfplan
         working-directory: ${{ env.TERRAFORM_DIR }}
