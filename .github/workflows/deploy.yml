@@ -92,7 +92,7 @@ jobs:
   # Runs plan immediately, saves .tfplan artifact, and outputs plan
   # text to job summary. User reviews plan in GH UI before approving
   # the apply job below.
-  Terraform plan:
+  terraform-plan:
     runs-on: ubuntu-latest
     needs: [container-scan, build-push]
     steps:
@@ -151,9 +151,9 @@ jobs:
   # ─── Terraform Apply (requires manual approval) ───────────────────
   # Applies the saved plan from the plan job. Runs only after manual
   # approval via the production environment gate.
-  Terraform apply:
+  terraform-apply:
     runs-on: ubuntu-latest
-    needs: [plan]
+    needs: [terraform-plan]
     environment: production # requires manual approval gate
     steps:
       - uses: actions/checkout@v7
