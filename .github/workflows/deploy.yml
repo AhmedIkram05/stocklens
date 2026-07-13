@@ -91,7 +91,7 @@ jobs:
   # Runs plan immediately, saves .tfplan artifact, and outputs plan
   # text to job summary. User reviews plan in GH UI before approving
   # the apply job below.
-  plan:
+  Terraform plan:
     runs-on: ubuntu-latest
     needs: [container-scan, build-push]
     steps:
@@ -112,15 +112,21 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Terraform init
-        run: terraform init
+      - name: Force-unlock stale state lock
+        # ponytail: cancelled CI runs leave stale locks. force-unlock with
+        # this specific lock from the PR #14 destructive apply that was
+        # interrupted. continue-on-error so it's a no-op if already cleared.
+        continue-on-error: true
+        run: terraform force-unlock -force 7ccbf15c-8f14-661c-1afb-5e19a18e16af
         working-directory: ${{ env.TERRAFORM_DIR }}
 
       - name: Terraform plan
         id: plan
         run: |
           IMAGE_TAG="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
-          terraform plan \
+          # ponytail: -lock=false safe for read-only plan. CI concurrency
+          # group (terraform-${{ github.ref }}) prevents parallel applies.
+          terraform plan -lock=false \
             -var="container_image=${IMAGE_TAG}" \
             -var="environment=dev" \
             -out=tfplan
@@ -144,7 +150,7 @@ jobs:
   # ─── Terraform Apply (requires manual approval) ───────────────────
   # Applies the saved plan from the plan job. Runs only after manual
   # approval via the production environment gate.
-  apply:
+  Terraform apply:
     runs-on: ubuntu-latest
     needs: [plan]
     environment: production # requires manual approval gate
@@ -168,8 +174,9 @@ jobs:
           name: tfplan-${{ github.sha }}
           path: ${{ env.TERRAFORM_DIR }}
 
-      - name: Terraform init
-        run: terraform init
+      - name: Force-unlock stale state lock
+        continue-on-error: true
+        run: terraform force-unlock -force 7ccbf15c-8f14-661c-1afb-5e19a18e16af
         working-directory: ${{ env.TERRAFORM_DIR }}
 
       - name: Terraform apply
