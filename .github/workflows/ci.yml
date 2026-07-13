@@ -86,6 +86,12 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Cache shared with the python job's maturin build (linux + host triple
+          # is the only configuration used by CI). workspace is the git-rooted
+          # default; this is just being explicit.
+          shared-key: ${{ runner.os }}-${{ matrix.target }}
       - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
@@ -133,7 +139,15 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
+          # standard GHA wheel cache, keyed on pyproject.toml+uv.lock.
+          # Avoids re-downloading ~1.7GB of torch+CUDA+Cython deps each run.
+          cache: 'pip'
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Shared cache key for cargo+target. Same key reused below by the
+          # maturin develop step so both jobs warm the same lockfile.
+          shared-key: ${{ runner.os }}-host
       - name: Set up virtual environment
         run: |
           python -m venv venv
@@ -153,7 +167,19 @@ jobs:
           ${{ github.workspace }}/venv/bin/python -m maturin develop
       - name: Pytest
         run: |
-          cd backend && ${{ github.workspace }}/venv/bin/pip install ".[dev]"
+          set -euo pipefail
+          cd backend
+          # Install CPU-only torch into a constraints file. pip ignores
+          # [tool.uv.sources], so we mirror it explicitly here. This avoids
+          # pulling the ~1.7 GB CUDA stack on GPU-less CI runners.
+          cat > /tmp/torch-cpu-constraint.txt <<'EOF'
+          torch==2.13.0+cpu
+          EOF
+          PYTHONPATH=$(pwd) \
+            ${{ github.workspace }}/venv/bin/pip install \
+              --constraint /tmp/torch-cpu-constraint.txt \
+              --extra-index-url https://download.pytorch.org/whl/cpu \
+              ".[dev]"
           ${{ github.workspace }}/venv/bin/pytest -q \
             --cov=src \
             --cov-report=xml:coverage.xml \

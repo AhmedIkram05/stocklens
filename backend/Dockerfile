@@ -1,31 +1,60 @@
 # Stage 0: Rust native module builder (features-engine)
-# Use same Python version as runtime to ensure ABI-compatible wheel (cp314)
-FROM python:3.14-slim AS rust-builder
+# Use same Debian base as python:3.14-slim (bookworm/trixie) — required so the
+# produced wheel matches the runtime ABI. Cross-compile for ARM64 (ADR 009).
+FROM rust:1.83-slim-bookworm AS rust-builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    build-essential \
-    gcc-aarch64-linux-gnu \
-    && rm -rf /var/lib/apt/lists/*
+# Toolchain: gcc-aarch64-linux-gnu for cross-link, pkg-config + libssl for pyo3/pyo3-ffi.
+# apt cache mount is reused across pipeline runs (see --mount flags below).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        gcc-aarch64-linux-gnu \
+        pkg-config \
+        libssl-dev \
+        python3-pip \
+    && ln -sf /usr/bin/aarch64-linux-gnu-gcc /usr/local/bin/aarch64-unknown-linux-gnu-gcc
 
-# Install Rust via rustup
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:$PATH"
+# Persist a single cargo target dir across the whole stage. sharing=locked
+# is required when --mount is used inside an outer --mount in the same step.
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
 
-RUN pip install maturin --no-cache-dir
+# Install maturin once and cache it; wheels go to /wheels outside the cache
+# so the stage export stays small.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir maturin
 
 WORKDIR /src
-COPY ml/features-engine /src
-# Cross-compile for ARM64 (ADR 009) — required for Fargate Graviton runtime.
-# Without --target the wheel matches the build host arch and import-crashes.
-ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-RUN maturin build --release --target aarch64-unknown-linux-gnu --features extension --out /wheels
+
+# Layer A — dependency manifest. Only invalidated when Cargo.toml/Cargo.lock
+# change. The dummy lib.rs is required because cargo validates the lib path
+# during `cargo fetch`; the real source overwrites it in Layer B.
+COPY ml/features-engine/Cargo.toml ml/features-engine/Cargo.lock ./
+COPY ml/features-engine/pyproject.toml ./
+COPY ml/features-engine/src/lib.rs ./src/lib.rs
+RUN mkdir -p src && touch src/lib.rs
+RUN --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/src/target,sharing=locked \
+    cargo fetch --locked --manifest-path Cargo.toml
+
+# Layer B — real source. Recompiles features-engine only when src changes;
+# cached deps + target dir means pyo3/numpy/ndarray aren't recompiled.
+COPY ml/features-engine/src ./src
+RUN --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/src/target,sharing=locked \
+    maturin build --release --target aarch64-unknown-linux-gnu \
+        --features extension --out /wheels
 
 
-# Stage 1: Build dependencies with uv
+# Stage 1: Python deps via uv.
+# uv's cache mount avoids re-downloading 162 deps (~700MB incl. torch/pyarrow)
+# on every build. We deliberately DROP UV_COMPILE_BYTECODE here — bytecode
+# compilation of 15k files took 13m on ARM64 QEMU. .pyc is generated lazily
+# on first import instead; runtime cost is negligible vs build cost.
 FROM python:3.14-slim AS builder
-
-ENV UV_COMPILE_BYTECODE=1
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
@@ -35,31 +64,34 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --no-dev --index-strategy unsafe-best-match
 
-# Install Rust native module into the virtual environment
+# Install Rust native module into the venv, copy wheel aside for re-install
+# in dev/test workflows.
 COPY --from=rust-builder /wheels /wheels
 RUN uv pip install --no-deps /wheels/features_engine*.whl && \
     mkdir -p /app/wheels && \
     cp /wheels/features_engine*.whl /app/wheels/
 
-# Stage 2: Runtime image
+
+# Stage 2: Runtime image.
 FROM python:3.14-slim AS runtime
 
-# Install system deps: tesseract-ocr for pytesseract, libgl for OpenCV, curl for healthcheck
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    tesseract-ocr \
-    libgl1 \
-    libglib2.0-0 \
-    curl \
+# apt cache mount reuses downloaded lists between pipeline runs.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+        tesseract-ocr \
+        libgl1 \
+        libglib2.0-0 \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy virtual environment from builder (includes pre-installed features_engine)
 COPY --from=builder /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Copy features_engine wheel for re-install after uv sync in dev/test workflows
+# features_engine wheel for re-install after uv sync in dev/test.
 COPY --from=builder /app/wheels /app/wheels
 
-# Copy uv for dev/test dependency management
+# uv for dev/test dep management + uv-python wheeled binary.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 WORKDIR /app
@@ -69,10 +101,9 @@ COPY docker/ docker/
 COPY alembic/ alembic/
 COPY alembic.ini pyproject.toml uv.lock ./
 
-# Ensure model artifacts directory exists (for shared volume permissions)
 RUN mkdir -p /model_artifacts/champion
 
-# Non-root user for security
+# Non-root for security.
 RUN groupadd -r appuser && useradd -r -g appuser -u 1000 appuser \
     && chown -R appuser:appuser /app /model_artifacts
 

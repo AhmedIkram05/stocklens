@@ -1,0 +1,54 @@
+# Dependencies / virtual envs (1.5GB+ on local machine)
+.venv/
+venv/
+env/
+**/.venv/
+**/venv/
+
+# Rust build artifacts (already inside the image; never build-context)
+target/
+**/target/
+ml/features-engine/target/
+ml/features-engine/dist/
+ml/features-engine/Cargo.lock
+
+# Python caches (rebuilt at runtime)
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+**/.pytest_cache/
+.ruff_cache/
+**/.ruff_cache/
+.mypy_cache/
+**/.mypy_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Tooling / IDE
+.git/
+.gitignore
+.gitattributes
+.github/
+.idea/
+.vscode/
+.DS_Store
+
+# Frontend / monorepo noise (backend is its own context)
+node_modules/
+frontend/
+docs/
+
+# Build artifacts that shouldn't end up in images
+dist/
+build/
+*.egg-info/
+*.log
+*.md
+*.txt
+!pyproject.toml
+!uv.lock
+LICENSE
