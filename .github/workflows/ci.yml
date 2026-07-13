@@ -166,12 +166,13 @@ jobs:
         run: |
           uv pip install maturin
           cd backend/ml/features-engine
-          "${{ github.workspace }}/venv/bin/python" -m maturin develop
+          "${{ github.workspace }}/venv/bin/python" -m maturin build --release --out /tmp/wheels
       - name: Pytest
         run: |
           set -euo pipefail
           cd backend
           UV_LINK_MODE=copy uv sync --frozen --all-extras
+          uv pip install /tmp/wheels/features_engine-*.whl
           uv run pytest -q \
             --cov=src \
             --cov-report=xml:coverage.xml \
