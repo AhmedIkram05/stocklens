@@ -117,15 +117,6 @@ jobs:
         run: terraform init
         working-directory: ${{ env.TERRAFORM_DIR }}
 
-      - name: Force-unlock stale state lock
-        # ponytail: cancelled CI runs leave stale locks. force-unlock with
-        # this specific lock from the PR #14 destructive apply that was
-        # interrupted. Runs after init so backend is initialized. OK if lock
-        # already cleared — continue-on-error makes it a no-op.
-        continue-on-error: true
-        run: terraform force-unlock -force 7ccbf15c-8f14-661c-1afb-5e19a18e16af
-        working-directory: ${{ env.TERRAFORM_DIR }}
-
       - name: Terraform plan
         id: plan
         run: |
@@ -177,11 +168,6 @@ jobs:
 
       - name: Terraform init
         run: terraform init
-        working-directory: ${{ env.TERRAFORM_DIR }}
-
-      - name: Force-unlock stale state lock
-        continue-on-error: true
-        run: terraform force-unlock -force 7ccbf15c-8f14-661c-1afb-5e19a18e16af
         working-directory: ${{ env.TERRAFORM_DIR }}
 
       - name: Download plan artifact
