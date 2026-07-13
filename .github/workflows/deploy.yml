@@ -118,7 +118,8 @@ jobs:
         run: |
           IMAGE_TAG="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
           terraform plan \
-            -var="container_image=${IMAGE_TAG}"
+            -var="container_image=${IMAGE_TAG}" \
+            -var="environment=dev"
         working-directory: ${{ env.TERRAFORM_DIR }}
 
       - name: Terraform apply
@@ -126,7 +127,8 @@ jobs:
           IMAGE_TAG="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
           for i in 1 2 3; do
             terraform apply -auto-approve \
-              -var="container_image=${IMAGE_TAG}" && break
+              -var="container_image=${IMAGE_TAG}" \
+              -var="environment=dev" && break
             echo "Attempt $i failed, retrying in $((i * 5))s..."
             sleep $((i * 5))
           done
