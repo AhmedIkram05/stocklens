@@ -168,16 +168,10 @@ jobs:
           cd backend/ml/features-engine
           "${{ github.workspace }}/venv/bin/python" -m maturin develop
       - name: Pytest
-        env:
-          VIRTUAL_ENV: ${{ github.workspace }}/venv
         run: |
           set -euo pipefail
           cd backend
-          # uv honors [tool.uv.sources] from pyproject.toml automatically,
-          # so the CPU-only torch index is already configured. No
-          # --constraint file needed; .[dev] extras come from the venv's
-          # VIRTUAL_ENV context.
-          UV_LINK_MODE=copy uv sync --dev --frozen --active
+          UV_LINK_MODE=copy uv sync --dev --frozen
           uv run pytest -q \
             --cov=src \
             --cov-report=xml:coverage.xml \

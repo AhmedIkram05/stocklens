@@ -35,11 +35,11 @@ WORKDIR /src
 # change. Cargo validates the lib path exists during manifest parsing, even
 # for fetch — so create a dummy lib.rs that Layer B overwrites with the real
 # source.
-COPY ml/features-engine/Cargo.toml ml/features-engine/Cargo.lock ml/features-engine/pyproject.toml ./
+COPY ml/features-engine/Cargo.toml ml/features-engine/pyproject.toml ./
 RUN mkdir -p src && touch src/lib.rs
 RUN --mount=type=cache,target=/root/.cargo/git \
     --mount=type=cache,target=/root/.cargo/registry \
-    cargo fetch --locked --manifest-path Cargo.toml
+    cargo fetch --manifest-path Cargo.toml
 
 # Layer B — real source. Recompiles features-engine only when src changes;
 # cached deps + target dir means pyo3/numpy/ndarray aren't recompiled.
