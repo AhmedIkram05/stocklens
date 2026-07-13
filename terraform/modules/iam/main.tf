@@ -412,12 +412,32 @@ data "aws_iam_policy_document" "github_oidc_assume" {
       values   = ["repo:${var.github_repo}:ref:refs/heads/main"]
     }
   }
+  # ponytail: deploy job uses environment:production which changes OIDC
+  # sub claim from ref:refs/heads/main to environment:production.
+  # Second statement OR'd with the first (both allow same role).
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.github_repo}:environment:production"]
+    }
+  }
 }
 
 resource "aws_iam_role" "github_deploy" {
   name               = "${var.app_name}-github-deploy-${var.environment}"
   assume_role_policy = data.aws_iam_policy_document.github_oidc_assume.json
-  description        = "GitHub Actions OIDC deploy role for ${var.github_repo} (main branch)"
+  description        = "GitHub Actions OIDC deploy role for ${var.github_repo} (main branch + production env)"
 }
 
 resource "aws_iam_role_policy" "github_deploy" {
