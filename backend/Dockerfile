@@ -15,8 +15,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         python3-pip \
     && ln -sf /usr/bin/aarch64-linux-gnu-gcc /usr/local/bin/aarch64-unknown-linux-gnu-gcc
 
-# Persist a single cargo target dir across the whole stage. sharing=locked
-# is required when --mount is used inside an outer --mount in the same step.
+# Persist cargo registry/git/target across RUN steps in this stage so that
+# pyo3/numpy/ndarray are not recompiled when only the features-engine source
+# changes. sharing=locked serialises concurrent mounts at the same path.
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true \
     CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
 
@@ -28,15 +29,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 WORKDIR /src
 
 # Layer A — dependency manifest. Only invalidated when Cargo.toml/Cargo.lock
-# change. The dummy lib.rs is required because cargo validates the lib path
-# during `cargo fetch`; the real source overwrites it in Layer B.
+# change. Cargo validates the lib path exists during manifest parsing, even
+# for fetch — so create a dummy lib.rs that Layer B overwrites with the real
+# source.
 COPY ml/features-engine/Cargo.toml ml/features-engine/Cargo.lock ./
-COPY ml/features-engine/pyproject.toml ./
-COPY ml/features-engine/src/lib.rs ./src/lib.rs
 RUN mkdir -p src && touch src/lib.rs
 RUN --mount=type=cache,target=/root/.cargo/git \
     --mount=type=cache,target=/root/.cargo/registry \
-    --mount=type=cache,target=/src/target,sharing=locked \
     cargo fetch --locked --manifest-path Cargo.toml
 
 # Layer B — real source. Recompiles features-engine only when src changes;

@@ -10,7 +10,8 @@ target/
 **/target/
 ml/features-engine/target/
 ml/features-engine/dist/
-ml/features-engine/Cargo.lock
+# NOTE: do NOT ignore Cargo.lock here — the Dockerfile COPYs it for
+# reproducible builds (maturin respects the locked versions).
 
 # Python caches (rebuilt at runtime)
 __pycache__/
