@@ -83,6 +83,7 @@ jobs:
           image-ref: '${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}'
           severity: 'CRITICAL'
           exit-code: '1'
+          trivyignores: '.trivyignore'
 
   # ─── Terraform Apply & ECS Deploy ─────────────────────────────────
   deploy:
@@ -106,6 +107,10 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Terraform init
+        run: terraform init
+        working-directory: ${{ env.TERRAFORM_DIR }}
 
       - name: Terraform plan
         run: |
