@@ -171,7 +171,7 @@ jobs:
           cd backend
           # Only sync stocklens-backend workspace member (not ml/ with mlflow).
           # mlflow-skinny pins requests==2.28.1, conflicts with yfinance>=2.31.
-          UV_LINK_MODE=copy uv sync --frozen --package stocklens-backend --all-extras
+          UV_LINK_MODE=copy uv sync --frozen --package stocklens-backend --all-extras --index-strategy unsafe-best-match
           uv pip install /tmp/wheels/features_engine-*.whl
           uv run pytest -q \
             --cov=src \

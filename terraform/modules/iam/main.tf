@@ -473,7 +473,7 @@ resource "aws_iam_role_policy" "github_deploy" {
           "cloudwatch:*", "events:*", "sns:*", "budgets:*", "ce:*", "wafv2:*",
           "elasticache:*", "rds:*", "application-autoscaling:*", "logs:*",
           "elasticloadbalancing:*", "lambda:*",
-          "ec2:*", "secretsmanager:*", "elasticfilesystem:*",
+          "ec2:*", "ssm:*", "secretsmanager:*", "elasticfilesystem:*",
           "servicediscovery:*", "route53:*"
         ]
         Resource = "*"

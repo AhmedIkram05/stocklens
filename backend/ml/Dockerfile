@@ -21,7 +21,7 @@ WORKDIR /src
 
 # Layer 1: Fetch dependencies (only invalidated when Cargo.toml/lock changes).
 # Cache mounts persist .cargo/git and .cargo/registry across docker rebuilds.
-COPY features-engine/Cargo.toml features-engine/Cargo.lock features-engine/pyproject.toml /src/
+COPY features-engine/Cargo.toml features-engine/pyproject.toml /src/
 # Cargo validates the lib path exists during manifest parsing, even for fetch.
 # Dummy placeholder — real src/ overwritten below.
 RUN mkdir -p /src/src && touch /src/src/lib.rs
