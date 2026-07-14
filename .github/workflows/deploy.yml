@@ -124,7 +124,7 @@ jobs:
 
   # ─── Container Image Security Scan (matrix: backend / airflow / ml-training) ─
   container-scan:
-    needs: [build-push, build-push-airflow, build-push-ml-training]
+    needs: [build-push-backend, build-push-airflow, build-push-ml-training]
     strategy:
       matrix:
         include:
