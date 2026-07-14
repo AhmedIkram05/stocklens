@@ -109,12 +109,6 @@ variable "ecs_cluster_name" {
   default     = ""
 }
 
-variable "ml_training_task_definition_family" {
-  description = "ML training task definition family name"
-  type        = string
-  default     = ""
-}
-
 variable "database_url" {
   description = "Database URL for ML training container"
   type        = string

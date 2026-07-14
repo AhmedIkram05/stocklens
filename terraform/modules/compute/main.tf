@@ -90,6 +90,140 @@ resource "aws_ecs_cluster" "main" {
   }
 }
 
+# ── GPU EC2 Launch Template (g5.xlarge for ML training) ──────────────
+# The ml_training task runs on EC2 GPU instances via this capacity provider.
+
+data "aws_ssm_parameter" "ecs_agent_installed_ami" {
+  name = "/aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id"
+}
+
+resource "aws_launch_template" "ml_training_gpu" {
+  name          = "${var.app_name}-ml-training-gpu-${var.environment}"
+  image_id      = data.aws_ssm_parameter.ecs_agent_installed_ami.value
+  instance_type = "g5.xlarge"
+
+  # IAM instance profile for EC2 -> must have ECS agent + secrets access
+  iam_instance_profile {
+    name = aws_iam_instance_profile.ecs_gpu.name
+  }
+
+  key_name = var.key_name
+
+  network_interfaces {
+    associate_public_ip_address = true
+    device_index                = 0
+    security_groups             = [var.ecs_tasks_sg_id]
+  }
+
+  user_data = base64encode(<<-EOF
+    #!/bin/bash
+    echo "ECS_CLUSTER=${aws_ecs_cluster.main.name}" >> /etc/ecs/ecs.config
+    echo "ECS_GPU_ENABLED=true" >> /etc/ecs/ecs.config
+EOF
+  )
+
+  ebs_optimized = true
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
+  }
+
+  monitoring {
+    enabled = true
+  }
+
+  tag_specifications {
+    resource_type = "instance"
+    tags = {
+      Name = "${var.app_name}-ml-training-gpu-${var.environment}"
+    }
+  }
+}
+
+# IAM instance profile for GPU EC2 instances (no additional perms needed beyond what task roles grant)
+locals {
+  # Extract the role name from the ARN (arn:aws:iam::account:role/name -> name)
+  ecs_execution_role_name = var.ecs_execution_role_arn != "" ? split("/", var.ecs_execution_role_arn)[1] : ""
+}
+
+resource "aws_iam_instance_profile" "ecs_gpu" {
+  name = "${var.app_name}-ecs-gpu-${var.environment}"
+  role = local.ecs_execution_role_name
+}
+
+# EC2 capacity provider for GPU instances (g5.xlarge)
+resource "aws_ecs_capacity_provider" "ml_training_gpu" {
+  name = "${var.app_name}-gpu-${var.environment}"
+
+  auto_scaling_group_provider {
+    auto_scaling_group_arn = aws_autoscaling_group.ml_training_gpu.arn
+    managed_scaling {
+      status                    = "ENABLED"
+      maximum_scaling_step_size = 5
+      minimum_scaling_step_size = 1
+      target_capacity           = 1
+    }
+    managed_termination_protection = "DISABLED"
+  }
+}
+
+# Auto Scaling Group for GPU instances — single g5.xlarge always-on for ML training
+resource "aws_autoscaling_group" "ml_training_gpu" {
+  name                      = "${var.app_name}-ml-training-gpu-${var.environment}"
+  min_size                  = 0
+  max_size                  = 4
+  desired_capacity          = 0 # Starts at 0; scales up when ML training task launches
+  vpc_zone_identifier       = var.private_subnet_ids
+  health_check_type         = "ELB"
+  health_check_grace_period = 300
+
+  launch_template {
+    id      = aws_launch_template.ml_training_gpu.id
+    version = "$Latest"
+  }
+
+  tag {
+    key                 = "Name"
+    value               = "${var.app_name}-ml-training-gpu-${var.environment}"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "ECS_CLUSTER"
+    value               = aws_ecs_cluster.main.name
+    propagate_at_launch = true
+  }
+
+  # ponytail: hardcode name to break circular dependency with capacity_provider resource
+  tag {
+    key                 = "ECS_CAPACITY_PROVIDER"
+    value               = "${var.app_name}-gpu-${var.environment}"
+    propagate_at_launch = true
+  }
+
+  lifecycle {
+    # Scale in only when no running tasks — handled by ECS managed scaling
+    # ponytail: start at 0 capacity, let managed scaling handle it
+  }
+}
+
+# Attach GPU capacity provider to the ECS cluster
+resource "aws_ecs_cluster_capacity_providers" "main" {
+  cluster_name = aws_ecs_cluster.main.name
+
+  capacity_providers = ["FARGATE", aws_ecs_capacity_provider.ml_training_gpu.name]
+
+  default_capacity_provider_strategy {
+    base              = 1
+    weight            = 100
+    capacity_provider = "FARGATE"
+  }
+
+  depends_on = [aws_autoscaling_group.ml_training_gpu]
+}
+
 # ── Application Load Balancer ────────────────────────────────────────
 
 data "aws_elb_service_account" "main" {}

@@ -143,3 +143,9 @@ variable "s3_kms_key_arn" {
   description = "ARN of the KMS key for S3 encryption"
   type        = string
 }
+
+variable "key_name" {
+  description = "EC2 key pair name for GPU instance SSH access (optional)"
+  type        = string
+  default     = ""
+}

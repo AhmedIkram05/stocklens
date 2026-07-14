@@ -40,6 +40,6 @@ output "ml_training_task_definition_arn" {
 }
 
 output "ml_training_task_definition_family" {
-  description = "Family name of the GPU ML training task definition (if created)"
-  value       = length(aws_ecs_task_definition.ml_training) > 0 ? aws_ecs_task_definition.ml_training[0].family : null
+  description = "Family name of the GPU ML training task definition (always returns a value, even if task not created)"
+  value       = try(aws_ecs_task_definition.ml_training[0].family, "${local.family}-ml-training")
 }

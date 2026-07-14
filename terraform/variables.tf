@@ -200,3 +200,9 @@ variable "github_repo" {
   type        = string
   default     = "AhmedIkram05/stocklens"
 }
+
+variable "key_name" {
+  description = "EC2 key pair name for SSH access to GPU instances (optional — leave empty for no SSH)"
+  type        = string
+  default     = ""
+}

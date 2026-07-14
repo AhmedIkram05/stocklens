@@ -232,12 +232,23 @@ resource "aws_iam_policy" "airflow_task_s3_kms_ecs" {
         Resource = var.s3_kms_key_arn
       },
       {
+        # Run + poll the GPU training task via EcsRunTaskOperator
         Effect = "Allow"
         Action = [
           "ecs:RunTask",
-          "iam:PassRole",
+          "ecs:DescribeTasks",
+          "ecs:DescribeTaskDefinition",
+          "ecs:ListTasks",
         ]
         Resource = "*"
+      },
+      {
+        # Only allow passing the ML training task role (created below)
+        Effect = "Allow"
+        Action = [
+          "iam:PassRole",
+        ]
+        Resource = aws_iam_role.ml_training_task.arn
       },
     ]
   })

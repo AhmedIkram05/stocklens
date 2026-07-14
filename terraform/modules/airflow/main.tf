@@ -18,8 +18,9 @@ locals {
 
   # Airflow variables passed via environment
   airflow_variables = {
-    ecs_cluster_name            = var.ecs_cluster_name
-    ml_training_task_definition = var.ml_training_task_definition_family
+    ecs_cluster_name = var.ecs_cluster_name
+    # ponytail: derived internally — no circular dependency needed
+    ml_training_task_definition = "${local.family}-ml-training"
     private_subnet_ids          = join(",", var.private_subnet_ids)
     airflow_sg_id               = var.airflow_sg_id
     database_url                = var.database_url
@@ -141,10 +142,15 @@ locals {
         name  = "MLFLOW_TRACKING_URI"
         value = var.mlflow_tracking_uri
       },
-      # Phase 4 DAG expects DATABASE_URL for direct asyncpg access
+      # DAG's asyncpg helpers read DATABASE_URL directly; must be postgresql:// (not +psycopg2)
       {
         name  = "DATABASE_URL"
-        value = var.airflow_sql_alchemy_conn
+        value = var.database_url
+      },
+      # BaseHook.get_connection("postgres_default") used by DAG's _check_new_ohlcv_data, _cleanup
+      {
+        name  = "AIRFLOW_CONN_POSTGRES_DEFAULT"
+        value = var.database_url
       },
       # Airflow Variables for EcsRunTaskOperator (prefixed with AIRFLOW_VAR_)
       {
@@ -213,7 +219,7 @@ resource "aws_ecs_task_definition" "webserver" {
 
   container_definitions = jsonencode([merge(
     local.airflow_container,
-    { entryPoint = ["sh", "-c"], command = ["python3 /opt/airflow/scripts/drop_alembic_version.py && airflow db migrate && exec airflow api-server"] }
+    { entryPoint = ["sh", "-c"], command = ["cd /app && alembic upgrade head && python3 /opt/airflow/scripts/drop_alembic_version.py && airflow db migrate && exec airflow api-server"] }
 
   )])
 
@@ -237,7 +243,7 @@ resource "aws_ecs_task_definition" "scheduler" {
 
   container_definitions = jsonencode([merge(
     local.airflow_container,
-    { entryPoint = ["sh", "-c"], command = ["python3 /opt/airflow/scripts/drop_alembic_version.py && airflow db migrate && (airflow dag-processor &) && exec airflow scheduler"] }
+    { entryPoint = ["sh", "-c"], command = ["cd /app && alembic upgrade head && python3 /opt/airflow/scripts/drop_alembic_version.py && airflow db migrate && (airflow dag-processor &) && exec airflow scheduler"] }
   )])
 
   tags = {
@@ -399,10 +405,11 @@ resource "aws_cloudwatch_event_target" "drift_retrain" {
 # The task is launched by the Airflow DAG via EcsRunTaskOperator.
 
 resource "aws_ecs_task_definition" "ml_training" {
-  count                    = var.ml_training_image != "" && var.ml_training_task_role_arn != "" ? 1 : 0
-  family                   = "${local.family}-ml-training"
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["EC2", "FARGATE"]
+  count        = var.ml_training_image != "" && var.ml_training_task_role_arn != "" ? 1 : 0
+  family       = "${local.family}-ml-training"
+  network_mode = "awsvpc"
+  # GPU ML training runs on EC2 (g5.xlarge) — Fargate does not support GPU workloads.
+  requires_compatibilities = ["EC2"]
   cpu                      = "4096"  # 4 vCPU
   memory                   = "16384" # 16 GB
   execution_role_arn       = var.ecs_execution_role_arn
@@ -498,7 +505,7 @@ resource "aws_ecs_task_definition" "ml_training" {
       file_system_id          = var.efs_filesystem_id
       root_directory          = "/mlflow"
       transit_encryption      = "ENABLED"
-      transit_encryption_port = 2999
+      transit_encryption_port = 2998
     }
   }
 
