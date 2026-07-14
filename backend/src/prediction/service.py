@@ -6,6 +6,7 @@ Loaded once at FastAPI startup via lifespan and reused across requests.
 
 from __future__ import annotations
 
+import concurrent.futures
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +19,9 @@ from ml.features import compute_all_features, compute_cross_sectional_features
 from ml.model import GlobalLSTM
 
 logger = structlog.get_logger()
+
+# Thread pool executor for fire-and-forget prediction logging
+_logger_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
 CLASS_NAMES = ("DOWN", "FLAT", "UP")
 

@@ -18,9 +18,42 @@ dependencies = [
     "httpx>=0.28.1",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest-cov>=6.0.0",
+    "pytest-mock>=3.14.0",
+]
+
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests as integration tests (require running PostgreSQL)",
+    "slow: marks tests as slow-running (deselect with '-m \"not slow\"')",
+    "ml: marks tests as ML pipeline tests",
+]
+addopts = "-v --tb=short --strict-markers"
+
+[tool.coverage.run]
+source = ["ml"]
+omit = [
+    "tests/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+fail_under = 60
+show_missing = true

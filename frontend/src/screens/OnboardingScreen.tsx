@@ -171,7 +171,12 @@ export default function OnboardingScreen() {
       </PageHeader>
 
       <View style={{ width: '100%', justifyContent: 'center', alignItems: 'center' }}>
-        <Svg width={graphWidth} height={graphHeight} viewBox={`0 0 ${graphWidth} ${graphHeight}`}>
+        <Svg
+          testID="onboarding-chart-svg"
+          width={graphWidth}
+          height={graphHeight}
+          viewBox={`0 0 ${graphWidth} ${graphHeight}`}
+        >
           {data.map((d, i) => {
             const p = progresses[i];
             const xCenter = computeXCenter(i);
