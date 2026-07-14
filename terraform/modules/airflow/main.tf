@@ -228,8 +228,9 @@ resource "aws_ecs_task_definition" "webserver" {
 
   container_definitions = jsonencode([merge(
     local.airflow_container,
-    # ponytail: backend runs its own migrations; Airflow only needs its own db migrate.
-    { entryPoint = ["sh", "-c"], command = ["airflow db migrate && exec airflow api-server"] }
+    # ponytail: drop shared alembic_version table so Airflow's db migrate
+    # starts fresh without conflicting with backend's alembic state.
+    { entryPoint = ["sh", "-c"], command = ["python3 /opt/airflow/scripts/drop_alembic_version.py && airflow db migrate && exec airflow api-server"] }
 
   )])
 
@@ -253,8 +254,9 @@ resource "aws_ecs_task_definition" "scheduler" {
 
   container_definitions = jsonencode([merge(
     local.airflow_container,
-    # ponytail: backend runs its own migrations; Airflow only needs its own db migrate.
-    { entryPoint = ["sh", "-c"], command = ["airflow db migrate && (airflow dag-processor &) && exec airflow scheduler"] }
+    # ponytail: drop shared alembic_version table so Airflow's db migrate
+    # starts fresh without conflicting with backend's alembic state.
+    { entryPoint = ["sh", "-c"], command = ["python3 /opt/airflow/scripts/drop_alembic_version.py && airflow db migrate && (airflow dag-processor &) && exec airflow scheduler"] }
   )])
 
   tags = {
