@@ -47,12 +47,13 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 
-# Install CUDA-enabled PyTorch first (for x86_64 GPU training)
-# Uses PyTorch's CUDA 12.1 index; on ARM64 this falls back to CPU-only
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu121
+# Install CUDA-enabled PyTorch on x86_64 (GPU training); ARM64 only has CPU support
+RUN if [ "$(uname -m)" = "x86_64" ]; then \
+        pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu121; \
+    fi
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-dev --index-strategy unsafe-best-match
+    uv sync --frozen --no-dev --index-strategy unsafe-best-match
 
 # Install Rust native module into the virtual environment
 COPY --from=rust-builder /wheels /wheels
