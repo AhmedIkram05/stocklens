@@ -49,7 +49,7 @@ COPY pyproject.toml uv.lock ./
 
 # Install CUDA-enabled PyTorch on x86_64 (GPU training); ARM64 only has CPU support
 RUN if [ "$(uname -m)" = "x86_64" ]; then \
-        pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu121; \
+        pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu126; \
     fi
 
 RUN --mount=type=cache,target=/root/.cache/uv \
