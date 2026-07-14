@@ -88,27 +88,27 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get upgrade -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/.venv /app/.venv
+# Non-root for security — create before COPY so --chown can reference it.
+# ponytail: --chown avoids chown -R after copy, halving peak disk usage.
+RUN groupadd -r appuser && useradd -r -g appuser -u 1000 appuser
+
+COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
 
 # features_engine wheel for re-install after uv sync in dev/test.
-COPY --from=builder /app/wheels /app/wheels
+COPY --from=builder --chown=appuser:appuser /app/wheels /app/wheels
 
 # uv for dev/test dep management + uv-python wheeled binary.
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:latest --chown=appuser:appuser /uv /bin/uv
 
 WORKDIR /app
-COPY src/ src/
-COPY ml/ ml/
-COPY docker/ docker/
-COPY alembic/ alembic/
-COPY alembic.ini pyproject.toml uv.lock ./
+COPY --chown=appuser:appuser src/ src/
+COPY --chown=appuser:appuser ml/ ml/
+COPY --chown=appuser:appuser docker/ docker/
+COPY --chown=appuser:appuser alembic/ alembic/
+COPY --chown=appuser:appuser alembic.ini pyproject.toml uv.lock ./
 
 RUN mkdir -p /model_artifacts/champion
-
-# Non-root for security.
-RUN groupadd -r appuser && useradd -r -g appuser -u 1000 appuser \
-    && chown -R appuser:appuser /app /model_artifacts
 
 USER appuser
 

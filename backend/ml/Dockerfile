@@ -75,18 +75,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python3 -m venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
 
+# Non-root user — create before COPY so --chown can reference it.
+RUN groupadd -r mluser && useradd -r -g mluser -u 1000 mluser
+
 # Copy virtual environment from builder (includes torch + deps)
-COPY --from=builder /app/.venv /app/.venv
+# ponytail: --chown avoids chown -R after copy, halving peak disk usage.
+COPY --from=builder --chown=mluser:mluser /app/.venv /app/.venv
 
 # Copy uv for dep management
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:latest --chown=mluser:mluser /uv /bin/uv
 
 WORKDIR /app
-COPY . /app/ml/
-
-# Non-root user
-RUN groupadd -r mluser && useradd -r -g mluser -u 1000 mluser \
-    && chown -R mluser:mluser /app
+COPY --chown=mluser:mluser . /app/ml/
 
 # Ensure model artifacts directory exists with correct ownership.
 # Named volume initialization copies these permissions when the volume is
