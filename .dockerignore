@@ -1,0 +1,18 @@
+# ponytail: reduces build context size for airflow Dockerfile (context: .)
+# Only excludes dirs the airflow Dockerfile doesn't COPY.
+# Other builds (backend/, backend/ml/) use scoped context and ignore this file.
+.git
+.gitignore
+.github
+node_modules
+frontend
+terraform
+*.md
+.vscode
+.idea
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+coverage

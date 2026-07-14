@@ -51,17 +51,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # pytorch-cpu extra index for CPU-only torch; PyPI for everything else.
 RUN pip install --no-cache-dir \
     --extra-index-url https://download.pytorch.org/whl/cpu \
-    torch>=2.12.0 \
-    mlflow>=3.14.0 \
-    scikit-learn>=1.6.0 \
-    numpy>=2.1.0 \
-    pandas>=2.3.0 \
-    matplotlib>=3.10.0 \
-    asyncpg>=0.30.0 \
-    psutil>=6.0.0 \
-    httpx>=0.28.1 \
-    evidently>=0.6.0 \
-    boto3>=1.43.0 \
+    'torch>=2.12.0' \
+    'mlflow>=3.14.0' \
+    'scikit-learn>=1.6.0' \
+    'numpy>=2.1.0' \
+    'pandas>=2.3.0' \
+    'matplotlib>=3.10.0' \
+    'asyncpg>=0.30.0' \
+    'psutil>=6.0.0' \
+    'httpx>=0.28.1' \
+    'evidently>=0.6.0' \
+    'boto3>=1.43.0' \
     'apache-airflow>=3.3.0' \
     'apache-airflow-providers-standard>=1.0.0' \
     'apache-airflow-providers-postgres>=5.0.0' \

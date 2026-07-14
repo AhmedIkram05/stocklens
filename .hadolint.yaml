@@ -1,0 +1,7 @@
+# ponytail: suppressing advisory rules. These warnings don't justify pinning
+# every apt package or pip version in dev images — maintainability cost > value.
+ignored:
+  - DL3008 # Pin versions in apt-get install
+  - DL3013 # Pin versions in pip
+  - DL3042 # Avoid pip cache directory
+  - DL4006 # Set pipefail before RUN with pipe
