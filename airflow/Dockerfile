@@ -7,19 +7,28 @@
 # Stage 0: Rust native module builder (features_engine)
 FROM python:3.12-slim AS rust-builder
 
+# Build toolchain: pkg-config for pyo3/numpy link, libssl for pyo3,
+# ca-certificates/curl for rustup. Mirrors the backend Dockerfile's
+# proven rust-builder stage.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
     build-essential \
+    pkg-config \
+    libssl-dev \
+    curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust via rustup
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:$PATH"
 
 RUN pip install maturin --no-cache-dir
 
 WORKDIR /src
-COPY ../backend/ml/features-engine /src
+# ponytail: single COPY layer (no dep-split like backend). Builds are
+# CI-only so layering gains are negligible vs simplicity.
+COPY backend/ml/features-engine /src
 RUN maturin build --release --features extension --out /wheels
 
 
@@ -56,7 +65,9 @@ RUN pip install --no-cache-dir \
     'apache-airflow>=3.3.0' \
     'apache-airflow-providers-standard>=1.0.0' \
     'apache-airflow-providers-postgres>=5.0.0' \
-    'apache-airflow-providers-fab>=1.0.0'
+    'apache-airflow-providers-fab>=1.0.0' \
+    'apache-airflow-providers-amazon>=9.0.0' \
+    alembic>=1.15.0
 
 # Install Rust native module (features_engine)
 COPY --from=rust-builder /wheels /wheels
@@ -66,6 +77,9 @@ RUN pip install --no-deps /wheels/features_engine*.whl
 COPY airflow/dags/ /opt/airflow/dags/
 COPY airflow/scripts/ /opt/airflow/scripts/
 COPY airflow/config/airflow.cfg /opt/airflow/config/
+
+# Backend source for DAG PythonOperator imports (drift.*, src.database.*) + alembic migrations
+COPY backend/ /app/
 
 # Airflow env defaults
 ENV AIRFLOW__CORE__LOAD_EXAMPLES=False
@@ -83,8 +97,12 @@ WORKDIR ${AIRFLOW_HOME}
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8080/api/v2/monitor/health || exit 1
 
+# Make init script executable
+RUN chmod +x /opt/airflow/scripts/init_airflow_variables.sh
+
 CMD ["bash", "-c", "\
     airflow db migrate \
+    && bash /opt/airflow/scripts/init_airflow_variables.sh \
     && airflow dag-processor & \
     airflow scheduler & \
     airflow api-server --port 8080"]

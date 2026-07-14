@@ -1,3 +1,6 @@
+# Base image arg — override with --build-arg BASE_IMAGE=... for ARM64 CPU-only builds.
+ARG BASE_IMAGE=nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
 # Stage 1: Rust native module builder
 # Use same Python version as runtime to ensure ABI-compatible wheel (cp314)
 FROM python:3.14-slim AS rust-builder
@@ -8,7 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust via rustup
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+RUN curl --retry 3 --retry-delay 5 --connect-timeout 30 \
+     --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:$PATH"
 
 RUN pip install maturin --no-cache-dir
@@ -55,7 +59,8 @@ COPY --from=rust-builder /wheels /wheels
 RUN uv pip install --no-deps /wheels/features_engine*.whl
 
 # Stage 3: Runtime image
-FROM nvidia/cuda:12.4-runtime-ubuntu22.04 AS runtime
+ARG BASE_IMAGE=nvidia/cuda:12.4.1-runtime-ubuntu22.04
+FROM ${BASE_IMAGE} AS runtime
 
 # Install curl for healthcheck, python3, libgomp for torch parallelism
 RUN apt-get update && apt-get install -y --no-install-recommends \

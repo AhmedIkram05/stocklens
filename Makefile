@@ -5,14 +5,18 @@
 
 .PHONY: up down rebuild test logs migrate alembic-autogenerate backend-ml train train-all seed hpo hpo-phase2
 
-up: ## Build & start all services (backend, ml, postgres, redis, mlflow, test DB)
-	docker compose --profile ml --profile test up -d
+up: ## Build & start all services (backend, ml, postgres, redis, mlflow, test DB, airflow)
+	docker compose up -d
+	cd airflow && docker compose up -d
 
 down: ## Stop all services
+	cd airflow && docker compose down
 	docker compose down
 
 rebuild: ## Rebuild the backend image and restart
-	docker compose build backend && docker compose up -d
+	docker compose build backend
+	docker compose up -d
+	cd airflow && docker compose up -d
 
 test: ## Run pytest suite in Docker (profile: test)
 	docker compose run --rm pytest

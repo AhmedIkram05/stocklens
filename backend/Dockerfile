@@ -22,7 +22,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 # Install Rust via rustup — host is ARM64 under QEMU, so --target is implicit.
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+RUN curl --retry 3 --retry-delay 5 --connect-timeout 30 \
+     --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Install maturin via pip (python:3.14-slim ships with pip pre-installed).

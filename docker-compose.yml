@@ -76,8 +76,8 @@ services:
     restart: unless-stopped
 
   ml:
-    build:
-      context: ./backend/ml
+    image: python:3.12-slim
+    working_dir: /app
     profiles:
       - ml
     environment:
@@ -96,6 +96,8 @@ services:
       - ./backend/ml:/app/ml
       - model_artifacts:/model_artifacts
       - mlflow_data:/mlflow
+    command: >
+      sh -c "pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu mlflow>=3.14.0 scikit-learn>=1.6.0 numpy pandas boto3 && python -m ml.pipeline"
     # No ports - runs on-demand via: docker compose run ml python -m ml.pipeline
 
   backend:
@@ -132,6 +134,7 @@ services:
       context: ./backend
     profiles:
       - test
+    env_file: ./backend/.env
     environment:
       HOME: /tmp
       DATABASE_URL: postgresql+asyncpg://stocklens:stocklens@postgres_test:5432/stocklens_test
@@ -154,6 +157,7 @@ services:
       - ./backend/tests:/app/tests
       - ./backend/alembic:/app/alembic
       - ./backend/pyproject.toml:/app/pyproject.toml
+      - ./backend/.env:/app/.env
     command: >
       sh -c "UV_CACHE_DIR=/tmp/uv-cache uv sync --extra dev --index-strategy unsafe-best-match && uv pip install --no-deps /app/wheels/features_engine*.whl && pytest -v -W 'ignore::DeprecationWarning:slowapi' --cov=src --cov-report=term-missing --cov-report=xml --tb=short"
 
