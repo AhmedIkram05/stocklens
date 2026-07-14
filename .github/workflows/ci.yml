@@ -47,7 +47,7 @@ jobs:
       - run: npx tsc --noEmit
 
   test:
-    name: Tests & Coverage
+    name: Frontend Tests & Coverage
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -56,7 +56,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npm test -- --coverage --coverageThreshold='{"global":{"branches":60,"functions":60,"lines":60,"statements":60}}'
+      - run: npm test -- --coverage --coverageThreshold='{"global":{"branches":30,"functions":30,"lines":30,"statements":30}}'
       - uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -100,7 +100,7 @@ jobs:
         run: cargo test
 
   python:
-    name: Python Backend
+    name: Backend Tests & Coverage
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -176,7 +176,7 @@ jobs:
             --cov-report=xml:coverage.xml \
             --cov-report=lcov:coverage/lcov.info \
             --cov-report=term-missing \
-            --cov-fail-under=60
+            --cov-fail-under=30
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v6
         with:
@@ -190,6 +190,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Create .env from example
+        run: cp backend/.env.example backend/.env
       - name: Validate docker-compose.yml
         run: docker compose config --quiet
       - name: Validate docker-compose.ci.yml

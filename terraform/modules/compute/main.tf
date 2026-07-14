@@ -110,7 +110,7 @@ resource "aws_launch_template" "ml_training_gpu" {
   key_name = var.key_name
 
   network_interfaces {
-    associate_public_ip_address = true
+    associate_public_ip_address = false
     device_index                = 0
     security_groups             = [var.ecs_tasks_sg_id]
   }
@@ -127,7 +127,7 @@ EOF
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
-    http_put_response_hop_limit = 2
+    http_put_response_hop_limit = 1
   }
 
   monitoring {
