@@ -209,6 +209,7 @@ module "airflow" {
   efs_filesystem_id         = local.efs_filesystem_id
   ecs_cluster_name          = module.compute.ecs_cluster_name
   database_url              = local.database_url
+  jwt_secret_arn            = module.secrets.jwt_secret_arn
 }
 
 # ── WAF ──────────────────────────────────────────────────────────────

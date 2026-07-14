@@ -191,6 +191,15 @@ locals {
       },
     ], var.airflow_extra_env)
 
+    # ponytail: JWT_SECRET_KEY needed because alembic's env.py imports src.config.Settings
+    # which validates ALL pydantic fields on instantiation, not just DATABASE_URL.
+    secrets = [
+      {
+        name      = "JWT_SECRET_KEY"
+        valueFrom = var.jwt_secret_arn
+      },
+    ]
+
     logConfiguration = {
       logDriver = "awslogs"
       options = {

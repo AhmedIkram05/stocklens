@@ -114,3 +114,9 @@ variable "database_url" {
   type        = string
   default     = ""
 }
+
+variable "jwt_secret_arn" {
+  description = "ARN of the JWT secret in Secrets Manager — needed for alembic env.py which imports src.config.Settings"
+  type        = string
+  default     = ""
+}

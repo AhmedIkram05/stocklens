@@ -4,6 +4,9 @@ StockLens FastAPI Application.
 Phase 1: Backend Foundation + Auth + OCR Migration.
 """
 
+import logging
+import sys
+
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +19,11 @@ from src.limiter import limiter
 from src.receipts.router import router as receipt_router
 
 # ── Structured logging (JSON to stdout, captured by CloudWatch in production) ──
+
+# ponytail: basicConfig ensures structlog/standard-logging messages actually
+# appear in CloudWatch. Without it, INFO-level structlog calls are silently
+# dropped (root logger defaults to WARNING, no handlers configured).
+logging.basicConfig(level=logging.INFO, stream=sys.stderr, force=True)
 
 structlog.configure(
     processors=[
@@ -68,21 +76,40 @@ async def lifespan(app: FastAPI):
     print("LIFESPAN: pool initialized", file=sys.stderr, flush=True)
     logger.info("database_pool_initialised")
 
-    # Seed categories on first startup
-    from src.categories.seed import seed_categories
+    # ponytail: try/except wraps the deferred-import zone. The silent exit
+    # between "pool initialized" and "yielding..." has no traceback in logs,
+    # suggesting either a segfault in a C extension or an exception swallowed
+    # by logging config. This wrapper forces the actual error to stderr.
+    # If the exit persists, check torch/numpy import-time segfaults.
+    try:
+        print("LIFESPAN: post-pool init starting...", file=sys.stderr, flush=True)
 
-    seeded = await seed_categories()
-    if seeded:
-        logger.info("categories_seeded", count=seeded)
+        # Seed categories on first startup
+        from src.categories.seed import seed_categories
 
-    # Load prediction model
-    from src.prediction.service import prediction_service
+        seeded = await seed_categories()
+        if seeded:
+            logger.info("categories_seeded", count=seeded)
+        else:
+            print("LIFESPAN: seed_categories returned 0", file=sys.stderr, flush=True)
 
-    loaded = prediction_service.load_model(settings.PREDICTION_MODEL_PATH)
-    if loaded:
-        logger.info("prediction_model_loaded", path=settings.PREDICTION_MODEL_PATH)
-    else:
-        logger.warning("prediction_model_not_found", path=settings.PREDICTION_MODEL_PATH)
+        # Load prediction model
+        from src.prediction.service import prediction_service
+
+        loaded = prediction_service.load_model(settings.PREDICTION_MODEL_PATH)
+        if loaded:
+            logger.info("prediction_model_loaded", path=settings.PREDICTION_MODEL_PATH)
+        else:
+            print("LIFESPAN: no champion model, continuing", file=sys.stderr, flush=True)
+
+        print("LIFESPAN: post-pool init done", file=sys.stderr, flush=True)
+    except Exception:
+        print("LIFESPAN CRASH:", file=sys.stderr, flush=True)
+        import traceback
+
+        traceback.print_exc(file=sys.stderr)
+        sys.stderr.flush()
+        raise
 
     print("LIFESPAN: yielding...", file=sys.stderr, flush=True)
     yield
