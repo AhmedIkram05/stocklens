@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 from airflow.models import DAG
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import BranchPythonOperator, PythonOperator
+from airflow.providers.amazon.aws.operators.ecs import EcsRunTaskOperator
 
 
 # ── Default arguments ──────────────────────────────────────────────────────────
@@ -64,59 +65,10 @@ def _check_new_ohlcv_data(**context) -> str:
     return asyncio.run(_check())
 
 
-def _train_challenger(**context) -> None:
-    """Launch ML training on ECS Fargate via boto3 and wait for completion."""
-    import boto3
-    from airflow.models import Variable
-
-    v = Variable.get
-    client = boto3.client("ecs", region_name=v("aws_region"))
-
-    resp = client.run_task(
-        cluster=v("ecs_cluster_name"),
-        taskDefinition=v("ml_training_task_definition"),
-        launchType="EC2",
-        networkConfiguration={
-            "awsvpcConfiguration": {
-                "subnets": v("private_subnet_ids").split(","),
-                "securityGroups": [v("airflow_sg_id")],
-                "assignPublicIp": "ENABLED",
-            }
-        },
-        overrides={
-            "containerOverrides": [
-                {
-                    "name": "ml-training",
-                    "environment": [
-                        {"name": "DATABASE_URL", "value": v("database_url")},
-                        {"name": "MLFLOW_TRACKING_URI", "value": v("mlflow_tracking_uri")},
-                        {"name": "MODEL_ARTIFACT_DIR", "value": "/model_artifacts/champion"},
-                        {"name": "MLFLOW_ARTIFACT_ROOT", "value": "/mlflow/artifacts"},
-                        {"name": "MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING", "value": "true"},
-                        {"name": "ENVIRONMENT", "value": v("environment")},
-                        {"name": "AWS_REGION", "value": v("aws_region")},
-                    ],
-                }
-            ]
-        },
-    )
-
-    failures = resp.get("failures", [])
-    if failures:
-        raise RuntimeError(f"ECS RunTask failed: {failures}")
-
-    task_arn = resp["tasks"][0]["taskArn"]
-    print(f"ECS training task launched: {task_arn}")
-
-    # Wait for ECS task to finish so downstream tasks (detect_new_champion)
-    # see the promoted model. Polls every 30s for up to 3h.
-    waiter = client.get_waiter("tasks_stopped")
-    waiter.wait(
-        cluster=v("ecs_cluster_name"),
-        tasks=[task_arn],
-        WaiterConfig={"Delay": 30, "MaxAttempts": 360},
-    )
-    print(f"ECS training task completed: {task_arn}")
+# ── Variables helper (env-backed, see init_airflow_variables.sh) ──
+def v(key: str) -> str:
+    from airflow.sdk import Variable
+    return Variable.get(key)
 
 
 def _detect_new_champion(**context) -> str:
@@ -294,11 +246,42 @@ with DAG(
 
     skip_retraining = EmptyOperator(task_id="skip_retraining")
 
-    # ── Task 2: Train challenger (runs on GPU via ECS, invoked via boto3) ──
-    train_challenger = PythonOperator(
+    # ── Task 2: Train challenger (runs on GPU via ECS EcsRunTaskOperator) ──
+    train_challenger = EcsRunTaskOperator(
         task_id="train_challenger",
-        python_callable=_train_challenger,
-        execution_timeout=timedelta(hours=3),
+        cluster=v("ecs_cluster_name"),
+        task_definition=v("ml_training_task_definition"),
+        launch_type="EC2",
+        network_configuration={
+            "awsvpcConfiguration": {
+                "subnets": v("private_subnet_ids").split(","),
+                "securityGroups": [v("airflow_sg_id")],
+                "assignPublicIp": "ENABLED",
+            },
+        },
+        overrides={
+            "containerOverrides": [
+                {
+                    "name": "ml-training",
+                    "environment": [
+                        {"name": "DATABASE_URL", "value": v("database_url")},
+                        {"name": "MLFLOW_TRACKING_URI", "value": v("mlflow_tracking_uri")},
+                        {"name": "MODEL_ARTIFACT_DIR", "value": "/model_artifacts/champion"},
+                        {"name": "MLFLOW_ARTIFACT_ROOT", "value": "/mlflow/artifacts"},
+                        {"name": "MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING", "value": "true"},
+                        {"name": "ENVIRONMENT", "value": v("environment")},
+                        {"name": "AWS_REGION", "value": v("aws_region")},
+                    ],
+                },
+            ],
+        },
+        awslogs_group=f"/ecs/{v('app_name')}-airflow-{v('environment')}",
+        awslogs_region=v("aws_region"),
+        awslogs_stream_prefix="ecs/ml-training",
+        reattach=True,
+        waiter_delay=30,
+        waiter_max_attempts=360,
+        do_xcom_push=True,
     )
 
     # ── Branch: detect champion change ──
