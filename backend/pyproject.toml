@@ -55,6 +55,7 @@ environments = ["sys_platform == 'linux'", "sys_platform == 'darwin'"]
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.ruff]
 line-length = 100

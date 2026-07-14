@@ -468,7 +468,7 @@ resource "aws_iam_role_policy" "github_deploy" {
       {
         Effect = "Allow"
         Action = [
-          "ecr:*", "ecs:*", "s3:*", "dynamodb:*", "kms:*",
+          "autoscaling:*", "ecr:*", "ecs:*", "s3:*", "dynamodb:*", "kms:*",
           "iam:*",
           "cloudwatch:*", "events:*", "sns:*", "budgets:*", "ce:*", "wafv2:*",
           "elasticache:*", "rds:*", "application-autoscaling:*", "logs:*",

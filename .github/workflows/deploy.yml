@@ -199,12 +199,14 @@ jobs:
           REGISTRY="${{ steps.login-ecr.outputs.registry }}"
           IMAGE_TAG="${REGISTRY}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
           AIRFLOW_IMAGE_TAG="${REGISTRY}/${{ env.ECR_REPOSITORY }}:airflow-${{ github.sha }}"
+          ML_TRAINING_IMAGE_TAG="${REGISTRY}/${{ env.ECR_REPOSITORY }}:ml-training-${{ github.sha }}"
           # ponytail: -lock=false safe for read-only plan. CI concurrency
           # group (terraform-${{ github.ref }}) prevents parallel applies.
           # Exit code 2 = changes detected (not a failure in CI context).
           terraform plan -lock=false \
             -var="container_image=${IMAGE_TAG}" \
             -var="airflow_image=${AIRFLOW_IMAGE_TAG}" \
+            -var="ml_training_image=${ML_TRAINING_IMAGE_TAG}" \
             -var="environment=dev" \
             -out=tfplan || { rc=$?; [ $rc -eq 2 ] && true || exit $rc; }
         working-directory: ${{ env.TERRAFORM_DIR }}
