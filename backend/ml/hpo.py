@@ -529,7 +529,7 @@ def _load_best_hps(path: str = "/tmp/hpo_best_hps.json") -> dict[str, Any] | Non
     try:
         with open(path) as f:
             return json.load(f)
-    except FileNotFoundError, json.JSONDecodeError:
+    except (FileNotFoundError, json.JSONDecodeError):
         return None
 
 
