@@ -154,7 +154,7 @@ async def get_quote_endpoint(
                 try:
                     data = json.loads(cached)
                     return QuoteResponse(**data)
-                except json.JSONDecodeError, TypeError:
+                except (json.JSONDecodeError, TypeError):
                     pass  # Corrupted cache — refetch
     except Exception:
         logger.warning("redis_cache_read_failed", ticker=ticker)
