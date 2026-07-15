@@ -1,12 +1,11 @@
 # Stage 0: Rust native module builder (features-engine)
-# Use python:3.14-slim so maturin builds a wheel matching the runtime ABI
-# (python:3.14-slim in builder/runtime stages). The official rust image ships
+# Use python:3.12-slim so maturin builds a wheel matching the runtime ABI
+# (python:3.12-slim in builder/runtime stages). The official rust image ships
 # without Python; installing Python from Debian Bookworm gives us 3.11, which
-# produces a cp311-tagged wheel — uninstallable on Python 3.14.
-# Rust is installed via rustup (~60s on first build, layer-cached thereafter).
+# produces a cp311-tagged wheel — uninstallable on Python 3.12.
 # Cross-compilation is unnecessary: buildx QEMU emulation makes ARM64 look
 # native, so the default Rust target is aarch64-unknown-linux-gnu.
-FROM python:3.14-slim AS rust-builder
+FROM python:3.12-slim AS rust-builder
 
 # Build toolchain: C compiler for pyo3/numpy link, pkg-config/libssl for pyo3,
 # curl for rustup.
@@ -56,26 +55,23 @@ RUN --mount=type=cache,target=/root/.cargo/git \
 # on every build. We deliberately DROP UV_COMPILE_BYTECODE here — bytecode
 # compilation of 15k files took 13m on ARM64 QEMU. .pyc is generated lazily
 # on first import instead; runtime cost is negligible vs build cost.
-FROM python:3.14-slim AS builder
+FROM python:3.12-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --index-strategy unsafe-best-match
-
 # Install Rust native module into the venv, copy wheel aside for re-install
 # in dev/test workflows.
 COPY --from=rust-builder /wheels /wheels
-RUN uv pip install --no-deps /wheels/features_engine*.whl && \
+RUN uv pip install --no-deps --python /usr/local/bin/python3 /wheels/features_engine*.whl && \
     mkdir -p /app/wheels && \
     cp /wheels/features_engine*.whl /app/wheels/
 
 
-# Stage 2: Runtime image.
-FROM python:3.14-slim AS runtime
+# Stage 2: Runtime image — install deps directly with pip (no venv, works cross-arch).
+FROM python:3.12-slim AS runtime
 
 # apt cache mount reuses downloaded lists between pipeline runs.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -88,27 +84,26 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get upgrade -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-# Non-root for security — create before COPY so --chown can reference it.
-# ponytail: --chown avoids chown -R after copy, halving peak disk usage.
+# Non-root for security
 RUN groupadd -r appuser && useradd -r -g appuser -u 1000 appuser
 
-COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
-ENV PATH="/app/.venv/bin:$PATH"
-
-# features_engine wheel for re-install after uv sync in dev/test.
-COPY --from=builder --chown=appuser:appuser /app/wheels /app/wheels
-
-# uv for dev/test dep management + uv-python wheeled binary.
-COPY --from=ghcr.io/astral-sh/uv:latest --chown=appuser:appuser /uv /bin/uv
-
+# Install Python deps directly into system Python (no venv = cross-arch safe)
+COPY --from=builder /app/pyproject.toml /app/uv.lock /app/
+COPY --from=builder /app/wheels /app/wheels
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 WORKDIR /app
+RUN pip install --no-cache-dir --no-deps /app/wheels/features_engine*.whl && \
+    pip install --no-cache-dir -e .
+
+# Copy application code
 COPY --chown=appuser:appuser src/ src/
 COPY --chown=appuser:appuser ml/ ml/
 COPY --chown=appuser:appuser docker/ docker/
 COPY --chown=appuser:appuser alembic/ alembic/
+COPY --chown=appuser:appuser sagemaker/ backend/sagemaker/
 COPY --chown=appuser:appuser alembic.ini pyproject.toml uv.lock ./
 
-RUN mkdir -p /model_artifacts/champion
+RUN mkdir -p /model_artifacts/champion && chmod o+rwX /model_artifacts
 
 USER appuser
 
