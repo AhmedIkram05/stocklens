@@ -466,8 +466,24 @@ class MLflowManager:
             parts = champion_s3_uri.removeprefix("s3://").rstrip("/").split("/", 1)
             bucket = parts[0]
             key_prefix = f"{parts[1]}/" if len(parts) > 1 else ""
+
+            # Publish loose model.pt (consumed by ECS bootstrap.py)
             s3_key = f"{key_prefix}model.pt"
             s3.upload_file(save_path, bucket, s3_key)
             logger.info("Champion model published to S3", extra={"bucket": bucket, "key": s3_key})
+
+            # Also publish model.tar.gz (consumed by SageMaker model_data_url)
+            import io  # noqa: E402  # ponytail: stdlib, no new dep
+            import tarfile
+
+            tar_buffer = io.BytesIO()
+            with tarfile.open(fileobj=tar_buffer, mode="w:gz") as tar:
+                tar.add(save_path, arcname="model.pt")
+            tar_buffer.seek(0)
+            tar_key = f"{key_prefix}model.tar.gz"
+            s3.upload_fileobj(tar_buffer, bucket, tar_key)
+            logger.info(
+                "Champion model tar.gz published to S3", extra={"bucket": bucket, "key": tar_key}
+            )
 
         return save_path
