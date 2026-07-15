@@ -299,7 +299,7 @@ def _clean_number(raw: str) -> Decimal | None:
         return None
     try:
         return Decimal(s)
-    except ValueError, decimal.InvalidOperation:
+    except (ValueError, decimal.InvalidOperation):
         return None
 
 
@@ -465,7 +465,7 @@ def parse_date(text: str) -> date | None:
                 day, month, year = int(groups[0]), int(groups[1]), int(groups[2]) + 2000
                 day, month = _normalise_day_month(day, month)
                 return date(year, month, day)
-        except ValueError, KeyError:
+        except (ValueError, KeyError):
             continue
 
     return None

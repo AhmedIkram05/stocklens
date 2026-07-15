@@ -412,7 +412,7 @@ def _raw_items_to_model(items: list[dict]) -> list[ExtractedItem]:
         # ponytail: naive int conversion — fromisoformat decimal later if needed
         try:
             qty = int(quantity) if quantity is not None else 1
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             qty = 1
         result.append(ExtractedItem(name=str(name), quantity=qty, price=float(price)))
     return result
