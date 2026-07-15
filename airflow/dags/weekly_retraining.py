@@ -271,6 +271,7 @@ with DAG(
                         {"name": "MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING", "value": "true"},
                         {"name": "ENVIRONMENT", "value": v("environment")},
                         {"name": "AWS_REGION", "value": v("aws_region")},
+                        {"name": "CHAMPION_S3_URI", "value": v("champion_s3_uri")},
                     ],
                 },
             ],
