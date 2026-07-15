@@ -7,8 +7,10 @@ Loaded once at FastAPI startup via lifespan and reused across requests.
 from __future__ import annotations
 
 import concurrent.futures
+import json
 from pathlib import Path
 
+import boto3
 import numpy as np
 import pandas as pd
 import structlog
@@ -17,6 +19,7 @@ import torch
 from ml.config import ML_CONFIG as ml_config
 from ml.features import compute_all_features, compute_cross_sectional_features
 from ml.model import GlobalLSTM
+from src.config import settings
 
 logger = structlog.get_logger()
 
@@ -153,16 +156,17 @@ class PredictionService:
             except Exception as exc:
                 logger.warning("cross_sectional_features_failed", error=str(exc))
 
-        # 4. Concatenate features
+        # 4. Concatenate features — ALWAYS produce 17 features (13 V1 + vol_pct + 3 excess)
         if spy_features is not None:
             feature_values = np.concatenate(
                 [ticker_features.values.astype(np.float32), vol_pct, spy_features],
                 axis=-1,
             )
         else:
-            # Fall back to 14 features (no cross-sectional)
+            # Pad cross-sectional features with zeros to maintain 17-feature contract
+            excess_pad = np.zeros((ticker_features.shape[0], 3), dtype=np.float32)
             feature_values = np.concatenate(
-                [ticker_features.values.astype(np.float32), vol_pct],
+                [ticker_features.values.astype(np.float32), vol_pct, excess_pad],
                 axis=-1,
             )
 
@@ -206,6 +210,40 @@ class PredictionService:
         tensor = torch.tensor(feature_window, dtype=torch.float32).unsqueeze(0)
         return tensor, raw_feature_values, feature_window
 
+    def _sagemaker_predict(self, ticker: str, feature_window: np.ndarray) -> dict | None:
+        """Invoke SageMaker serverless endpoint for prediction.
+
+        Args:
+            ticker: Ticker symbol (for request context).
+            feature_window: (30, n_features) standardised sliding window.
+
+        Returns:
+            Dict with keys: direction, confidence, probabilities, model_version.
+            None if SageMaker call fails.
+        """
+        endpoint_name = settings.SAGEMAKER_ENDPOINT_NAME
+        payload = {
+            "ticker": ticker.upper(),
+            "features": feature_window.tolist(),
+        }
+        try:
+            sm_client = boto3.client(
+                "sagemaker-runtime",
+                region_name=settings.AWS_REGION,
+            )
+            response = sm_client.invoke_endpoint(
+                EndpointName=endpoint_name,
+                ContentType="application/json",
+                Body=json.dumps(payload),
+            )
+            result = json.loads(response["Body"].read().decode("utf-8"))
+            # Expected shape: {direction, confidence, probabilities}
+            result["model_version"] = "sagemaker"
+            return result
+        except Exception as exc:
+            logger.exception("sagemaker_invoke_failed", ticker=ticker, error=str(exc))
+            return None
+
     def predict(
         self, ticker: str, ohlcv_rows: list[dict], spy_ohlcv_rows: list[dict] | None = None
     ) -> dict | None:
@@ -221,6 +259,43 @@ class PredictionService:
             Dict with keys: direction, confidence, probabilities, model_version.
             None if prediction cannot be made.
         """
+        # Compute features (shared between fargate and sagemaker paths)
+        result = self._compute_features(ohlcv_rows, spy_ohlcv_rows)
+        if result is None:
+            return None
+
+        features_tensor, raw_feature_values, feature_window = result
+
+        # ── SageMaker serving path ──
+        if settings.PREDICTION_SERVING_BACKEND == "sagemaker":
+            logger.info("using_sagemaker_backend", ticker=ticker)
+            sm_result = self._sagemaker_predict(ticker, feature_window)
+            if sm_result is None:
+                logger.error("sagemaker_prediction_failed_falling_back")
+                return None
+
+            # Fire-and-forget: log prediction for drift monitoring
+            from src.prediction.prediction_logger import _logger_executor, log_prediction_sync
+
+            _logger_executor.submit(
+                log_prediction_sync,
+                ticker,
+                sm_result.get("model_version", "sagemaker"),
+                sm_result["direction"],
+                sm_result["confidence"],
+                sm_result["probabilities"],
+                raw_feature_values,
+                feature_window,
+            )
+            return {
+                "ticker": ticker.upper(),
+                "direction": sm_result["direction"],
+                "confidence": sm_result["confidence"],
+                "probabilities": sm_result["probabilities"],
+                "model_version": sm_result.get("model_version", "sagemaker"),
+            }
+
+        # ── Default Fargate serving path (local GlobalLSTM) ──
         if self.model is None:
             logger.error("model_not_loaded_cannot_predict")
             return None
@@ -229,13 +304,6 @@ class PredictionService:
         vocab = getattr(self.model, "_vocab", {})
         ticker_idx_val = vocab.get(ticker.upper(), 0)  # 0 = UNK_IDX
         ticker_idx = torch.tensor([ticker_idx_val], dtype=torch.long)
-
-        # Compute features
-        result = self._compute_features(ohlcv_rows, spy_ohlcv_rows)
-        if result is None:
-            return None
-
-        features_tensor, raw_feature_values, feature_window = result
 
         # Run inference
         with torch.no_grad():
