@@ -19,7 +19,7 @@ try:
         _EVIDENTLY_AVAILABLE,
         EvidentlyReporter,
     )
-except ImportError, AttributeError:
+except (ImportError, AttributeError):
     _EVIDENTLY_AVAILABLE = False  # type: ignore[assignment]
 
 if not _EVIDENTLY_AVAILABLE:
