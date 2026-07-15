@@ -22,7 +22,7 @@ try:
     from evidently import ColumnMapping  # noqa: F401
     from evidently.metric_preset import DataDriftPreset  # noqa: F401
     from evidently.report import Report  # noqa: F401
-except ImportError, AttributeError:
+except (ImportError, AttributeError):
     _EVIDENTLY_AVAILABLE = False
 
 logger = structlog.get_logger()
