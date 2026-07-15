@@ -103,7 +103,7 @@ COPY --chown=appuser:appuser alembic/ alembic/
 COPY --chown=appuser:appuser sagemaker/ backend/sagemaker/
 COPY --chown=appuser:appuser alembic.ini pyproject.toml uv.lock ./
 
-RUN mkdir -p /model_artifacts/champion && chmod o+rwX /model_artifacts
+RUN mkdir -p /model_artifacts/champion && chmod -R o+rwX /model_artifacts
 
 USER appuser
 
