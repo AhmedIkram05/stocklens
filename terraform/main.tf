@@ -238,16 +238,16 @@ module "monitoring" {
 # ── SageMaker (R6) ────────────────────────────────────────────────────
 
 module "sagemaker" {
-  source                         = "./modules/sagemaker"
-  app_name                       = var.app_name
-  environment                    = var.environment
-  aws_region                     = var.aws_region
-  container_image                = var.sagemaker_image
-  champion_s3_uri                = var.champion_s3_uri
-  sagemaker_execution_role_arn   = module.iam.sagemaker_execution_role_arn
-  sagemaker_instance_type        = var.sagemaker_instance_type
-  sagemaker_model_download_timeout     = var.sagemaker_model_download_timeout
-  sagemaker_container_startup_timeout  = var.sagemaker_container_startup_timeout
+  source                              = "./modules/sagemaker"
+  app_name                            = var.app_name
+  environment                         = var.environment
+  aws_region                          = var.aws_region
+  container_image                     = var.sagemaker_image
+  champion_s3_uri                     = var.champion_s3_uri
+  sagemaker_execution_role_arn        = module.iam.sagemaker_execution_role_arn
+  sagemaker_instance_type             = var.sagemaker_instance_type
+  sagemaker_model_download_timeout    = var.sagemaker_model_download_timeout
+  sagemaker_container_startup_timeout = var.sagemaker_container_startup_timeout
 }
 
 # ── Budgets ──────────────────────────────────────────────────────────
