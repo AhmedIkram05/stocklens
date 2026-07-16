@@ -310,6 +310,7 @@ jobs:
             -var="airflow_image=${AIRFLOW_IMAGE_TAG}" \
             -var="ml_training_image=${ML_TRAINING_IMAGE_TAG}" \
             -var="sagemaker_image=${SAGEMAKER_IMAGE_TAG}" \
+            -var="champion_s3_uri=s3://stocklens-mlflow-artifacts-dev/champion" \
             -var="environment=dev" \
             -out=tfplan || { rc=$?; [ $rc -eq 2 ] && true || exit $rc; }
         working-directory: ${{ env.TERRAFORM_DIR }}
