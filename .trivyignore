@@ -12,3 +12,7 @@ CVE-2026-8376
 # g_dbus_node_info_new_for_xml. No fix available. App doesn't parse D-Bus
 # introspection XML at runtime.
 CVE-2026-58016
+
+# CVE-2026-13221: perl-base regex compilation silently incorrect results.
+# No fix version available. Our Python app never invokes perl regexes.
+CVE-2026-13221
