@@ -112,10 +112,11 @@ async def lifespan(app: FastAPI):
         raise
 
     print("LIFESPAN: yielding...", file=sys.stderr, flush=True)
-    yield
-
-    logger.info("app_shutting_down")
-    await close_pool()
+    try:
+        yield
+    finally:
+        logger.info("app_shutting_down")
+        await close_pool()
 
 
 # ── FastAPI application ──

@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -15,14 +16,14 @@ class Settings(BaseSettings):
     REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379
     REDIS_PASSWORD: str = ""
-    REDIS_URL: str = ""  # set below
+    REDIS_URL: str = ""
 
     # JWT
-    JWT_SECRET_KEY: str  # required, no default
+    JWT_SECRET_KEY: str = Field(..., min_length=1)  # required, must be non-empty
     JWT_ALGORITHM: str = "HS256"
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, gt=0)
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-    BCRYPT_ROUNDS: int = 12
+    BCRYPT_ROUNDS: int = Field(default=12, gt=0)
 
     # AWS
     AWS_REGION: str = "eu-west-2"
@@ -61,9 +62,9 @@ class Settings(BaseSettings):
     # Prediction Logging / Drift
     PREDICTION_LOG_ENABLED: bool = True
     PREDICTION_LOG_RETENTION_DAYS: int = 90
-    DRIFT_ALERT_PSI_THRESHOLD: float = 0.25
-    DRIFT_ALERT_KS_THRESHOLD: float = 0.3
-    DRIFT_ALERT_JS_THRESHOLD: float = 0.3
+    DRIFT_ALERT_PSI_THRESHOLD: float = Field(default=0.25, ge=0)
+    DRIFT_ALERT_KS_THRESHOLD: float = Field(default=0.3, ge=0)
+    DRIFT_ALERT_JS_THRESHOLD: float = Field(default=0.3, ge=0)
     DRIFT_MONITORED_TICKERS: str = ""  # comma-separated, empty = portfolio-only
     DRIFT_REPORT_S3_BUCKET: str = "stocklens-drift-reports"
     DRIFT_REPORT_S3_PREFIX: str = "drift_reports/"
@@ -79,6 +80,21 @@ class Settings(BaseSettings):
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
+    @model_validator(mode="after")
+    def derive_redis_url(self):
+        """Derive REDIS_URL from host/port/password when not set directly.
+        Uses rediss:// (TLS) because ElastiCache forces in-transit encryption.
+        ponytail: self-signed certs — redis-py handles these by default on rediss://
+        """
+        if not self.REDIS_URL:
+            if self.REDIS_PASSWORD:
+                self.REDIS_URL = (
+                    f"rediss://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/0"
+                )
+            else:
+                self.REDIS_URL = f"rediss://{self.REDIS_HOST}:{self.REDIS_PORT}/0"
+        return self
+
 
 # ── .env guard — fail fast if .env is missing in non-dev environments ──
 # Also treat "dev" as a development env (Terraform uses "dev" as env name).
@@ -92,14 +108,3 @@ if not env_path.exists() and _env not in ("development", "dev"):
     )
 
 settings = Settings()
-
-# Derive REDIS_URL from host/port/password if not set directly
-# Uses rediss:// (TLS) because ElastiCache forces in-transit encryption.
-# ponytail: self-signed certs — redis-py handles these by default on rediss://
-if not settings.REDIS_URL:
-    if settings.REDIS_PASSWORD:
-        settings.REDIS_URL = (
-            f"rediss://:{settings.REDIS_PASSWORD}@{settings.REDIS_HOST}:{settings.REDIS_PORT}/0"
-        )
-    else:
-        settings.REDIS_URL = f"rediss://{settings.REDIS_HOST}:{settings.REDIS_PORT}/0"
