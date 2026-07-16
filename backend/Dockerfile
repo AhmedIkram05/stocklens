@@ -50,6 +50,10 @@ RUN --mount=type=cache,target=/root/.cargo/git \
     maturin build --release --features extension --out /wheels
 
 
+# CI override: --build-context wheel-source=<path> provides pre-built wheel,
+# skipping the rust-builder stage entirely (saves ~5min under QEMU).
+FROM rust-builder AS wheel-source
+
 # Stage 1: Python deps via uv.
 # uv's cache mount avoids re-downloading 162 deps (~700MB incl. torch/pyarrow)
 # on every build. We deliberately DROP UV_COMPILE_BYTECODE here — bytecode
@@ -64,7 +68,7 @@ COPY pyproject.toml uv.lock ./
 
 # Install Rust native module into the venv, copy wheel aside for re-install
 # in dev/test workflows.
-COPY --from=rust-builder /wheels /wheels
+COPY --from=wheel-source /wheels /wheels
 RUN uv pip install --no-deps --python /usr/local/bin/python3 /wheels/features_engine*.whl && \
     mkdir -p /app/wheels && \
     cp /wheels/features_engine*.whl /app/wheels/
