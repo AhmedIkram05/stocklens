@@ -10,7 +10,7 @@ FROM ${BASE_IMAGE}
 WORKDIR /app
 
 # Copy updated SageMaker handler (not in base image)
-COPY backend/sagemaker/serve.py backend/sagemaker/serve.py
+COPY sagemaker/serve.py backend/sagemaker/serve.py
 
 # Override entrypoint to SageMaker handler
 ENTRYPOINT ["python", "backend/sagemaker/serve.py"]
