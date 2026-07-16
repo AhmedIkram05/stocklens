@@ -235,6 +235,21 @@ module "monitoring" {
   ecs_log_group_name = module.compute.log_group_name
 }
 
+# ── SageMaker (R6) ────────────────────────────────────────────────────
+
+module "sagemaker" {
+  source                              = "./modules/sagemaker"
+  app_name                            = var.app_name
+  environment                         = var.environment
+  aws_region                          = var.aws_region
+  container_image                     = var.sagemaker_image
+  champion_s3_uri                     = var.champion_s3_uri
+  sagemaker_execution_role_arn        = module.iam.sagemaker_execution_role_arn
+  sagemaker_instance_type             = var.sagemaker_instance_type
+  sagemaker_model_download_timeout    = var.sagemaker_model_download_timeout
+  sagemaker_container_startup_timeout = var.sagemaker_container_startup_timeout
+}
+
 # ── Budgets ──────────────────────────────────────────────────────────
 
 module "budgets" {
@@ -243,4 +258,30 @@ module "budgets" {
   budget_monthly_limit = var.budget_monthly_limit
   budget_sns_arns      = [module.monitoring.sns_topic_arn]
   budget_sns_arn       = module.monitoring.sns_topic_arn
+}
+
+# ── R6: SageMaker InvokeEndpoint permission ───────────────────────────
+# Created outside any module to avoid a circular dependency:
+#   IAM module → needs endpoint ARN  →  SageMaker module → needs execution role ARN
+# By placing the policy in the root module, both outputs are available.
+
+resource "aws_iam_policy" "ecs_task_sagemaker_invoke" {
+  name        = "${var.app_name}-ecs-task-sagemaker-invoke-${var.environment}"
+  description = "Allow ECS task role to invoke SageMaker prediction endpoint"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "sagemaker:InvokeEndpoint",
+      ]
+      Resource = module.sagemaker.sagemaker_endpoint_arn
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_task_sagemaker_invoke" {
+  role       = module.iam.ecs_task_role_name
+  policy_arn = aws_iam_policy.ecs_task_sagemaker_invoke.arn
 }

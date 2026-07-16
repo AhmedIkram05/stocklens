@@ -57,3 +57,10 @@ output "ecs_deploy_role_arn" {
   description = "ARN of the GitHub Actions OIDC deploy role"
   value       = aws_iam_role.github_deploy.arn
 }
+
+# ── R6: SageMaker ──
+
+output "sagemaker_execution_role_arn" {
+  description = "ARN of the SageMaker execution IAM role"
+  value       = aws_iam_role.sagemaker_execution.arn
+}

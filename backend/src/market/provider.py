@@ -139,7 +139,7 @@ def _maybe_decimal(value: Any) -> Optional[Decimal]:
         if v != v:  # NaN check
             return None
         return Decimal(str(v))
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return None
 
 
@@ -152,7 +152,7 @@ def _maybe_int(value: Any) -> Optional[int]:
         if v != v:  # NaN check
             return None
         return int(v)
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return None
 
 

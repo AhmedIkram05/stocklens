@@ -58,7 +58,7 @@ async def predict(
                 try:
                     data = json.loads(cached)
                     return PredictionResponse(**data, cached=True)
-                except json.JSONDecodeError, TypeError:
+                except (json.JSONDecodeError, TypeError):
                     pass  # Corrupted cache — recompute
     except Exception:
         logger.warning("redis_cache_read_failed", ticker=ticker)

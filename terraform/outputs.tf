@@ -169,3 +169,20 @@ output "ecs_deploy_role_arn" {
   description = "ARN of the GitHub Actions OIDC deploy role (used by CI/CD pipeline via gh secret)"
   value       = module.iam.ecs_deploy_role_arn
 }
+
+# ── R6: SageMaker ──
+
+output "sagemaker_endpoint_name" {
+  description = "Name of the SageMaker serverless prediction endpoint"
+  value       = module.sagemaker.sagemaker_endpoint_name
+}
+
+output "sagemaker_endpoint_arn" {
+  description = "ARN of the SageMaker serverless prediction endpoint"
+  value       = module.sagemaker.sagemaker_endpoint_arn
+}
+
+output "sagemaker_model_name" {
+  description = "Name of the SageMaker model"
+  value       = module.sagemaker.sagemaker_model_name
+}

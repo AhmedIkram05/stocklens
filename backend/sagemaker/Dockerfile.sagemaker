@@ -1,0 +1,16 @@
+# SageMaker-specific image — runs serve.py with model from /opt/ml/model/
+# Build: docker build -f backend/sagemaker/Dockerfile.sagemaker -t sagemaker-<sha> .
+
+# Use the ARM64 backend image (built in CI/CD)
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+# SageMaker extracts model_data_url (tar.gz) to /opt/ml/model/
+# Our serve.py expects model.pt at /opt/ml/model/model.pt or downloads from S3
+WORKDIR /app
+
+# Copy updated SageMaker handler (not in base image)
+COPY backend/sagemaker/serve.py backend/sagemaker/serve.py
+
+# Override entrypoint to SageMaker handler
+ENTRYPOINT ["python", "backend/sagemaker/serve.py"]

@@ -2,7 +2,7 @@
 name = "stocklens-backend"
 version = "0.1.0"
 description = "StockLens FastAPI backend — OCR, portfolio tracking, and investment analysis"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.138.0",
     "uvicorn[standard]",
@@ -59,7 +59,7 @@ explicit = true
 
 [tool.ruff]
 line-length = 100
-target-version = "py314"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]

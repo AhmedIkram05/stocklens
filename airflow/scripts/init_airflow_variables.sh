@@ -53,6 +53,9 @@ set_var_if "database_url"         "AIRFLOW_VAR_DATABASE_URL" "DATABASE_URL"
 # ── MLflow ─────────────────────────────────────────────────────────────
 set_var_if "mlflow_tracking_uri"  "AIRFLOW_VAR_MLFLOW_TRACKING_URI" "MLFLOW_TRACKING_URI"
 
+# ── Champion ──────────────────────────────────────────────────────────
+set_var_if "champion_s3_uri"     "AIRFLOW_VAR_CHAMPION_S3_URI" "CHAMPION_S3_URI"
+
 # ── App ───────────────────────────────────────────────────────────────
 set_var_if "app_name"             "AIRFLOW_VAR_APP_NAME" "APP_NAME"
 set_var_if "environment"          "AIRFLOW_VAR_ENVIRONMENT" "ENVIRONMENT"

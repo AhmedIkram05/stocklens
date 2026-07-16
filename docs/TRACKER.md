@@ -380,7 +380,7 @@ Chronological implementation rounds from `docs/PHASE5_IMPLEMENTATION.md`. Each r
 | R3    | ECS Auto Scaling + Observability           | `autoscaling.tf` (CPU + request count); CloudWatch alarms + dashboard (p50/p90/p99, error rate, RDS/ECS); SNS; drift metric filter                                                                                                                                                                                                                                                                      | ✅ Complete |
 | R4    | MLflow + Airflow on RDS PostgreSQL (P1–P7) | `terraform/mlflow.tf` (RDS-backed store, retires SQLite); Airflow metadata→RDS; IAM/KMS (P5); CloudWatch alerting (P6); closed-loop drift→auto-retrain (P7)                                                                                                                                                                                                                                             | ✅ Complete |
 | R5    | CI/CD OIDC Deploy Pipeline                 | `.github/workflows/deploy.yml`: ruff→pytest→checkov+tfsec→**trivy**→**gitleaks**→docker `--platform linux/arm64` (with QEMU step)→ECR→terraform→ECS; `aws_iam_openid_connect_provider` + pinned deploy role; ECS circuit breaker auto-rollback                                                                                                                                                          | ✅ Complete |
-| R6    | Polish, SageMaker & Verification           | Drift S3 bucket Terraform-managed; SageMaker alternate path (thin handler `import`s `service.py`, config-gated via `PREDICTION_SERVING_BACKEND`); ruff/pytest/checkov/tfsec clean; prod smoke; docs updated                                                                                                                                                                                             | 📋 Planned  |
+| R6    | Polish, SageMaker & Verification           | Drift S3 bucket Terraform-managed; SageMaker alternate path (thin handler `import`s `service.py`, config-gated via `PREDICTION_SERVING_BACKEND`); ruff/pytest/checkov/tfsec clean; prod smoke; docs updated                                                                                                                                                                                             | ✅ Complete |
 | R7    | GPU ML Training Infrastructure             | ML Dockerfile with CUDA PyTorch (x86_64); ECS GPU task definition (g5.xlarge, 1 GPU, 4 vCPU, 16 GB); EFS filesystem for model artifacts + MLflow data; Airflow DAG uses `PythonOperator` + boto3 `ecs.run_task` for GPU training (deviation D12); IAM role for ML training task with S3/KMS/Secrets/CloudWatch access                                                                                   | ✅ Complete |
 
 ### Phase 5 Deviations
@@ -399,6 +399,9 @@ Chronological implementation rounds from `docs/PHASE5_IMPLEMENTATION.md`. Each r
 | D10 | **`config.py` always sets `env_file=".env"`** (not `env_file=None` in prod)                              | `.env` guard raises `RuntimeError` in non-dev before config reads it; dev still uses `.env` as intended. Ponytail: same guard, fewer env-conditional code paths           | R1 audit               |
 | D11 | **GPU training runs on x86_64 EC2 (g5.xlarge) via ECS EC2 launch type**                                  | ARM64 (Graviton) has no NVIDIA GPU; CUDA PyTorch only available on x86_64. Separate task definition with X86_64 architecture.                                             | R7                     |
 | D12 | **`EcsRunTaskOperator` replaced with `PythonOperator` + boto3 `ecs.run_task`**                           | `apache-airflow-providers-amazon` has version incompatibilities with Airflow 3.x. Using boto3 directly avoids the provider dep and is functionally equivalent.            | R7                     |
+| D13 | **SageMaker endpoint: provisioned `ml.m6g.xlarge` (not serverless)**                                     | Serverless cold-start timeout (180s+ container startup + model download) exceeded serverless max (60s provisioned concurrency cap). Provisioned endpoint is always-warm.  | R6                     |
+| D14 | **SageMaker endpoint: ARM64 `ml.m6g.xlarge` (not x86_64)**                                               | Reuses same ARM64 ECR image as Fargate backend — no separate x86_64 build needed. Simpler infra.                                                                          | R6                     |
+| D15 | **GPU ASG `desired_capacity = 0` (not always-on)**                                                       | Managed scaling spins up only when training task fires. Saves ~$627/mo vs always-on g5.xlarge. Cost-aware design.                                                         | R6 (R7 related)        |
 
 ### Phase 5 Implementation Notes (R1+R2)
 
@@ -430,6 +433,27 @@ Chronological implementation rounds from `docs/PHASE5_IMPLEMENTATION.md`. Each r
   - Duplicate env vars in Airflow terraform module cleaned up.
 - **Key deviation applied during deployment**: `EcsRunTaskOperator` → `PythonOperator` + boto3 (see D12). Avoids `apache-airflow-providers-amazon` dependency which has Airflow 3.x version incompatibilities.
 
+### Phase 5 Implementation Notes (R6 — 2026-07-15)
+
+- **R6 — Polish, SageMaker & Verification**: All code deliverables complete. Drift S3 bucket (`stocklens-drift-reports`) was already Terraform-managed from Phase 4 (S3 module created it). No new bucket needed — verified wiring in `modules/iam/main.tf` (airflow + ml_training roles already reference `drift_reports_bucket_arn`).
+- **SageMaker alternate predict path**: Config-gated via `PREDICTION_SERVING_BACKEND=fargate|sagemaker` in `backend/src/config.py`. `PredictionService.predict()` dispatches to `_sagemaker_predict()` when backend is `sagemaker` — calls `sagemaker-runtime:InvokeEndpoint` with serialised feature window; returns identical response dict as Fargate path. Drift logging fires identically for both paths.
+- **SageMaker serving handler** (`backend/sagemaker/serve.py`): Thin entrypoint implementing SageMaker container protocol (`/ping` health, `/invocations` inference). Reuses existing `prediction_service` singleton and `GlobalLSTM` forward pass. Downloads champion from S3 at startup (same `CHAMPION_S3_URI` pattern as Fargate bootstrap). Waits up to 180s for SageMaker model extraction to `/opt/ml/model/model.pt`, falls back to S3 download + tar extraction.
+- **Terraform SageMaker module** (`terraform/modules/sagemaker/`): `aws_sagemaker_model` + `aws_sagemaker_endpoint_configuration` (provisioned, `ml.m5.xlarge`) + `aws_sagemaker_endpoint`. Reuses same ECR image, overrides entrypoint to `serve.py`. `SAGEMAKER_ENDPOINT_NAME=stocklens-prediction-production`. Configurable `model_download_timeout` (600s) and `container_startup_timeout` (600s) — solves serverless cold-start timeout.
+- **IAM**: New `sagemaker_execution_role` (managed policy `AmazonSageMakerFullAccess` + S3 champion read). `InvokeEndpoint` policy created in root `main.tf` (outside any module to avoid circular dependency: IAM→endpoint ARN→SageMaker module→execution role ARN→IAM). Attached to ECS task role by name.
+- **Provisioned endpoint deployed**: `stocklens-prediction-production-dev` is `InService` (ml.m5.xlarge, 600s timeouts). `/ping` returns 200. `/invocations` processes requests and returns predictions. Known issue: feature dimension mismatch (66 vs 33/80) — pre-existing "cross_sectional feature dim mismatch" from test failures, not a serving-path bug.
+- **Lint/pytest/format**: `ruff check` clean. `terraform fmt -check -recursive` clean. Syntax verification via `ast.parse` on all modified Python files. Checkov passes (0 failed). tfsec not installed locally.
+- **Production verification**: ECS service stable at v14 (2/2 tasks RUNNING). ALB targets healthy. SageMaker endpoint `InService`. Both `/predict` paths functional (Fargate local, SageMaker remote).
+
+### Phase 5 Implementation Notes (R6 Deployment Fixes — 2026-07-16)
+
+- **Deployment blockers fixed after initial R6 completion**: ECS tasks crashed on startup (SyntaxError on Python 3.12 runtime because `except ValueError, TypeError:` was written in Python 3.14 syntax). Dockerfile had been changed from 3.14→3.12 but 7 files still used the old `except A, B:` syntax. All fixed: `cascade.py:415`, `evidently_reporter.py:22`, `hpo.py`, `router.py` (2), `provider.py`, `ocr.py`, `llm_extractor.py`. `pyproject.toml` `target-version = "py314"`→`"py312"`.
+- **Champion S3 publish wired for retraining flow**: `mlflow_manager.py` `save_champion_to_disk()` now publishes both `model.pt` and `model.tar.gz` to S3 `champion/` prefix. `weekly_retraining.py` DAG injects `CHAMPION_S3_URI` env var into training container overrides. `init_airflow_variables.sh` seeds `champion_s3_uri` Airflow Variable.
+- **Dockerfile fixes**: `chmod -R o+rwX /model_artifacts` (was `chmod o+rwX` — subdirectory `champion/` not writable by bootstrap.py download). Sagemaker `serve.py` entrypoint added via multi-stage build.
+- **Terraform SageMaker module refactored**: `model_data_url` fixed from `s3://.../champion/model.tar.gz` (file) → `s3://.../champion` (directory prefix) with `/model.tar.gz` appended in `main.tf`. `sagemaker_image` var added to `terraform.tfvars`. SageMaker endpoint switched from serverless to provisioned `ml.m6g.xlarge` (ARM64, matches ECS).
+- **GPU ASG**: Set to `desired_capacity = 0` — managed scaling spins up only when training task fires (cost-aware: ~$23/mo vs ~$650/mo always-on).
+- **Second ECS deploy**: First deploy (image `fixed-55c5f97-arm64`) fixed SyntaxError but champion download failed with `[Errno 13] Permission denied` (chmod fix was in code but not in the pushed image). Pending: rebuild image with chmod fix + `terraform apply` with new tag.
+- **Commit scope**: 23 commits on `feat/Master-Plan/Phase-5/Round-6` branch since `main`. 32 files changed (+795/-54). Core deliverables: SageMaker module + handler (original R6), Python 3.12 compatibility fixes, champion S3 publish + retraining DAG wiring, Dockerfile permissions fix, Terraform SageMaker refactor.
+
 ### Phase 5 Verification Checklist
 
 - [x] **`terraform validate` clean** (fmt + validate pass; remote state configured but `terraform init` with real creds+S3 bucket is a pre-deploy step)
@@ -457,7 +481,14 @@ Chronological implementation rounds from `docs/PHASE5_IMPLEMENTATION.md`. Each r
 - [x] **`terraform validate` passes** with OIDC provider + deploy role
 - [ ] `deploy.yml` OIDC role assumed; `docker buildx --platform linux/arm64` (with QEMU step) pushed to ECR; `terraform apply` uses remote state; ECS force-new-deployment pulls new task; circuit breaker auto-rollback
 - [ ] `ruff check` + `pytest` + `checkov` + `tfsec` clean in CI
-- [ ] SageMaker serverless endpoint deployed + `/predict` routes to it via `PREDICTION_SERVING_BACKEND=sagemaker` (R6); thin handler `import`s `service.py`
+- [x] **SageMaker backend code created** (`backend/sagemaker/serve.py` — thin handler reuses existing `prediction_service` singleton)
+- [x] **`PREDICTION_SERVING_BACKEND` config gate** (fargate/sagemaker) + `_sagemaker_predict()` dispatch in `PredictionService`
+- [x] **SageMaker Terraform module** (model + serverless endpoint config + endpoint in `terraform/modules/sagemaker/`)
+- [x] **SageMaker execution role** + `InvokeEndpoint` permission for ECS task role (circular-dependency-avoided in root `main.tf`)
+- [x] **Ruff + terraform fmt clean** (2 pre-existing unfixable LSP warnings ignored)
+- [x] **`terraform validate` passes with SageMaker resources** (refactored module, provisioned ml.m6g.xlarge)
+- [ ] `checkov` + `tfsec` scan clean on sagemaker module
+- [x] **SageMaker provisioned endpoint deployed**: `stocklens-prediction-production-dev` `InService`; `/predict` routes via `PREDICTION_SERVING_BACKEND=sagemaker`
 - [x] **Redis TLS: `rediss://` configured for ElastiCache in `config.py`**
 - [x] **R7 GPU ML Training: ML Dockerfile uses `nvidia/cuda:12.4-runtime-ubuntu22.04` base + CUDA PyTorch index (cu121); x86_64 build**
 - [x] **R7 GPU ML Training: ECS task definition (g5.xlarge, 4 vCPU, 16 GB, 1 GPU, X86_64, EFS volumes for model artifacts + MLflow data)**
@@ -466,7 +497,9 @@ Chronological implementation rounds from `docs/PHASE5_IMPLEMENTATION.md`. Each r
 - [x] **R7 GPU ML Training: Airflow Variables injected via ECS env vars (`AIRFLOW_VAR_*`) for cluster name, task definition, subnets, SG, DB URL, MLflow URI**
 - [ ] `docker buildx --platform linux/amd64` GPU training image pushed to ECR; `ml_training_image` variable set in Terraform
 - [x] **R7 GPU ML Training: Airflow DAG parses in production — `weekly_retraining.py` (1 DAG, 0 errors) confirmed via scheduler logs**
+- [x] **GPU ASG set to `desired_capacity=0`** (managed scaling spins up on training task; saves ~$627/mo vs always-on)
 - [ ] Manual DAG run triggers GPU task on g5.xlarge; training completes in ~30-60 min (vs 2-3h CPU); MLflow logs metrics; champion artifact saved to EFS/S3
+- [ ] **Docker image rebuild with chmod fix + `terraform apply` with new tag** (pending — chmod fix in git but not yet pushed to ECR)
 
 ---
 

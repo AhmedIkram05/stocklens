@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ─── Build & Push ARM64 Image ─────────────────────────────────────
+  # ─── Build & Push ARM64 Backend Image (for ECS) ───────────────────
   build-push-backend:
     runs-on: ubuntu-latest
     steps:
@@ -47,7 +47,7 @@ jobs:
         # ADR 009: QEMU required for linux/arm64 builds on x86 runners
         uses: docker/setup-qemu-action@v3
 
-      - name: Build and push ARM64 image
+      - name: Build and push ARM64 backend image
         uses: docker/build-push-action@v5
         with:
           context: backend
@@ -126,9 +126,43 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ─── Container Image Security Scan (matrix: backend / airflow / ml-training) ─
+  # ─── Build & Push SageMaker ARM64 Image (for SageMaker endpoint) ────
+  build-push-sagemaker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.ECS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push SageMaker ARM64 image
+        uses: docker/build-push-action@v5
+        with:
+          context: backend
+          file: backend/sagemaker/Dockerfile.sagemaker
+          platforms: linux/arm64
+          push: true
+          build-args: |
+            BASE_IMAGE=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:sagemaker-${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:sagemaker-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─── Container Image Security Scan (matrix: backend / airflow / ml-training / sagemaker) ─
   container-scan:
-    needs: [build-push-backend, build-push-airflow, build-push-ml-training]
+    needs: [build-push-backend, build-push-airflow, build-push-ml-training, build-push-sagemaker]
     strategy:
       matrix:
         include:
@@ -141,6 +175,9 @@ jobs:
           - image: ml-training
             tag: ml-training-${{ github.sha }}
             platform: linux/amd64
+          - image: sagemaker
+            tag: sagemaker-${{ github.sha }}
+            platform: linux/arm64
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -204,6 +241,7 @@ jobs:
           IMAGE_TAG="${REGISTRY}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
           AIRFLOW_IMAGE_TAG="${REGISTRY}/${{ env.ECR_REPOSITORY }}:airflow-${{ github.sha }}"
           ML_TRAINING_IMAGE_TAG="${REGISTRY}/${{ env.ECR_REPOSITORY }}:ml-training-${{ github.sha }}"
+          SAGEMAKER_IMAGE_TAG="${REGISTRY}/${{ env.ECR_REPOSITORY }}:sagemaker-${{ github.sha }}"
           # ponytail: -lock=false safe for read-only plan. CI concurrency
           # group (terraform-${{ github.ref }}) prevents parallel applies.
           # Exit code 2 = changes detected (not a failure in CI context).
@@ -211,6 +249,7 @@ jobs:
             -var="container_image=${IMAGE_TAG}" \
             -var="airflow_image=${AIRFLOW_IMAGE_TAG}" \
             -var="ml_training_image=${ML_TRAINING_IMAGE_TAG}" \
+            -var="sagemaker_image=${SAGEMAKER_IMAGE_TAG}" \
             -var="environment=dev" \
             -out=tfplan || { rc=$?; [ $rc -eq 2 ] && true || exit $rc; }
         working-directory: ${{ env.TERRAFORM_DIR }}

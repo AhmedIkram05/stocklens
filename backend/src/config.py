@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     # Prediction
     PREDICTION_MODEL_PATH: str = "/model_artifacts/champion/model.pt"
     PREDICTION_CACHE_TTL: int = 21600
+    PREDICTION_SERVING_BACKEND: str = "fargate"  # "fargate" | "sagemaker"
+    SAGEMAKER_ENDPOINT_NAME: str = "stocklens-prediction-production-dev"
 
     # Prediction Logging / Drift
     PREDICTION_LOG_ENABLED: bool = True

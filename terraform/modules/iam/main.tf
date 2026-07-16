@@ -127,6 +127,11 @@ resource "aws_iam_role_policy_attachment" "ecs_task_champion_s3" {
   policy_arn = aws_iam_policy.ecs_task_champion_s3[0].arn
 }
 
+resource "aws_iam_role_policy_attachment" "ecs_task_secrets" {
+  role       = aws_iam_role.ecs_task.name
+  policy_arn = aws_iam_policy.ecs_execution_secrets.arn
+}
+
 # ── MLflow Fargate task role (R4) ────────────────────────────────────
 # Needs S3 GetObject/PutObject on mlflow-artifacts and KMS decrypt.
 
@@ -480,6 +485,60 @@ resource "aws_iam_role_policy" "github_deploy" {
       }
     ]
   })
+}
+
+# ── SageMaker execution role (R6) ─────────────────────────────────────
+# Used by the SageMaker endpoint to pull the container image and write
+# CloudWatch logs. The model-load entrypoint (backend/sagemaker/serve.py)
+# also needs S3 GetObject on CHAMPION_S3_URI.
+
+resource "aws_iam_role" "sagemaker_execution" {
+  name = "${var.app_name}-sagemaker-execution-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "sagemaker.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+# SageMaker needs ECR pull + CloudWatch logs.
+resource "aws_iam_role_policy_attachment" "sagemaker_execution_managed" {
+  role       = aws_iam_role.sagemaker_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSageMakerFullAccess"
+}
+
+# Champion model S3 read for the SageMaker container.
+resource "aws_iam_policy" "sagemaker_execution_champion_s3" {
+  count       = var.champion_s3_uri != "" ? 1 : 0
+  name        = "${var.app_name}-sagemaker-execution-champion-s3-${var.environment}"
+  description = "Allow SageMaker execution role to read champion model from S3"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "s3:GetObject",
+        "s3:ListBucket",
+      ]
+      Resource = [
+        "arn:aws:s3:::${local.champion_bucket}",
+        local.champion_prefix != "" ? "arn:aws:s3:::${local.champion_bucket}/${local.champion_prefix}*" : "arn:aws:s3:::${local.champion_bucket}/*",
+      ]
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "sagemaker_execution_champion_s3" {
+  count      = var.champion_s3_uri != "" ? 1 : 0
+  role       = aws_iam_role.sagemaker_execution.name
+  policy_arn = aws_iam_policy.sagemaker_execution_champion_s3[0].arn
 }
 
 data "aws_caller_identity" "current" {}

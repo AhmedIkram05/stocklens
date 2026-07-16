@@ -158,7 +158,7 @@ async def extract_with_llm(
             logger.warning("llm_response_not_object", type=type(parsed).__name__)
             return None
         result = LLMExtractionResult(**parsed)
-    except json.JSONDecodeError, Exception:
+    except (json.JSONDecodeError, Exception):
         logger.warning("llm_response_unparseable", response=result_json[:200])
         return None
 

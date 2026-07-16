@@ -52,6 +52,12 @@ variable "ml_training_image" {
   default     = ""
 }
 
+variable "sagemaker_image" {
+  description = "ECR image tag for the ARM64 SageMaker serving container (e.g., account.dkr.ecr.eu-west-2.amazonaws.com/stocklens-dev:sagemaker-latest)"
+  type        = string
+  default     = ""
+}
+
 variable "cors_origins" {
   description = "List of allowed CORS origins (e.g., https://app.stocklens.com)"
   type        = list(string)
@@ -205,4 +211,24 @@ variable "key_name" {
   description = "EC2 key pair name for SSH access to GPU instances (optional — leave empty for no SSH)"
   type        = string
   default     = ""
+}
+
+# ── R6: SageMaker ──
+
+variable "sagemaker_instance_type" {
+  description = "Instance type for provisioned SageMaker endpoint (e.g., ml.m5.xlarge, ml.g5.xlarge)"
+  type        = string
+  default     = "ml.m5.xlarge"
+}
+
+variable "sagemaker_model_download_timeout" {
+  description = "Timeout in seconds for model download from S3 to container (max 3600)"
+  type        = number
+  default     = 600
+}
+
+variable "sagemaker_container_startup_timeout" {
+  description = "Timeout in seconds for container startup health check (max 3600, solves cold-start SLA)"
+  type        = number
+  default     = 600
 }

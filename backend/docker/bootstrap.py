@@ -38,8 +38,9 @@ def main() -> None:
         s3.download_file(bucket, key, str(dest))
         print(f"[bootstrap] champion model downloaded from s3://{bucket}/{key}")
     except Exception as exc:
-        print(f"[bootstrap] FATAL: champion download failed ({exc})", file=sys.stderr)
-        sys.exit(1)
+        print(f"[bootstrap] WARNING: champion download failed ({exc})", file=sys.stderr)
+        if environment == "production":
+            sys.exit(1)
 
 
 if __name__ == "__main__":
