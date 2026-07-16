@@ -44,6 +44,7 @@ dev = [
     "pytest-cov>=6.0.0",
     "pytest-mock>=3.14.0",
     "freezegun>=1.5.0",
+    "evidently>=0.7",
 ]
 
 [tool.uv.sources]

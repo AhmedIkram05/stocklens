@@ -1,6 +1,6 @@
 apache-airflow==2.11.0
 apache-airflow-providers-postgres==2.14.0
-evidently>=0.6.0
+evidently>=0.7
 boto3>=1.43.0
 pandas>=2.3.0
 numpy>=2.1.0
