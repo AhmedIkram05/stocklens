@@ -46,7 +46,9 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # System deps: curl for healthcheck, libgomp for torch parallelism
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     curl \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*

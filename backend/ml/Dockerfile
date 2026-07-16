@@ -41,7 +41,9 @@ RUN --mount=type=cache,target=/src/target,sharing=locked \
 # Stage 2: Build Python dependencies with uv
 FROM python:3.14-slim AS builder
 
-ENV UV_COMPILE_BYTECODE=1
+# Disable .pyc compilation — saves ~30% temp disk during build for 15k files.
+# .pyc is generated lazily on first import; fine for batch training jobs.
+ENV UV_COMPILE_BYTECODE=0
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
