@@ -65,7 +65,7 @@ async def get_latest_drift_summary() -> dict:
             SELECT drift_run_id, MAX(created_at) as latest_run_at
             FROM drift_metrics
             GROUP BY drift_run_id
-            ORDER BY latest_run_at DESC
+            ORDER BY latest_run_at DESC, MAX(id) DESC
             LIMIT 1
             """,
         )
@@ -133,7 +133,7 @@ async def list_drift_runs(
                 COUNT(*) FILTER (WHERE alert_triggered = TRUE) AS alerts
             FROM drift_metrics
             GROUP BY drift_run_id
-            ORDER BY latest_run_at DESC
+            ORDER BY latest_run_at DESC, MAX(id) DESC
             LIMIT $1 OFFSET $2
             """,
             limit,
