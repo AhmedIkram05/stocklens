@@ -22,17 +22,24 @@ from src.config import settings
 
 
 def hash_password(password: str) -> str:
-    """Return a bcrypt hash of *password*."""
+    """Return a bcrypt hash of *password*.
+
+    Note: bcrypt has a 72-byte limit on passwords; longer inputs are
+    silently truncated to 72 bytes for backwards compatibility across
+    bcrypt library versions.
+    """
     return bcrypt.hashpw(
-        password.encode("utf-8"),
+        password.encode("utf-8")[:72],
         bcrypt.gensalt(rounds=settings.BCRYPT_ROUNDS),
     ).decode("utf-8")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
     """Return ``True`` if *password* matches the stored *password_hash*."""
+    if not password_hash:
+        return False
     return bcrypt.checkpw(
-        password.encode("utf-8"),
+        password.encode("utf-8")[:72],
         password_hash.encode("utf-8"),
     )
 
