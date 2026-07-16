@@ -206,16 +206,14 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push SageMaker ARM64 image
+        # SageMaker CreateModel rejects OCI manifest types (both index and
+        # single-manifest). Must use Docker V2 media type explicitly.
         uses: docker/build-push-action@v5
         with:
           context: backend
           file: backend/sagemaker/Dockerfile.sagemaker
           platforms: linux/arm64
-          push: true
-          # ponytail: default buildx adds OCI provenance (image index). SageMaker
-          # CreateModel only accepts single-manifest images, not image indexes.
-          provenance: false
-          sbom: false
+          outputs: type=registry,push=true,oci-mediatypes=false
           build-args: |
             BASE_IMAGE=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           tags: |
