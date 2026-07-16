@@ -16,3 +16,7 @@ CVE-2026-58016
 # CVE-2026-13221: perl-base regex compilation silently incorrect results.
 # No fix version available. Our Python app never invokes perl regexes.
 CVE-2026-13221
+
+# CVE-2026-6653: mingw-libxml2 DoS via crafted XML.
+# MinGW is a Windows cross-compilation library — irrelevant to ARM64 Linux containers.
+CVE-2026-6653
