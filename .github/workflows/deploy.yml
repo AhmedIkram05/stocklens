@@ -46,7 +46,7 @@ jobs:
             --cache-to type=gha,mode=max \
             --output type=tar,dest=/tmp/wheels.tar \
             backend/
-          mkdir -p wheels/wheels
+          mkdir -p /tmp/wheel-extract wheels/wheels
           tar -xf /tmp/wheels.tar -C /tmp/wheel-extract
           cp /tmp/wheel-extract/wheels/features_engine*.whl wheels/wheels/
           ls -la wheels/wheels/
