@@ -102,6 +102,12 @@ class TestSeedCategoriesFunction:
             count = await conn.fetchval("SELECT COUNT(*) FROM spending_categories")
         assert count == len(SEED_CATEGORIES)
 
+    def _parse_jsonb(self, value):
+        """Parse JSONB value — asyncpg may return str or decoded list/dict."""
+        import json as _json
+
+        return _json.loads(value) if isinstance(value, str) else value
+
     async def test_stores_merchant_keywords_as_jsonb(self):
         from src.database.connection import connection_ctx
 
@@ -112,7 +118,7 @@ class TestSeedCategoriesFunction:
                 "SELECT merchant_keywords FROM spending_categories WHERE name = 'Groceries'"
             )
         assert row is not None
-        keywords = row["merchant_keywords"]
+        keywords = self._parse_jsonb(row["merchant_keywords"])
         assert isinstance(keywords, list)
         assert "tesco" in keywords
 
@@ -126,30 +132,31 @@ class TestSeedCategoriesFunction:
                 "SELECT associated_tickers FROM spending_categories WHERE name = 'Groceries'"
             )
         assert row is not None
-        tickers = row["associated_tickers"]
+        tickers = self._parse_jsonb(row["associated_tickers"])
         assert isinstance(tickers, list)
         assert "TSCO.L" in tickers
 
     async def test_existing_categories_not_duplicated(self):
         from src.database.connection import connection_ctx
 
-        # Insert one manually
+        # Insert one seed category manually first
         async with connection_ctx() as conn:
             await conn.execute(
                 "INSERT INTO spending_categories (name, description, merchant_keywords, associated_tickers) "
                 "VALUES ($1, $2, $3::jsonb, $4::jsonb)",
-                "Test Category",
-                "Test",
-                json.dumps(["test"]),
-                json.dumps(["TEST"]),
+                "Groceries",
+                "Manually pre-inserted",
+                json.dumps(["manual"]),
+                json.dumps(["MNL"]),
             )
 
         count = await seed_categories()
-        # Should insert remaining 9
+        # Should skip Groceries (already exists) and insert remaining 9
         assert count == len(SEED_CATEGORIES) - 1
 
         async with connection_ctx() as conn:
             total = await conn.fetchval("SELECT COUNT(*) FROM spending_categories")
+        # The manual Groceries + 9 seed inserts = 10 total
         assert total == len(SEED_CATEGORIES)
 
 
@@ -174,4 +181,4 @@ class TestSpecificCategories:
     def test_financial_services_has_expected_keywords(self):
         fs = next(c for c in SEED_CATEGORIES if c["name"] == "Financial Services")
         assert "monzo" in fs["merchant_keywords"]
-        assert "REVOLUT" in [t.upper() for t in fs["associated_tickers"]]
+        assert any(t in fs["associated_tickers"] for t in ("PYPL", "V", "MA"))

@@ -191,11 +191,11 @@ class TestGetCurrentUser:
 
 
 class TestGetCurrentUserId:
-    def test_returns_id_string(self, monkeypatch):
+    async def test_returns_id_string(self, monkeypatch):
         from src.auth.dependencies import get_current_user_id
 
         user = _mock_user(id="user-abc")
-        result = get_current_user_id(user)
+        result = await get_current_user_id(user)
         assert result == "user-abc"
 
 
@@ -203,9 +203,9 @@ class TestGetCurrentUserId:
 
 
 class TestRequireActiveUser:
-    def test_active_user_passes(self):
+    async def test_active_user_passes(self):
         user = _mock_user(is_active=True)
-        result = require_active_user(user)
+        result = await require_active_user(user)
         assert result is user
 
     def test_deactivated_user_raises_403(self):

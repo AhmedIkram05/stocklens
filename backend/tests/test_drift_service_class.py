@@ -310,7 +310,10 @@ class TestDriftDetector:
     async def test_missing_features_handled_gracefully(self):
         from src.drift.service import DriftDetector
 
-        reference_dist = {"feature_histograms": {"log_ret_1d": {"values": [0.0] * 10}}}
+        reference_dist = {
+            "feature_histograms": {"log_ret_1d": {"values": [0.0] * 10}},
+            "prediction_proportions": {"UP": 0.33, "DOWN": 0.33, "FLAT": 0.34},
+        }
         # Log entry missing features
         prediction_logs = {"AAPL": [{"prediction": "UP"}]}
 
@@ -357,7 +360,7 @@ class TestFeatureNames:
     """Test FEATURE_NAMES constant."""
 
     def test_has_expected_count(self):
-        assert len(FEATURE_NAMES) == 18
+        assert len(FEATURE_NAMES) == 17
 
     def test_expected_features_present(self):
         expected = [

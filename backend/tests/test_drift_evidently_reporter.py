@@ -1,7 +1,6 @@
 """
 Tests for EvidentlyReporter (src.drift.evidently_reporter).
 
-Note: evidently 0.4.x is incompatible with NumPy 2.0 (np.float_ removed).
 Tests are skipped when evidently is unavailable, or mock the import.
 """
 
@@ -67,7 +66,7 @@ class TestGenerateDriftReport:
         assert os.path.exists(report_path)
 
     @pytest.mark.skipif(not _EVIDENTLY_AVAILABLE, reason="evidently not available")
-    def test_column_mapping_auto_detects_numerical(self, tmp_path):
+    def test_mixed_data_types(self, tmp_path):
         import pandas as pd
 
         ref_df = pd.DataFrame({"num1": [1.0, 2.0], "cat1": ["a", "b"]})

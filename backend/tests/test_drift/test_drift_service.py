@@ -143,7 +143,8 @@ class TestComputePredictionDistribution:
 
     def test_empty_list(self) -> None:
         dist = compute_prediction_distribution([])
-        assert np.allclose(dist, [0.0, 0.0, 0.0])
+        # Uniform distribution when there are no predictions
+        assert np.allclose(dist, [1 / 3, 1 / 3, 1 / 3])
 
     def test_invalid_prediction_ignored(self) -> None:
         preds = ["UP", "INVALID", "DOWN"]

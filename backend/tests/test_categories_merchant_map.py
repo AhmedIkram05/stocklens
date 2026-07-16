@@ -48,19 +48,26 @@ class TestLoadCategories:
         assert all(isinstance(c, CategoryRule) for c in categories)
 
     def test_loads_db_categories_when_provided(self):
-        db_cats = [
-            {
-                "id": "1",
-                "name": "Custom Category",
-                "description": "Test",
-                "merchant_keywords": ["custom"],
-                "associated_tickers": ["CSTM"],
-            }
-        ]
-        categories = load_categories(db_cats)
-        assert len(categories) == 1
-        assert categories[0].name == "Custom Category"
-        assert categories[0].merchant_keywords == ["custom"]
+        from src.categories import merchant_map
+
+        saved = merchant_map._category_cache
+        merchant_map._category_cache = None
+        try:
+            db_cats = [
+                {
+                    "id": "1",
+                    "name": "Custom Category",
+                    "description": "Test",
+                    "merchant_keywords": ["custom"],
+                    "associated_tickers": ["CSTM"],
+                }
+            ]
+            categories = load_categories(db_cats)
+            assert len(categories) == 1
+            assert categories[0].name == "Custom Category"
+            assert categories[0].merchant_keywords == ["custom"]
+        finally:
+            merchant_map._category_cache = saved
 
     def test_cache_returns_same_instance(self):
         load_categories(None)
@@ -121,11 +128,14 @@ class TestMatchByKeyword:
         ]
         from src.categories import merchant_map
 
+        saved = merchant_map._category_cache
         merchant_map._category_cache = custom
-
-        category = match_by_keyword("my shop")
-        assert category is not None
-        assert category.name == "First"
+        try:
+            category = match_by_keyword("my shop")
+            assert category is not None
+            assert category.name == "First"
+        finally:
+            merchant_map._category_cache = saved
 
 
 class TestResolveCategory:

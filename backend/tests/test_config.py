@@ -77,7 +77,7 @@ class TestSettingsFromEnv:
         monkeypatch.setenv("REDIS_HOST", "my-redis")
         monkeypatch.setenv("REDIS_PORT", "6380")
         monkeypatch.setenv("REDIS_PASSWORD", "secret")
-        monkeypatch.delenv("REDIS_URL", raising=False)
+        monkeypatch.setenv("REDIS_URL", "")
         s = Settings()
         assert s.REDIS_URL == "rediss://:secret@my-redis:6380/0"
 
@@ -86,7 +86,7 @@ class TestSettingsFromEnv:
         monkeypatch.setenv("REDIS_HOST", "my-redis")
         monkeypatch.setenv("REDIS_PORT", "6380")
         monkeypatch.setenv("REDIS_PASSWORD", "")
-        monkeypatch.delenv("REDIS_URL", raising=False)
+        monkeypatch.setenv("REDIS_URL", "")
         s = Settings()
         assert s.REDIS_URL == "rediss://my-redis:6380/0"
 
@@ -128,7 +128,7 @@ class TestSettingsValidation:
     """Test validation constraints."""
 
     def test_jwt_secret_key_required(self, monkeypatch):
-        monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+        monkeypatch.setenv("JWT_SECRET_KEY", "")
         with pytest.raises(ValidationError):
             Settings()
 
@@ -173,7 +173,7 @@ class TestSettingsDerivedValues:
         monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
         monkeypatch.setenv("REDIS_HOST", "cache.example.com")
         monkeypatch.setenv("REDIS_PORT", "6379")
-        monkeypatch.delenv("REDIS_URL", raising=False)
+        monkeypatch.setenv("REDIS_URL", "")
         s = Settings()
         assert s.REDIS_URL.startswith("rediss://")
 
