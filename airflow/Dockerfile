@@ -55,7 +55,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 # Install ML dependencies + Airflow + drift deps in one layer.
 # pytorch-cpu extra index for CPU-only torch; PyPI for everything else.
-RUN pip install --no-cache-dir \
+# pip cache mount reuses downloaded wheels across builds — critical for
+# QEMU ARM64 where re-downloading torch (~900MB) under emulation takes ~10min.
+# --no-cache-dir deliberately removed: cache persistence is the optimization.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install \
     --extra-index-url https://download.pytorch.org/whl/cpu \
     'torch>=2.12.0' \
     'mlflow>=3.14.0' \
