@@ -62,19 +62,22 @@ FROM rust-builder AS wheel-source
 FROM python:3.12-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+ENV UV_COMPILE_BYTECODE=0
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 
-# Install Rust native module into the venv, copy wheel aside for re-install
-# in dev/test workflows.
+# Install all project deps into .venv (uv sync with cache mount = fast rebuilds).
+# --no-install-project skips the project itself (no source yet).
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
+
+# Install Rust native module into the same .venv
 COPY --from=wheel-source /wheels /wheels
-RUN uv pip install --no-deps --python /usr/local/bin/python3 /wheels/features_engine*.whl && \
-    mkdir -p /app/wheels && \
-    cp /wheels/features_engine*.whl /app/wheels/
+RUN uv pip install --python /app/.venv/bin/python --no-deps /wheels/features_engine*.whl
 
 
-# Stage 2: Runtime image — install deps directly with pip (no venv, works cross-arch).
+# Stage 2: Runtime image — uses .venv pre-built by builder stage.
 FROM python:3.12-slim AS runtime
 
 # apt cache mount reuses downloaded lists between pipeline runs.
@@ -91,13 +94,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # Non-root for security
 RUN groupadd -r appuser && useradd -r -g appuser -u 1000 appuser
 
-# Install Python deps directly into system Python (no venv = cross-arch safe)
-COPY --from=builder /app/pyproject.toml /app/uv.lock /app/
-COPY --from=builder /app/wheels /app/wheels
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+# Copy .venv from builder (all deps pre-installed) — avoids pip install
+# re-downloading everything under QEMU on every build.
+COPY --from=builder /app/pyproject.toml /app/
+COPY --from=builder /app/.venv /app/.venv
+ENV PATH="/app/.venv/bin:$PATH"
 WORKDIR /app
-RUN pip install --no-cache-dir --no-deps /app/wheels/features_engine*.whl && \
-    pip install --no-cache-dir -e .
+# Install project metadata only — deps are already in .venv
+RUN pip install --no-cache-dir --no-deps -e .
 
 # Copy application code
 COPY --chown=appuser:appuser src/ src/
