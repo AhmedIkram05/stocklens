@@ -31,6 +31,10 @@ WORKDIR /src
 COPY backend/ml/features-engine /src
 RUN maturin build --release --features extension --out /wheels
 
+# CI override: --build-context wheel-source=<path> provides pre-built wheel,
+# skipping the rust-builder stage entirely (saves ~5min under QEMU).
+FROM rust-builder AS wheel-source
+
 
 # Stage 1: Final Airflow image
 FROM python:3.12-slim
@@ -70,7 +74,7 @@ RUN pip install --no-cache-dir \
     alembic>=1.15.0
 
 # Install Rust native module (features_engine)
-COPY --from=rust-builder /wheels /wheels
+COPY --from=wheel-source /wheels /wheels
 RUN pip install --no-deps /wheels/features_engine*.whl
 
 # Copy DAGs, migration helpers, and config

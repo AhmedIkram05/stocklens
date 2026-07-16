@@ -24,8 +24,43 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ─── Build features-engine Rust wheel (shared across images) ──────
+  build-features-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up QEMU for ARM64 emulation
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build features-engine ARM64 wheel
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
+            -f backend/Dockerfile \
+            --target rust-builder \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --output type=tar,dest=/tmp/wheels.tar \
+            backend/
+          mkdir -p wheels/wheels
+          tar -xf /tmp/wheels.tar -C /tmp/wheel-extract
+          cp /tmp/wheel-extract/wheels/features_engine*.whl wheels/wheels/
+          ls -la wheels/wheels/
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: features-engine-wheel
+          path: wheels/
+          retention-days: 1
+
   # ─── Build & Push ARM64 Backend Image (for ECS) ───────────────────
   build-push-backend:
+    needs: [build-features-engine]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -47,6 +82,12 @@ jobs:
         # ADR 009: QEMU required for linux/arm64 builds on x86 runners
         uses: docker/setup-qemu-action@v3
 
+      - name: Download pre-built features-engine wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: features-engine-wheel
+          path: wheels
+
       - name: Build and push ARM64 backend image
         uses: docker/build-push-action@v5
         with:
@@ -54,6 +95,8 @@ jobs:
           file: backend/Dockerfile
           platforms: linux/arm64
           push: true
+          build-contexts: |
+            wheel-source=${{ github.workspace }}/wheels
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
@@ -62,6 +105,7 @@ jobs:
 
   # ─── Build & Push Airflow ARM64 Image ────────────────────────────
   build-push-airflow:
+    needs: [build-features-engine]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -82,6 +126,12 @@ jobs:
       - name: Set up QEMU for ARM64 emulation
         uses: docker/setup-qemu-action@v3
 
+      - name: Download pre-built features-engine wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: features-engine-wheel
+          path: wheels
+
       - name: Build and push Airflow ARM64 image
         uses: docker/build-push-action@v5
         with:
@@ -89,6 +139,8 @@ jobs:
           file: airflow/Dockerfile
           platforms: linux/arm64
           push: true
+          build-contexts: |
+            wheel-source=${{ github.workspace }}/wheels
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:airflow-${{ github.sha }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:airflow-latest
