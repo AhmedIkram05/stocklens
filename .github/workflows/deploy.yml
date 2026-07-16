@@ -212,6 +212,10 @@ jobs:
           file: backend/sagemaker/Dockerfile.sagemaker
           platforms: linux/arm64
           push: true
+          # ponytail: default buildx adds OCI provenance (image index). SageMaker
+          # CreateModel only accepts single-manifest images, not image indexes.
+          provenance: false
+          sbom: false
           build-args: |
             BASE_IMAGE=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           tags: |
