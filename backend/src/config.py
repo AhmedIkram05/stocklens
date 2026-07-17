@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     # AWS
     AWS_REGION: str = "eu-west-2"
 
-    # Bedrock
-    BEDROCK_MODEL_ID: str = "anthropic.claude-3-haiku-20240307-v1:0"
+    # NLP Bedrock Model
+    BEDROCK_MODEL_ID: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
 
     # OCR
     OCR_TESSERACT_CMD: str | None = None
@@ -68,6 +68,20 @@ class Settings(BaseSettings):
     DRIFT_MONITORED_TICKERS: str = ""  # comma-separated, empty = portfolio-only
     DRIFT_REPORT_S3_BUCKET: str = "stocklens-drift-reports"
     DRIFT_REPORT_S3_PREFIX: str = "drift_reports/"
+
+    # Agent
+    AGENT_MODEL_ID: str = "deepseek.v3-v1:0"  # DeepSeek V3.1 — agent inference
+    AGENT_JUDGE_MODEL_ID: str = "openai.gpt-5.4"  # GPT 5.4 — LLM-as-Judge
+    # Claude Haiku 4.5 — NLP pipeline (BEDROCK_MODEL_ID per Phase 1.5 cascade extractor)
+    NLP_MODEL_ID: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
+    # DeepSeek V3.1 optimal max; below 8K stops mid-reasoning on multi-tool queries
+    AGENT_MAX_TOKENS: int = 8192
+    AGENT_TEMPERATURE: float = 0.1
+    AGENT_EVAL_SAMPLE_RATE: float = 0.1
+    AGENT_MAX_HISTORY_TURNS: int = 20
+    AGENT_REDIS_TTL: int = 604800  # 7 days — active session state TTL
+    AGENT_REDIS_KEY_PREFIX: str = "agent:session:"  # Redis key prefix
+    RATE_LIMIT_AGENT: str = "30/minute"  # Rate limit for agent chat endpoint
 
     # NLP Cascade OCR
     CASCADE_CONFIDENCE_THRESHOLD: float = 0.7
