@@ -14,6 +14,8 @@ application code reuses the same connection currently inside a ``BEGIN`` /
 from __future__ import annotations
 
 import json
+import os
+import socket
 from collections.abc import AsyncGenerator
 
 import asyncpg
@@ -21,9 +23,38 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+# Tests always run against the test database. Force the "test" environment so
+# Alembic migrations target TEST_DATABASE_URL rather than the docker
+# ``postgres`` host (which is unreachable when pytest runs on the host machine).
+# get_redis() builds its pool from settings.REDIS_URL (derived once at settings
+# import from REDIS_HOST); on the host the redis container is published on
+# localhost, so set REDIS_URL directly. Env vars take precedence over .env.
+# All of these must be set before src.config.settings is imported below.
+os.environ["ENVIRONMENT"] = "test"
+os.environ["REDIS_URL"] = "redis://localhost:6379"
+
 from src.config import settings
 from src.database import connection as db_conn
 from src.main import app
+
+
+# ponytail: tests assume the ``postgres_test`` docker hostname; when running on
+# the host that name doesn't resolve, so rewrite it to the published localhost
+# port. No-op inside the docker-compose network.
+def _resolve_test_dsn(dsn: str) -> str:
+    if "postgres_test" not in dsn:
+        return dsn
+    try:
+        socket.gethostbyname("postgres_test")
+        return dsn
+    except OSError:
+        return dsn.replace("postgres_test:5432", "localhost:5433")
+
+
+TEST_DSN = _resolve_test_dsn(settings.TEST_DATABASE_URL)
+# Make the rewritten DSN authoritative for anything that reads
+# settings.TEST_DATABASE_URL (including Alembic's migration target).
+settings.TEST_DATABASE_URL = TEST_DSN
 
 
 @pytest.fixture(scope="session")
@@ -60,7 +91,7 @@ async def _test_db() -> AsyncGenerator[None, None]:
     On teardown the transaction is rolled back and the original functions are
     restored.
     """
-    dsn = settings.TEST_DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://", 1)
+    dsn = TEST_DSN.replace("postgresql+asyncpg://", "postgresql://", 1)
     conn = await asyncpg.connect(dsn)
     # Register JSONB codec so jsonb columns return Python objects (not raw strings)
     await conn.set_type_codec(
@@ -84,6 +115,15 @@ async def _test_db() -> AsyncGenerator[None, None]:
         "ON CONFLICT (id) DO NOTHING",
         "00000000-0000-0000-0000-000000000001",
         "cashflow-test@stocklens.dev",
+        "$2b$12$abc123",
+    )
+    # A second, distinct user so ownership-isolation tests can create
+    # conversations owned by "another" user (FK requires the row to exist).
+    await conn.execute(
+        "INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3) "
+        "ON CONFLICT (id) DO NOTHING",
+        "00000000-0000-0000-0000-000000000002",
+        "other-user@stocklens.dev",
         "$2b$12$abc123",
     )
     for pid, name in [
@@ -125,7 +165,7 @@ async def _test_db() -> AsyncGenerator[None, None]:
 @pytest_asyncio.fixture(autouse=True)
 async def _setup_app() -> AsyncGenerator[None, None]:
     """Initialise the asyncpg pool before tests and tear it down after."""
-    await db_conn.init_pool(settings.TEST_DATABASE_URL, min_size=1, max_size=2)
+    await db_conn.init_pool(TEST_DSN, min_size=1, max_size=2)
     try:
         yield
     finally:

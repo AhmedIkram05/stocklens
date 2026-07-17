@@ -41,9 +41,14 @@ def run_migrations_offline() -> None:
 
 
 async def run_async_migrations() -> None:
-    """Run migrations with a live async connection."""
+    """Run migrations with a live async connection.
+
+    Tests run against the isolated ``postgres_test`` database, so when the
+    environment is ``test`` we migrate there instead of the runtime DB.
+    """
+    dsn = settings.TEST_DATABASE_URL if settings.ENVIRONMENT == "test" else settings.DATABASE_URL
     connectable = create_async_engine(
-        settings.DATABASE_URL,
+        dsn,
     )
     async with connectable.connect() as conn:
         await conn.run_sync(do_run_migrations)

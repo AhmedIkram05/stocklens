@@ -137,35 +137,14 @@ def test_json_fallback_numpy() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Champion metrics — mock asyncpg DB
+# Champion metrics — mock asyncpg DB + mlflow
 # ---------------------------------------------------------------------------
 
 
-def _mock_mlflow_module() -> MagicMock:
-    """Patch sys.modules so mlflow imports don't fail outside Docker."""
-    import sys
-
-    mock = MagicMock()
-    mock.set_tracking_uri = MagicMock()
-    mock.set_experiment = MagicMock()
-    mock.tracking.MlflowClient = MagicMock()
-    mock.active_run.return_value = None
-    mock.start_run.return_value.__enter__.return_value = MagicMock()
-    mock.end_run = MagicMock()
-    mock.MlflowClient.return_value = MagicMock()
-    mock.pytorch = MagicMock()
-    mock.pytorch.autolog = MagicMock()
-    mock.pytorch.pytorch = MagicMock()
-    sys.modules["mlflow"] = mock
-    sys.modules["mlflow.tracking"] = mock.tracking
-    sys.modules["mlflow.pytorch"] = mock.pytorch
-    return mock
-
-
 @pytest.mark.asyncio
-async def test_read_champion_metrics_found() -> None:
+@patch("ml.mlflow_manager.mlflow")
+async def test_read_champion_metrics_found(mock_mlflow) -> None:
     """Returns champion metrics when DB has a champion row."""
-    _mock_mlflow_module()
     from ml.mlflow_manager import MLflowManager
 
     mgr = MLflowManager()
@@ -187,7 +166,8 @@ async def test_read_champion_metrics_found() -> None:
 
 
 @pytest.mark.asyncio
-async def test_read_champion_metrics_none() -> None:
+@patch("ml.mlflow_manager.mlflow")
+async def test_read_champion_metrics_none(mock_mlflow) -> None:
     """Returns None when no champion row exists."""
     from ml.mlflow_manager import MLflowManager
 
