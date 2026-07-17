@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncpg
 import pytest
 
+from src.config import settings
 from src.database import connection as db_conn
 
 # ── _normalise_dsn ─────────────────────────────────────────────────────────────
@@ -79,7 +80,7 @@ class TestPoolLifecycle:
 
         # Re-initialise for other tests
         await db_conn.init_pool(
-            "postgresql+asyncpg://stocklens:stocklens@postgres_test:5432/stocklens_test",
+            settings.TEST_DATABASE_URL,
             min_size=1,
             max_size=2,
         )
