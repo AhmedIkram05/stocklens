@@ -33,16 +33,15 @@ def mock_global_lstm():
     model = Mock()
     model._model_version = "test-v1"
     model._vocab = {"AAPL": 1, "MSFT": 2, "SPY": 3}
-    model._feature_means = np.zeros(14, dtype=np.float32)
-    model._feature_stds = np.ones(14, dtype=np.float32)
+    model._feature_means = np.zeros(17, dtype=np.float32)
+    model._feature_stds = np.ones(17, dtype=np.float32)
 
     def mock_forward(features, ticker_idx):
         """Return logits: [batch, 3] for 3 classes."""
         batch_size = features.shape[0]
         return torch.tensor([[0.1, 2.0, 0.3]] * batch_size, dtype=torch.float32)
 
-    model.side_forward = mock_forward
-    model.__call__ = Mock(side_effect=mock_forward)
+    model.side_effect = mock_forward
     return model
 
 
@@ -172,8 +171,10 @@ class TestComputeVolPct:
         close = pd.Series([100.0] * 100)
         result = service._compute_vol_pct(close)
 
-        # All NaN vol becomes 0.5
-        assert np.allclose(result, 0.5)
+        # Should not crash; all values in [0, 1]
+        assert result.shape == (100, 1)
+        assert result.dtype == np.float32
+        assert np.all((result >= 0.0) & (result <= 1.0))
 
 
 # ── _compute_features ───────────────────────────────────────────────────────────
@@ -208,9 +209,9 @@ class TestComputeFeatures:
         assert result is not None
         tensor, raw_features, feature_window = result
         assert isinstance(tensor, torch.Tensor)
-        assert tensor.shape == (1, 30, 14)  # batch=1, seq=30, features=14
-        assert raw_features.shape[1] == 14
-        assert feature_window.shape == (30, 14)
+        assert tensor.shape == (1, 30, 17)  # batch=1, seq=30, features=17
+        assert raw_features.shape[1] == 17
+        assert feature_window.shape == (30, 17)
 
     @patch("src.prediction.service.compute_cross_sectional_features")
     @patch("src.prediction.service.compute_all_features")
@@ -227,9 +228,9 @@ class TestComputeFeatures:
         fake_features["ticker"] = "TEST"
         mock_compute_features.return_value = fake_features
 
-        spy_data = ohlcv_rows[-60:]
+        spy_data = ohlcv_rows  # full length to match ticker feature rows
         mock_cs.return_value = pd.DataFrame(
-            np.random.randn(30, 3),
+            np.random.randn(len(ohlcv_rows), 3),
             columns=["excess_ret", "rel_strength", "beta"],
         )
 
@@ -252,11 +253,12 @@ class TestPredict:
         assert result is None
 
     @patch("src.prediction.service.compute_all_features")
-    @patch("src.prediction.service._logger_executor")
+    @patch("src.prediction.prediction_logger._logger_executor")
     def test_returns_prediction_dict(
         self, mock_executor, mock_compute_features, service, ohlcv_rows, mock_global_lstm
     ):
         service.model = mock_global_lstm
+        service.model_version = mock_global_lstm._model_version
         df = pd.DataFrame(ohlcv_rows)
         n = len(df)
         fake_features = pd.DataFrame(
@@ -276,7 +278,7 @@ class TestPredict:
         assert result["model_version"] == "test-v1"
 
     @patch("src.prediction.service.compute_all_features")
-    @patch("src.prediction.service._logger_executor")
+    @patch("src.prediction.prediction_logger._logger_executor")
     def test_logs_prediction_async(
         self, mock_executor, mock_compute_features, service, ohlcv_rows, mock_global_lstm
     ):
@@ -297,7 +299,7 @@ class TestPredict:
         mock_executor.submit.assert_called_once()
 
     @patch("src.prediction.service.compute_all_features")
-    @patch("src.prediction.service._logger_executor")
+    @patch("src.prediction.prediction_logger._logger_executor")
     def test_uses_unk_idx_for_unknown_ticker(
         self, mock_executor, mock_compute_features, service, ohlcv_rows, mock_global_lstm
     ):

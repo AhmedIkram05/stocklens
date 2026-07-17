@@ -132,6 +132,7 @@ services:
   pytest:
     build:
       context: ./backend
+    entrypoint: ['']
     profiles:
       - test
     env_file: ./backend/.env
@@ -144,6 +145,7 @@ services:
       STRUCTLOG_LOG_LEVEL: WARNING
       RATE_LIMIT_LOGIN: 1000/second
       RATE_LIMIT_DEFAULT: 1000/second
+      TORCHDYNAMO_DISABLE: 1
     depends_on:
       postgres:
         condition: service_healthy
@@ -159,7 +161,7 @@ services:
       - ./backend/pyproject.toml:/app/pyproject.toml
       - ./backend/.env:/app/.env
     command: >
-      sh -c "UV_CACHE_DIR=/tmp/uv-cache uv sync --extra dev --index-strategy unsafe-best-match && uv pip install --no-deps /app/wheels/features_engine*.whl && pytest -v -W 'ignore::DeprecationWarning:slowapi' --cov=src --cov-report=term-missing --cov-report=xml --tb=short"
+      sh -c "python -m ensurepip --upgrade 2>/dev/null && python -m pip install --quiet pytest pytest-asyncio pytest-cov pytest-mock freezegun evidently && python -m pytest -v -W 'ignore::DeprecationWarning:slowapi' --cov=src --cov-report=term-missing --cov-report=xml --tb=short"
 
 volumes:
   pgdata:

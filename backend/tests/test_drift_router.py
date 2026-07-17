@@ -338,7 +338,6 @@ class TestEdgeCases:
         client: AsyncClient,
         auth_headers: dict[str, str],
     ):
-        import structlog
 
         mock_get_user.return_value = "test-user"
         mock_run_id.return_value = "test-run"
@@ -376,7 +375,7 @@ class TestEdgeCases:
             "overall_verdict": "drifted",
         }
 
-        with patch.object(structlog.get_logger(), "warning") as mock_warn:
+        with patch("src.drift.router.logger.warning") as mock_warn:
             response = await client.post(
                 "/drift/run", json={"tickers": ["AAPL"]}, headers=auth_headers
             )

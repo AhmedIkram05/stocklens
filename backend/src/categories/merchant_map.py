@@ -47,10 +47,14 @@ def load_categories(db_categories: list[dict[str, Any]] | None = None) -> list[C
 
     Call this on startup with the result of a ``SELECT * FROM spending_categories``
     query. If *db_categories* is ``None`` or empty the built-in seed list is used.
+
+    Results are cached in ``_category_cache``. Once cached, calling again with
+    ``db_categories=None`` returns the same list. Passing explicit *db_categories*
+    refreshes the cache.
     """
     global _category_cache
 
-    if db_categories:
+    if db_categories is not None:
         _category_cache = [
             CategoryRule(
                 id=str(c["id"]),
@@ -62,6 +66,8 @@ def load_categories(db_categories: list[dict[str, Any]] | None = None) -> list[C
             for c in db_categories
         ]
     else:
+        if _category_cache is not None:
+            return _category_cache
         # Fall back to seed data — assign a placeholder ID since there is no DB row
         _category_cache = [
             CategoryRule(
@@ -105,9 +111,14 @@ def match_by_keyword(merchant_name: str) -> Optional[CategoryRule]:
 
     for category in get_categories():
         for keyword in category.merchant_keywords:
+            # Normalise keyword the same way as merchant name so punctuation
+            # (e.g. "m&s food" → "ms food") is stripped for matching.
+            normalised_keyword = _normalise(keyword.lower())
+            if not normalised_keyword:
+                continue
             # Use word-boundary-at-start so "tfl" doesn't match inside "netflix"
             # but "mcdonald" still matches inside "mcdonalds"
-            if re.search(rf"(?<!\w){re.escape(keyword.lower())}", normalised):
+            if re.search(rf"(?<!\w){re.escape(normalised_keyword)}", normalised):
                 logger.debug(
                     "category_keyword_match",
                     merchant=merchant_name,

@@ -111,6 +111,8 @@ def compute_prediction_distribution(
 
     Entries that don't match any class (e.g. ``"UNKNOWN"``) are silently ignored.
     """
+    if not predictions:
+        return np.array([1 / len(classes)] * len(classes), dtype=np.float64)
     counts = {c: 0 for c in classes}
     for p in predictions:
         if p in counts:

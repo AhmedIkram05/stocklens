@@ -70,7 +70,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     'asyncpg>=0.30.0' \
     'psutil>=6.0.0' \
     'httpx>=0.28.1' \
-    'evidently>=0.6.0' \
+    'evidently>=0.7' \
     'boto3>=1.43.0' \
     'apache-airflow>=3.3.0' \
     'apache-airflow-providers-standard>=1.0.0' \

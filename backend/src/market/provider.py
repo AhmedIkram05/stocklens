@@ -58,9 +58,12 @@ def _download_ohlcv(
     Returns a list of dicts with keys: date, open, high, low, close,
     adjusted_close, volume. NaN values are converted to None.
     """
-    # yfinance expects "YYYY-MM-DD" strings
-    start_str = start_date.isoformat() if start_date else None
-    end_str = end_date.isoformat() if end_date else None
+    if start_date is None:
+        start_date = date.today() - timedelta(days=20 * 365)
+    if end_date is None:
+        end_date = date.today()
+    start_str = start_date.isoformat()
+    end_str = end_date.isoformat()
 
     df = yf.download(ticker, start=start_str, end=end_str, progress=False, auto_adjust=False)
 

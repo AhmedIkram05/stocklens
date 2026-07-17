@@ -6,7 +6,7 @@ Uses real database via connection_ctx() with per-test transaction rollback.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from src.market.repository import (
@@ -35,9 +35,14 @@ class TestUpsertOHLCV:
 
     async def test_batch_size_3000_triggers_batching(self):
         """3000+ rows should trigger batch logic (BATCH_SIZE=3000)."""
+        base = date(2024, 1, 1)
         rows = [
-            {"date": date(2024, 1, i), "close": Decimal(str(180 + i % 10)), **NULL_OHLCV}
-            for i in range(2, 3005)  # 3003 rows
+            {
+                "date": base + timedelta(days=i),
+                "close": Decimal(str(180 + i % 10)),
+                **NULL_OHLCV,
+            }
+            for i in range(3003)  # 3003 rows
         ]
         result = await upsert_ohlcv("AAPL", rows)
         assert result == 3003

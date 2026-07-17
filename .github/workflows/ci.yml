@@ -132,6 +132,7 @@ jobs:
       JWT_SECRET_KEY: dev-test-secret-do-not-use-in-prod
       RATE_LIMIT_LOGIN: 10000/minute
       RATE_LIMIT_DEFAULT: 10000/minute
+      TORCHDYNAMO_DISABLE: 1
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6

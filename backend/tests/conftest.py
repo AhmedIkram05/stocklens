@@ -62,7 +62,41 @@ async def _test_db() -> AsyncGenerator[None, None]:
     """
     dsn = settings.TEST_DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://", 1)
     conn = await asyncpg.connect(dsn)
+    # Register JSONB codec so jsonb columns return Python objects (not raw strings)
+    await conn.set_type_codec(
+        "jsonb",
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema="pg_catalog",
+    )
+    # UUID codec returns strings
+    await conn.set_type_codec(
+        "uuid",
+        encoder=str,
+        decoder=str,
+        schema="pg_catalog",
+    )
     await conn.execute("BEGIN")
+
+    # Seed test user and portfolios for FK references
+    await conn.execute(
+        "INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3) "
+        "ON CONFLICT (id) DO NOTHING",
+        "00000000-0000-0000-0000-000000000001",
+        "cashflow-test@stocklens.dev",
+        "$2b$12$abc123",
+    )
+    for pid, name in [
+        ("11111111-1111-1111-1111-111111111111", "Test Portfolio"),
+        ("22222222-2222-2222-2222-222222222222", "Other Portfolio"),
+    ]:
+        await conn.execute(
+            "INSERT INTO portfolios (id, user_id, name) VALUES ($1::uuid, $2, $3) "
+            "ON CONFLICT (id) DO NOTHING",
+            pid,
+            "00000000-0000-0000-0000-000000000001",
+            name,
+        )
 
     # Save originals
     original_get_conn = db_conn.get_conn
