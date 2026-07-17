@@ -53,15 +53,23 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install ML dependencies + Airflow + drift deps in one layer.
-# pytorch-cpu extra index for CPU-only torch; PyPI for everything else.
-# pip cache mount reuses downloaded wheels across builds — critical for
-# QEMU ARM64 where re-downloading torch (~900MB) under emulation takes ~10min.
-# --no-cache-dir deliberately removed: cache persistence is the optimization.
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install \
+# Install uv (fast Rust-based pip replacement)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+# Layer 1: torch alone — huge download, cached independently so other dep
+# changes don't force a re-download. UV_COMPILE_BYTECODE=0 avoids 13m QEMU
+# penalty (same as backend Dockerfile).
+ENV UV_COMPILE_BYTECODE=0
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system \
     --extra-index-url https://download.pytorch.org/whl/cpu \
-    'torch>=2.12.0' \
+    'torch>=2.12.0'
+
+# Layer 2: everything else — uv resolves + downloads in parallel (10-100x
+# faster than pip). uv cache mount persists across rebuilds.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system \
     'mlflow>=3.14.0' \
     'scikit-learn>=1.6.0' \
     'numpy>=2.1.0' \
@@ -81,7 +89,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # Install Rust native module (features_engine)
 COPY --from=wheel-source /wheels /wheels
-RUN pip install --no-deps /wheels/features_engine*.whl
+RUN uv pip install --system --no-deps /wheels/features_engine*.whl
 
 # Copy DAGs, migration helpers, and config
 COPY airflow/dags/ /opt/airflow/dags/
