@@ -58,16 +58,20 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 # Layer 1: torch alone — huge download, cached independently so other dep
 # changes don't force a re-download. UV_COMPILE_BYTECODE=0 avoids 13m QEMU
-# penalty (same as backend Dockerfile).
+# penalty (same as backend Dockerfile).  hadolint ignore=DL3059 — intentional
+# layer split for rebuild speed.
 ENV UV_COMPILE_BYTECODE=0
 
+# hadolint ignore=DL3059
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system \
     --extra-index-url https://download.pytorch.org/whl/cpu \
     'torch>=2.12.0'
 
 # Layer 2: everything else — uv resolves + downloads in parallel (10-100x
-# faster than pip). uv cache mount persists across rebuilds.
+# faster than pip). uv cache mount persists across rebuilds.  hadolint
+# ignore=DL3059 — same intentional split.
+# hadolint ignore=DL3059
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system \
     'mlflow>=3.14.0' \
