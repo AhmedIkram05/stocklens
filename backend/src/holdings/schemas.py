@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from src.types import DecimalAsFloat
+from src.type_aliases import DecimalAsFloat
 
 
 class HoldingBase(BaseModel):

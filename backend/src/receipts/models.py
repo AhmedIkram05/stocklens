@@ -11,7 +11,7 @@ from typing import Any, Optional
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Literal
 
-from src.types import DecimalAsFloat
+from src.type_aliases import DecimalAsFloat
 
 
 class ExtractedItem(BaseModel):
