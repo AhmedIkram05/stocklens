@@ -115,7 +115,7 @@ class Settings(BaseSettings):
 
 env_path = Path(".env")
 _env = os.environ.get("ENVIRONMENT", "development")
-if not env_path.exists() and _env not in ("development", "dev"):
+if not env_path.exists() and _env not in ("development", "dev", "test"):
     raise RuntimeError(
         f".env file not found at {env_path.resolve()}. "
         "Create one from .env.example or set all env vars directly."

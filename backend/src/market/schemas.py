@@ -9,7 +9,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from src.types import DecimalAsFloat
+from src.type_aliases import DecimalAsFloat
 
 
 class OHLCVData(BaseModel):

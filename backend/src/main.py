@@ -102,6 +102,12 @@ async def lifespan(app: FastAPI):
         else:
             print("LIFESPAN: no champion model, continuing", file=sys.stderr, flush=True)
 
+        # Initialize agent service (warm LangGraph agent — sync compile)
+        from src.agent.service import agent_service
+
+        agent_service.initialize()
+        logger.info("agent_service_initialised")
+
         print("LIFESPAN: post-pool init done", file=sys.stderr, flush=True)
     except Exception:
         print("LIFESPAN CRASH:", file=sys.stderr, flush=True)
@@ -155,6 +161,7 @@ async def health():
 
 # ── Router registrations ──
 # Import at function scope to avoid circular imports at module level.
+from src.agent.router import router as agent_router  # noqa: E402
 from src.auth.router import router as auth_router  # noqa: E402
 from src.cash_flows.router import router as cash_flows_router  # noqa: E402
 from src.categories.router import router as category_router  # noqa: E402
@@ -177,3 +184,4 @@ app.include_router(performance_router, tags=["performance"])
 app.include_router(prediction_router, prefix="/predict", tags=["prediction"])
 app.include_router(drift_router, prefix="/drift", tags=["drift"])
 app.include_router(transaction_router, tags=["transactions"])
+app.include_router(agent_router, prefix="/agent", tags=["agent"])

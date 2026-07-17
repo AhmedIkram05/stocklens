@@ -42,7 +42,7 @@ async def resolve_instrument(ticker: str) -> tuple[str, Optional[str]]:
         currency = (quote.get("currency") or "GBP").upper()
         exchange = quote.get("exchange")
     except Exception:
-        logger.warning("instrument_resolve_failed", ticker=ticker, exc_info=True)
+        logger.warning("instrument_resolve_failed", extra={"ticker": ticker}, exc_info=True)
         currency, exchange = "GBP", None
 
     try:
@@ -57,7 +57,7 @@ async def resolve_instrument(ticker: str) -> tuple[str, Optional[str]]:
                 exchange,
             )
     except Exception:
-        logger.warning("instrument_persist_failed", ticker=ticker, exc_info=True)
+        logger.warning("instrument_persist_failed", extra={"ticker": ticker}, exc_info=True)
 
     return currency, exchange
 
@@ -74,7 +74,7 @@ async def get_fx_rate_to_gbp(currency: str) -> Decimal:
         if cached is not None:
             return Decimal(cached.decode())
     except Exception:
-        logger.warning("fx_cache_read_failed", currency=currency, exc_info=True)
+        logger.warning("fx_cache_read_failed", extra={"currency": currency}, exc_info=True)
 
     rate = await provider.fetch_fx(currency.upper())
 
@@ -82,6 +82,6 @@ async def get_fx_rate_to_gbp(currency: str) -> Decimal:
         r = await get_redis()
         await r.set(key, str(rate), ex=_FX_TTL)
     except Exception:
-        logger.warning("fx_cache_write_failed", currency=currency, exc_info=True)
+        logger.warning("fx_cache_write_failed", extra={"currency": currency}, exc_info=True)
 
     return rate
