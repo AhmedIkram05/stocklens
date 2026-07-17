@@ -17,6 +17,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Index,
+    Integer,
     MetaData,
     Numeric,
     String,
@@ -137,6 +138,12 @@ transactions = Table(
     Column("total_amount_gbp", Numeric(24, 6), nullable=True),
     Column("transaction_date", Date(), nullable=False),
     Column("notes", Text()),
+    Column(
+        "spending_category_id",
+        UUID(as_uuid=True),
+        ForeignKey("spending_categories.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
     Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
     CheckConstraint("type IN ('BUY', 'SELL')", name="chk_transactions_type"),
     CheckConstraint("total_amount = shares * price_per_share", name="chk_transactions_amount"),
@@ -232,7 +239,27 @@ model_registry = Table(
 )
 
 # ---------------------------------------------------------------------------
-# Agent conversations
+# Conversations — lightweight metadata for list endpoint
+# ---------------------------------------------------------------------------
+
+conversations = Table(
+    "conversations",
+    target_metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
+    Column(
+        "user_id",
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("title", Text(), nullable=True),  # auto-generated from first user message
+    Column("message_count", Integer(), server_default=text("0"), nullable=False),
+    Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
+    Column("updated_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
+)
+
+# ---------------------------------------------------------------------------
+# Agent conversations — multi-turn message archive
 # ---------------------------------------------------------------------------
 
 agent_conversations = Table(
@@ -240,16 +267,22 @@ agent_conversations = Table(
     target_metadata,
     Column("id", BigInteger(), primary_key=True, autoincrement=True),
     Column(
+        "conversation_id",
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
         "user_id",
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     ),
-    Column("message", Text()),
-    Column("response", Text()),
-    Column("tools_used", JSONB()),
-    Column("reasoning_steps", JSONB()),
-    Column("created_at", DateTime(timezone=True), server_default=func.now()),
+    Column("role", String(20), nullable=False),  # "user" | "assistant"
+    Column("content", Text(), nullable=False),
+    Column("tools_used", JSONB(), nullable=True),
+    Column("reasoning_steps", JSONB(), nullable=True),
+    Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
 )
 
 # ---------------------------------------------------------------------------
@@ -283,6 +316,9 @@ Index("idx_refresh_tokens_user", refresh_tokens.c.user_id)
 # prefers an explicit index declaration for autogen)
 Index("idx_refresh_tokens_hash", refresh_tokens.c.token_hash, unique=True)
 
+# Transactions — spending_category lookup
+Index("idx_transactions_spending_category", transactions.c.spending_category_id)
+
 # Spending categories — GIN index on merchant_keywords JSONB
 Index(
     "idx_categories_keywords",
@@ -290,8 +326,11 @@ Index(
     postgresql_using="gin",
 )
 
-# Agent conversations — user lookup
-Index("idx_conversations_user", agent_conversations.c.user_id)
+# Conversations — user lookup
+Index("idx_conversations_user", conversations.c.user_id)
+
+# Agent conversations — conversation lookup
+Index("idx_agent_conversations_cid", agent_conversations.c.conversation_id)
 
 # ---------------------------------------------------------------------------
 # prediction_log — stores every prediction request for drift monitoring
