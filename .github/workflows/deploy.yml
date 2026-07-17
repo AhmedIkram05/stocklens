@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Set up QEMU for ARM64 emulation
         uses: docker/setup-qemu-action@v3
@@ -76,7 +76,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Set up QEMU for ARM64 emulation
         # ADR 009: QEMU required for linux/arm64 builds on x86 runners
@@ -121,7 +121,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Set up QEMU for ARM64 emulation
         uses: docker/setup-qemu-action@v3
@@ -164,7 +164,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Free disk space
         # GitHub Free runners have ~14GB but ship Android SDK (~10GB) + .NET (~5GB) + GHC (~1GB).
@@ -203,7 +203,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build and push SageMaker ARM64 image
         # SageMaker CreateModel rejects OCI manifest types (both index and
