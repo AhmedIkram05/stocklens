@@ -1,7 +1,8 @@
 # StockLens — Implementation Tracker
 
 > **Purpose:** Single source of truth for implementation progress. Agents read this to determine what to work on next, and write to it when done.
-> **Plan docs:** [MASTER_PLAN.md](MASTER_PLAN.md) (architecture), [PHASE1_IMPLEMENTATION.md](PHASE1_IMPLEMENTATION.md), [PHASE2_IMPLEMENTATION.md](PHASE2_IMPLEMENTATION.md) > **Domain glossary:** [CONTEXT.md](CONTEXT.md) (normative terms)
+> **Plan docs:** [MASTER_PLAN.md](MASTER_PLAN.md) (architecture), [PHASE1_IMPLEMENTATION.md](PHASE1_IMPLEMENTATION.md), [PHASE2_IMPLEMENTATION.md](PHASE2_IMPLEMENTATION.md), [PHASE6_IMPLEMENTATION.md](PHASE6_IMPLEMENTATION.md)
+> **Domain glossary:** [CONTEXT.md](CONTEXT.md) (normative terms)
 > **Docs are frozen** — plan docs are the specs. This tracker captures what actually happened.
 
 ---
@@ -503,6 +504,38 @@ Chronological implementation rounds from `docs/PHASE5_IMPLEMENTATION.md`. Each r
 
 ---
 
-## Phase 6 - Conversation Tool use AI Agent
+## Phase 6 — LangGraph ReAct Agent
 
-_Not started._ Add tracker rows when
+**Goal:** LangGraph ReAct agent — users ask natural-language questions about portfolio, spending, market data, and forecasts. The agent uses the **ReAct (Reason + Act)** loop to call 16 tools, incorporate results, and stream responses via SSE. Two-tier persistence (Redis hot + RDS cold). LLM-as-Judge evaluation (GPT 5.4) samples 10% of conversations.
+**Plan doc:** [PHASE6_IMPLEMENTATION.md](PHASE6_IMPLEMENTATION.md) (frozen after subagent logic review — all 5 critical blockers + 5 open decisions + 7 contradictions fixed)
+**Architecture decisions:** Three models on Bedrock Converse API — DeepSeek V3.1 (agent inference), GPT 5.4 (judge), Claude Haiku 4.5 (NLP pipeline). `InjectedToolArg` for user_id propagation. No `MemorySaver` — custom two-tier persistence. Per-turn connection_ctx per tool.
+
+### Step Tracker
+
+| Round | Objective                                   | Key Deliverables                                                                                                                                                                                      | Status     |
+| ----- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| R1    | Foundation: Dependencies, DB Schema, Config | `langgraph>=1.0.0` + migration 0009 (conversations + agent_conversations refactor), config values (model IDs, TTLs, rate limits, eval sample rate)                                                    | 📋 Planned |
+| R2    | Agent Graph Engine                          | `agent/` module (schemas, repository, tools with `InjectedToolArg`, `graph.py` StateGraph, `service.py` two-tier persistence singleton, wired into `main.py` startup)                                 | 📋 Planned |
+| R3    | Agent API Endpoints + SSE Streaming         | `router.py` — POST /agent/chat (SSE via `astream_events v2`), GET/DELETE /conversations, GET /conversations/{id}. Rate-limited via `RATE_LIMIT_AGENT`                                                 | 📋 Planned |
+| R4    | New Tool Endpoints (7)                      | `tool_endpoints.py` — spending-analysis, ticker-info, market-news, sector-exposure, diversification-score, dividend-insights, compare-tickers                                                         | 📋 Planned |
+| R5    | Backend Evaluation Module                   | Migration 0010 (`agent_evaluations`), `evaluator.py` (GPT 5.4 LLM-as-Judge), wired via `_run_eval_background` with task registry set for GC safety                                                    | 📋 Planned |
+| R6    | Frontend Chat UI                            | `agentService.ts` (SSE parsing with currentEvent tracking), `AgentChatScreen.tsx` (modal), `MessageBubble.tsx`, `ToolIndicator.tsx`, AI chat button on PortfolioListScreen (with Ionicons import fix) | 📋 Planned |
+
+### Deviations
+
+| Deviation | Detail                                                                                                      | Rationale                                                                                                                                                                               |
+| --------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D1**    | **No `MemorySaver`** — custom two-tier persistence (Redis + RDS) replaces LangGraph's built-in checkpointer | Process memory dies on restart. RDS is the canonical history store; Redis enables fast resume across ECS tasks sharing ElastiCache. Thread_id in config is vestigial — no checkpointer. |
+| **D2**    | **`InjectedToolArg`** for user_id propagation (not LLM-generated)                                           | LLM cannot know the user's ID. Tools annotated with `InjectedToolArg` — service binds user_id at call time. Previously a critical blocker (B1 from review).                             |
+| **D3**    | **Three Bedrock models** — DeepSeek V3.1 (agent) + GPT 5.4 (judge) + Claude Haiku 4.5 (NLP pipeline)        | All available on AWS Bedrock Converse API; no additional SDK dependencies needed beyond existing `langchain-aws`.                                                                       |
+| **D4**    | **Eval task registry** (`_eval_tasks` set) prevents GC of background evaluation tasks                       | `asyncio.create_task` without strong reference may get GC'd before completion. Registry set holds ref + `add_done_callback` self-removes.                                               |
+
+### Notes
+
+- **Plan reviewed by `planner` subagent** — 5 critical blockers, 5 open decisions, 7 contradictions found. All fixed before implementation start.
+- **Subagent verdict:** "Implementable after fixing 5 critical blockers — architecture is sound." All fixes applied: user_id injection (InjectedToolArg), RATE_LIMIT_AGENT in config, module-level singleton, langgraph>=1.0.0, Ionicons import.
+- **Model IDs verified** from AWS Bedrock docs: `deepseek.v3-v1:0` (DeepSeek V3.1), `openai.gpt-5.4` (GPT 5.4), `anthropic.claude-haiku-4-5-20251001-v1:0` (Claude Haiku 4.5).
+- **No new Python dependencies** — all three models accessed via existing `ChatBedrockConverse` from `langchain-aws`.
+- **`get_cash_flow_summary` retained** — shows deposit/withdrawal patterns over time, distinct from `get_portfolio_summary`'s current cash balance snapshot. Total tool count: 16.
+- **Tool description template** includes `Complementary tools` field for cross-referencing overlapping tools (portfolio_summary vs portfolio_performance vs recent_transactions).
+- **Deferred:** latency benchmarks, model comparison (DeepSeek vs Haiku vs Sonnet), failure modes table, fine-tuning.

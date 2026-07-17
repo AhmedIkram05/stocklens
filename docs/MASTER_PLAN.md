@@ -27,7 +27,7 @@ Physical receipts contain spending data that could inform investment decisions, 
 
 ### Solution
 
-StockLens scans receipts via OCR, maps merchants to stock tickers, tracks portfolio performance against market benchmarks, forecasts price direction with an LSTM, and answers natural-language questions about your finances via a ReAct agent.
+StockLens scans receipts via OCR, maps merchants to stock tickers, tracks portfolio performance against market benchmarks, forecasts price direction with an LSTM, and answers natural-language questions about your finances via a LangGraph ReAct agent.
 
 ### Principles
 
@@ -118,7 +118,7 @@ StockLens scans receipts via OCR, maps merchants to stock tickers, tracks portfo
 | WAF                 | AWS WAF                                   | Rate-based rules (200/min per IP), SQL injection + XSS protection attached to ALB |
 | Cost management     | AWS Budgets + Cost Anomaly Detection      | realistic $120 warn / $300 hard budget alert, anomaly detection on RDS + ECS      |
 | Container scaling   | ECS Service Auto Scaling                  | Target tracking on CPU + request count per target                                 |
-| Agent framework     | LangChain                                 | 1.3.x, ReAct with 5 tools                                                         |
+| Agent framework     | LangGraph                                 | 1.x, LangGraph ReAct with 16 tools                                                |
 | Container runtime   | Docker Compose (dev) / ECS Fargate (prod) |                                                                                   |
 
 > ⚠️ **Version audit (2026-06-26):** All versions above verified against current PyPI/GitHub releases. Python 3.14.6 is latest stable (released June 10). Expo SDK 56 shipped May 21 with RN 0.85. PostgreSQL 18.4 is latest stable (19 beta 1 out June 4). Redis 8.8.0 GA released May 25. MLflow 3.14.0 released June 17. Re-verify before executing each phase.
@@ -399,15 +399,15 @@ Applied to `users`, `portfolios`, `holdings` via `CREATE TRIGGER ... BEFORE UPDA
 
 ---
 
-### Phase 6 — LangChain Tool-Use Agent
+### Phase 6 — LangGraph ReAct Agent
 
-**Goal:** ReAct agent with five tools deployed as a FastAPI endpoint, integrated into React Native.
+**Goal:** LangGraph ReAct agent with 16 financial tools deployed as a FastAPI SSE endpoint, integrated into React Native.
 
 **Key deliverables:**
 
-- Five tools: `get_lstm_forecast`, `get_market_data`, `get_portfolio_summary`, `get_spending_analysis`, `compare_to_benchmark`
-- LangChain ReAct agent with tool descriptions as system prompt
-- FastAPI `/agent/chat` endpoint
+- 16 tools covering portfolio, spending, market, forecasts, dividends, screening, and comparisons (see [PHASE6_IMPLEMENTATION.md](PHASE6_IMPLEMENTATION.md) for full inventory)
+- LangGraph StateGraph + ToolNode implementing the ReAct (Reason + Act) loop — each reasoning step and tool call is streamed via SSE
+- FastAPI `/agent/chat` SSE endpoint
 - 15-question golden evaluation set
 - React Native conversational UI screen
 - **Agent monitoring — latency drift:** Tracks response latency percentiles (p50/p95/p99) over sliding windows. Alerts on sustained degradation or outlier spikes.
@@ -497,5 +497,5 @@ After all six phases, every StockLens CV bullet is replaced with provably true c
 | "Per-category OCR with 78 tests"                                    | "Full-stack Python OCR pipeline with pytesseract + Bedrock Claude Haiku fallback, 80+ pytest suite"                                                                                                                                                 |
 | "78 tests covering ML flows"                                        | "LSTM evaluated by directional accuracy, per-class F1, and simulated Sharpe ratio"                                                                                                                                                                  |
 | _(no infra claim)_                                                  | "Terraform-provisioned AWS stack: RDS (Multi-AZ, PITR), ECS Fargate (auto-scaling), WAF (rate-based + SQLi/XSS), Secrets Manager (4+ secrets), CloudWatch observability (p50/p95/p99 dashboards), AWS Budgets + cost anomaly detection, OIDC CI/CD" |
-| _(no agent claim)_                                                  | "LangChain ReAct agent with 5 financial tools, 15-question golden evaluation set"                                                                                                                                                                   |
+| _(no agent claim)_                                                  | "LangGraph ReAct agent with 16 financial tools, LLM-as-Judge evaluation sampling 10% of conversations"                                                                                                                                              |
 | _(no MLOps claim)_                                                  | "Airflow weekly retraining pipeline with Evidently drift detection, champion/challenger model promotion"                                                                                                                                            |

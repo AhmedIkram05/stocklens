@@ -3,6 +3,8 @@
 > **Purpose:** Shared vocabulary across all phases. Updated per-phase.
 > **Audience:** AI coding agents implementing any phase.
 > **All terms defined here are normative** — if implementation docs use different language, this glossary wins.
+>
+> **Phase 6 terms added:** 2026-07-13 (Conversational Finance Agent — LangGraph)
 
 ---
 
@@ -238,3 +240,106 @@ Trigger (DAG / API) → DriftDetector
 | **Auto Scaling**              | ECS Fargate target-tracking scaling on two dimensions: average CPU utilisation and average request count per target. Keeps desired count between a minimum (HA) and a cost-bounded maximum.                                                           | Min 2 (AZ spread), max bounded by the realistic cost guardrail (Round 4: $120 warn / $300 hard; alert via AWS Budgets). Decoupled from model promotion — new tasks re-run the S3 bootstrap. |
 | **Serving Backend**           | The inference execution target. Primary = Fargate (local `GlobalLSTM` forward pass). Alternate = SageMaker serverless endpoint, selected via `PREDICTION_SERVING_BACKEND`.                                                                            | Default `fargate` (local testing). `sagemaker` is a config-gated required path; behaviour of `/predict` is identical either way, but both must be deployed and wired.                       |
 | **Phantom `BEDROCK_API_KEY`** | A secret named in earlier planning docs that does not exist and is not consumed. Bedrock is called via IAM task-role `bedrock:InvokeModel` + the `BEDROCK_MODEL_ID` plain env var.                                                                    | Removed from all plans/secrets (ADR 007). Do not create or inject it.                                                                                                                       |
+
+---
+
+## Conversational Finance Agent (Phase 6)
+
+| Term                                              | Definition                                                                                                                                                                                                                                                                      | Attributes / Constraints                                                                                                                                                                                                        |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Finance Agent** (aka **LangGraph ReAct Agent**) | The LangGraph-based conversational AI implementing the **ReAct (Reason + Act)** loop — it reasons, calls tools (16 total), incorporates results, and streams responses via SSE. Answers questions about portfolio, spending, market data, and forecasts. Never executes trades. | Analytical & Professional persona. Uses LangGraph StateGraph + ToolNode (ReAct loop). Deployed as FastAPI `/agent/chat` SSE endpoint.                                                                                           |
+| **Agent Graph**                                   | A LangGraph `StateGraph` that defines the agent's control flow: nodes = {agent_decision, tool_execution}, edges = conditional routing based on tool call necessity.                                                                                                             | Compiled once at startup and reused across all conversations. `State` = list of `BaseMessage` (conversation history).                                                                                                           |
+| **Agent Tool**                                    | A callable function wrapping a FastAPI endpoint or data provider, registered with LangGraph via `@tool` decorator (or `StructuredTool`). Each tool has a name, description, and typed parameter schema that the LLM uses to decide when and how to call it.                     | Tool descriptions are the primary mechanism for correct tool selection — must be precise and enumerative (list what the tool CAN and CANNOT do). Descriptions follow pattern: `{what_it_does} + {when_to_use} + {limitations}`. |
+| **Tool Call**                                     | An invocation of an Agent Tool by the LLM during the reasoning loop. Parameters are LLM-generated JSON matching the tool's Pydantic schema.                                                                                                                                     | Success/failure tracked per-tool for monitoring. Failed tool calls return structured error to the LLM for graceful degradation.                                                                                                 |
+| **Tool Result**                                   | The data returned from a successful Tool Call. Typed as a string (LangGraph convention — serialised JSON or summary text).                                                                                                                                                      | The LLM's response must stay within tool-provided data. No hallucination beyond tool results (enforced by persona prompt).                                                                                                      |
+| **Streaming Response**                            | Server-sent events (SSE) delivering tokens progressively as the agent generates its response. Uses FastAPI `StreamingResponse` + LangGraph's `astream_events()` with `version="v2"`.                                                                                            | Events: `on_chat_model_start`, `on_tool_start`, `on_tool_end`, `on_chat_model_stream` (token deltas). Frontend consumes via `EventSource` or `fetch` with `ReadableStream`.                                                     |
+| **Persona Prompt**                                | The system prompt that defines the agent's personality, scope, and constraints. Loaded at graph compile time, injected as the first SystemMessage in every conversation.                                                                                                        | Analytical & Professional tone. Key directives: (a) answer only from tool data, (b) disclose limitations, (c) never hallucinate ticker/price data, (d) cite sources where possible, (e) no trade execution.                     |
+| **Graceful Degradation**                          | When a tool call fails (yfinance down, missing data, invalid ticker), the agent reports what succeeded and what didn't, then provides a partial answer from available data.                                                                                                     | Implemented via error handling in each tool + instruction in persona prompt. Failed tools are retried once internally before degrading.                                                                                         |
+| **Agent Conversation**                            | A single user query + the agent's full reasoning trace (tool calls, intermediate thoughts) + final response. Persisted via two-tier: Redis (hot, 7-day TTL) for fast resume, RDS `agent_conversations` table for permanent archive.                                             | All past conversations visible. No auto-deletion. Agent has full context of current conversation (within one chat session). No cross-conversation memory in v1.                                                                 |
+| **Conversation Session**                          | A sequence of user messages in the same chat UI. Tied to a `user_id`. Backend treats each request independently but loads prior turns from Redis (hot) or RDS (cold) for context.                                                                                               | Defined by `conversation_id` (UUID). Created on first message. State loaded from Redis → RDS fallback on miss.                                                                                                                  |
+| **Two-Tier Persistence**                          | Custom state management replacing `MemorySaver` — Redis for active session state across ECS tasks, RDS for permanent conversation history. State survives container restarts and enables horizontal scaling.                                                                    | Tier 1: Redis hash `agent:session:{id}` with 7-day TTL (refreshed per turn). Tier 2: `conversations` (metadata) + `agent_conversations` (messages) in RDS. No `langgraph-checkpoint-postgres` dependency.                       |
+| **Conversations Table**                           | Lightweight RDS table for conversation listing and metadata. Avoids full message scan on the history endpoint.                                                                                                                                                                  | Columns: id (UUID PK), user_id (FK), title, message_count, created_at, updated_at. Indexed on (user_id, updated_at DESC).                                                                                                       |
+| **Redis State Key**                               | Active conversation state stored as a Redis hash. Contains the serialised message list, user_id, message_count, and updated_at timestamp.                                                                                                                                       | Key format: `agent:session:{conversation_id}`. TTL: 604800s (7 days) — refreshed on every turn via `EXPIRE`.                                                                                                                    |
+| **LLM-as-Judge**                                  | Periodic evaluation of live agent responses using a stronger LLM (GPT 5.4 evaluated against agent's DeepSeek V3.1). Samples a subset of production conversations and scores them on three dimensions.                                                                           | Sampling rate: configurable (default 10% of conversations). Scored offline (async background task). Results stored in `agent_evaluations` table. No impact on response latency.                                                 |
+| **Answer Relevance**                              | Does the agent's final response directly answer the user's question? Scored 0–1 by the judge model.                                                                                                                                                                             | Dimension 1 of 3 in LLM-as-Judge. A response that changes the subject or ignores the question scores 0.                                                                                                                         |
+| **Tool Selection Correctness**                    | Did the agent call the appropriate tool(s) for the user's question? Scored 0–1 by the judge model.                                                                                                                                                                              | Dimension 2 of 3. Wrong tool = 0 (e.g., calling `get_market_news` for a portfolio question).                                                                                                                                    |
+| **Context Adherence**                             | Does the final response stay within the data returned by the tools, without introducing external information? Scored 0–1 by the judge model.                                                                                                                                    | Dimension 3 of 3. Hallucinated numbers/facts = 0.                                                                                                                                                                               |
+| **Composite Relevance Score**                     | Weighted average of Answer Relevance (0.4) + Tool Selection (0.3) + Context Adherence (0.3). Used to track agent quality over time.                                                                                                                                             | Sampled from live traffic. Logged per-evaluation with judge model ID and timestamp.                                                                                                                                             |
+| **Golden Evaluation Set**                         | A curated set of test questions with expected tool calls and ideal responses. Used to validate the agent after changes and to qualify new model versions.                                                                                                                       | Mix of single-tool, multi-tool, and edge case scenarios. No hard count limit (~20–30 expected). Each entry = {question, expected_tools[], expected_response_key_points[], judge_score_threshold}.                               |
+| **Agent Monitoring — Latency Drift**              | Tracks response latency percentiles (p50/p95/p99) over sliding windows for agent conversations. Alerts on sustained degradation or outlier spikes.                                                                                                                              | Measured per-conversation. Window = 1h rolling. Alerts via CloudWatch if p95 > 20s for 5 consecutive windows.                                                                                                                   |
+| **Agent Monitoring — Tool Success Rate**          | Per-tool invocation success rate, failure modes (timeout, parsing error, API error), and recovery actions tracked via structured logs.                                                                                                                                          | Logged in `agent_conversations.tools_used` (JSONB — includes status and error per tool call). CloudWatch metric filter on `{ $.tool_status = "error" }`.                                                                        |
+| **Agent Monitoring — LLM Response Relevance**     | Periodic LLM-as-Judge relevance score sampled from live traffic. See LLM-as-Judge, Composite Relevance Score.                                                                                                                                                                   | Sampling rate configurable via `AGENT_EVAL_SAMPLE_RATE` (default 0.1). Results stored in `agent_evaluations` table.                                                                                                             |
+
+### Data Flow — Agent Chat (Streaming) with Two-Tier Persistence
+
+```
+Client (React Native) → POST /agent/chat { message, conversation_id? }
+  → FastAPI router (StreamingResponse)
+  → No conversation_id → create conversations row (RDS)
+  → Try Redis GET agent:session:{id} for active state        ◄── Tier 1 (hot)
+  → On Redis miss → build from RDS agent_conversations       ◄── Tier 2 (cold)
+  → Build Messages list: [SystemMessage(persona_prompt), *past_turns, HumanMessage(user_message)]
+  → Compile LangGraph graph (once, cached at lifespan)
+  → astream_events(graph, input, version="v2")
+    ├── on_chat_model_start → frontend: "thinking..."
+    ├── on_tool_start { tool_name, input } → frontend: tool indicator
+    ├── on_tool_end { tool_name, output } → frontend: tool result summary
+    └── on_chat_model_stream { chunk } → frontend: append to response text
+  → After stream completes:
+    → INSERT user message + assistant response into agent_conversations (RDS)
+    → UPDATE conversations (message_count, updated_at) (RDS)
+    → SET agent:session:{id} in Redis with 7-day TTL refresh  ◄── Hot tier updated
+    → Sample for LLM-as-Judge evaluation (if random < AGENT_EVAL_SAMPLE_RATE)
+```
+
+### Data Flow — Agent Evaluation (Background)
+
+```
+Background task (after agent response):
+  → If sampled (random < AGENT_EVAL_SAMPLE_RATE):
+    → Build evaluation prompt: { question, agent_trace, response }
+    → Call judge model (GPT 5.4 — stronger than agent's DeepSeek V3.1)
+    → Score: answer_relevance (0–1), tool_selection (0–1), context_adherence (0–1)
+    → Compute composite: 0.4 × answer_relevance + 0.3 × tool_selection + 0.3 × context_adherence
+    → Store in agent_evaluations table
+    → Log structured metric to CloudWatch (composite_relevance_score)
+```
+
+### Architecture — LangGraph StateGraph
+
+```
+Graph Definition (compiled at startup):
+
+  State = {
+    messages: list[BaseMessage],   // conversation history + new input
+    tool_calls: list[dict],         // track tool invocations for monitoring
+  }
+
+  Nodes:
+    [agent] → LLM decides: respond directly or call a tool
+    [tools] → Execute the tool requested by the LLM, return result
+
+  Edges:
+    agent → tools (if tool call requested)
+    agent → end (if final response ready)
+    tools → agent (tool result → LLM continues reasoning)
+
+  Entry Point: agent
+  End Condition: agent produces AIMessage with no tool calls
+```
+
+### Tool Inventory (Phase 6)
+
+**16 tools** (reduced from 19 after review — see `docs/goal_tool_review.md` for cuts/merges. `get_cash_flow_summary` was flagged as potentially redundant but kept — it shows deposit/withdrawal patterns over time, distinct from `get_portfolio_summary`'s current cash balance snapshot):
+
+| Category        | Tools                                                                        | Data Source Notes                                                    |
+| --------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| **Market Data** | `get_market_ohlcv`, `get_market_quote`, `get_ticker_info`, `get_market_news` | yfinance — news has limited/stale data ⚠️                            |
+| **Portfolio**   | `get_portfolio_summary`, `get_portfolio_holdings`, `get_sector_exposure`     | Sector exposure is NEW (yfinance ticker→sector map)                  |
+| **Performance** | `get_portfolio_performance` (merged with history), `compare_to_benchmark`    | `include_history` param on performance                               |
+| **Forecasting** | `get_lstm_forecast`                                                          | Existing prediction service                                          |
+| **Spending**    | `get_spending_analysis`, `get_recent_transactions`, `get_cash_flow_summary`  | Spending analysis is NEW — may replace raw transactions for spend Qs |
+| **Analysis**    | `get_portfolio_diversification_score`, `compare_tickers_side_by_side`        | Both NEW — HHI diversification is top differentiator                 |
+| **Insights**    | `get_dividend_insights`                                                      | NEW — yfinance dividend fields                                       |
+
+**Cut from v1:** `get_ticker_screening` (no yfinance screening API), `get_drift_metrics` (MLOps metric, not user-facing), `get_portfolio_history` (merged into performance).
