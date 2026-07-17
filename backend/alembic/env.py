@@ -1,14 +1,14 @@
 """
-Alembic environment configuration — async mode using asyncpg.
+Alembic environment configuration — sync mode using psycopg2.
 
-Loads DATABASE_URL from src.config.settings so the single source of truth
-in config.py is used for both the application and migrations.
+Loads DATABASE_URL from src.config.settings and strips the async driver
+suffix so Alembic can use a plain sync connection.  No asyncio, no
+greenlet — just a direct psycopg2 connection.
 """
 
-import asyncio
 from logging.config import fileConfig
 
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import create_engine
 
 from alembic import context
 from src.config import settings
@@ -17,9 +17,9 @@ from src.database.schema import target_metadata
 # Alembic Config object — provides access to alembic.ini values
 config = context.config
 
-# Override sqlalchemy.url with the value from pydantic settings.
-# The placeholder in alembic.ini is never used directly.
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Use a sync-compatible URL (psycopg2 is already a project dependency).
+sync_url = settings.DATABASE_URL.replace("+asyncpg", "+psycopg2", 1)
+config.set_main_option("sqlalchemy.url", sync_url)
 
 # Set up Python logging from the [loggers] section in alembic.ini
 if config.config_file_name is not None:
@@ -27,11 +27,7 @@ if config.config_file_name is not None:
 
 
 def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode (emit SQL without a live connection).
-
-    Each migration is rendered as a SQL script that can be reviewed or
-    applied manually.
-    """
+    """Run migrations in 'offline' mode (emit SQL without a live connection)."""
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
         target_metadata=target_metadata,
@@ -42,26 +38,16 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def do_run_migrations(connection):
-    """Wrap Alembic's sync context configuration for use inside run_sync."""
-    context.configure(connection=connection, target_metadata=target_metadata)
-    with context.begin_transaction():
-        context.run_migrations()
-
-
-async def run_async_migrations() -> None:
-    """Create an async engine, run all pending migrations, then dispose."""
-    connectable = create_async_engine(
-        config.get_main_option("sqlalchemy.url"),
-    )
-    async with connectable.connect() as conn:
-        await conn.run_sync(do_run_migrations)
-    await connectable.dispose()
-
-
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode using an async engine."""
-    asyncio.run(run_async_migrations())
+    """Run migrations in 'online' mode using a sync engine (psycopg2)."""
+    db_url = config.get_main_option("sqlalchemy.url")
+    assert db_url is not None, "sqlalchemy.url must be set"
+    connectable = create_engine(db_url)
+    with connectable.connect() as connection:
+        context.configure(connection=connection, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+    connectable.dispose()
 
 
 if context.is_offline_mode():
