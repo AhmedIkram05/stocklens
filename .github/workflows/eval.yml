@@ -41,8 +41,6 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
-    # Evaluation regressions should warn, not block the pipeline.
-    continue-on-error: true
     env:
       LANGCHAIN_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
       LANGCHAIN_TRACING_V2: 'true'

@@ -483,10 +483,17 @@ resource "aws_iam_role_policy" "github_deploy" {
           "elasticloadbalancing:*", "lambda:*",
           "ec2:*", "ssm:*", "secretsmanager:*", "elasticfilesystem:*",
           "sagemaker:*",
-          "servicediscovery:*", "route53:*",
-          "bedrock:*"
+          "servicediscovery:*", "route53:*"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = "bedrock:InvokeModel"
+        Resource = [
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/deepseek.v3.2",
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/zai.glm-5",
+        ]
       }
     ]
   })
