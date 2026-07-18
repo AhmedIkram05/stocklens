@@ -31,16 +31,11 @@ def upload_dataset(client: Client | None = None) -> None:
     client = client or Client()
     questions = load_questions()
     if client.has_dataset(dataset_name=DATASET_NAME):
-        dataset = client.read_dataset(dataset_name=DATASET_NAME)
-    else:
-        dataset = client.create_dataset(
-            dataset_name=DATASET_NAME,
-            description="StockLens agent golden evaluation questions",
-        )
-    # Reset any pre-existing examples so re-uploads are idempotent.
-    existing = client.list_examples(dataset_id=dataset.id)
-    if existing:
-        client.delete_examples(example_ids=[ex.id for ex in existing])
+        client.delete_dataset(dataset_name=DATASET_NAME)
+    dataset = client.create_dataset(
+        dataset_name=DATASET_NAME,
+        description="StockLens agent golden evaluation questions",
+    )
     client.create_examples(
         inputs=[{"question": q["question"]} for q in questions],
         dataset_id=dataset.id,

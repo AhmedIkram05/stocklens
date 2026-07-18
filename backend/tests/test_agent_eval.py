@@ -21,43 +21,40 @@ from src.agent.service import agent_service
 
 
 def test_upload_dataset_idempotent():
-    """Re-running upload resets existing examples then recreates them."""
+    """Re-running upload deletes the dataset then recreates it."""
     fake_client = MagicMock()
     fake_dataset = MagicMock()
     fake_dataset.id = "ds-123"
     fake_client.has_dataset.return_value = True
-    fake_client.read_dataset.return_value = fake_dataset
-
-    existing = [MagicMock(id="ex-1"), MagicMock(id="ex-2")]
-    fake_client.list_examples.return_value = existing
+    fake_client.create_dataset.return_value = fake_dataset
 
     upload_dataset(client=fake_client)
 
     fake_client.has_dataset.assert_called_once()
-    fake_client.read_dataset.assert_called_once()
-    fake_client.create_dataset.assert_not_called()
-    fake_client.list_examples.assert_called_once_with(dataset_id="ds-123")
-    fake_client.delete_examples.assert_called_once_with(
-        example_ids=["ex-1", "ex-2"],
-    )
+    fake_client.delete_dataset.assert_called_once_with(dataset_name="stocklens-golden")
+    fake_client.create_dataset.assert_called_once()
     # 22 questions in golden_dataset.json -> 22 create_examples inputs
     inputs = fake_client.create_examples.call_args.kwargs["inputs"]
     assert len(inputs) == 22
     assert all("question" in row for row in inputs)
 
 
-def test_upload_dataset_no_existing_examples():
-    """When the dataset is empty, delete_examples is never called."""
+def test_upload_dataset_first_run():
+    """First run (dataset doesn't exist) skips delete_dataset."""
     fake_client = MagicMock()
     fake_dataset = MagicMock()
     fake_dataset.id = "ds-0"
-    fake_client.has_dataset.return_value = True
-    fake_client.read_dataset.return_value = fake_dataset
-    fake_client.list_examples.return_value = []
+    fake_client.has_dataset.return_value = False
+    fake_client.create_dataset.return_value = fake_dataset
 
     upload_dataset(client=fake_client)
 
-    fake_client.delete_examples.assert_not_called()
+    fake_client.has_dataset.assert_called_once()
+    fake_client.delete_dataset.assert_not_called()
+    fake_client.create_dataset.assert_called_once_with(
+        dataset_name="stocklens-golden",
+        description="StockLens agent golden evaluation questions",
+    )
     assert fake_client.create_examples.call_args.kwargs["inputs"]
 
 
