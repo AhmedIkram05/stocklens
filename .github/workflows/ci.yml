@@ -176,6 +176,7 @@ jobs:
           UV_LINK_MODE=copy uv sync --frozen --package stocklens-backend --all-extras --index-strategy unsafe-best-match
           uv pip install /tmp/wheels/features_engine-*.whl
           uv run pytest -q \
+            -n auto --dist loadfile --durations=10 \
             --cov=src \
             --cov-report=xml:coverage.xml \
             --cov-report=lcov:coverage/lcov.info \
