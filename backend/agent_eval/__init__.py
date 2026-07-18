@@ -17,7 +17,8 @@ def __getattr__(name: str):
         "upload_dataset": "agent_eval.upload_dataset",
     }
     if name in _MAP:
-        return importlib.import_module(_MAP[name])
+        mod = importlib.import_module(_MAP[name])
+        return getattr(mod, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

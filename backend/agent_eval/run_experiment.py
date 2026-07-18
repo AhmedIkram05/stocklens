@@ -9,6 +9,8 @@ evaluation package is needed.
 
 from __future__ import annotations
 
+import asyncio
+
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import Client
@@ -19,6 +21,7 @@ from src.agent.graph import create_agent_graph
 from src.agent.service import PERSONA_PROMPT
 from src.agent.tools import get_all_tools
 from src.config import settings
+from src.database.connection import close_pool, init_pool
 
 DATASET_NAME = "stocklens-golden"
 EXPERIMENT_PREFIX = "stocklens-agent"
@@ -42,7 +45,7 @@ async def _target(inputs: dict) -> dict:
                 SystemMessage(content=PERSONA_PROMPT),
                 HumanMessage(content=inputs["question"]),
             ],
-            "user_id": "eval",
+            "user_id": "00000000-0000-0000-0000-000000000001",
         }
     )
     return {"response": result["messages"][-1].content}
@@ -102,19 +105,24 @@ _EVALUATORS = [
 
 def run_experiment(client: Client | None = None) -> None:
     """Execute the evaluation experiment on LangSmith."""
-    client = client or Client()
+    # The eval runs outside FastAPI, so init the DB pool manually.
+    asyncio.run(init_pool(settings.DATABASE_URL))
     try:
-        dataset = next(client.list_datasets(dataset_name=DATASET_NAME))
-    except StopIteration:
-        raise RuntimeError(
-            f"Dataset '{DATASET_NAME}' not found. Run `python -m agent_eval.upload_dataset` first."
-        ) from None
-    evaluate(
-        _target,
-        data=dataset,
-        evaluators=_EVALUATORS,
-        experiment_prefix=EXPERIMENT_PREFIX,
-    )
+        client = client or Client()
+        try:
+            dataset = next(client.list_datasets(dataset_name=DATASET_NAME))
+        except StopIteration:
+            raise RuntimeError(
+                f"Dataset '{DATASET_NAME}' not found. Run `python -m agent_eval.upload_dataset` first."  # noqa: E501
+            ) from None
+        evaluate(
+            _target,
+            data=dataset,
+            evaluators=_EVALUATORS,
+            experiment_prefix=EXPERIMENT_PREFIX,
+        )
+    finally:
+        asyncio.run(close_pool())
 
 
 if __name__ == "__main__":

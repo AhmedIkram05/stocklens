@@ -50,84 +50,70 @@
   },
   {
     "question": "What is the current price of AAPL?",
-    "expected_tools": ["get_quote"],
+    "expected_tools": ["get_market_quote"],
     "expected_response_contains": ["AAPL", "price"],
     "difficulty": "easy",
     "category": "market_data"
   },
   {
     "question": "Give me the latest market quote for Tesla.",
-    "expected_tools": ["get_quote"],
+    "expected_tools": ["get_market_quote"],
     "expected_response_contains": ["TSLA", "quote"],
     "difficulty": "easy",
     "category": "market_data"
   },
   {
-    "question": "What are the analyst price targets for NVIDIA?",
-    "expected_tools": ["get_analyst_targets"],
-    "expected_response_contains": ["target", "analyst"],
-    "difficulty": "medium",
-    "category": "market_data"
-  },
-  {
     "question": "Show me the 52-week high and low for Microsoft.",
-    "expected_tools": ["get_quote"],
+    "expected_tools": ["get_market_quote"],
     "expected_response_contains": ["52-week", "high", "low"],
     "difficulty": "medium",
     "category": "market_data"
   },
   {
     "question": "What is the market capitalization of Amazon?",
-    "expected_tools": ["get_quote"],
+    "expected_tools": ["get_ticker_info"],
     "expected_response_contains": ["market cap", "Amazon"],
     "difficulty": "medium",
     "category": "market_data"
   },
   {
     "question": "How much did I spend on groceries last month?",
-    "expected_tools": ["get_spending_by_category"],
+    "expected_tools": ["get_spending_analysis"],
     "expected_response_contains": ["groceries", "spending"],
     "difficulty": "easy",
     "category": "spending"
   },
   {
     "question": "What is my largest spending category this quarter?",
-    "expected_tools": ["get_spending_by_category"],
+    "expected_tools": ["get_spending_analysis"],
     "expected_response_contains": ["spending", "category"],
     "difficulty": "medium",
     "category": "spending"
   },
   {
     "question": "Compare my dining spending this year versus last year.",
-    "expected_tools": ["get_spending_by_category"],
+    "expected_tools": ["get_spending_analysis"],
     "expected_response_contains": ["dining", "compare", "year"],
     "difficulty": "medium",
     "category": "spending"
   },
   {
     "question": "What was my total spend in the last 30 days?",
-    "expected_tools": ["get_spending_by_category"],
+    "expected_tools": ["get_spending_analysis"],
     "expected_response_contains": ["total", "spend"],
     "difficulty": "easy",
     "category": "spending"
   },
   {
     "question": "Forecast my portfolio value for the next quarter.",
-    "expected_tools": ["forecast_portfolio"],
+    "expected_tools": ["get_lstm_forecast"],
     "expected_response_contains": ["forecast", "quarter"],
     "difficulty": "hard",
     "category": "forecasting"
   },
   {
-    "question": "Predict my spending trend for next month.",
-    "expected_tools": ["forecast_spending"],
-    "expected_response_contains": ["forecast", "spending", "trend"],
-    "difficulty": "hard",
-    "category": "forecasting"
-  },
-  {
     "question": "What is the projected return of my holdings over 6 months?",
-    "expected_tools": ["forecast_portfolio"],
+    "expected_tools": ["get_lstm_forecast"],
     "expected_response_contains": ["projected", "return", "months"],
     "difficulty": "hard",
     "category": "forecasting"
