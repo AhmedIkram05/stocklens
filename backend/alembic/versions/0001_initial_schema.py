@@ -3,8 +3,14 @@
 Create all 10 tables, 9 indexes, the ``update_updated_at_column()`` trigger
 function, and 3 row-level triggers.
 
+This migration was originally auto-generated with revision
+``d2f4e1b3c5a7`` but was manually renamed to ``0001`` before the first
+commit.  The companion file ``d2f4e1b3c5a7__initial_schema.py`` provides
+an empty identity bridge so Alembic can resolve the orphaned hash on
+databases that were stamped before the rename.
+
 Revision ID: 0001
-Revises:
+Revises: d2f4e1b3c5a7
 Create Date: 2026-06-27
 """
 
@@ -16,7 +22,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision: str = "0001"
-down_revision: Union[str, None] = None
+down_revision: Union[str, None] = "d2f4e1b3c5a7"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
