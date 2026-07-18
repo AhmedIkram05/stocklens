@@ -25,14 +25,17 @@ def test_upload_dataset_idempotent():
     fake_client = MagicMock()
     fake_dataset = MagicMock()
     fake_dataset.id = "ds-123"
-    fake_client.get_or_create_dataset.return_value = fake_dataset
+    fake_client.has_dataset.return_value = True
+    fake_client.read_dataset.return_value = fake_dataset
 
     existing = [MagicMock(id="ex-1"), MagicMock(id="ex-2")]
     fake_client.list_examples.return_value = existing
 
     upload_dataset(client=fake_client)
 
-    fake_client.get_or_create_dataset.assert_called_once()
+    fake_client.has_dataset.assert_called_once()
+    fake_client.read_dataset.assert_called_once()
+    fake_client.create_dataset.assert_not_called()
     fake_client.list_examples.assert_called_once_with(dataset_id="ds-123")
     fake_client.delete_examples.assert_called_once_with(
         example_ids=["ex-1", "ex-2"],
@@ -48,7 +51,8 @@ def test_upload_dataset_no_existing_examples():
     fake_client = MagicMock()
     fake_dataset = MagicMock()
     fake_dataset.id = "ds-0"
-    fake_client.get_or_create_dataset.return_value = fake_dataset
+    fake_client.has_dataset.return_value = True
+    fake_client.read_dataset.return_value = fake_dataset
     fake_client.list_examples.return_value = []
 
     upload_dataset(client=fake_client)
