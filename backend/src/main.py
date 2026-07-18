@@ -162,6 +162,7 @@ async def health():
 # ── Router registrations ──
 # Import at function scope to avoid circular imports at module level.
 from src.agent.router import router as agent_router  # noqa: E402
+from src.agent.tool_endpoints import router as agent_tools_router  # noqa: E402
 from src.auth.router import router as auth_router  # noqa: E402
 from src.cash_flows.router import router as cash_flows_router  # noqa: E402
 from src.categories.router import router as category_router  # noqa: E402
@@ -185,3 +186,4 @@ app.include_router(prediction_router, prefix="/predict", tags=["prediction"])
 app.include_router(drift_router, prefix="/drift", tags=["drift"])
 app.include_router(transaction_router, tags=["transactions"])
 app.include_router(agent_router, prefix="/agent", tags=["agent"])
+app.include_router(agent_tools_router, prefix="/agent", tags=["agent"])
