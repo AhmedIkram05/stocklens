@@ -32,6 +32,7 @@ from httpx import ASGITransport, AsyncClient
 # All of these must be set before src.config.settings is imported below.
 os.environ["ENVIRONMENT"] = "test"
 os.environ["REDIS_URL"] = "redis://localhost:6379"
+os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-testing-only-32-bytes-long!"
 
 from src.config import settings
 from src.database import connection as db_conn
