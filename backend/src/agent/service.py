@@ -17,6 +17,7 @@ from uuid import UUID
 
 import structlog
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langsmith import Client
 
 from src.agent import repository as agent_repo
 from src.agent.graph import create_agent_graph
@@ -324,17 +325,43 @@ class AgentService:
         response_text: str,
         tools_used: list | None = None,
     ) -> None:
-        """Fire-and-forget LLM-as-Judge evaluation. Stub — evaluator created in R5."""
-        try:
-            from src.agent.evaluator import run_evaluation  # noqa: PLC0415
-        except ImportError:
-            return  # Evaluator module not available until R5
+        """Fire-and-forget LangSmith feedback logging for a sampled conversation.
+
+        Records a ``sampled_eval`` feedback point so offline runs can be
+        correlated with golden-dataset experiments. No-op when no API key is set.
+        """
+        if not settings.LANGCHAIN_API_KEY:
+            return
 
         task = asyncio.create_task(
-            run_evaluation(conversation_id, user_id, question, response_text, tools_used),
+            self._log_eval_feedback(
+                conversation_id,
+                user_id,
+                question,
+                response_text,
+                tools_used or [],
+            ),
         )
         self._eval_tasks.add(task)
         task.add_done_callback(self._eval_tasks.discard)
+
+    async def _log_eval_feedback(
+        self,
+        conversation_id: UUID,
+        user_id: str,
+        question: str,
+        response_text: str,
+        tools_used: list,
+    ) -> None:
+        """Push a sampled-eval feedback record to LangSmith."""
+        client = Client()
+        client.create_feedback(
+            feedback_key="sampled_eval",
+            score=1.0,
+            comment=f"user={user_id} tools={tools_used}",
+            feedback_source_type="app",
+            source_metadata={"conversation_id": str(conversation_id)},
+        )
 
     # ── Chat ─────────────────────────────────────────────────────────────
 

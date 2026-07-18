@@ -74,10 +74,11 @@ Frontend (React Native)                          Backend (FastAPI)
                                                         │    ├── 7 new endpoints             │
                                                         │    └── 9 existing wraps           │
                                                         │                                  │
-                                                        │  agent/evaluator.py               │
-                                                        │    ├── LLM-as-Judge               │
-                                                        │    └── composite score            │
-                                                        └──────────────────────────────────┘
+│  agent_eval/ (LangSmith-native)   │
+│    ├── run_experiment.py          │
+│    ├── upload_dataset.py          │
+│    └── golden_dataset.json        │
+└──────────────────────────────────┘
 ```
 
 ### LangGraph Graph Structure (ReAct Loop)
@@ -118,18 +119,24 @@ This is the **ReAct (Reason + Act)** pattern: the agent LLM reasons about the us
 
 ### New Backend Files
 
-| File                                                                        | Purpose                                                 |
-| --------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `backend/src/agent/__init__.py`                                             | Module docstring                                        |
-| `backend/src/agent/schemas.py`                                              | Pydantic models for agent API                           |
-| `backend/src/agent/graph.py`                                                | LangGraph StateGraph definition                         |
-| `backend/src/agent/tools.py`                                                | All tool definitions (16 tools — existing wraps + new)  |
-| `backend/src/agent/service.py`                                              | AgentService singleton (loads graph, runs inference)    |
-| `backend/src/agent/router.py`                                               | FastAPI endpoints for chat + history                    |
-| `backend/src/agent/evaluator.py`                                            | LLM-as-Judge background evaluator                       |
-| `backend/src/agent/repository.py`                                           | asyncpg queries for agent DB tables                     |
-| `backend/alembic/versions/0009_add_spending_category_id_to_transactions.py` | Migration: add `spending_category_id` to `transactions` |
-| `backend/alembic/versions/0010_agent_conversations_refactor.py`             | Migration for new agent schema                          |
+| File                                                                        | Purpose                                                                    |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `backend/src/agent/__init__.py`                                             | Module docstring                                                           |
+| `backend/src/agent/schemas.py`                                              | Pydantic models for agent API                                              |
+| `backend/src/agent/graph.py`                                                | LangGraph StateGraph definition                                            |
+| `backend/src/agent/tools.py`                                                | All tool definitions (16 tools — existing wraps + new)                     |
+| `backend/src/agent/service.py`                                              | AgentService singleton (loads graph, runs inference)                       |
+| `backend/src/agent/router.py`                                               | FastAPI endpoints for chat + history (+ `POST /agent/feedback` in Round 5) |
+| `backend/src/agent/repository.py`                                           | asyncpg queries for agent DB tables                                        |
+| `backend/agent_eval/__init__.py`                                            | LangSmith-native eval package marker                                       |
+| `backend/agent_eval/run_experiment.py`                                      | LangSmith `evaluate()` experiment runner                                   |
+| `backend/agent_eval/upload_dataset.py`                                      | Idempotent golden dataset upload                                           |
+| `backend/agent_eval/golden_dataset.json`                                    | 20–30 curated test cases                                                   |
+| `backend/tests/test_agent_eval.py`                                          | Unit tests for eval pipeline + feedback route                              |
+| `backend/pyproject.toml`                                                    | Add `langsmith>=0.3.0` dependency (Round 5)                                |
+| `.github/workflows/eval.yml`                                                | MANDATORY CI workflow running LangSmith experiments                        |
+| `backend/alembic/versions/0009_add_spending_category_id_to_transactions.py` | Migration: add `spending_category_id` to `transactions`                    |
+| `backend/alembic/versions/0010_agent_conversations_refactor.py`             | Migration for new agent schema                                             |
 
 ### New Frontend Files
 
@@ -1165,12 +1172,25 @@ Returns a matrix of ticker × metric.
 - Auto-run experiments on every deploy
 - Feedback API for user thumbs up/down from chat UI
 
+**Prerequisites (must already exist — see Round 4 verification):**
+
+- `langchain-aws`, `langgraph`, `langchain-core` are installed and the graph compiles via `create_agent_graph(tools).compile()` in `agent/graph.py`.
+- `PERSONA_PROMPT` is defined in `src/agent/service.py` (imported, not re-declared, in the runner).
+- `AgentState` carries `user_id` (so the non-streaming eval run executes identically to live traffic).
+- `config.py` exposes `LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY`, `LANGCHAIN_PROJECT`, and `AGENT_EVAL_SAMPLE_RATE`.
+- `secrets.LANGSMITH_API_KEY` exists in GitHub (reused by `eval.yml` — see Round 5.6).
+
 **File changes:**
 
-- **NEW:** `backend/agent_eval/run_experiment.py` — experiment runner script
+- **NEW:** `backend/agent_eval/__init__.py` — package marker
+- **NEW:** `backend/agent_eval/run_experiment.py` — experiment runner script (LangSmith `evaluate()` + built-in LLM-as-Judge evaluators)
 - **NEW:** `backend/agent_eval/golden_dataset.json` — 20–30 test cases
-- **MODIFIED:** `backend/src/agent/service.py` — add `_log_feedback` method, update `_run_eval_background`
-- **NEW:** `.github/workflows/eval.yml` — CI workflow to run experiments
+- **NEW:** `backend/agent_eval/upload_dataset.py` — idempotent dataset upload (`get_or_create_dataset`)
+- **MODIFIED:** `backend/src/agent/service.py` — replace `_run_eval_background` body with LangSmith feedback logging (delete the dangling `src.agent.evaluator` import)
+- **MODIFIED:** `backend/src/agent/router.py` — add `POST /agent/feedback` route (user thumbs up/down)
+- **NEW:** `backend/tests/test_agent_eval.py` — unit tests for the eval pipeline + feedback route
+- **NEW:** `backend/pyproject.toml` — add `langsmith>=0.3.0` to dependencies
+- **NEW:** `.github/workflows/eval.yml` — CI workflow to run experiments (MANDATORY — runs on push to `main`)
 
 #### 5.1 Create golden dataset
 
@@ -1190,17 +1210,45 @@ A JSON array of test cases. Each entry:
 
 Coverage: 20–30 entries across categories (portfolio, performance, market data, spending, forecasting, edge cases).
 
-#### 5.2 Upload dataset to LangSmith
+#### 5.2 Upload dataset to LangSmith (idempotent)
 
-**Command** (one-time, or via CI on dataset change):
+**File:** `backend/agent_eval/upload_dataset.py`
 
-```bash
-python -c "
+Runs one-time or via CI on dataset change. Uses `get_or_create_dataset` so re-runs are idempotent (no duplicate examples):
+
+```python
+"""Idempotently upload the golden dataset to LangSmith.
+
+Usage:
+    python -m agent_eval.upload_dataset
+"""
+import json
+from pathlib import Path
+
 from langsmith import Client
-client = Client()
-ds = client.create_dataset('stocklens-golden', description='Golden eval set for StockLens agent')
-client.create_examples(ds.id, inputs=[{'question': q} for q in questions])
-"
+
+DATASET_NAME = "stocklens-golden"
+DATASET_PATH = Path(__file__).parent / "golden_dataset.json"
+
+
+def main() -> None:
+    client = Client()
+    dataset = client.get_or_create_dataset(
+        dataset_name=DATASET_NAME,
+        description="Golden eval set for StockLens agent",
+    )
+    questions = json.loads(DATASET_PATH.read_text())["questions"]
+    # Idempotent: recreate examples fresh each upload (dataset is small).
+    client.delete_examples(dataset_id=dataset.id)
+    client.create_examples(
+        dataset_id=dataset.id,
+        inputs=[{"question": q["question"]} for q in questions],
+    )
+    print(f"Uploaded {len(questions)} examples to dataset '{DATASET_NAME}'")
+
+
+if __name__ == "__main__":
+    main()
 ```
 
 #### 5.3 Create experiment runner
@@ -1225,40 +1273,124 @@ Usage:
 Requires LANGCHAIN_API_KEY, LANGCHAIN_TRACING_V2=true, LANGCHAIN_PROJECT set.
 """
 import asyncio
-import json
+
+from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import Client, evaluate
+from langsmith.evaluation.evaluator import LangChainStringEvaluator
+
 from src.agent.graph import create_agent_graph
+from src.agent.service import PERSONA_PROMPT
 from src.agent.tools import get_all_tools
 
-async def main():
+
+async def run_agent(graph, inputs):
+    """Run agent synchronously (no streaming) and return final response."""
+    messages = [
+        SystemMessage(content=PERSONA_PROMPT),
+        HumanMessage(content=inputs["question"]),
+    ]
+    result = await graph.ainvoke({"messages": messages, "user_id": "eval"})
+    return {"response": result["messages"][-1].content}
+
+
+def target(inputs):
     tools = get_all_tools()
     graph = create_agent_graph(tools).compile()
+    return asyncio.run(run_agent(graph, inputs))
 
+
+def main():
     client = Client()
     ds = client.list_datasets(dataset_name="stocklens-golden")[0]
 
-    # LangSmith's evaluate() runs each example, calling the target function,
-    # then scores using configured evaluators
+    # LangSmith's built-in LLM-as-Judge evaluators score each run automatically.
+    evaluators = [
+        LangChainStringEvaluator("criteria", config={"criteria": "correctness"}),
+        LangChainStringEvaluator("criteria", config={"criteria": "relevance"}),
+    ]
+
     results = evaluate(
-        lambda inputs: asyncio.run(run_agent(graph, inputs)),
+        target,
         data=ds,
-        evaluators=[],  # Uses LangSmith's built-in LLM-as-Judge evaluators
+        evaluators=evaluators,
         experiment_prefix="stocklens-agent",
     )
     print(f"Experiment {results.experiment_id} complete")
 
-async def run_agent(graph, inputs):
-    """Run agent synchronously (no streaming) and return final response."""
-    messages = [SystemMessage(content=PERSONA_PROMPT), HumanMessage(content=inputs["question"])]
-    result = await graph.ainvoke({"messages": messages, "user_id": "eval"})
-    return {"response": result["messages"][-1].content}
+
+if __name__ == "__main__":
+    main()
 ```
 
-#### 5.4 CI experiment workflow
+> **Note:** An empty `evaluators=[]` (as in the prior draft) would run the agent but produce no scores. The built-in LLM-as-Judge evaluators must be passed explicitly — here `correctness` and `relevance` via `LangChainStringEvaluator`.
+
+#### 5.4 User feedback integration (live-traffic sampling)
+
+**File:** `backend/src/agent/service.py`
+
+`_run_eval_background` already exists (it imports the non-existent `src.agent.evaluator` and silently no-ops on `ImportError`). Replace its body to log a LangSmith feedback score against the current trace, and **delete the dangling `from src.agent import evaluator` import**. The composite-score / custom-evaluator logic is removed entirely — LangSmith stores scores natively.
+
+```python
+async def _run_eval_background(self, conversation_id, user_id, question, response_text, tools_used):
+    """Fire-and-forget eval logging to LangSmith for sampled conversations."""
+    from langsmith import Client
+
+    try:
+        client = Client()
+        # Log a feedback keyed to the current run tree; LangSmith links it
+        # to the trace automatically. No custom evaluator / RDS table.
+        # No score is written here — this is a sampled-run marker only.
+        # (Live automatic LLM-as-Judge scoring is out of scope for R5; see
+        #  the live-traffic judge note in 5.4.)
+        client.create_feedback(
+            feedback_key="sampled_eval",
+            comment=f"user={user_id} tools={tools_used}",
+            feedback_source_type="app",
+            source_metadata={"conversation_id": str(conversation_id)},
+        )
+    except Exception as exc:  # eval must never break the response path
+        logger.warning("LangSmith feedback logging failed: %s", exc)
+```
+
+The sampling gate that calls this method stays as-is (driven by `AGENT_EVAL_SAMPLE_RATE`); the existing `TestEvalSampling` test (which mocks `_run_eval_background` and asserts it fires on sample) continues to pass unchanged.
+
+**File:** `backend/src/agent/router.py`
+
+Add a user feedback route so the chat UI can send thumbs up/down with a trace ID:
+
+```python
+@router.post("/feedback")
+async def agent_feedback(payload: AgentFeedbackRequest, user=Depends(get_current_user)):
+    """Record a user feedback score against a LangSmith trace."""
+    from langsmith import Client
+
+    client = Client()
+    client.create_feedback(
+        feedback_key=payload.rating,  # e.g. "thumbs_up" / "thumbs_down"
+        trace_id=payload.trace_id,
+        feedback_source_type="app",
+        source_metadata={"user_id": str(user.id)},
+    )
+    return {"status": "ok"}
+```
+
+#### 5.5 Unit tests for the eval pipeline
+
+**File:** `backend/tests/test_agent_eval.py`
+
+Covers the new surface so the pipeline is verifiable offline (no real LangSmith calls):
+
+- `test_upload_dataset_idempotent` — `get_or_create_dataset` is called; examples are created.
+- `test_run_experiment_target` — `target()` invokes `create_agent_graph(...).compile()` and returns `{"response": ...}` for a fixture question (mock `get_all_tools` + graph `ainvoke`).
+- `test_run_agent_builds_messages` — assert the message list starts with `SystemMessage(PERSONA_PROMPT)` then the `HumanMessage`.
+- `test_feedback_route` — `POST /agent/feedback` calls `Client.create_feedback` and returns `{"status": "ok"}` (mock `Client`).
+- `test_eval_background_logs_feedback` — `_run_eval_background` calls `create_feedback` **without a score** (sampled-run marker) and swallows exceptions on failure.
+
+#### 5.6 CI experiment workflow
 
 **File:** `.github/workflows/eval.yml`
 
-Trigger: on push to `main` (after deploy), manual dispatch.
+Triggers on push to `main` (after deploy) and manual dispatch. Uses `uv` (the repo's package manager — backend is the `stocklens-backend` workspace package, installed via `uv sync --package stocklens-backend --all-extras`, **not** `pip install -e backend/`) and AWS OIDC credentials (the agent calls Bedrock, so CI needs AWS auth). `secrets.LANGSMITH_API_KEY` is remapped to `LANGCHAIN_API_KEY`. The job is **mandatory** but `continue-on-error` keeps a LangSmith/network outage from blocking the deploy pipeline.
 
 ```yaml
 name: Agent Eval
@@ -1266,36 +1398,40 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['backend/src/agent/**']
+    paths: ['backend/src/agent/**', 'backend/agent_eval/**']
+
+permissions:
+  id-token: write # AWS OIDC
+  contents: read
 
 jobs:
   run-experiment:
     runs-on: ubuntu-latest
+    continue-on-error: true # eval failure must not block deploy
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
-      - run: pip install -e backend/
-      - name: Run LangSmith experiment
-        run: python -m agent_eval.run_experiment
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Configure AWS credentials (Bedrock access)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.ECS_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-2
+      - name: Sync backend with extras
+        run: uv sync --package stocklens-backend --all-extras
+      - name: Upload golden dataset
+        run: uv run --package stocklens-backend python -m agent_eval.upload_dataset
         env:
           LANGCHAIN_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
           LANGCHAIN_TRACING_V2: 'true'
           LANGCHAIN_PROJECT: stocklens-eval
-```
-
-#### 5.5 User feedback integration (optional enhancement)
-
-Add LangSmith Feedback API to `_run_eval_background` in `service.py` so sampled conversations log a thumbs up/down link. Frontend sends `POST /agent/feedback` with trace ID + rating.
-
-```python
-async def _run_eval_background(self, conversation_id, user_id, question, response_text, tools_used):
-    """Fire-and-forget eval logging to LangSmith."""
-    from langsmith import Client
-    client = Client()
-    # The current run tree has the trace ID — log a feedback score
-    # LangSmith links it automatically to the trace
-    # Removed: custom evaluator.py, RDS agent_evaluations table, eval migration
-    # All scoring happens inside LangSmith's UI/dataset infrastructure
+      - name: Run LangSmith experiment
+        run: uv run --package stocklens-backend python -m agent_eval.run_experiment
+        env:
+          LANGCHAIN_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+          LANGCHAIN_TRACING_V2: 'true'
+          LANGCHAIN_PROJECT: stocklens-eval
 ```
 
 **Files dropped from original plan:**
@@ -1307,7 +1443,7 @@ async def _run_eval_background(self, conversation_id, user_id, question, respons
 - ❌ No `evaluation_service.py`
 - ❌ No composite score computation in Python
 
-**Risk:** Low. LangSmith evaluation is fire-and-forget via the `evaluate()` SDK. The CI workflow runs offline (no impact on production traffic). If LangSmith is down, the experiment fails non-critically — agent continues serving.
+**Risk:** Low. LangSmith evaluation is fire-and-forget via the `evaluate()` SDK. The CI workflow runs offline (no impact on production traffic). If LangSmith is down, the experiment fails non-critically (`continue-on-error`) — agent continues serving and the deploy proceeds.
 
 ---
 
@@ -1526,13 +1662,13 @@ const [chatVisible, setChatVisible] = useState(false);
 
 ### Unit Tests (backend)
 
-| Test File                            | Tests                                           | Coverage          |
-| ------------------------------------ | ----------------------------------------------- | ----------------- |
-| `tests/test_agent_graph.py`          | Graph compilation, node execution, tool routing | Agent graph logic |
-| `tests/test_agent_tools.py`          | Each tool's input/output schema, error handling | All 16 tools      |
-| `tests/test_agent_repository.py`     | CRUD operations on sessions/messages            | Repository layer  |
-| `tests/test_agent_evaluator.py`      | Evaluation scoring, prompt formatting           | Evaluator logic   |
-| `tests/test_agent_tool_endpoints.py` | 7 new endpoint responses                        | New endpoints     |
+| Test File                            | Tests                                                   | Coverage             |
+| ------------------------------------ | ------------------------------------------------------- | -------------------- |
+| `tests/test_agent_graph.py`          | Graph compilation, node execution, tool routing         | Agent graph logic    |
+| `tests/test_agent_tools.py`          | Each tool's input/output schema, error handling         | All 16 tools         |
+| `tests/test_agent_repository.py`     | CRUD operations on sessions/messages                    | Repository layer     |
+| `tests/test_agent_eval.py`           | LangSmith eval pipeline, feedback route, dataset upload | Round 5 eval surface |
+| `tests/test_agent_tool_endpoints.py` | 7 new endpoint responses                                | New endpoints        |
 
 ### Integration Tests
 
@@ -1557,12 +1693,13 @@ const [chatVisible, setChatVisible] = useState(false);
 ## Success Criteria
 
 - [ ] All 475 existing backend tests still pass
-- [ ] New tests for graph, tools, repository, evaluator, tool endpoints
+- [ ] New tests for graph, tools, repository, agent_eval, tool endpoints
 - [ ] LangGraph graph compiles and runs end-to-end
 - [ ] SSE streaming works from FastAPI → React Native modal
 - [ ] All agent tools (16) return correct data for valid inputs
 - [ ] Tools fail gracefully with error messages (no crash)
-- [ ] LLM-as-Judge evaluation samples and stores scores
+- [ ] LangSmith-native evaluation: sampled conversations + golden-dataset experiments run and score
+- [ ] `eval.yml` CI workflow runs on push to `main` (mandatory, non-blocking)
 - [ ] Chat history is persisted and retrievable across sessions
 - [ ] Auth gating: unauthenticated users cannot access agent endpoints
 - [ ] Ownership scoping: users only see their own conversations
@@ -1629,9 +1766,12 @@ const [chatVisible, setChatVisible] = useState(false);
 
 ### After Round 5
 
-- [ ] Evaluation runs on sampled conversations
-- [ ] Scores stored in `agent_evaluations` table
-- [ ] Judge model returns structured output
+- [ ] `langsmith>=0.3.0` added to `backend/pyproject.toml` and synced
+- [ ] `agent_eval/` package exists; golden dataset uploads idempotently
+- [ ] `python -m agent_eval.run_experiment` runs and scores via LangSmith evaluators
+- [ ] `_run_eval_background` logs LangSmith feedback (dangling `evaluator` import removed)
+- [ ] `POST /agent/feedback` route deployed
+- [ ] `eval.yml` runs on push to `main` (mandatory, `continue-on-error`)
 
 ### After Round 6
 

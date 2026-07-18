@@ -1,0 +1,64 @@
+# Agent Evaluation
+#
+# Runs the LangSmith-native evaluation harness (agent_eval/) on every push to
+# main. Uploads the golden dataset, then runs the agent experiment against it.
+# Failure here must NOT block merges — it is a signal, not a gate.
+name: Agent Evaluation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/src/agent/**'
+      - 'backend/agent_eval/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  evaluate:
+    name: Run LangSmith Agent Evaluation
+    runs-on: ubuntu-latest
+    # Evaluation regressions should warn, not block the pipeline.
+    continue-on-error: true
+    env:
+      LANGCHAIN_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+      LANGCHAIN_TRACING_V2: 'true'
+      LANGCHAIN_PROJECT: stocklens-agent
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.ECS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync backend environment
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          uv sync --package stocklens-backend --all-extras --index-strategy unsafe-best-match
+
+      - name: Upload golden dataset
+        working-directory: backend
+        run: uv run python -m agent_eval.upload_dataset
+
+      - name: Run experiment
+        working-directory: backend
+        run: uv run python -m agent_eval.run_experiment
