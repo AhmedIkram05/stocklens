@@ -175,6 +175,9 @@ jobs:
           # mlflow-skinny pins requests==2.28.1, conflicts with yfinance>=2.31.
           UV_LINK_MODE=copy uv sync --frozen --package stocklens-backend --all-extras --index-strategy unsafe-best-match
           uv pip install /tmp/wheels/features_engine-*.whl
+          # Run migrations once before xdist workers start — the
+          # _migrate_db fixture detects already-applied and becomes a no-op.
+          PYTHONPATH=. uv run alembic upgrade head
           uv run pytest -q \
             -n auto --dist loadfile --durations=10 \
             --cov=src \
