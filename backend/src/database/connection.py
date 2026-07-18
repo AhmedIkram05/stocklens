@@ -84,5 +84,11 @@ async def close_pool() -> None:
     """Close the global pool and release all resources."""
     global pool
     if pool:
-        await pool.close()
+        try:
+            await pool.close()
+        except RuntimeError:
+            # Fall back to terminate if graceful close fails
+            # (e.g. pending internal connection-holder tasks or
+            # event-loop mismatch in test scenarios).
+            pool.terminate()
         pool = None
