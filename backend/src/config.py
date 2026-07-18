@@ -82,6 +82,12 @@ class Settings(BaseSettings):
     AGENT_REDIS_TTL: int = 604800  # 7 days — active session state TTL
     AGENT_REDIS_KEY_PREFIX: str = "agent:session:"  # Redis key prefix
     RATE_LIMIT_AGENT: str = "30/minute"  # Rate limit for agent chat endpoint
+    AGENT_SUMMARY_MODEL_ID: str = "deepseek.v3-v1:0"  # DeepSeek V3.1 — summarization
+
+    # LangSmith — env vars set via .env (read directly by langchain SDK)
+    LANGCHAIN_TRACING_V2: bool = True
+    LANGCHAIN_API_KEY: str = ""  # Required for tracing — set in .env
+    LANGCHAIN_PROJECT: str = "stocklens-agent"
 
     # NLP Cascade OCR
     CASCADE_CONFIDENCE_THRESHOLD: float = 0.7

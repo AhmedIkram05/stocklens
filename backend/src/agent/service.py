@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import random
 from collections.abc import AsyncGenerator
 from uuid import UUID
@@ -40,6 +41,20 @@ Rules:
 5. Never execute trades or modify portfolios. Analyze only — no actions on the user's behalf.
 6. Keep responses concise and professional. Use bullet points for multiple data points.
 7. If the user asks about a ticker or portfolio you don't have access to, say so.
+8. When presenting numerical data, always include units (%, GBP, USD) and
+   round to 2 decimal places.
+9. If multiple tools are needed, call them one at a time and synthesise the
+   results.
+10. If asked to trade or take any action beyond analysis, politely decline
+    and offer to provide information instead.
+
+Examples:
+- "How is my portfolio doing?" → call get_portfolio_summary +
+  get_portfolio_performance, then synthesise.
+- "What's the outlook for AAPL?" → call get_lstm_forecast +
+  get_ticker_info, then present results.
+- "Buy 100 shares of TSLA" → decline: "I cannot execute trades.
+  I can provide price, forecast, or other data instead."
 """
 
 
@@ -56,6 +71,18 @@ class AgentService:
         """Load tools, compile graph. Called once at app startup (sync)."""
         if self.graph is not None:
             return
+
+        # Export LangSmith env vars so the langchain SDK can pick them up
+        os.environ.setdefault("LANGCHAIN_TRACING_V2", str(settings.LANGCHAIN_TRACING_V2).lower())
+        os.environ.setdefault("LANGCHAIN_PROJECT", settings.LANGCHAIN_PROJECT)
+        if settings.LANGCHAIN_API_KEY:
+            os.environ.setdefault("LANGCHAIN_API_KEY", settings.LANGCHAIN_API_KEY)
+        if settings.LANGCHAIN_TRACING_V2 and settings.LANGCHAIN_API_KEY:
+            logger.info(
+                "langsmith_tracing_enabled",
+                project=settings.LANGCHAIN_PROJECT,
+            )
+
         tools = get_all_tools()
         graph = create_agent_graph(tools)
         # No checkpointer — custom two-tier persistence handles state
@@ -83,12 +110,13 @@ class AgentService:
         except Exception:
             pass  # Fall through to RDS
 
-        # Tier 2: RDS (cold) — build from archived messages
+        # Tier 2: RDS (cold) — build from archived messages.
+        # Load extra turns so `_summarize_old_messages` can compress them.
         async with connection_ctx() as conn:
             rows = await agent_repo.get_conversation_messages(
                 conn,
                 conversation_id,
-                settings.AGENT_MAX_HISTORY_TURNS,
+                settings.AGENT_MAX_HISTORY_TURNS * 2,
             )
 
         state: list = [SystemMessage(content=PERSONA_PROMPT)]
@@ -97,6 +125,18 @@ class AgentService:
                 state.append(HumanMessage(content=row["content"]))
             elif row["role"] == "assistant":
                 state.append(AIMessage(content=row["content"]))
+
+        # Compress history if approaching the context limit
+        # (messages[0] is the SystemMessage prompt, so discount it)
+        turn_count = len(state) - 1
+        if turn_count > settings.AGENT_MAX_HISTORY_TURNS:
+            keep = max(settings.AGENT_MAX_HISTORY_TURNS // 2, 5)
+            state = await self._summarize_old_messages(state, keep_last=keep)
+            logger.info(
+                "history_summarized",
+                turn_count=turn_count,
+                kept_turns=keep,
+            )
 
         # Seed Redis with loaded state
         try:
@@ -210,6 +250,69 @@ class AgentService:
             await redis.expire(redis_key, settings.AGENT_REDIS_TTL)
         except Exception:
             pass  # Redis miss is OK — next turn loads from RDS
+
+    # ── Context window management ─────────────────────────────────────────
+
+    async def _summarize_old_messages(
+        self,
+        messages: list,
+        keep_last: int = 10,
+    ) -> list:
+        """Compress older messages into a summary when history exceeds limits.
+
+        Replaces the oldest messages (everything except the last *keep_last*)
+        with a single ``SystemMessage`` containing a condensed summary.
+        Falls back to dropping oldest messages if the summarization call fails.
+
+        This only runs on cold-start (RDS load) for very long conversations,
+        so it is deliberately inline rather than fire-and-forget.
+        """
+        oldest = messages[:-keep_last]
+        recent = messages[-keep_last:]
+
+        # Build a text block of the oldest messages for the summary model
+        history_text = "\n".join(
+            f"{'User' if isinstance(m, HumanMessage) else 'Assistant'}: {m.content[:500]}"
+            for m in oldest
+        )
+
+        try:
+            from langchain_aws import ChatBedrockConverse  # noqa: PLC0415
+
+            summarizer = ChatBedrockConverse(
+                model=settings.AGENT_SUMMARY_MODEL_ID,
+                temperature=0,
+                max_tokens=512,
+                region_name=settings.AWS_REGION,
+            )
+            summary = await summarizer.ainvoke(
+                f"Summarise the following financial conversation in 2-3 sentences. "
+                f"Focus on: what questions were asked, what data was retrieved, "
+                f"and what conclusions were reached.\n\n{history_text}"
+            )
+            summary_text = summary.content if hasattr(summary, "content") else str(summary)
+        except Exception:
+            logger.warning("summarization_failed", message_count=len(oldest))
+            # Fall back: just drop the oldest and keep recent messages
+            omitted = len(oldest)
+            return [
+                SystemMessage(
+                    content=(
+                        f"{PERSONA_PROMPT}\n\n"
+                        f"[Earlier conversation history omitted — "
+                        f"{omitted} messages dropped to stay within context limits.]"
+                    )
+                ),
+                *recent,
+            ]
+
+        # Prepend summary as a SystemMessage
+        return [
+            SystemMessage(
+                content=(f"{PERSONA_PROMPT}\n\nEarlier in this conversation: {summary_text}")
+            ),
+            *recent,
+        ]
 
     # ── Evaluation ───────────────────────────────────────────────────────
 
