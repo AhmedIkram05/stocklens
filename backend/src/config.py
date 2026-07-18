@@ -71,7 +71,7 @@ class Settings(BaseSettings):
 
     # Agent
     AGENT_MODEL_ID: str = "deepseek.v3-v1:0"  # DeepSeek V3.1 — agent inference
-    AGENT_JUDGE_MODEL_ID: str = "openai.gpt-5.4"  # GPT 5.4 — LLM-as-Judge
+    AGENT_JUDGE_MODEL_ID: str = "anthropic.claude-opus-4-8"  # Claude Opus 4.8 — LLM-as-Judge
     # Claude Haiku 4.5 — NLP pipeline (BEDROCK_MODEL_ID per Phase 1.5 cascade extractor)
     NLP_MODEL_ID: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     # DeepSeek V3.1 optimal max; below 8K stops mid-reasoning on multi-tool queries

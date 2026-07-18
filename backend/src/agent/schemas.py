@@ -60,3 +60,11 @@ class MessageResponse(BaseModel):
     tools_used: dict | None
     reasoning_steps: dict | None
     created_at: datetime
+
+
+class AgentFeedbackRequest(BaseModel):
+    """Request body for POST /agent/feedback (LangSmith feedback)."""
+
+    rating: str  # e.g. "positive" / "negative" → used as the feedback_key
+    trace_id: str  # LangSmith trace id to attach feedback to
+    comment: str | None = None

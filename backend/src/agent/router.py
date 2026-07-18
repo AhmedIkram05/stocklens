@@ -26,9 +26,10 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from langsmith import Client
 
 from src.agent import repository as agent_repo
-from src.agent.schemas import ChatRequest
+from src.agent.schemas import AgentFeedbackRequest, ChatRequest
 from src.agent.service import agent_service
 from src.auth.dependencies import get_current_user
 from src.auth.schemas import UserInDB
@@ -143,3 +144,23 @@ async def delete_conversation(
         if not conv:
             raise HTTPException(status_code=404, detail="Conversation not found")
         await agent_repo.delete_conversation(conn, conversation_id)
+
+
+@router.post("/feedback")
+async def submit_feedback(
+    body: AgentFeedbackRequest,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """Record user feedback against a LangSmith trace."""
+    if not settings.LANGCHAIN_API_KEY:
+        return {"status": "skipped", "reason": "langsmith_disabled"}
+
+    client = Client()
+    client.create_feedback(
+        feedback_key=body.rating,
+        trace_id=body.trace_id,
+        comment=body.comment or f"user={current_user.id}",
+        feedback_source_type="app",
+        source_metadata={"user_id": str(current_user.id)},
+    )
+    return {"status": "ok"}
