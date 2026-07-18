@@ -20,6 +20,7 @@ from typing import Annotated, Any
 
 import yfinance as yf
 from langchain_core.tools import InjectedToolArg, tool
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.database.connection import connection_ctx
 from src.market.repository import get_ohlcv
@@ -27,6 +28,13 @@ from src.market.repository import get_ohlcv
 logger = logging.getLogger(__name__)
 
 # ── Shared helpers ───────────────────────────────────────────────────────
+
+# Retry decorator for yfinance calls (unreliable external API)
+_yf_retry = retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    reraise=True,
+)
 
 
 def _decimal_to_float(val: Any) -> float:
@@ -224,13 +232,11 @@ async def get_sector_exposure(
     unique_tickers = list({r["ticker"] for r in rows})
     sector_map: dict[str, str] = {}
 
+    @_yf_retry
     def _fetch_sector(t: str) -> tuple[str, str]:
-        try:
-            info = yf.Ticker(t).info
-            sector = info.get("sector", "Unknown")
-            return t, sector if sector else "Unknown"
-        except Exception:
-            return t, "Unknown"
+        info = yf.Ticker(t).info
+        sector = info.get("sector", "Unknown")
+        return t, sector if sector else "Unknown"
 
     loop = asyncio.get_running_loop()
     results = await asyncio.gather(
@@ -727,25 +733,23 @@ async def compare_tickers_side_by_side(
     if len(ticker_list) > 10:
         return json.dumps({"error": "Maximum 10 tickers for side-by-side comparison"})
 
+    @_yf_retry
     def _fetch_info(t: str) -> dict:
-        try:
-            tk = yf.Ticker(t)
-            info = tk.info
-            return {
-                "ticker": t,
-                "price": info.get("currentPrice") or info.get("regularMarketPrice"),
-                "change_pct": info.get("regularMarketChangePercent"),
-                "market_cap": info.get("marketCap"),
-                "pe_ratio": info.get("trailingPE") or info.get("forwardPE"),
-                "sector": info.get("sector"),
-                "industry": info.get("industry"),
-                "dividend_yield": info.get("dividendYield"),
-                "volume": info.get("regularMarketVolume"),
-                "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
-                "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
-            }
-        except Exception as e:
-            return {"ticker": t, "error": str(e)}
+        tk = yf.Ticker(t)
+        info = tk.info
+        return {
+            "ticker": t,
+            "price": info.get("currentPrice") or info.get("regularMarketPrice"),
+            "change_pct": info.get("regularMarketChangePercent"),
+            "market_cap": info.get("marketCap"),
+            "pe_ratio": info.get("trailingPE") or info.get("forwardPE"),
+            "sector": info.get("sector"),
+            "industry": info.get("industry"),
+            "dividend_yield": info.get("dividendYield"),
+            "volume": info.get("regularMarketVolume"),
+            "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
+            "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
+        }
 
     loop = asyncio.get_running_loop()
     results = await asyncio.gather(
@@ -840,30 +844,28 @@ async def get_ticker_info(
     compare_tickers_side_by_side (for multi-ticker comparison).
     """
 
+    @_yf_retry
     def _fetch_info(t: str) -> dict:
-        try:
-            tk = yf.Ticker(t)
-            info = tk.info
-            return {
-                "ticker": t,
-                "company_name": info.get("longName") or info.get("shortName"),
-                "sector": info.get("sector"),
-                "industry": info.get("industry"),
-                "description": info.get("longBusinessSummary"),
-                "market_cap": info.get("marketCap"),
-                "pe_ratio": info.get("trailingPE"),
-                "forward_pe": info.get("forwardPE"),
-                "dividend_yield": info.get("dividendYield"),
-                "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
-                "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
-                "employees": info.get("fullTimeEmployees"),
-                "country": info.get("country"),
-                "website": info.get("website"),
-                "currency": info.get("currency"),
-                "exchange": info.get("exchange"),
-            }
-        except Exception as e:
-            return {"ticker": t, "error": str(e)}
+        tk = yf.Ticker(t)
+        info = tk.info
+        return {
+            "ticker": t,
+            "company_name": info.get("longName") or info.get("shortName"),
+            "sector": info.get("sector"),
+            "industry": info.get("industry"),
+            "description": info.get("longBusinessSummary"),
+            "market_cap": info.get("marketCap"),
+            "pe_ratio": info.get("trailingPE"),
+            "forward_pe": info.get("forwardPE"),
+            "dividend_yield": info.get("dividendYield"),
+            "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
+            "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
+            "employees": info.get("fullTimeEmployees"),
+            "country": info.get("country"),
+            "website": info.get("website"),
+            "currency": info.get("currency"),
+            "exchange": info.get("exchange"),
+        }
 
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(None, _fetch_info, ticker.upper())
@@ -890,30 +892,28 @@ async def get_market_news(
     if max_articles > 10:
         max_articles = 10
 
+    @_yf_retry
     def _fetch_news(t: str, limit: int) -> list:
-        try:
-            tk = yf.Ticker(t)
-            news = tk.news or []
-            articles = []
-            for article in news[:limit]:
-                articles.append(
-                    {
-                        "title": article.get("title"),
-                        "publisher": article.get("publisher"),
-                        "link": article.get("link"),
-                        "published_date": (
-                            datetime.fromtimestamp(
-                                article.get("providerPublishTime", 0), tz=timezone.utc
-                            ).isoformat()
-                            if article.get("providerPublishTime")
-                            else None
-                        ),
-                        "summary": article.get("summary"),
-                    }
-                )
-            return articles
-        except Exception as e:
-            return [{"error": str(e)}]
+        tk = yf.Ticker(t)
+        news = tk.news or []
+        articles = []
+        for article in news[:limit]:
+            articles.append(
+                {
+                    "title": article.get("title"),
+                    "publisher": article.get("publisher"),
+                    "link": article.get("link"),
+                    "published_date": (
+                        datetime.fromtimestamp(
+                            article.get("providerPublishTime", 0), tz=timezone.utc
+                        ).isoformat()
+                        if article.get("providerPublishTime")
+                        else None
+                    ),
+                    "summary": article.get("summary"),
+                }
+            )
+        return articles
 
     loop = asyncio.get_running_loop()
     articles = await loop.run_in_executor(None, _fetch_news, ticker.upper(), max_articles)
@@ -1192,38 +1192,32 @@ async def get_dividend_insights(
     Complementary tools: get_ticker_info (for full company profile).
     """
 
+    @_yf_retry
     def _fetch_dividend(t: str) -> dict:
-        try:
-            tk = yf.Ticker(t)
-            info = tk.info
-            dividends = tk.dividends
-
-            result = {
-                "ticker": t,
-                "dividend_rate": info.get("dividendRate"),
-                "dividend_yield": info.get("dividendYield"),
-                "payout_ratio": info.get("payoutRatio"),
-                "ex_dividend_date": (
-                    datetime.fromtimestamp(info["exDividendDate"], tz=timezone.utc).isoformat()
-                    if info.get("exDividendDate")
-                    else None
-                ),
-                "last_dividend_date": (
-                    str(dividends.index[-1])[:10]
-                    if dividends is not None and not dividends.empty
-                    else None
-                ),
-                "last_dividend_value": (
-                    float(dividends.iloc[-1])
-                    if dividends is not None and not dividends.empty
-                    else None
-                ),
-                "five_year_growth": info.get("fiveYearAvgDividendYield"),
-                "currency": info.get("currency"),
-            }
-            return result
-        except Exception as e:
-            return {"ticker": t, "error": str(e)}
+        tk = yf.Ticker(t)
+        info = tk.info
+        dividends = tk.dividends
+        return {
+            "ticker": t,
+            "dividend_rate": info.get("dividendRate"),
+            "dividend_yield": info.get("dividendYield"),
+            "payout_ratio": info.get("payoutRatio"),
+            "ex_dividend_date": (
+                datetime.fromtimestamp(info["exDividendDate"], tz=timezone.utc).isoformat()
+                if info.get("exDividendDate")
+                else None
+            ),
+            "last_dividend_date": (
+                str(dividends.index[-1])[:10]
+                if dividends is not None and not dividends.empty
+                else None
+            ),
+            "last_dividend_value": (
+                float(dividends.iloc[-1]) if dividends is not None and not dividends.empty else None
+            ),
+            "five_year_growth": info.get("fiveYearAvgDividendYield"),
+            "currency": info.get("currency"),
+        }
 
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(None, _fetch_dividend, ticker.upper())
