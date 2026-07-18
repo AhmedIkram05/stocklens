@@ -77,10 +77,10 @@ resource "aws_iam_role" "ecs_task" {
   })
 }
 
-# Allow invoking Claude Haiku via Bedrock.
+# Allow invoking Bedrock foundation models (Haiku for NLP, DeepSeek for agent).
 resource "aws_iam_policy" "ecs_task_bedrock" {
   name        = "${var.app_name}-ecs-task-bedrock-${var.environment}"
-  description = "Allow ECS task role to invoke Bedrock Claude Haiku model"
+  description = "Allow ECS task role to invoke Bedrock foundation models"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -88,7 +88,10 @@ resource "aws_iam_policy" "ecs_task_bedrock" {
       Effect = "Allow"
       Action = "bedrock:InvokeModel"
       Resource = [
-        "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"
+        # Claude Haiku — NLP pipeline (OCR, extraction)
+        "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+        # DeepSeek V3.1 — LangGraph agent + summarization
+        "arn:aws:bedrock:${var.aws_region}::foundation-model/deepseek.v3-v1:0",
       ]
     }]
   })

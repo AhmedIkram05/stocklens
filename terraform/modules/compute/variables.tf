@@ -107,6 +107,12 @@ variable "redis_pass_secret_arn" {
   type        = string
 }
 
+variable "langsmith_api_key_secret_arn" {
+  description = "ARN of the LangSmith API key secret"
+  type        = string
+  default     = ""
+}
+
 variable "champion_s3_uri" {
   description = "S3 URI for champion model artifacts"
   type        = string

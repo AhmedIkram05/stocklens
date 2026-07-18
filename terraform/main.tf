@@ -71,12 +71,13 @@ module "network" {
 # ── Secrets ──────────────────────────────────────────────────────────
 
 module "secrets" {
-  source         = "./modules/secrets"
-  app_name       = var.app_name
-  environment    = var.environment
-  db_password    = var.db_password
-  jwt_secret_key = var.jwt_secret_key
-  redis_pass     = var.redis_pass
+  source            = "./modules/secrets"
+  app_name          = var.app_name
+  environment       = var.environment
+  db_password       = var.db_password
+  jwt_secret_key    = var.jwt_secret_key
+  redis_pass        = var.redis_pass
+  langsmith_api_key = var.langsmith_api_key
 }
 
 # ── S3 ───────────────────────────────────────────────────────────────
@@ -126,6 +127,7 @@ module "iam" {
     module.secrets.db_password_secret_arn,
     module.secrets.jwt_secret_arn,
     module.secrets.redis_pass_secret_arn,
+    module.secrets.langsmith_api_key_secret_arn,
     module.database.db_secret_arn,
   ]
   champion_s3_uri             = var.champion_s3_uri
@@ -158,8 +160,9 @@ module "compute" {
   redis_endpoint          = module.cache.redis_endpoint
   redis_port              = module.cache.redis_port
   database_url_secret_arn = module.database.db_secret_arn
-  jwt_secret_arn          = module.secrets.jwt_secret_arn
-  redis_pass_secret_arn   = module.secrets.redis_pass_secret_arn
+  jwt_secret_arn              = module.secrets.jwt_secret_arn
+  redis_pass_secret_arn       = module.secrets.redis_pass_secret_arn
+  langsmith_api_key_secret_arn = module.secrets.langsmith_api_key_secret_arn
   champion_s3_uri         = var.champion_s3_uri
   s3_kms_key_arn          = module.s3.s3_kms_key_arn
   ecs_min_capacity        = var.ecs_min_capacity
