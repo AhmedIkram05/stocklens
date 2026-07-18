@@ -2,113 +2,144 @@
 FastAPI router for the StockLens Agent chat API.
 
 Endpoints:
-    - POST   /agent/chat          — send a message (returns full response; SSE streaming in R3)
-    - GET    /agent/conversations  — list user conversations
-    - GET    /agent/conversations/{id} — get conversation messages
-    - DELETE /agent/conversations/{id} — delete a conversation
+    - POST   /agent/chat               — streaming chat (SSE)
+    - GET    /agent/conversations       — list user conversations
+    - GET    /agent/conversations/{id}  — get conversation messages
+    - DELETE /agent/conversations/{id}  — delete a conversation
 
-Note: Full SSE streaming via ``StreamingResponse`` is deferred to Round 3.
-The POST endpoint currently consumes the streaming generator internally
-and returns a ``ChatResponse`` with the complete text.
+SSE event types emitted by POST /agent/chat:
+
+    | Event        | Data                               | Description                      |
+    | ------------ | ---------------------------------- | -------------------------------- |
+    | token        | string                             | A text chunk of the response     |
+    | tool_start   | string                             | Tool name that started executing |
+    | tool_end     | string                             | Tool name that completed         |
+    | done         | {conversation_id, full_response}   | Stream complete                  |
+    | error        | {error}                            | An error occurred                |
 """
 
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 
 from src.agent import repository as agent_repo
-from src.agent.schemas import ChatRequest, ChatResponse
+from src.agent.schemas import ChatRequest
 from src.agent.service import agent_service
-from src.auth.dependencies import get_current_user_id
+from src.auth.dependencies import get_current_user
+from src.auth.schemas import UserInDB
+from src.config import settings
 from src.database.connection import connection_ctx
+from src.limiter import limiter
 
 logger = structlog.get_logger()
 router = APIRouter(tags=["agent"])
 
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("/chat")
+@limiter.limit(settings.RATE_LIMIT_AGENT)
 async def chat(
+    request: Request,
     body: ChatRequest,
-    user_id: str = Depends(get_current_user_id),
+    current_user: UserInDB = Depends(get_current_user),
 ):
-    """Send a message to the agent and receive a response.
+    """Streaming chat endpoint. Returns SSE events.
 
-    Creates a new conversation when ``conversation_id`` is ``null``.
-    Continues an existing one when provided.
-
-    Consumes the streaming process_message generator and returns the
-    assembled response text.  Round 3 will upgrade this to true SSE
-    streaming via ``StreamingResponse``.
+    Two-tier state management:
+    1. conversation_id provided → load from Redis (hot) or RDS (cold)
+    2. No conversation_id → create new conversation row in RDS
     """
-    # Create conversation if needed
-    if body.conversation_id is None:
-        async with connection_ctx() as conn:
-            conversation_id = await agent_repo.create_conversation(conn, user_id)
-    else:
-        # Verify the conversation exists and belongs to user
-        async with connection_ctx() as conn:
-            existing = await agent_repo.get_conversation(conn, body.conversation_id, user_id)
-            if existing is None:
+    # Resolve or create conversation
+    conversation_id = body.conversation_id
+    async with connection_ctx() as conn:
+        if conversation_id:
+            conv = await agent_repo.get_conversation(conn, conversation_id, current_user.id)
+            if not conv:
                 raise HTTPException(status_code=404, detail="Conversation not found")
-        conversation_id = body.conversation_id
+        else:
+            conversation_id = await agent_repo.create_conversation(conn, current_user.id)
 
-    # Consume the streaming generator to collect the full response
-    response_text = ""
-    async for event in agent_service.process_message(
-        conversation_id,
-        user_id,
-        body.message,
-    ):
-        if event["event"] == "token":
-            response_text += event["data"]
+    async def event_generator():
+        try:
+            full_response = ""
+            async for event in agent_service.process_message(
+                conversation_id,
+                current_user.id,
+                body.message,
+            ):
+                if event["event"] == "token":
+                    full_response += event["data"]
+                yield f"event: {event['event']}\ndata: {json.dumps(event['data'])}\n\n"
 
-    if not response_text:
-        response_text = "I processed your request but have no specific answer."
+            done_payload = json.dumps(
+                {
+                    "conversation_id": str(conversation_id),
+                    "full_response": full_response,
+                }
+            )
+            yield f"event: done\ndata: {done_payload}\n\n"
+        except Exception as e:
+            logger.exception("chat_stream_error", error=str(e))
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
 
-    return ChatResponse(
-        conversation_id=conversation_id,
-        message=response_text,
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
 @router.get("/conversations")
 async def list_conversations(
-    user_id: str = Depends(get_current_user_id),
+    request: Request,
+    current_user: UserInDB = Depends(get_current_user),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
-    """List the user's conversations, most recent first."""
-    conversations = await agent_service.list_conversations(
-        user_id,
-        limit=limit,
-        offset=offset,
-    )
+    """List user's conversations (lightweight — no message bodies)."""
     async with connection_ctx() as conn:
-        total = await agent_repo.get_user_conversations_count(conn, user_id)
+        conversations = await agent_repo.get_user_conversations(
+            conn,
+            current_user.id,
+            limit,
+            offset,
+        )
+        total = await agent_repo.get_user_conversations_count(conn, current_user.id)
     return {"conversations": conversations, "total": total}
 
 
 @router.get("/conversations/{conversation_id}")
-async def get_conversation_messages(
+async def get_conversation(
+    request: Request,
     conversation_id: UUID,
-    user_id: str = Depends(get_current_user_id),
+    current_user: UserInDB = Depends(get_current_user),
 ):
-    """Get all messages in a conversation."""
-    messages = await agent_service.get_messages(user_id, conversation_id)
-    if messages is None:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    return {"conversation_id": str(conversation_id), "messages": messages}
+    """Get full message history for a conversation."""
+    async with connection_ctx() as conn:
+        conv = await agent_repo.get_conversation(conn, conversation_id, current_user.id)
+        if not conv:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        messages = await agent_repo.get_conversation_messages(conn, conversation_id)
+    return {"conversation": conv, "messages": messages}
 
 
 @router.delete("/conversations/{conversation_id}", status_code=204)
 async def delete_conversation(
+    request: Request,
     conversation_id: UUID,
-    user_id: str = Depends(get_current_user_id),
+    current_user: UserInDB = Depends(get_current_user),
 ):
-    """Delete a conversation and its messages."""
-    deleted = await agent_service.delete_conversation(user_id, conversation_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    """Delete a conversation and all its messages (cascaded via FK)."""
+    async with connection_ctx() as conn:
+        conv = await agent_repo.get_conversation(conn, conversation_id, current_user.id)
+        if not conv:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        await agent_repo.delete_conversation(conn, conversation_id)

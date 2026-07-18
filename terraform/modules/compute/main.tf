@@ -397,6 +397,10 @@ resource "aws_ecs_task_definition" "app" {
         {
           name      = "REDIS_PASSWORD"
           valueFrom = var.redis_pass_secret_arn
+        },
+        {
+          name      = "LANGCHAIN_API_KEY"
+          valueFrom = var.langsmith_api_key_secret_arn
         }
       ]
 
@@ -447,7 +451,15 @@ resource "aws_ecs_task_definition" "app" {
         },
         {
           name  = "BEDROCK_MODEL_ID"
-          value = "anthropic.claude-3-haiku-20240307-v1:0"
+          value = "anthropic.claude-haiku-4-5-20251001-v1:0"
+        },
+        {
+          name  = "LANGCHAIN_TRACING_V2"
+          value = "true"
+        },
+        {
+          name  = "LANGCHAIN_PROJECT"
+          value = "stocklens-${var.environment}"
         }
       ]
 

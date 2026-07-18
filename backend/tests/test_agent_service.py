@@ -14,6 +14,7 @@ emulates ``astream_events`` v2 output. This verifies:
 
 from __future__ import annotations
 
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -257,3 +258,128 @@ class TestEvalSampling:
                 pass
 
         mock_eval.assert_awaited_once()
+
+
+class TestLangSmithInit:
+    """Verify LangSmith env vars are set correctly during initialize()."""
+
+    def test_sets_env_vars(self):
+        svc = AgentService()
+        for k in ("LANGCHAIN_TRACING_V2", "LANGCHAIN_PROJECT", "LANGCHAIN_API_KEY"):
+            os.environ.pop(k, None)
+
+        with patch.object(svc, "graph", None):
+            svc.initialize()
+
+        assert os.environ["LANGCHAIN_TRACING_V2"] == "true"
+        assert os.environ["LANGCHAIN_PROJECT"] == "stocklens-agent"
+        # API key is empty by default — should not be set
+        assert "LANGCHAIN_API_KEY" not in os.environ
+
+    def test_initialize_does_not_overwrite_existing_env(self):
+        svc = AgentService()
+        os.environ["LANGCHAIN_PROJECT"] = "custom-project"
+        with patch.object(svc, "graph", None):
+            svc.initialize()
+        assert os.environ["LANGCHAIN_PROJECT"] == "custom-project"
+
+    def test_initialize_sets_api_key_when_configured(self):
+        svc = AgentService()
+        for k in ("LANGCHAIN_TRACING_V2", "LANGCHAIN_PROJECT", "LANGCHAIN_API_KEY"):
+            os.environ.pop(k, None)
+        with (
+            patch.object(svc, "graph", None),
+            patch("src.agent.service.settings.LANGCHAIN_API_KEY", "sk-abc123"),
+        ):
+            svc.initialize()
+        assert os.environ.get("LANGCHAIN_API_KEY") == "sk-abc123"
+
+
+class TestSummarization:
+    """Tests for _summarize_old_messages and its trigger in _load_state."""
+
+    async def test_summarize_success(self):
+        svc = AgentService()
+        messages = [SystemMessage(content="prompt")]
+        for i in range(15):
+            messages.append(HumanMessage(content=f"q{i}"))
+            messages.append(AIMessage(content=f"a{i}"))
+
+        with patch("langchain_aws.ChatBedrockConverse") as mock_bedrock:
+            mock_instance = AsyncMock()
+            mock_instance.ainvoke.return_value = MagicMock(
+                content="Summary of earlier conversation"
+            )
+            mock_bedrock.return_value = mock_instance
+
+            result = await svc._summarize_old_messages(messages, keep_last=4)
+
+        # Should have: SystemMessage(summary) + 4 recent messages
+        assert len(result) == 5
+        assert isinstance(result[0], SystemMessage)
+        assert "Summary of earlier conversation" in result[0].content
+        assert result[-1].content == "a14"  # last AIMessage kept (15 pairs, keep_last=4)
+
+    async def test_summarize_fallback_on_failure(self):
+        svc = AgentService()
+        messages = [SystemMessage(content="prompt")]
+        for i in range(15):
+            messages.append(HumanMessage(content=f"q{i}"))
+            messages.append(AIMessage(content=f"a{i}"))
+
+        with patch("langchain_aws.ChatBedrockConverse") as mock_bedrock:
+            mock_instance = AsyncMock()
+            mock_instance.ainvoke.side_effect = RuntimeError("Bedrock down")
+            mock_bedrock.return_value = mock_instance
+
+            result = await svc._summarize_old_messages(messages, keep_last=4)
+
+        # Fallback: drops oldest, keeps recent + prompt with omission notice
+        assert len(result) == 5
+        assert isinstance(result[0], SystemMessage)
+        assert "dropped" in result[0].content
+
+    async def test_load_state_triggers_summarization(self):
+        """_load_state should summarise when RDS returns more than AGENT_MAX_HISTORY_TURNS."""
+        svc = AgentService()
+        async with connection_ctx() as conn:
+            cid = await create_conversation(conn, USER_ID)
+            # Insert 15 turns (30 messages) — exceeds AGENT_MAX_HISTORY_TURNS=20,
+            # and is under the 2× limit (40) now passed to get_conversation_messages
+            for i in range(15):
+                await add_message(conn, cid, USER_ID, "user", f"q{i}")
+                await add_message(conn, cid, USER_ID, "assistant", f"a{i}")
+
+        with (
+            patch("src.agent.service.get_redis") as mock_get_redis,
+            patch.object(AgentService, "_summarize_old_messages") as mock_summarize,
+        ):
+            mock_redis = AsyncMock()
+            mock_redis.hget.return_value = None  # Redis miss → RDS fallback
+            mock_get_redis.return_value = mock_redis
+            mock_summarize.return_value = [SystemMessage(content="summarised")]
+
+            state = await svc._load_state(cid, USER_ID)
+
+        mock_summarize.assert_awaited_once()
+        assert len(state) == 1
+
+
+class TestSystemPrompt:
+    """Verify PERSONA_PROMPT contains key directives."""
+
+    def test_contains_core_rules(self):
+        from src.agent.service import PERSONA_PROMPT
+
+        assert "Answer ONLY from the data" in PERSONA_PROMPT
+        assert "Never execute trades" in PERSONA_PROMPT
+        assert "round to 2 decimal places" in PERSONA_PROMPT
+        assert "call them one at a time" in PERSONA_PROMPT
+        assert "politely decline" in PERSONA_PROMPT
+
+    def test_contains_examples(self):
+        from src.agent.service import PERSONA_PROMPT
+
+        assert "get_portfolio_summary" in PERSONA_PROMPT
+        assert "get_lstm_forecast" in PERSONA_PROMPT
+        assert "I cannot execute trades" in PERSONA_PROMPT

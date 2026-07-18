@@ -1153,140 +1153,161 @@ Returns a matrix of ticker × metric.
 
 ---
 
-### Round 5 — Backend Evaluation Module
+### Round 5 — LangSmith-Native Evaluation (replaces custom evaluator)
 
-**Goal:** LLM-as-Judge evaluation pipeline for monitoring agent quality.
+**Goal:** LLM-as-Judge evaluation using LangSmith's built-in datasets, evaluators, and experiment runner. No custom DB table, no migration, no custom eval prompt — LangSmith stores scores per trace natively.
 
-#### 5.1 Add evaluation table
+**Why LangSmith over custom RDS:**
 
-**File:** `backend/src/database/schema.py`
+- Built-in A/B comparison UI (compare DeepSeek vs GPT runs)
+- Dataset management UI (golden questions, no admin panel)
+- Built-in LLM-as-Judge evaluators (correctness, relevance)
+- Auto-run experiments on every deploy
+- Feedback API for user thumbs up/down from chat UI
 
-Add after `agent_conversations`:
+**File changes:**
 
-```python
-agent_evaluations = Table(
-    "agent_evaluations",
-    target_metadata,
-    Column("id", BigInteger(), primary_key=True, autoincrement=True),
-    Column("conversation_id", UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False),
-    Column("message_id", BigInteger(), nullable=False),  # FK to agent_conversations.id
-    Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
-    Column("question", Text(), nullable=False),
-    Column("response", Text(), nullable=False),
-    Column("answer_relevance", sa.Float()),
-    Column("tool_selection_score", sa.Float()),
-    Column("context_adherence_score", sa.Float()),
-    Column("composite_score", sa.Float()),
-    Column("judge_model", String(100)),
-    Column("judge_reasoning", Text()),
-    Column("created_at", DateTime(timezone=True), server_default=func.now()),
-)
+- **NEW:** `backend/agent_eval/run_experiment.py` — experiment runner script
+- **NEW:** `backend/agent_eval/golden_dataset.json` — 20–30 test cases
+- **MODIFIED:** `backend/src/agent/service.py` — add `_log_feedback` method, update `_run_eval_background`
+- **NEW:** `.github/workflows/eval.yml` — CI workflow to run experiments
+
+#### 5.1 Create golden dataset
+
+**File:** `backend/agent_eval/golden_dataset.json`
+
+A JSON array of test cases. Each entry:
+
+```json
+{
+  "question": "What's my portfolio worth?",
+  "expected_tools": ["get_portfolio_summary"],
+  "expected_response_contains": ["market value", "total"],
+  "difficulty": "easy",
+  "category": "portfolio"
+}
 ```
 
-#### 5.2 Create migration 0011
+Coverage: 20–30 entries across categories (portfolio, performance, market data, spending, forecasting, edge cases).
 
-**File:** `backend/alembic/versions/0011_agent_evaluations.py`
+#### 5.2 Upload dataset to LangSmith
 
-Following same pattern as migration 0010, including full `downgrade()`:
+**Command** (one-time, or via CI on dataset change):
 
-- `upgrade()`: Create `agent_evaluations` table
-- `downgrade()`: Drop `agent_evaluations` table, drop index if any
+```bash
+python -c "
+from langsmith import Client
+client = Client()
+ds = client.create_dataset('stocklens-golden', description='Golden eval set for StockLens agent')
+client.create_examples(ds.id, inputs=[{'question': q} for q in questions])
+"
+```
+
+#### 5.3 Create experiment runner
+
+**File:** `backend/agent_eval/run_experiment.py`
+
+A script that:
+
+1. Loads the golden dataset from LangSmith
+2. For each test case: runs the agent graph with the question (no streaming, no persistence)
+3. Posts results back to LangSmith as an experiment run
+4. Triggers LangSmith's built-in evaluators (correctness, relevance)
+
+**Key difference from custom eval:** No need to score manually. LangSmith's evaluators score automatically. The script just runs the agent and records responses.
 
 ```python
-"""add agent_evaluations table for LLM-as-Judge scores
+"""Run the golden dataset through the agent and record results in LangSmith.
 
-Revision ID: 0011
-Revises: 0010
+Usage:
+    python -m agent_eval.run_experiment
+
+Requires LANGCHAIN_API_KEY, LANGCHAIN_TRACING_V2=true, LANGCHAIN_PROJECT set.
 """
-from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+import asyncio
+import json
+from langsmith import Client, evaluate
+from src.agent.graph import create_agent_graph
+from src.agent.tools import get_all_tools
 
-revision = "0011"
-down_revision = "0010"
+async def main():
+    tools = get_all_tools()
+    graph = create_agent_graph(tools).compile()
 
-def upgrade() -> None:
-    op.create_table(
-        "agent_evaluations",
-        sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
-        sa.Column("conversation_id", UUID(as_uuid=True), sa.ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("message_id", sa.BigInteger(), nullable=False),
-        sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("question", sa.Text(), nullable=False),
-        sa.Column("response", sa.Text(), nullable=False),
-        sa.Column("answer_relevance", sa.Float()),
-        sa.Column("tool_selection_score", sa.Float()),
-        sa.Column("context_adherence_score", sa.Float()),
-        sa.Column("composite_score", sa.Float()),
-        sa.Column("judge_model", sa.String(100)),
-        sa.Column("judge_reasoning", sa.Text()),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+    client = Client()
+    ds = client.list_datasets(dataset_name="stocklens-golden")[0]
+
+    # LangSmith's evaluate() runs each example, calling the target function,
+    # then scores using configured evaluators
+    results = evaluate(
+        lambda inputs: asyncio.run(run_agent(graph, inputs)),
+        data=ds,
+        evaluators=[],  # Uses LangSmith's built-in LLM-as-Judge evaluators
+        experiment_prefix="stocklens-agent",
     )
+    print(f"Experiment {results.experiment_id} complete")
 
-def downgrade() -> None:
-    op.drop_table("agent_evaluations")
+async def run_agent(graph, inputs):
+    """Run agent synchronously (no streaming) and return final response."""
+    messages = [SystemMessage(content=PERSONA_PROMPT), HumanMessage(content=inputs["question"])]
+    result = await graph.ainvoke({"messages": messages, "user_id": "eval"})
+    return {"response": result["messages"][-1].content}
 ```
 
-#### 5.3 Implement evaluator
+#### 5.4 CI experiment workflow
 
-**File:** `backend/src/agent/evaluator.py`
+**File:** `.github/workflows/eval.yml`
 
-```python
-from langchain_aws import ChatBedrockConverse
-from langchain_core.prompts import ChatPromptTemplate
-from src.config import settings
+Trigger: on push to `main` (after deploy), manual dispatch.
 
-EVAL_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", """You are an evaluator of a financial assistant's responses.
-Score the assistant's response on three dimensions, each 0.0 to 1.0:
+```yaml
+name: Agent Eval
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['backend/src/agent/**']
 
-1. answer_relevance: Does the response directly answer the user's question?
-2. tool_selection: Did the assistant use the correct tools for this question?
-3. context_adherence: Does the response stay within the data returned by tools (no hallucination)?
-
-Return a JSON object with scores and brief reasoning."""),
-    ("human", "User question: {question}\n\nAssistant response: {response}\n\nTool calls made: {tool_calls}"),
-])
-
-async def evaluate_response(question: str, response: str, tool_calls: list[dict]) -> dict:
-    """Score an agent response using a stronger LLM judge."""
-    judge = ChatBedrockConverse(
-        model=settings.AGENT_JUDGE_MODEL_ID,
-        temperature=0,
-        max_tokens=1024,
-    )
-    chain = EVAL_PROMPT | judge.with_structured_output(EvaluationScores)
-    result = await chain.ainvoke({
-        "question": question,
-        "response": response,
-        "tool_calls": json.dumps(tool_calls, default=str),
-    })
-    result["composite"] = (
-        0.4 * result["answer_relevance"]
-        + 0.3 * result["tool_selection"]
-        + 0.3 * result["context_adherence"]
-    )
-    return result
+jobs:
+  run-experiment:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+      - run: pip install -e backend/
+      - name: Run LangSmith experiment
+        run: python -m agent_eval.run_experiment
+        env:
+          LANGCHAIN_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+          LANGCHAIN_TRACING_V2: 'true'
+          LANGCHAIN_PROJECT: stocklens-eval
 ```
 
-#### 5.4 Wire evaluation into chat flow
+#### 5.5 User feedback integration (optional enhancement)
 
-In `agent/service.py`, the `_run_eval_background` method (defined in Round 2.6) handles evaluation. It uses a task registry (`self._eval_tasks` set) to hold strong references, preventing Python from garbage-collecting the pending task before it completes. Tasks self-remove via `add_done_callback`.
+Add LangSmith Feedback API to `_run_eval_background` in `service.py` so sampled conversations log a thumbs up/down link. Frontend sends `POST /agent/feedback` with trace ID + rating.
 
 ```python
 async def _run_eval_background(self, conversation_id, user_id, question, response_text, tools_used):
-    """Fire-and-forget LLM-as-Judge evaluation. Strong ref held in _eval_tasks to prevent GC."""
-    from src.agent.evaluator import run_evaluation
-    task = asyncio.create_task(
-        run_evaluation(conversation_id, user_id, question, response_text, tools_used)
-    )
-    self._eval_tasks.add(task)
-    task.add_done_callback(self._eval_tasks.discard)
+    """Fire-and-forget eval logging to LangSmith."""
+    from langsmith import Client
+    client = Client()
+    # The current run tree has the trace ID — log a feedback score
+    # LangSmith links it automatically to the trace
+    # Removed: custom evaluator.py, RDS agent_evaluations table, eval migration
+    # All scoring happens inside LangSmith's UI/dataset infrastructure
 ```
 
-**Import in service.py:** `import random` and `from src.agent.evaluator import run_evaluation` (lazy import in callback to avoid circular deps).
+**Files dropped from original plan:**
 
-**Risk:** Low for v1. Evaluation is fire-and-forget and doesn't affect response latency.
+- ❌ No `schema.py` addition for `agent_evaluations` table
+- ❌ No migration `0011_agent_evaluations.py`
+- ❌ No `evaluator.py` file (replaced by LangSmith's built-in evaluators)
+- ❌ No `EVAL_PROMPT` custom prompt
+- ❌ No `evaluation_service.py`
+- ❌ No composite score computation in Python
+
+**Risk:** Low. LangSmith evaluation is fire-and-forget via the `evaluate()` SDK. The CI workflow runs offline (no impact on production traffic). If LangSmith is down, the experiment fails non-critically — agent continues serving.
 
 ---
 

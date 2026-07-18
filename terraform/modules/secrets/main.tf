@@ -70,3 +70,23 @@ resource "aws_secretsmanager_secret_version" "redis_pass" {
   secret_id     = aws_secretsmanager_secret.redis_pass.id
   secret_string = var.redis_pass != "" ? var.redis_pass : random_password.redis.result
 }
+
+# ── LangSmith API key ─────────────────────────────────────────────────
+
+resource "random_password" "langsmith" {
+  length  = 32
+  special = false
+}
+
+resource "aws_secretsmanager_secret" "langsmith_api_key" {
+  # checkov:skip=CKV_AWS_149:dev — no KMS CMK; use default encryption
+  # checkov:skip=CKV2_AWS_57:dev — secret rotation not configured; add Lambda in prod
+  name                    = "${var.app_name}-langsmith-api-key-${var.environment}"
+  description             = "StockLens LangSmith API key for LLM tracing"
+  recovery_window_in_days = 7
+}
+
+resource "aws_secretsmanager_secret_version" "langsmith_api_key" {
+  secret_id     = aws_secretsmanager_secret.langsmith_api_key.id
+  secret_string = var.langsmith_api_key != "" ? var.langsmith_api_key : random_password.langsmith.result
+}

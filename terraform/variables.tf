@@ -107,6 +107,13 @@ variable "redis_pass" {
   default     = ""
 }
 
+variable "langsmith_api_key" {
+  description = "LangSmith API key for LLM tracing (sensitive, optional — auto-generated placeholder if empty)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "ecs_cpu" {
   description = "ECS task CPU units (Fargate)"
   type        = string

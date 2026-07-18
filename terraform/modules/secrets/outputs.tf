@@ -30,3 +30,8 @@ output "redis_pass_secret_arn" {
   description = "ARN of the Secrets Manager secret for Redis AUTH token"
   value       = aws_secretsmanager_secret.redis_pass.arn
 }
+
+output "langsmith_api_key_secret_arn" {
+  description = "ARN of the Secrets Manager secret for LangSmith API key"
+  value       = aws_secretsmanager_secret.langsmith_api_key.arn
+}
