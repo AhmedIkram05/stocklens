@@ -424,6 +424,7 @@ class AgentService:
                         last_content,
                         tools_used,
                     )
+                yield {"event": "done", "data": ""}
 
     # ── Conversation CRUD (shared with router) ──────────────────────────
 

@@ -140,36 +140,36 @@ module "iam" {
 # ── Compute ──────────────────────────────────────────────────────────
 
 module "compute" {
-  source                  = "./modules/compute"
-  app_name                = var.app_name
-  environment             = var.environment
-  aws_region              = var.aws_region
-  vpc_id                  = local.vpc_id
-  public_subnet_ids       = local.public_subnet_ids
-  private_subnet_ids      = local.private_subnet_ids
-  alb_sg_id               = module.network.alb_sg_id
-  ecs_tasks_sg_id         = module.network.ecs_tasks_sg_id
-  ecs_execution_role_arn  = module.iam.ecs_execution_role_arn
-  ecs_task_role_arn       = module.iam.ecs_task_role_arn
-  ecs_task_role_name      = module.iam.ecs_task_role_name
-  container_image         = var.container_image
-  cors_origins            = var.cors_origins
-  ecs_cpu                 = var.ecs_cpu
-  ecs_memory              = var.ecs_memory
-  desired_count           = var.desired_count
-  redis_endpoint          = module.cache.redis_endpoint
-  redis_port              = module.cache.redis_port
-  database_url_secret_arn = module.database.db_secret_arn
-  jwt_secret_arn              = module.secrets.jwt_secret_arn
-  redis_pass_secret_arn       = module.secrets.redis_pass_secret_arn
+  source                       = "./modules/compute"
+  app_name                     = var.app_name
+  environment                  = var.environment
+  aws_region                   = var.aws_region
+  vpc_id                       = local.vpc_id
+  public_subnet_ids            = local.public_subnet_ids
+  private_subnet_ids           = local.private_subnet_ids
+  alb_sg_id                    = module.network.alb_sg_id
+  ecs_tasks_sg_id              = module.network.ecs_tasks_sg_id
+  ecs_execution_role_arn       = module.iam.ecs_execution_role_arn
+  ecs_task_role_arn            = module.iam.ecs_task_role_arn
+  ecs_task_role_name           = module.iam.ecs_task_role_name
+  container_image              = var.container_image
+  cors_origins                 = var.cors_origins
+  ecs_cpu                      = var.ecs_cpu
+  ecs_memory                   = var.ecs_memory
+  desired_count                = var.desired_count
+  redis_endpoint               = module.cache.redis_endpoint
+  redis_port                   = module.cache.redis_port
+  database_url_secret_arn      = module.database.db_secret_arn
+  jwt_secret_arn               = module.secrets.jwt_secret_arn
+  redis_pass_secret_arn        = module.secrets.redis_pass_secret_arn
   langsmith_api_key_secret_arn = module.secrets.langsmith_api_key_secret_arn
-  champion_s3_uri         = var.champion_s3_uri
-  s3_kms_key_arn          = module.s3.s3_kms_key_arn
-  ecs_min_capacity        = var.ecs_min_capacity
-  ecs_max_capacity        = var.ecs_max_capacity
-  ecs_cpu_target          = var.ecs_cpu_target
-  ecs_rps_target          = var.ecs_rps_target
-  key_name                = var.key_name
+  champion_s3_uri              = var.champion_s3_uri
+  s3_kms_key_arn               = module.s3.s3_kms_key_arn
+  ecs_min_capacity             = var.ecs_min_capacity
+  ecs_max_capacity             = var.ecs_max_capacity
+  ecs_cpu_target               = var.ecs_cpu_target
+  ecs_rps_target               = var.ecs_rps_target
+  key_name                     = var.key_name
 }
 
 # ── MLflow tracking server (R4) ─────────────────────────────────────
