@@ -163,9 +163,9 @@ async def _test_db() -> AsyncGenerator[None, None]:
         await conn.close()
 
 
-@pytest_asyncio.fixture(autouse=True)
+@pytest_asyncio.fixture(scope="session", autouse=True)
 async def _setup_app() -> AsyncGenerator[None, None]:
-    """Initialise the asyncpg pool before tests and tear it down after."""
+    """Initialise the asyncpg pool once per session and tear it down after."""
     await db_conn.init_pool(TEST_DSN, min_size=1, max_size=2)
     try:
         yield
