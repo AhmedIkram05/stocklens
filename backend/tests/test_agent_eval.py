@@ -13,8 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agent_eval import upload_dataset
 from agent_eval.run_experiment import _target
+from agent_eval.upload_dataset import upload_dataset
 from src.agent.service import agent_service
 
 # ── Dataset upload ───────────────────────────────────────────────────────────
@@ -37,9 +37,9 @@ def test_upload_dataset_idempotent():
     fake_client.delete_examples.assert_called_once_with(
         example_ids=["ex-1", "ex-2"],
     )
-    # 24 questions in golden_dataset.json -> 24 create_examples inputs
+    # 22 questions in golden_dataset.json -> 22 create_examples inputs
     inputs = fake_client.create_examples.call_args.kwargs["inputs"]
-    assert len(inputs) == 24
+    assert len(inputs) == 22
     assert all("question" in row for row in inputs)
 
 
@@ -73,9 +73,9 @@ async def test_run_experiment_target():
         out = await _target({"question": "How is my portfolio doing?"})
 
     assert out == {"response": "Your portfolio is up 2.3% today."}
-    # graph was invoked with a SystemMessage(PERSONA_PROMPT) + HumanMessage + user_id="eval"
+    # graph was invoked with the fixed eval UUID (changed from "eval")
     args, _ = fake_graph.ainvoke.call_args
-    assert args[0]["user_id"] == "eval"
+    assert args[0]["user_id"] == "00000000-0000-0000-0000-000000000001"
     from langchain_core.messages import HumanMessage, SystemMessage
 
     assert isinstance(args[0]["messages"][0], SystemMessage)
@@ -191,3 +191,54 @@ async def test_eval_background_logs_feedback(monkeypatch):
     assert "user=user-1" in kwargs["comment"]
     assert "tools=['get_quote']" in kwargs["comment"]
     assert "conversation_id" in kwargs["source_metadata"]
+
+
+# ── Dataset integrity ─────────────────────────────────────────────────────────
+
+
+def test_golden_dataset_tool_names_valid():
+    """Every expected_tools entry references a real tool function in tools.py."""
+    from agent_eval.upload_dataset import load_questions
+    from src.agent.tools import _AGENT_TOOLS
+
+    questions = load_questions()
+    real_tools = {t.name for t in _AGENT_TOOLS}
+
+    all_valid = True
+    bad_entries: list[str] = []
+    for q in questions:
+        for tool_name in q.get("expected_tools", []):
+            if tool_name not in real_tools:
+                bad_entries.append(f"  '{tool_name}' (referenced by: {q['question'][:60]}...)")
+                all_valid = False
+
+    assert all_valid, "expected_tools not found in tools.py:\n" + "\n".join(bad_entries)
+
+
+def test_golden_dataset_structure():
+    """All golden dataset entries have required fields with correct types."""
+    from agent_eval.upload_dataset import load_questions
+
+    questions = load_questions()
+    assert len(questions) >= 1
+
+    for i, q in enumerate(questions):
+        assert "question" in q, f"Entry {i} missing 'question'"
+        assert isinstance(q["question"], str), f"Entry {i} 'question' must be str"
+        assert q["question"], f"Entry {i} 'question' must not be empty"
+
+        assert "expected_tools" in q, f"Entry {i} missing 'expected_tools'"
+        assert isinstance(q["expected_tools"], list), f"Entry {i} 'expected_tools' must be list"
+
+        assert "expected_response_contains" in q, f"Entry {i} missing 'expected_response_contains'"
+        assert isinstance(q["expected_response_contains"], list), (
+            f"Entry {i} 'expected_response_contains' must be list"
+        )
+
+        assert "difficulty" in q, f"Entry {i} missing 'difficulty'"
+        assert q["difficulty"] in ("easy", "medium", "hard"), (
+            f"Entry {i} difficulty must be easy/medium/hard, got {q['difficulty']!r}"
+        )
+
+        assert "category" in q, f"Entry {i} missing 'category'"
+        assert isinstance(q["category"], str), f"Entry {i} 'category' must be str"
