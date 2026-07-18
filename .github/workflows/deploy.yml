@@ -316,7 +316,7 @@ jobs:
           ML_TRAINING_IMAGE_TAG="${REGISTRY}/${{ env.ECR_REPOSITORY }}:ml-training-${{ github.sha }}"
           SAGEMAKER_IMAGE_TAG="${REGISTRY}/${{ env.ECR_REPOSITORY }}:sagemaker-${{ github.sha }}"
           # ponytail: -lock=false safe for read-only plan. CI concurrency
-          # group (terraform-${{ github.ref }) prevents parallel applies.
+          # group (terraform-${{ github.ref }}) prevents parallel applies.
           # Exit code 2 = changes detected (not a failure in CI context).
           terraform plan -lock=false \
             -var="container_image=${IMAGE_TAG}" \
