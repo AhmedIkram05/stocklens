@@ -88,12 +88,10 @@ resource "aws_iam_policy" "ecs_task_bedrock" {
       Effect = "Allow"
       Action = "bedrock:InvokeModel"
       Resource = [
-        # Claude Haiku — NLP pipeline (OCR, extraction)
-        "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
-        # DeepSeek V3.1 — LangGraph agent + summarization
-        "arn:aws:bedrock:${var.aws_region}::foundation-model/deepseek.v3-v1:0",
-        # Claude Opus 4.8 — LLM-as-Judge (eval harness)
-        "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.claude-opus-4-8",
+        # DeepSeek V3.2 — agent inference, summarization, NLP pipeline
+        "arn:aws:bedrock:${var.aws_region}::foundation-model/deepseek.v3.2",
+        # GLM 5 — LLM-as-Judge (eval harness)
+        "arn:aws:bedrock:${var.aws_region}::foundation-model/zai.glm-5",
       ]
     }]
   })
@@ -485,7 +483,8 @@ resource "aws_iam_role_policy" "github_deploy" {
           "elasticloadbalancing:*", "lambda:*",
           "ec2:*", "ssm:*", "secretsmanager:*", "elasticfilesystem:*",
           "sagemaker:*",
-          "servicediscovery:*", "route53:*"
+          "servicediscovery:*", "route53:*",
+          "bedrock:*"
         ]
         Resource = "*"
       }

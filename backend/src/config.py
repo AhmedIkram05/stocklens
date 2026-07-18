@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     AWS_REGION: str = "eu-west-2"
 
     # NLP Bedrock Model
-    BEDROCK_MODEL_ID: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
+    BEDROCK_MODEL_ID: str = "deepseek.v3.2"
 
     # OCR
     OCR_TESSERACT_CMD: str | None = None
@@ -70,10 +70,10 @@ class Settings(BaseSettings):
     DRIFT_REPORT_S3_PREFIX: str = "drift_reports/"
 
     # Agent
-    AGENT_MODEL_ID: str = "deepseek.v3-v1:0"  # DeepSeek V3.1 — agent inference
-    AGENT_JUDGE_MODEL_ID: str = "anthropic.claude-opus-4-8"  # Claude Opus 4.8 — LLM-as-Judge
-    # Claude Haiku 4.5 — NLP pipeline (BEDROCK_MODEL_ID per Phase 1.5 cascade extractor)
-    NLP_MODEL_ID: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
+    AGENT_MODEL_ID: str = "deepseek.v3.2"  # DeepSeek V3.2 — agent inference
+    AGENT_JUDGE_MODEL_ID: str = "zai.glm-5"  # GLM 5 — LLM-as-Judge
+    # DeepSeek V3.2 — NLP pipeline (BEDROCK_MODEL_ID per Phase 1.5 cascade extractor)
+    NLP_MODEL_ID: str = "deepseek.v3.2"
     # DeepSeek V3.1 optimal max; below 8K stops mid-reasoning on multi-tool queries
     AGENT_MAX_TOKENS: int = 8192
     AGENT_TEMPERATURE: float = 0.1
@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     AGENT_REDIS_TTL: int = 604800  # 7 days — active session state TTL
     AGENT_REDIS_KEY_PREFIX: str = "agent:session:"  # Redis key prefix
     RATE_LIMIT_AGENT: str = "30/minute"  # Rate limit for agent chat endpoint
-    AGENT_SUMMARY_MODEL_ID: str = "deepseek.v3-v1:0"  # DeepSeek V3.1 — summarization
+    AGENT_SUMMARY_MODEL_ID: str = "deepseek.v3.2"  # DeepSeek V3.2 — summarization
 
     # LangSmith — env vars set via .env (read directly by langchain SDK)
     LANGCHAIN_TRACING_V2: bool = True
