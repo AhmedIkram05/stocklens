@@ -35,11 +35,7 @@ logger = logging.getLogger(__name__)
 
 def _is_retryable(exc: BaseException) -> bool:
     """Return True for errors that deserve a retry (incl. 429 rate-limit)."""
-    if isinstance(exc, (ConnectionError, TimeoutError, ValueError)):
-        return True
-    if isinstance(exc, HTTPError):
-        return True
-    return False
+    return isinstance(exc, (ConnectionError, TimeoutError, HTTPError))
 
 
 @retry(

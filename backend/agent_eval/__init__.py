@@ -2,7 +2,23 @@
 
 from __future__ import annotations
 
-from agent_eval.run_experiment import run_experiment
-from agent_eval.upload_dataset import upload_dataset
+
+def __getattr__(name: str):
+    """Lazy import — avoid pulling in the full agent stack unless needed.
+
+    ``python -m agent_eval.upload_dataset`` loads this module first; with
+    eager imports it would pull ``run_experiment`` → ``src.agent.graph`` →
+    ``src.config.Settings`` → crash on missing ``JWT_SECRET_KEY`` in CI.
+    """
+    import importlib
+
+    _MAP = {
+        "run_experiment": "agent_eval.run_experiment",
+        "upload_dataset": "agent_eval.upload_dataset",
+    }
+    if name in _MAP:
+        return importlib.import_module(_MAP[name])
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = ["run_experiment", "upload_dataset"]
