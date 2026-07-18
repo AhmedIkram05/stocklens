@@ -20,13 +20,6 @@ class ChatRequest(BaseModel):
     conversation_id: UUID | None = None  # None = new conversation
 
 
-class ChatResponse(BaseModel):
-    """Final response (non-streaming fallback)."""
-
-    conversation_id: UUID
-    message: str  # full response text
-
-
 class ToolCallEvent(BaseModel):
     """Emitted when a tool starts executing."""
 
