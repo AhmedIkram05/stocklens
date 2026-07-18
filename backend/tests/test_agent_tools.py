@@ -19,6 +19,8 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pytest  # noqa: PLC0415 — used by TestToolReliability
+
 from src.agent.tools import get_all_tools
 from src.database.connection import connection_ctx
 
@@ -589,3 +591,41 @@ class TestOwnershipEnforcement:
             {"portfolio_id": TEST_PORTFOLIO, "user_id": "99999999-9999-9999-9999-999999999999"}
         )
         assert json.loads(result_str)["error"] == "Portfolio not found"
+
+
+class TestToolReliability:
+    """Verify tenacity retry decorator is applied to yfinance helpers."""
+
+    def test_yf_retry_retries_transient_failures(self):
+        from src.agent.tools import _yf_retry
+
+        call_count = 0
+
+        @_yf_retry
+        def _flaky() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                msg = f"transient error {call_count}"
+                raise ValueError(msg)
+            return "ok"
+
+        result = _flaky()
+        assert result == "ok"
+        assert call_count == 3  # 2 failures + 1 success
+
+    def test_yf_retry_raises_after_max_attempts(self):
+        from src.agent.tools import _yf_retry
+
+        call_count = 0
+
+        @_yf_retry
+        def _always_fails() -> str:
+            nonlocal call_count
+            call_count += 1
+            msg = f"persistent error {call_count}"
+            raise ValueError(msg)
+
+        with pytest.raises(ValueError, match="persistent error 3"):
+            _always_fails()
+        assert call_count == 3  # all 3 attempts exhausted
