@@ -35,7 +35,7 @@ def test_upload_dataset_idempotent():
     fake_client.create_dataset.assert_called_once()
     # 22 questions in golden_dataset.json -> 22 create_examples inputs
     inputs = fake_client.create_examples.call_args.kwargs["inputs"]
-    assert len(inputs) == 22
+    assert len(inputs) == 41
     assert all("question" in row for row in inputs)
 
 

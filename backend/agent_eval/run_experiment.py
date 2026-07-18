@@ -14,7 +14,7 @@ import asyncio
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import Client
-from langsmith.evaluation import evaluate
+from langsmith.evaluation import aevaluate
 from langsmith.schemas import Example
 
 from src.agent.graph import create_agent_graph
@@ -103,10 +103,10 @@ _EVALUATORS = [
 ]
 
 
-def run_experiment(client: Client | None = None) -> None:
+async def run_experiment(client: Client | None = None) -> None:
     """Execute the evaluation experiment on LangSmith."""
     # The eval runs outside FastAPI, so init the DB pool manually.
-    asyncio.run(init_pool(settings.DATABASE_URL))
+    await init_pool(settings.DATABASE_URL)
     try:
         client = client or Client()
         try:
@@ -115,15 +115,15 @@ def run_experiment(client: Client | None = None) -> None:
             raise RuntimeError(
                 f"Dataset '{DATASET_NAME}' not found. Run `python -m agent_eval.upload_dataset` first."  # noqa: E501
             ) from None
-        evaluate(
+        await aevaluate(
             _target,
             data=dataset,
             evaluators=_EVALUATORS,
             experiment_prefix=EXPERIMENT_PREFIX,
         )
     finally:
-        asyncio.run(close_pool())
+        await close_pool()
 
 
 if __name__ == "__main__":
-    run_experiment()
+    asyncio.run(run_experiment())

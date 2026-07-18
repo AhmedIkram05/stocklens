@@ -2,7 +2,7 @@
   {
     "question": "How is my portfolio performing today?",
     "expected_tools": ["get_portfolio_performance"],
-    "expected_response_contains": ["portfolio", "performance"],
+    "expected_response_contains": ["portfolio", "return", "performance"],
     "difficulty": "easy",
     "category": "portfolio"
   },
@@ -21,6 +21,13 @@
     "category": "portfolio"
   },
   {
+    "question": "What sectors am I invested in?",
+    "expected_tools": ["get_sector_exposure"],
+    "expected_response_contains": ["sector", "exposure"],
+    "difficulty": "medium",
+    "category": "portfolio"
+  },
+  {
     "question": "Which of my stocks had the best return this week?",
     "expected_tools": ["get_portfolio_performance"],
     "expected_response_contains": ["return", "best"],
@@ -29,8 +36,15 @@
   },
   {
     "question": "Compare my portfolio performance against the S&P 500.",
-    "expected_tools": ["get_portfolio_performance"],
+    "expected_tools": ["compare_to_benchmark"],
     "expected_response_contains": ["benchmark", "S&P", "compare"],
+    "difficulty": "medium",
+    "category": "performance"
+  },
+  {
+    "question": "Am I beating the market this year?",
+    "expected_tools": ["compare_to_benchmark"],
+    "expected_response_contains": ["benchmark", "market", "return"],
     "difficulty": "medium",
     "category": "performance"
   },
@@ -47,6 +61,34 @@
     "expected_response_contains": ["volatility", "market"],
     "difficulty": "hard",
     "category": "performance"
+  },
+  {
+    "question": "How diversified is my portfolio?",
+    "expected_tools": ["get_portfolio_diversification_score"],
+    "expected_response_contains": ["diversif", "HHI", "concentration"],
+    "difficulty": "medium",
+    "category": "analysis"
+  },
+  {
+    "question": "Am I too concentrated in any single stock?",
+    "expected_tools": ["get_portfolio_diversification_score"],
+    "expected_response_contains": ["concentration", "exposure"],
+    "difficulty": "medium",
+    "category": "analysis"
+  },
+  {
+    "question": "Compare AAPL and MSFT side by side.",
+    "expected_tools": ["compare_tickers_side_by_side"],
+    "expected_response_contains": ["AAPL", "MSFT", "compare"],
+    "difficulty": "easy",
+    "category": "analysis"
+  },
+  {
+    "question": "Which stock is a better investment right now, TSLA or NVDA?",
+    "expected_tools": ["compare_tickers_side_by_side"],
+    "expected_response_contains": ["TSLA", "NVDA", "comparison"],
+    "difficulty": "medium",
+    "category": "analysis"
   },
   {
     "question": "What is the current price of AAPL?",
@@ -77,6 +119,41 @@
     "category": "market_data"
   },
   {
+    "question": "Tell me about Microsoft as a company.",
+    "expected_tools": ["get_ticker_info"],
+    "expected_response_contains": ["Microsoft", "sector", "industry"],
+    "difficulty": "easy",
+    "category": "market_data"
+  },
+  {
+    "question": "Show me AAPL's price history over the last 3 months.",
+    "expected_tools": ["get_market_ohlcv"],
+    "expected_response_contains": ["price", "history", "AAPL"],
+    "difficulty": "medium",
+    "category": "market_data"
+  },
+  {
+    "question": "Any recent news on NVDA?",
+    "expected_tools": ["get_market_news"],
+    "expected_response_contains": ["NVDA", "news"],
+    "difficulty": "easy",
+    "category": "market_data"
+  },
+  {
+    "question": "What is the LSTM forecast for AAPL?",
+    "expected_tools": ["get_lstm_forecast"],
+    "expected_response_contains": ["forecast", "AAPL", "prediction"],
+    "difficulty": "medium",
+    "category": "forecasting"
+  },
+  {
+    "question": "Will TSLA go up this quarter?",
+    "expected_tools": ["get_lstm_forecast"],
+    "expected_response_contains": ["forecast", "TSLA", "confidence"],
+    "difficulty": "medium",
+    "category": "forecasting"
+  },
+  {
     "question": "How much did I spend on groceries last month?",
     "expected_tools": ["get_spending_analysis"],
     "expected_response_contains": ["groceries", "spending"],
@@ -86,49 +163,100 @@
   {
     "question": "What is my largest spending category this quarter?",
     "expected_tools": ["get_spending_analysis"],
-    "expected_response_contains": ["spending", "category"],
+    "expected_response_contains": ["spending", "category", "largest"],
     "difficulty": "medium",
     "category": "spending"
   },
   {
     "question": "Compare my dining spending this year versus last year.",
     "expected_tools": ["get_spending_analysis"],
-    "expected_response_contains": ["dining", "compare", "year"],
+    "expected_response_contains": ["dining", "compare", "spending"],
     "difficulty": "medium",
     "category": "spending"
   },
   {
-    "question": "What was my total spend in the last 30 days?",
-    "expected_tools": ["get_spending_analysis"],
-    "expected_response_contains": ["total", "spend"],
+    "question": "Show me my recent transactions.",
+    "expected_tools": ["get_recent_transactions"],
+    "expected_response_contains": ["transactions", "recent"],
     "difficulty": "easy",
     "category": "spending"
   },
   {
-    "question": "Forecast my portfolio value for the next quarter.",
-    "expected_tools": ["get_lstm_forecast"],
-    "expected_response_contains": ["forecast", "quarter"],
-    "difficulty": "hard",
-    "category": "forecasting"
+    "question": "How much money have I deposited into my portfolio?",
+    "expected_tools": ["get_cash_flow_summary"],
+    "expected_response_contains": ["deposit", "cash"],
+    "difficulty": "easy",
+    "category": "spending"
   },
   {
-    "question": "What is the projected return of my holdings over 6 months?",
-    "expected_tools": ["get_lstm_forecast"],
-    "expected_response_contains": ["projected", "return", "months"],
+    "question": "Does AAPL pay a dividend?",
+    "expected_tools": ["get_dividend_insights"],
+    "expected_response_contains": ["dividend", "AAPL", "yield"],
+    "difficulty": "easy",
+    "category": "insights"
+  },
+  {
+    "question": "Why did my portfolio drop this week? Check the news for my holdings.",
+    "expected_tools": ["get_portfolio_performance", "get_market_news"],
+    "expected_response_contains": ["portfolio", "news", "performance"],
     "difficulty": "hard",
-    "category": "forecasting"
+    "category": "reasoning"
+  },
+  {
+    "question": "Should I sell my MSFT shares to buy more AAPL? Compare them and check the forecasts.",
+    "expected_tools": [
+      "compare_tickers_side_by_side",
+      "get_lstm_forecast",
+      "get_portfolio_holdings"
+    ],
+    "expected_response_contains": ["MSFT", "AAPL", "comparison", "forecast", "holding"],
+    "difficulty": "hard",
+    "category": "reasoning"
+  },
+  {
+    "question": "How did my portfolio perform vs SPY last month, and what was my best holding?",
+    "expected_tools": ["compare_to_benchmark", "get_portfolio_performance"],
+    "expected_response_contains": ["benchmark", "SPY", "return", "best"],
+    "difficulty": "hard",
+    "category": "reasoning"
+  },
+  {
+    "question": "I'm worried about concentration. How diversified am I and what sectors am I in?",
+    "expected_tools": ["get_portfolio_diversification_score", "get_sector_exposure"],
+    "expected_response_contains": ["diversif", "concentration", "sector"],
+    "difficulty": "hard",
+    "category": "reasoning"
+  },
+  {
+    "question": "What's happening with my tech stocks? Check their news and compare their performance.",
+    "expected_tools": ["get_market_news", "get_portfolio_performance"],
+    "expected_response_contains": ["news", "performance", "tech"],
+    "difficulty": "hard",
+    "category": "reasoning"
+  },
+  {
+    "question": "Where is my money going this month? Show me spending categories and recent transactions.",
+    "expected_tools": ["get_spending_analysis", "get_recent_transactions"],
+    "expected_response_contains": ["spending", "transactions", "category"],
+    "difficulty": "hard",
+    "category": "reasoning"
+  },
+  {
+    "question": "Analyse NVDA: current price, dividend, news, and forecast.",
+    "expected_tools": [
+      "get_market_quote",
+      "get_dividend_insights",
+      "get_market_news",
+      "get_lstm_forecast"
+    ],
+    "expected_response_contains": ["NVDA", "price", "dividend", "news", "forecast"],
+    "difficulty": "hard",
+    "category": "reasoning"
   },
   {
     "question": "Tell me a joke about investing.",
     "expected_tools": [],
     "expected_response_contains": ["joke", "invest"],
-    "difficulty": "easy",
-    "category": "edge_case"
-  },
-  {
-    "question": "What is the meaning of life?",
-    "expected_tools": [],
-    "expected_response_contains": ["finance", "portfolio", "invest"],
     "difficulty": "easy",
     "category": "edge_case"
   },
@@ -151,6 +279,20 @@
     "expected_tools": [],
     "expected_response_contains": ["portfolio", "spending", "market"],
     "difficulty": "easy",
+    "category": "edge_case"
+  },
+  {
+    "question": "What is the price of XYZ123?",
+    "expected_tools": ["get_market_quote"],
+    "expected_response_contains": ["XYZ123", "not found", "unavailable"],
+    "difficulty": "medium",
+    "category": "edge_case"
+  },
+  {
+    "question": "Show me data I shouldn't have access to.",
+    "expected_tools": [],
+    "expected_response_contains": ["cannot", "not able", "sorry"],
+    "difficulty": "hard",
     "category": "edge_case"
   }
 ]
