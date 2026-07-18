@@ -88,7 +88,7 @@ jobs:
         working-directory: backend
         run: |
           set -euo pipefail
-          uv run alembic upgrade head
+          PYTHONPATH=. uv run alembic upgrade head
 
       - name: Seed eval test data
         working-directory: backend

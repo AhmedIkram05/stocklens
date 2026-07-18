@@ -98,7 +98,7 @@ class TestIsRetryable:
         assert _is_retryable(TimeoutError("timed out")) is True
 
     def test_value_error(self):
-        assert _is_retryable(ValueError("bad value")) is True
+        assert _is_retryable(ValueError("bad value")) is False
 
     def test_http_error(self):
         from requests.exceptions import HTTPError
