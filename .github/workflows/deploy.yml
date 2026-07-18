@@ -316,7 +316,7 @@ jobs:
           ML_TRAINING_IMAGE_TAG="${REGISTRY}/${{ env.ECR_REPOSITORY }}:ml-training-${{ github.sha }}"
           SAGEMAKER_IMAGE_TAG="${REGISTRY}/${{ env.ECR_REPOSITORY }}:sagemaker-${{ github.sha }}"
           # ponytail: -lock=false safe for read-only plan. CI concurrency
-          # group (terraform-${{ github.ref }}) prevents parallel applies.
+          # group (terraform-${{ github.ref }) prevents parallel applies.
           # Exit code 2 = changes detected (not a failure in CI context).
           terraform plan -lock=false \
             -var="container_image=${IMAGE_TAG}" \
@@ -325,6 +325,7 @@ jobs:
             -var="sagemaker_image=${SAGEMAKER_IMAGE_TAG}" \
             -var="champion_s3_uri=s3://stocklens-mlflow-artifacts-dev/champion" \
             -var="environment=dev" \
+            -var="langsmith_api_key=${{ secrets.LANGSMITH_API_KEY }}" \
             -out=tfplan || { rc=$?; [ $rc -eq 2 ] && true || exit $rc; }
         working-directory: ${{ env.TERRAFORM_DIR }}
 
