@@ -92,6 +92,8 @@ resource "aws_iam_policy" "ecs_task_bedrock" {
         "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
         # DeepSeek V3.1 — LangGraph agent + summarization
         "arn:aws:bedrock:${var.aws_region}::foundation-model/deepseek.v3-v1:0",
+        # Claude Opus 4.8 — LLM-as-Judge (eval harness)
+        "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.claude-opus-4-8",
       ]
     }]
   })
