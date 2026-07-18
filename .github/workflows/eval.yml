@@ -25,12 +25,41 @@ jobs:
   evaluate:
     name: Run LangSmith Agent Evaluation
     runs-on: ubuntu-latest
+    # Postgres service container for agent tool queries (portfolio, OHLCV, etc.)
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: stocklens
+          POSTGRES_USER: stocklens
+          POSTGRES_PASSWORD: stocklens
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     # Evaluation regressions should warn, not block the pipeline.
     continue-on-error: true
     env:
       LANGCHAIN_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
       LANGCHAIN_TRACING_V2: 'true'
       LANGCHAIN_PROJECT: stocklens-agent
+      # Required by Settings() at import time even though eval doesn't sign JWTs.
+      JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY || 'eval-ci-dummy-key-not-for-production' }}
+      # Point to the Postgres service container instead of RDS.
+      DATABASE_URL: postgresql+asyncpg://stocklens:stocklens@localhost:5432/stocklens
+      # Alembic uses TEST_DATABASE_URL when ENVIRONMENT=test
+      ENVIRONMENT: development
+      # No Redis in CI — the cache layer degrades gracefully.
+      REDIS_URL: 'redis://localhost:6379/0'
+      # Use the eval region (eu-west-2 — the app's home region).
+      AWS_REGION: eu-west-2
+      # yfinance needs HTTPS
+      REQUESTS_CA_BUNDLE: ''
+
     steps:
       - uses: actions/checkout@v5
 
@@ -38,7 +67,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ secrets.ECS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          aws-region: eu-west-2
 
       - uses: actions/setup-python@v6
         with:
@@ -54,6 +83,18 @@ jobs:
         run: |
           set -euo pipefail
           uv sync --package stocklens-backend --all-extras --index-strategy unsafe-best-match
+
+      - name: Run database migrations
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          uv run alembic upgrade head
+
+      - name: Seed eval test data
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          uv run python scripts/seed_eval.py
 
       - name: Upload golden dataset
         working-directory: backend
