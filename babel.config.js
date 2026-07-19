@@ -4,6 +4,8 @@
  * Babel configuration for the Expo project. Enables `module-resolver`
  * alias `@` → `./src` for concise imports across the codebase.
  */
+const path = require('path');
+
 module.exports = function (api) {
   api.cache(true);
   return {
@@ -14,7 +16,7 @@ module.exports = function (api) {
         {
           extensions: ['.ts', '.tsx', '.js', '.jsx', '.json'],
           alias: {
-            '@': './frontend/src',
+            '@': path.resolve(__dirname, 'frontend', 'src'),
           },
         },
       ],
