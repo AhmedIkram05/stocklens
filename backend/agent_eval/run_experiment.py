@@ -119,6 +119,9 @@ async def run_experiment(client: Client | None = None) -> None:
             data=dataset,
             evaluators=[_score_criteria],
             experiment_prefix=EXPERIMENT_PREFIX,
+            # Default is 0 (no concurrency) — 41 questions × ~1min each = 40+ min.
+            # None removes the limit so questions run in parallel via asyncio.
+            max_concurrency=None,
         )
     finally:
         await close_pool()
