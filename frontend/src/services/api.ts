@@ -318,6 +318,28 @@ export const apiService = {
   // ── Token management ──
 
   getAccessToken: () => SecureStore.getItemAsync(ACCESS_TOKEN_KEY),
+
+  /**
+   * Get a valid (non-expired) access token, refreshing if necessary.
+   * Uses the same singleton refreshPromise as api() to avoid race conditions.
+   * Returns null when refresh fails or no token exists.
+   */
+  ensureValidAccessToken: async (): Promise<string | null> => {
+    let accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
+    if (accessToken && isTokenExpired(accessToken)) {
+      if (!refreshPromise) {
+        refreshPromise = refreshTokens();
+      }
+      const refreshed = await refreshPromise;
+      refreshPromise = null;
+      if (refreshed) {
+        accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
+      } else {
+        return null;
+      }
+    }
+    return accessToken;
+  },
   getRefreshToken: () => SecureStore.getItemAsync(REFRESH_TOKEN_KEY),
 
   setTokens: async (accessToken: string, refreshToken: string) => {
