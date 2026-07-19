@@ -36,8 +36,7 @@ cors_origins = [
 ]
 
 # ── Bedrock model IDs (defaults in config.py are fine for most cases) ──
-# bedrock_model_id = "anthropic.claude-haiku-4-5-20251001-v1:0"  # NLP pipeline
-# AGENT_MODEL_ID and AGENT_SUMMARY_MODEL_ID default to deepseek.v3-v1:0 in code
+# bedrock_model_id = "amazon.nova-lite-v1:0"  # NLP pipeline (default in config.py)
 
 # ── Instance sizing ──────────────────────────────────────────────────
 # db_instance_class  = "db.t4g.micro"
