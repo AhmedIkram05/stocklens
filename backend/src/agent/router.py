@@ -67,6 +67,7 @@ async def chat(
     async def event_generator():
         try:
             full_response = ""
+            trace_id = ""
             async for event in agent_service.process_message(
                 conversation_id,
                 current_user.id,
@@ -74,12 +75,18 @@ async def chat(
             ):
                 if event["event"] == "token":
                     full_response += event["data"]
+                elif event["event"] == "_done":
+                    # Internal signal from service — capture trace_id, don't emit
+                    if isinstance(event["data"], dict):
+                        trace_id = event["data"].get("trace_id", "")
+                    continue
                 yield f"event: {event['event']}\ndata: {json.dumps(event['data'])}\n\n"
 
             done_payload = json.dumps(
                 {
                     "conversation_id": str(conversation_id),
                     "full_response": full_response,
+                    "trace_id": trace_id,
                 }
             )
             yield f"event: done\ndata: {done_payload}\n\n"

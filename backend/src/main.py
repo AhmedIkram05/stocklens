@@ -136,10 +136,13 @@ app = FastAPI(
     redoc_url=None,
 )
 
-# CORS — origins from config (comma-separated, supports dev + production)
+# CORS — origins from config (comma-separated, supports dev + production).
+# allow_origin_regex catches Expo Go dynamic origins (exp://<lan-ip>:19000
+# or exp://<tunnel>.exp.direct:80) that can't be listed statically.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS.split(","),
+    allow_origin_regex=r"exp://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
