@@ -1,84 +1,34 @@
-import { act, renderHook } from '@testing-library/react-native';
+import { renderHook } from '@testing-library/react-native';
 import { useBreakpoint } from '@/hooks/useBreakpoint';
 
-jest.mock(
-  '@/utils/responsive',
-  () => ({
-    scale: jest.fn((size: number) => size),
-    verticalScale: jest.fn((size: number) => size),
-    moderateScale: jest.fn((size: number, _factor?: number) => size),
-    cap: jest.fn((value: number, _min?: number, _max?: number) => value),
-    default: {
-      scale: jest.fn((size: number) => size),
-      verticalScale: jest.fn((size: number) => size),
-      moderateScale: jest.fn((size: number, _factor?: number) => size),
-      cap: jest.fn((value: number, _min?: number, _max?: number) => value),
-    },
-  }),
-  { virtual: true },
-);
+// Mock Dimensions.get so responsive.ts's scale() computes base values against
+// iPhone X width (375), matching our useWindowDimensions default. Must be
+// mocked before any imports that load responsive.ts.
+jest.mock('react-native/Libraries/Utilities/Dimensions', () => {
+  const mock = {
+    get: jest.fn(() => ({ width: 375, height: 812, scale: 2, fontScale: 1 })),
+    addEventListener: jest.fn(() => ({ remove: jest.fn() })),
+    removeEventListener: jest.fn(),
+  };
+  return { __esModule: true, default: mock };
+});
 
-jest.mock(
-  '@/styles/theme',
-  () => ({
-    spacing: {
-      xs: 4,
-      sm: 8,
-      md: 12,
-      lg: 16,
-      xl: 24,
-      xxl: 32,
-    },
-    breakpoints: {
-      smallPhone: 360,
-      largePhone: 414,
-      tablet: 768,
-    },
-    sizes: {
-      controlSm: 36,
-      controlMd: 44,
-      controlLg: 56,
-      avatarSm: 40,
-      avatarMd: 56,
-    },
-    radii: {
-      sm: 8,
-      md: 12,
-      lg: 16,
-      xl: 24,
-      pill: 999,
-    },
-    typography: {
-      display: { fontSize: 32, fontWeight: '700' },
-      sectionTitle: { fontSize: 24, fontWeight: '600' },
-      pageSubtitle: { fontSize: 16 },
-      button: { fontSize: 16, fontWeight: '600' },
-    },
-    shadows: {
-      level1: {},
-      level2: {},
-      level3: {},
-    },
-  }),
-  { virtual: true },
-);
+// Mock useWindowDimensions at the module useBreakpoint.ts imports from RN.
+// The RN index.js getter resolves it via:
+//   require('./Libraries/Utilities/useWindowDimensions').default
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: jest.fn(() => ({ width: 375, height: 812, scale: 2, fontScale: 1 })),
+}));
 
-jest.mock(
-  'react-native',
-  () => ({
-    Dimensions: { get: jest.fn(() => ({ width: 375, height: 812, scale: 2, fontScale: 1 })) },
-    useWindowDimensions: jest.fn(() => ({ width: 375, height: 812, scale: 2, fontScale: 1 })),
-    StyleSheet: { create: (obj: any) => obj },
-    Platform: { OS: 'ios', select: jest.fn((obj) => obj.ios || obj.default) },
-  }),
-  { virtual: true },
-);
-
-const mockUseWindowDimensions = jest.requireMock('react-native').useWindowDimensions as jest.Mock;
+// Re-import to get the mock function reference
+import useWindowDimensions from 'react-native/Libraries/Utilities/useWindowDimensions';
+const mockUseWindowDimensions = useWindowDimensions as jest.Mock;
 
 describe('useBreakpoint', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseWindowDimensions.mockReturnValue({ width: 375, height: 812, scale: 2, fontScale: 1 });
   });
 
   it('returns phone dimensions for small phone (<= 360px)', () => {
@@ -160,10 +110,8 @@ describe('useBreakpoint', () => {
     expect(result.current.isTablet).toBe(false);
     expect(result.current.width).toBe(375);
 
-    act(() => {
-      mockUseWindowDimensions.mockReturnValue({ width: 1024, height: 768, scale: 2, fontScale: 1 });
-      rerender(undefined);
-    });
+    mockUseWindowDimensions.mockReturnValue({ width: 1024, height: 768, scale: 2, fontScale: 1 });
+    rerender(undefined);
 
     expect(result.current.isTablet).toBe(true);
     expect(result.current.width).toBe(1024);
