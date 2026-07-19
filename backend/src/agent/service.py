@@ -324,11 +324,13 @@ class AgentService:
         question: str,
         response_text: str,
         tools_used: list | None = None,
+        trace_id: str = "",
     ) -> None:
         """Fire-and-forget LangSmith feedback logging for a sampled conversation.
 
-        Records a ``sampled_eval`` feedback point so offline runs can be
-        correlated with golden-dataset experiments. No-op when no API key is set.
+        Records a ``sampled_eval`` feedback point linked to the trace so offline
+        runs can be correlated with golden-dataset experiments. No-op when no
+        API key is set.
         """
         if not settings.LANGCHAIN_API_KEY:
             return
@@ -340,6 +342,7 @@ class AgentService:
                 question,
                 response_text,
                 tools_used or [],
+                trace_id,
             ),
         )
         self._eval_tasks.add(task)
@@ -352,16 +355,20 @@ class AgentService:
         question: str,
         response_text: str,
         tools_used: list,
+        trace_id: str = "",
     ) -> None:
-        """Push a sampled-eval feedback record to LangSmith."""
+        """Push a sampled-eval feedback record to LangSmith, linked to the trace."""
         client = Client()
-        client.create_feedback(
-            feedback_key="sampled_eval",
-            score=1.0,
-            comment=f"user={user_id} tools={tools_used}",
-            feedback_source_type="app",
-            source_metadata={"conversation_id": str(conversation_id)},
-        )
+        kwargs: dict = {
+            "feedback_key": "sampled_eval",
+            "score": 1.0,
+            "comment": f"user={user_id} tools={tools_used}",
+            "feedback_source_type": "app",
+            "source_metadata": {"conversation_id": str(conversation_id)},
+        }
+        if trace_id:
+            kwargs["trace_id"] = trace_id
+        client.create_feedback(**kwargs)
 
     # ── Chat ─────────────────────────────────────────────────────────────
 
@@ -404,6 +411,7 @@ class AgentService:
 
         # Track tool calls for persistence
         tools_used: list[dict] = []
+        trace_id = ""
 
         async for event in self.graph.astream_events(
             graph_input,
@@ -430,6 +438,7 @@ class AgentService:
                 yield {"event": "tool_end", "data": event.get("name", "unknown")}
             elif kind == "on_chain_end" and event.get("name") == "LangGraph":
                 final_state = event["data"]["output"]
+                trace_id = str(event.get("run_id", ""))
                 await self._persist_turn(
                     conversation_id,
                     user_id,
@@ -450,8 +459,10 @@ class AgentService:
                         message,
                         last_content,
                         tools_used,
+                        trace_id=trace_id,
                     )
-                yield {"event": "done", "data": ""}
+                # Internal signal to router — suppressed from SSE, carries trace_id
+                yield {"event": "_done", "data": {"trace_id": trace_id}}
 
     # ── Conversation CRUD (shared with router) ──────────────────────────
 

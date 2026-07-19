@@ -192,6 +192,37 @@ async def test_eval_background_logs_feedback(monkeypatch):
     assert "user=user-1" in kwargs["comment"]
     assert "tools=['get_quote']" in kwargs["comment"]
     assert "conversation_id" in kwargs["source_metadata"]
+    # trace_id should NOT be present when not provided (backward compat)
+    assert "trace_id" not in kwargs
+
+
+@pytest.mark.asyncio
+async def test_eval_background_logs_feedback_with_trace_id(monkeypatch):
+    """_run_eval_background passes trace_id to LangSmith when provided."""
+    from src.config import settings
+
+    monkeypatch.setattr(settings, "LANGCHAIN_API_KEY", "test-key")
+
+    fake_create = MagicMock()
+    with patch("src.agent.service.Client", return_value=MagicMock()) as client_cls:
+        client_cls.return_value.create_feedback = fake_create
+        await agent_service._run_eval_background(
+            conversation_id=__import__("uuid").uuid4(),
+            user_id="user-2",
+            question="hi",
+            response_text="hello",
+            tools_used=["get_quote"],
+            trace_id="trace-xyz789",
+        )
+        assert agent_service._eval_tasks
+        await asyncio.gather(*list(agent_service._eval_tasks))
+
+    assert fake_create.called
+    _, kwargs = fake_create.call_args
+    assert kwargs["feedback_key"] == "sampled_eval"
+    assert kwargs["score"] == 1.0
+    # trace_id should be present when provided
+    assert kwargs["trace_id"] == "trace-xyz789"
 
 
 # ── LLM-as-judge scoring ─────────────────────────────────────────────────────

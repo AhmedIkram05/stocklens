@@ -77,7 +77,7 @@ resource "aws_iam_role" "ecs_task" {
   })
 }
 
-# Allow invoking Bedrock foundation models (Haiku for NLP, DeepSeek for agent).
+# Allow invoking Bedrock foundation models (Nova Lite for NLP/agent, GLM-4.7 Flash for judge).
 resource "aws_iam_policy" "ecs_task_bedrock" {
   name        = "${var.app_name}-ecs-task-bedrock-${var.environment}"
   description = "Allow ECS task role to invoke Bedrock foundation models"
@@ -88,10 +88,10 @@ resource "aws_iam_policy" "ecs_task_bedrock" {
       Effect = "Allow"
       Action = "bedrock:InvokeModel"
       Resource = [
-        # DeepSeek V3.2 — agent inference, summarization, NLP pipeline
-        "arn:aws:bedrock:${var.aws_region}::foundation-model/deepseek.v3.2",
-        # GLM 5 — LLM-as-Judge (eval harness)
-        "arn:aws:bedrock:${var.aws_region}::foundation-model/zai.glm-5",
+        # Nova Lite — agent inference, summarization, NLP pipeline
+        "arn:aws:bedrock:${var.aws_region}::foundation-model/amazon.nova-lite-v1:0",
+        # GLM-4.7 Flash — LLM-as-Judge (eval harness)
+        "arn:aws:bedrock:${var.aws_region}::foundation-model/zai.glm-4.7-flash",
       ]
     }]
   })
@@ -491,8 +491,8 @@ resource "aws_iam_role_policy" "github_deploy" {
         Effect = "Allow"
         Action = "bedrock:InvokeModel"
         Resource = [
-          "arn:aws:bedrock:${var.aws_region}::foundation-model/deepseek.v3.2",
-          "arn:aws:bedrock:${var.aws_region}::foundation-model/zai.glm-5",
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/amazon.nova-lite-v1:0",
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/zai.glm-4.7-flash",
         ]
       }
     ]

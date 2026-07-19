@@ -451,7 +451,7 @@ resource "aws_ecs_task_definition" "app" {
         },
         {
           name  = "BEDROCK_MODEL_ID"
-          value = "anthropic.claude-haiku-4-5-20251001-v1:0"
+          value = "amazon.nova-lite-v1:0"
         },
         {
           name  = "LANGCHAIN_TRACING_V2"

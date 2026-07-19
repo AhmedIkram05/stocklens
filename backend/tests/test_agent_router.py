@@ -268,6 +268,63 @@ class TestChatEndpoint:
         err_data = json.loads(sse[-1]["data"])
         assert "error" in err_data
 
+    async def test_done_event_includes_trace_id(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ):
+        """The final done SSE event includes trace_id from the service's _done event."""
+        events = [
+            {"event": "token", "data": "Hello "},
+            {"event": "token", "data": "world"},
+            {"event": "_done", "data": {"trace_id": "trace-abc123"}},
+        ]
+        fake = _fake_generator(events)
+
+        with patch.object(agent_service, "process_message", fake):
+            resp = await client.post(
+                "/agent/chat",
+                json={"message": "Hi"},
+                headers=auth_headers,
+            )
+
+        sse = _parse_sse(resp.text)
+        # 2 tokens + 1 router done = 3 events (_done is suppressed)
+        assert len(sse) == 3
+
+        assert sse[0]["event"] == "token"
+        assert sse[1]["event"] == "token"
+        assert sse[2]["event"] == "done"
+        done_data = json.loads(sse[2]["data"])
+        assert done_data["trace_id"] == "trace-abc123"
+        assert done_data["full_response"] == "Hello world"
+
+    async def test_internal_done_suppressed(
+        self,
+        client: httpx.AsyncClient,
+        auth_headers: dict[str, str],
+    ):
+        """The _done internal event is NOT emitted to the SSE stream."""
+        events = [
+            {"event": "token", "data": "Visible"},
+            {"event": "_done", "data": {"trace_id": "hidden"}},
+        ]
+        fake = _fake_generator(events)
+
+        with patch.object(agent_service, "process_message", fake):
+            resp = await client.post(
+                "/agent/chat",
+                json={"message": "test"},
+                headers=auth_headers,
+            )
+
+        sse = _parse_sse(resp.text)
+        event_types = [e["event"] for e in sse]
+        # _done must never appear in the SSE output
+        assert "_done" not in event_types
+        # Only token + done from router
+        assert event_types == ["token", "done"]
+
     async def test_headers_are_correct(
         self,
         client: httpx.AsyncClient,
