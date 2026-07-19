@@ -65,7 +65,7 @@ class TestProcessMessage:
 
         kinds = [e["event"] for e in emitted]
         assert "token" in kinds
-        assert emitted[-1]["event"] == "done"
+        assert emitted[-1]["event"] == "_done"
         # tokens concatenated
         token_data = "".join(e["data"] for e in emitted if e["event"] == "token")
         assert token_data == "Hello world"
