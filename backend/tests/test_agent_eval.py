@@ -70,7 +70,7 @@ async def test_run_experiment_target():
     fake_graph = MagicMock()
     fake_graph.ainvoke = AsyncMock(return_value=fake_result)
 
-    with patch("agent_eval.run_experiment._build_graph", return_value=fake_graph):
+    with patch("agent_eval.run_experiment._GRAPH", fake_graph):
         out = await _target({"question": "How is my portfolio doing?"})
 
     assert out == {"response": "Your portfolio is up 2.3% today."}
@@ -98,7 +98,7 @@ async def test_run_agent_builds_messages():
     fake_graph = MagicMock()
     fake_graph.ainvoke.side_effect = _fake_ainvoke
 
-    with patch("agent_eval.run_experiment._build_graph", return_value=fake_graph):
+    with patch("agent_eval.run_experiment._GRAPH", fake_graph):
         await _target({"question": "What is the price of AAPL?"})
 
     from langchain_core.messages import HumanMessage, SystemMessage
@@ -192,6 +192,140 @@ async def test_eval_background_logs_feedback(monkeypatch):
     assert "user=user-1" in kwargs["comment"]
     assert "tools=['get_quote']" in kwargs["comment"]
     assert "conversation_id" in kwargs["source_metadata"]
+
+
+# ── LLM-as-judge scoring ─────────────────────────────────────────────────────
+
+
+def _make_example(question: str = "Test?") -> MagicMock:
+    ex = MagicMock()
+    ex.inputs = {"question": question}
+    return ex
+
+
+@pytest.mark.asyncio
+async def test_score_criteria_both_yes():
+    """Both criteria parse as YES when the judge returns two valid lines."""
+    fake_verdict = MagicMock()
+    fake_verdict.content = "correctness: YES — looks good\nrelevance: YES — on topic"
+    with patch("agent_eval.run_experiment._JUDGE_MODEL") as judge:
+        judge.ainvoke = AsyncMock(return_value=fake_verdict)
+        from agent_eval.run_experiment import _score_criteria
+
+        result = await _score_criteria(_make_example(), {"response": "ok"})
+
+    assert "results" in result
+    scores = {r["key"]: r["score"] for r in result["results"]}
+    assert scores == {"correctness": 1.0, "relevance": 1.0}
+
+
+@pytest.mark.asyncio
+async def test_score_criteria_both_no():
+    """Both criteria parse as NO."""
+    fake_verdict = MagicMock()
+    fake_verdict.content = "correctness: NO — wrong data\nrelevance: NO — off topic"
+    with patch("agent_eval.run_experiment._JUDGE_MODEL") as judge:
+        judge.ainvoke = AsyncMock(return_value=fake_verdict)
+        from agent_eval.run_experiment import _score_criteria
+
+        result = await _score_criteria(_make_example(), {"response": "bad"})
+
+    scores = {r["key"]: r["score"] for r in result["results"]}
+    assert scores == {"correctness": 0.0, "relevance": 0.0}
+
+
+@pytest.mark.asyncio
+async def test_score_criteria_mixed():
+    """One criterion YES, the other NO."""
+    fake_verdict = MagicMock()
+    fake_verdict.content = "correctness: NO — missing sources\nrelevance: YES — relevant"
+    with patch("agent_eval.run_experiment._JUDGE_MODEL") as judge:
+        judge.ainvoke = AsyncMock(return_value=fake_verdict)
+        from agent_eval.run_experiment import _score_criteria
+
+        result = await _score_criteria(_make_example(), {"response": "mixed"})
+
+    scores = {r["key"]: r["score"] for r in result["results"]}
+    assert scores == {"correctness": 0.0, "relevance": 1.0}
+
+
+@pytest.mark.asyncio
+async def test_score_criteria_case_insensitive():
+    """YES/yes/Yes all resolve to score 1.0."""
+    fake_verdict = MagicMock()
+    fake_verdict.content = "correctness: yes — fine\nrelevance: YeS — good"
+    with patch("agent_eval.run_experiment._JUDGE_MODEL") as judge:
+        judge.ainvoke = AsyncMock(return_value=fake_verdict)
+        from agent_eval.run_experiment import _score_criteria
+
+        result = await _score_criteria(_make_example(), {"response": "ok"})
+
+    scores = {r["key"]: r["score"] for r in result["results"]}
+    assert scores == {"correctness": 1.0, "relevance": 1.0}
+
+
+@pytest.mark.asyncio
+async def test_score_criteria_extra_text():
+    """Extra text after YES/NO on the same line is ignored for scoring."""
+    fake_verdict = MagicMock()
+    fake_verdict.content = (
+        "correctness: YES — the response correctly identifies the portfolio "
+        "return and references the holdings data\n"
+        "relevance: NO — strays into sports"
+    )
+    with patch("agent_eval.run_experiment._JUDGE_MODEL") as judge:
+        judge.ainvoke = AsyncMock(return_value=fake_verdict)
+        from agent_eval.run_experiment import _score_criteria
+
+        result = await _score_criteria(_make_example(), {"response": "..."})
+
+    scores = {r["key"]: r["score"] for r in result["results"]}
+    assert scores == {"correctness": 1.0, "relevance": 0.0}
+
+
+@pytest.mark.asyncio
+async def test_score_criteria_missing_line_defaults_zero():
+    """Missing criterion line defaults to score 0.0."""
+    fake_verdict = MagicMock()
+    fake_verdict.content = "correctness: YES — fine"
+    with patch("agent_eval.run_experiment._JUDGE_MODEL") as judge:
+        judge.ainvoke = AsyncMock(return_value=fake_verdict)
+        from agent_eval.run_experiment import _score_criteria
+
+        result = await _score_criteria(_make_example(), {"response": "..."})
+
+    scores = {r["key"]: r["score"] for r in result["results"]}
+    assert scores == {"correctness": 1.0, "relevance": 0.0}
+
+
+@pytest.mark.asyncio
+async def test_score_criteria_none_content():
+    """Non-string verdict content is stringified safely."""
+    fake_verdict = MagicMock()
+    fake_verdict.content = ["garbage"]
+    with patch("agent_eval.run_experiment._JUDGE_MODEL") as judge:
+        judge.ainvoke = AsyncMock(return_value=fake_verdict)
+        from agent_eval.run_experiment import _score_criteria
+
+        result = await _score_criteria(_make_example(), {"response": "..."})
+
+    # Both default to 0.0 when regex doesn't match
+    scores = {r["key"]: r["score"] for r in result["results"]}
+    assert scores == {"correctness": 0.0, "relevance": 0.0}
+
+
+@pytest.mark.asyncio
+async def test_score_criteria_empty_inputs():
+    """Empty question/response still produces valid results."""
+    fake_verdict = MagicMock()
+    fake_verdict.content = "correctness: NO — empty\nrelevance: NO — empty"
+    with patch("agent_eval.run_experiment._JUDGE_MODEL") as judge:
+        judge.ainvoke = AsyncMock(return_value=fake_verdict)
+        from agent_eval.run_experiment import _score_criteria
+
+        result = await _score_criteria(_make_example(""), {"response": ""})
+
+    assert len(result["results"]) == 2
 
 
 # ── Dataset integrity ─────────────────────────────────────────────────────────

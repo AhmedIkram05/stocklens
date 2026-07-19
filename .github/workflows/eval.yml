@@ -11,6 +11,11 @@ on:
     paths:
       - 'backend/src/agent/**'
       - 'backend/agent_eval/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/src/agent/**'
+      - 'backend/agent_eval/**'
   workflow_dispatch:
 
 concurrency:
