@@ -12,12 +12,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useNavigation, useFocusEffect, CompositeNavigationProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { Ionicons } from '@expo/vector-icons';
 
 import { brandColors, useTheme } from '../../contexts/ThemeContext';
 import type { PortfolioStackParamList } from '../../navigation/AppNavigator';
 import { portfolioService, Portfolio, PortfolioPerformance } from '../../services/portfolios';
 import { formatCurrencyRounded, formatRelativeDate } from '../../utils/formatters';
 import { spacing, radii, typography, shadows } from '../../styles/theme';
+import AgentChatScreen from '../AgentChatScreen';
 
 type ScreenNavProp = CompositeNavigationProp<
   StackNavigationProp<PortfolioStackParamList, 'PortfolioList'>,
@@ -35,6 +37,7 @@ export default function PortfolioListScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [chatVisible, setChatVisible] = useState(false);
 
   const fetchData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -150,14 +153,25 @@ export default function PortfolioListScreen() {
       <StatusBar style="auto" />
       <View style={[styles.header, { backgroundColor: theme.background }]}>
         <Text style={[styles.title, { color: theme.text }]}>My Portfolios</Text>
-        <TouchableOpacity
-          style={[styles.fab, { backgroundColor: theme.primary }]}
-          onPress={() => navigation.navigate('CreatePortfolio')}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Text style={styles.fabText}>+</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={[styles.chatBtn, { backgroundColor: theme.primary }]}
+            onPress={() => setChatVisible(true)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.fab, { backgroundColor: theme.primary }]}
+            onPress={() => navigation.navigate('CreatePortfolio')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.fabText}>+</Text>
+          </TouchableOpacity>
+        </View>
       </View>
+
+      <AgentChatScreen visible={chatVisible} onClose={() => setChatVisible(false)} />
 
       <FlatList
         data={portfolios}
@@ -201,6 +215,18 @@ const styles = StyleSheet.create({
   },
   title: {
     ...typography.pageTitle,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  chatBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   fab: {
     width: 40,
