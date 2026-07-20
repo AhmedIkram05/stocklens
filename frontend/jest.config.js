@@ -6,17 +6,23 @@
  */
 const path = require('path');
 
+// ponytail: must come before module.exports — preset's setupFiles check this at load time
+process.env.EXPO_OS = 'ios';
+
 module.exports = {
   preset: 'jest-expo',
   testEnvironment: 'node',
   // ponytail: force babel-jest to find root babel.config.js;
   // jest-expo's resolveBabelConfig returns null when one exists, so
   // babel falls back to process.cwd() which may not be the project root.
+  // Also forward the platform to babel-preset-expo so it inlines
+  // process.env.EXPO_OS (via expo-define-plugin) instead of replacing it with undefined.
   transform: {
     '\\.[jt]sx?$': [
       'babel-jest',
       {
         configFile: path.resolve(__dirname, '..', 'babel.config.js'),
+        caller: { name: 'metro', bundler: 'metro', platform: 'ios' },
       },
     ],
   },

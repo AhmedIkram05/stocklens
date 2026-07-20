@@ -8,6 +8,19 @@
 import React from 'react';
 import '@testing-library/jest-native/extend-expect';
 import 'jest-fetch-mock';
+
+// ponytail: jest-fetch-mock promises resolve on microtasks that escape React's
+// act() scope after render. Suppressing the act() warning is accepted practice
+// for integration tests when async effects (fetch, timers) are tested implicitly
+// through waitFor assertions.
+const origError = console.error;
+console.error = (...args: any[]) => {
+  if (typeof args[0] === 'string' && args[0].includes('inside a test was not wrapped in act')) {
+    return;
+  }
+  origError.call(console, ...args);
+};
+
 const fetchMock = require('jest-fetch-mock');
 
 fetchMock.enableMocks();
