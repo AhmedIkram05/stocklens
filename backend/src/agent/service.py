@@ -422,7 +422,16 @@ class AgentService:
             if kind == "on_chat_model_stream":
                 chunk = event["data"]["chunk"]
                 if hasattr(chunk, "content") and chunk.content:
-                    yield {"event": "token", "data": chunk.content}
+                    if isinstance(chunk.content, list):
+                        text = "".join(
+                            b["text"]
+                            for b in chunk.content
+                            if isinstance(b, dict) and b.get("type") == "text" and "text" in b
+                        )
+                        if text:
+                            yield {"event": "token", "data": text}
+                    elif isinstance(chunk.content, str):
+                        yield {"event": "token", "data": chunk.content}
             elif kind == "on_tool_start":
                 tools_used.append(
                     {
