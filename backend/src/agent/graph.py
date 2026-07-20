@@ -27,6 +27,7 @@ class AgentState(TypedDict):
 
     messages: Annotated[Sequence[BaseMessage], add_messages]
     user_id: str
+    portfolio_id: str
 
 
 def create_agent_graph(tools: list) -> StateGraph:

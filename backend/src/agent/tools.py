@@ -53,7 +53,7 @@ def _decimal_to_float(val: Any) -> float:
 
 @tool
 async def get_portfolio_summary(
-    portfolio_id: str,
+    portfolio_id: Annotated[str, InjectedToolArg],
     user_id: Annotated[str, InjectedToolArg],
 ) -> str:
     """Fetch a portfolio's summary: name, description, total value, cash balance, created date.
@@ -153,7 +153,7 @@ async def get_portfolio_summary(
 
 @tool
 async def get_portfolio_holdings(
-    portfolio_id: str,
+    portfolio_id: Annotated[str, InjectedToolArg],
     user_id: Annotated[str, InjectedToolArg],
 ) -> str:
     """Fetch current holdings for a portfolio.
@@ -198,7 +198,7 @@ async def get_portfolio_holdings(
 
 @tool
 async def get_sector_exposure(
-    portfolio_id: str,
+    portfolio_id: Annotated[str, InjectedToolArg],
     user_id: Annotated[str, InjectedToolArg],
 ) -> str:
     """Calculate sector exposure breakdown for a portfolio using yfinance sector data.
@@ -280,7 +280,7 @@ async def get_sector_exposure(
 
 @tool
 async def get_portfolio_performance(
-    portfolio_id: str,
+    portfolio_id: Annotated[str, InjectedToolArg],
     user_id: Annotated[str, InjectedToolArg],
     include_history: bool = False,
 ) -> str:
@@ -414,7 +414,7 @@ async def get_portfolio_performance(
 
 @tool
 async def compare_to_benchmark(
-    portfolio_id: str,
+    portfolio_id: Annotated[str, InjectedToolArg],
     user_id: Annotated[str, InjectedToolArg],
     benchmark_ticker: str = "SPY",
 ) -> str:
@@ -645,7 +645,7 @@ async def compare_to_benchmark(
 
 @tool
 async def get_portfolio_diversification_score(
-    portfolio_id: str,
+    portfolio_id: Annotated[str, InjectedToolArg],
     user_id: Annotated[str, InjectedToolArg],
 ) -> str:
     """Calculate portfolio diversification using the Herfindahl-Hirschman Index (HHI).
@@ -969,7 +969,7 @@ async def get_lstm_forecast(
 
 @tool
 async def get_spending_analysis(
-    portfolio_id: str,
+    portfolio_id: Annotated[str, InjectedToolArg],
     user_id: Annotated[str, InjectedToolArg],
     start_date: str | None = None,
     end_date: str | None = None,
@@ -1057,7 +1057,7 @@ async def get_spending_analysis(
 
 @tool
 async def get_recent_transactions(
-    portfolio_id: str,
+    portfolio_id: Annotated[str, InjectedToolArg],
     user_id: Annotated[str, InjectedToolArg],
     limit: int = 10,
 ) -> str:
@@ -1112,7 +1112,7 @@ async def get_recent_transactions(
 
 @tool
 async def get_cash_flow_summary(
-    portfolio_id: str,
+    portfolio_id: Annotated[str, InjectedToolArg],
     user_id: Annotated[str, InjectedToolArg],
 ) -> str:
     """Fetch cash flow summary: deposits into a portfolio over time.
