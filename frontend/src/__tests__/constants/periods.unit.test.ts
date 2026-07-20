@@ -9,6 +9,14 @@ describe('PERIOD_OPTIONS', () => {
   it('exports expected period labels', () => {
     expect(PERIOD_OPTIONS).toEqual(['1M', '3M', '6M', '1Y', '3Y', '5Y', '10Y', '20Y', 'YTD']);
   });
+
+  it('exports exactly 9 options', () => {
+    expect(PERIOD_OPTIONS).toHaveLength(9);
+  });
+
+  it('contains no duplicate labels', () => {
+    expect(new Set(PERIOD_OPTIONS).size).toBe(PERIOD_OPTIONS.length);
+  });
 });
 
 describe('periodToYears', () => {
@@ -33,6 +41,17 @@ describe('periodToYears', () => {
     const ytd = periodToYears('YTD');
     expect(ytd).toBeGreaterThan(0.49);
     expect(ytd).toBeLessThan(0.5);
+
+    jest.useRealTimers();
+  });
+
+  it('computes YTD as approximately 0 at the start of year', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2025-01-01T00:00:01Z'));
+
+    const ytd = periodToYears('YTD');
+    expect(ytd).toBeGreaterThan(0);
+    expect(ytd).toBeLessThan(0.01);
 
     jest.useRealTimers();
   });
@@ -64,6 +83,11 @@ describe('periodToStartDate', () => {
     expect(periodToStartDate('YTD', base)).toBe('2025-01-01');
   });
 
+  it('returns YTD as Jan 1 when endDate is Jan 1', () => {
+    const janFirst = new Date('2025-01-01T12:00:00Z');
+    expect(periodToStartDate('YTD', janFirst)).toBe('2025-01-01');
+  });
+
   it('defaults to 1 year ago for unknown labels', () => {
     expect(periodToStartDate('foobar', base)).toBe('2024-07-15');
   });
@@ -73,6 +97,13 @@ describe('periodToStartDate', () => {
     jest.setSystemTime(new Date('2025-06-01T00:00:00Z'));
     expect(periodToStartDate('1M')).toBe('2025-05-01');
     jest.useRealTimers();
+  });
+
+  it('truncates time portion to return just date', () => {
+    const midMonth = new Date('2025-03-20T15:30:00Z');
+    const result = periodToStartDate('1M', midMonth);
+    expect(result).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(result).toBe('2025-02-20');
   });
 });
 
@@ -95,5 +126,15 @@ describe('periodLabel', () => {
   it('handles singular and plural correctly', () => {
     expect(periodLabel('2M')).toBe('2 months');
     expect(periodLabel('2Y')).toBe('2 years');
+  });
+
+  it('returns "X months" for unrecognized month labels', () => {
+    expect(periodLabel('9M')).toBe('9 months');
+    expect(periodLabel('11M')).toBe('11 months');
+  });
+
+  it('returns "X years" for unrecognized year labels', () => {
+    expect(periodLabel('15Y')).toBe('15 years');
+    expect(periodLabel('25Y')).toBe('25 years');
   });
 });
