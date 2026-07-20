@@ -6,11 +6,13 @@ Phase 1: Backend Foundation + Auth + OCR Migration.
 
 import logging
 import sys
+import traceback
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
+from starlette.responses import PlainTextResponse
 
 from src.config import settings
 from src.database.connection import close_pool, init_pool
@@ -50,8 +52,6 @@ logger = structlog.get_logger()
 
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
-    import sys
-
     print(f"LIFESPAN START: environment={settings.ENVIRONMENT}", file=sys.stderr, flush=True)
     logger.info("app_starting", environment=settings.ENVIRONMENT)
 
@@ -64,8 +64,6 @@ async def lifespan(app: FastAPI):
         logger.info("migrations_complete")
     except Exception as e:
         print(f"LIFESPAN ERROR in migrations: {e}", file=sys.stderr, flush=True)
-        import traceback
-
         traceback.print_exc(file=sys.stderr)
         logger.exception("migrations_failed")
         raise
@@ -111,8 +109,6 @@ async def lifespan(app: FastAPI):
         print("LIFESPAN: post-pool init done", file=sys.stderr, flush=True)
     except Exception:
         print("LIFESPAN CRASH:", file=sys.stderr, flush=True)
-        import traceback
-
         traceback.print_exc(file=sys.stderr)
         sys.stderr.flush()
         raise
@@ -153,7 +149,41 @@ app.state.limiter = limiter
 app.add_exception_handler(429, _rate_limit_exceeded_handler)
 
 
-# ── Health endpoint ──
+# Unhandled exception logger — catches everything HTTPException doesn't cover
+# and forces the traceback to stderr so CloudWatch has a chance to pick it up.
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> PlainTextResponse:
+    traceback.print_exc(file=sys.stderr)
+    sys.stderr.flush()
+    logger.exception("unhandled_exception", exc_info=exc)
+    return PlainTextResponse("Internal Server Error", status_code=500)
+
+
+# ── Health & Debug endpoints ──
+
+
+@app.get("/debug/db", tags=["system"])
+async def debug_db():
+    """Debug endpoint — shows database state."""
+    from src.database.connection import get_conn, release_conn
+
+    try:
+        conn = await get_conn()
+        try:
+            version = await conn.fetch("SELECT * FROM alembic_version")
+            tables = await conn.fetch(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'public' ORDER BY table_name"
+            )
+            result = {
+                "alembic_version": [dict(r) for r in version],
+                "tables": [r["table_name"] for r in tables],
+            }
+        finally:
+            await release_conn(conn)
+        return result
+    except Exception as e:
+        return {"error": str(e), "type": type(e).__name__}
 
 
 @app.get("/health", tags=["system"])
