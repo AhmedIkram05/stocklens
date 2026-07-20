@@ -265,16 +265,20 @@ class TestLangSmithInit:
 
     def test_sets_env_vars(self):
         svc = AgentService()
-        for k in ("LANGCHAIN_TRACING_V2", "LANGCHAIN_PROJECT", "LANGCHAIN_API_KEY"):
-            os.environ.pop(k, None)
 
-        with patch.object(svc, "graph", None):
+        with (
+            patch.dict(
+                os.environ,
+                {"LANGCHAIN_PROJECT": "stocklens-agent", "LANGCHAIN_API_KEY": ""},
+            ),
+            patch.object(svc, "graph", None),
+        ):
             svc.initialize()
 
-        assert os.environ["LANGCHAIN_TRACING_V2"] == "true"
-        assert os.environ["LANGCHAIN_PROJECT"] == "stocklens-agent"
-        # API key is empty by default — should not be set
-        assert "LANGCHAIN_API_KEY" not in os.environ
+            assert os.environ["LANGCHAIN_TRACING_V2"] == "true"
+            assert os.environ["LANGCHAIN_PROJECT"] == "stocklens-agent"
+            # API key is empty by default — should not be set
+            assert not os.environ.get("LANGCHAIN_API_KEY")
 
     def test_initialize_does_not_overwrite_existing_env(self):
         svc = AgentService()

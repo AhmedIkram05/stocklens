@@ -234,6 +234,12 @@ def _make_example(question: str = "Test?") -> MagicMock:
     return ex
 
 
+def _make_run(output: str = "") -> MagicMock:
+    run = MagicMock()
+    run.outputs = {"response": output}
+    return run
+
+
 @pytest.mark.asyncio
 async def test_score_criteria_both_yes():
     """Both criteria parse as YES when the judge returns two valid lines."""
@@ -243,7 +249,7 @@ async def test_score_criteria_both_yes():
         judge.ainvoke = AsyncMock(return_value=fake_verdict)
         from agent_eval.run_experiment import _score_criteria
 
-        result = await _score_criteria(_make_example(), {"response": "ok"})
+        result = await _score_criteria(_make_run(output="ok"), _make_example())
 
     assert "results" in result
     scores = {r["key"]: r["score"] for r in result["results"]}
@@ -259,7 +265,7 @@ async def test_score_criteria_both_no():
         judge.ainvoke = AsyncMock(return_value=fake_verdict)
         from agent_eval.run_experiment import _score_criteria
 
-        result = await _score_criteria(_make_example(), {"response": "bad"})
+        result = await _score_criteria(_make_run(output="bad"), _make_example())
 
     scores = {r["key"]: r["score"] for r in result["results"]}
     assert scores == {"correctness": 0.0, "relevance": 0.0}
@@ -274,7 +280,7 @@ async def test_score_criteria_mixed():
         judge.ainvoke = AsyncMock(return_value=fake_verdict)
         from agent_eval.run_experiment import _score_criteria
 
-        result = await _score_criteria(_make_example(), {"response": "mixed"})
+        result = await _score_criteria(_make_run(output="mixed"), _make_example())
 
     scores = {r["key"]: r["score"] for r in result["results"]}
     assert scores == {"correctness": 0.0, "relevance": 1.0}
@@ -289,7 +295,7 @@ async def test_score_criteria_case_insensitive():
         judge.ainvoke = AsyncMock(return_value=fake_verdict)
         from agent_eval.run_experiment import _score_criteria
 
-        result = await _score_criteria(_make_example(), {"response": "ok"})
+        result = await _score_criteria(_make_run(output="ok"), _make_example())
 
     scores = {r["key"]: r["score"] for r in result["results"]}
     assert scores == {"correctness": 1.0, "relevance": 1.0}
@@ -308,7 +314,7 @@ async def test_score_criteria_extra_text():
         judge.ainvoke = AsyncMock(return_value=fake_verdict)
         from agent_eval.run_experiment import _score_criteria
 
-        result = await _score_criteria(_make_example(), {"response": "..."})
+        result = await _score_criteria(_make_run(output="..."), _make_example())
 
     scores = {r["key"]: r["score"] for r in result["results"]}
     assert scores == {"correctness": 1.0, "relevance": 0.0}
@@ -323,7 +329,7 @@ async def test_score_criteria_missing_line_defaults_zero():
         judge.ainvoke = AsyncMock(return_value=fake_verdict)
         from agent_eval.run_experiment import _score_criteria
 
-        result = await _score_criteria(_make_example(), {"response": "..."})
+        result = await _score_criteria(_make_run(output="..."), _make_example())
 
     scores = {r["key"]: r["score"] for r in result["results"]}
     assert scores == {"correctness": 1.0, "relevance": 0.0}
@@ -338,7 +344,7 @@ async def test_score_criteria_none_content():
         judge.ainvoke = AsyncMock(return_value=fake_verdict)
         from agent_eval.run_experiment import _score_criteria
 
-        result = await _score_criteria(_make_example(), {"response": "..."})
+        result = await _score_criteria(_make_run(output="..."), _make_example())
 
     # Both default to 0.0 when regex doesn't match
     scores = {r["key"]: r["score"] for r in result["results"]}
@@ -354,7 +360,7 @@ async def test_score_criteria_empty_inputs():
         judge.ainvoke = AsyncMock(return_value=fake_verdict)
         from agent_eval.run_experiment import _score_criteria
 
-        result = await _score_criteria(_make_example(""), {"response": ""})
+        result = await _score_criteria(_make_run(output=""), _make_example(""))
 
     assert len(result["results"]) == 2
 
