@@ -63,6 +63,7 @@ async def _target(inputs: dict) -> dict:
                 HumanMessage(content=inputs["question"]),
             ],
             "user_id": "00000000-0000-0000-0000-000000000001",
+            "portfolio_id": "00000000-0000-0000-0000-000000000010",
         }
     )
     return {"response": result["messages"][-1].content}
