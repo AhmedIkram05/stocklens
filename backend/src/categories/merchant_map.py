@@ -100,12 +100,14 @@ def _normalise(text: str) -> str:
 
 
 def match_by_keyword(merchant_name: str) -> Optional[CategoryRule]:
-    """Return the first category whose keywords appear in the merchant name.
+    """Return the first category whose keywords match the merchant name.
 
-    This simplified implementation normalises both the merchant name and each
-    keyword (lower‑case, punctuation stripped) and checks for a simple
-    substring containment. It avoids complex regex while satisfying all unit
-    tests.
+    Matching is case-insensitive and checks if any keyword appears as a
+    substring preceded by either the start of the string or a non-word
+    character.  The ``(?:^|[^\\w])`` lookbehind replaces the simpler
+    ``(?<!\\w)`` to correctly handle both ``mcdonalds`` → ``mcdonald``
+    (start-of-string assertion) and to avoid false positives such as
+    ``tfl`` matching inside ``netflix`` (middle-of-word is not matched).
     """
     normalised = _normalise(merchant_name)
     if not normalised:
@@ -113,12 +115,13 @@ def match_by_keyword(merchant_name: str) -> Optional[CategoryRule]:
 
     for category in get_categories():
         for keyword in category.merchant_keywords:
-            # Normalise keyword the same way as merchant name.
-            normalised_keyword = _normalise(keyword)
+            # Normalise keyword the same way as merchant name so punctuation
+            # (e.g. "m&s food" → "ms food") is stripped for matching.
+            normalised_keyword = _normalise(keyword.lower())
             if not normalised_keyword:
                 continue
-            if normalised_keyword in normalised:
-                # ponytail: simple contains check replaces regex for efficiency
+            # ponytail: (?:^|[^\w]) is clearer than (?<!\w) for start-of-string
+            if re.search(rf"(?:^|[^\w]){re.escape(normalised_keyword)}", normalised):
                 logger.debug(
                     "category_keyword_match",
                     merchant=merchant_name,
