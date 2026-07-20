@@ -33,3 +33,27 @@ describe('keyManager', () => {
     expect(key).toBe('existing-key');
   });
 });
+
+describe('clearKey', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('deletes key from SecureStore and clears cache', async () => {
+    // First set a key so cache is populated
+    (SecureStore.getItemAsync as jest.Mock).mockResolvedValueOnce(null);
+    (SecureStore.setItemAsync as jest.Mock).mockResolvedValueOnce(undefined);
+    await keyManager.getOrCreateKey();
+
+    // Now clear it
+    await keyManager.clearKey();
+
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith('stocklens_encryption_key_v1');
+  });
+
+  it('returns cached key when SecureStore fails', async () => {
+    (SecureStore.getItemAsync as jest.Mock).mockRejectedValueOnce(new Error('store error'));
+    const key = await keyManager.getOrCreateKey();
+    expect(typeof key).toBe('string');
+  });
+});

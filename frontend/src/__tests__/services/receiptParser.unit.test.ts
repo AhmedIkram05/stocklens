@@ -30,6 +30,14 @@ describe('hasForeignCurrency', () => {
   it('returns false for GBP-denominated text without symbols', () => {
     expect(hasForeignCurrency('Total 25.00')).toBe(false);
   });
+
+  it('detects dollar sign even when mixed with GBP symbols', () => {
+    expect(hasForeignCurrency('Total: £25.00 ($32.00)')).toBe(true);
+  });
+
+  it('returns false for text with only numbers and no currency symbols', () => {
+    expect(hasForeignCurrency('Total 25.00')).toBe(false);
+  });
 });
 
 describe('validateAmount', () => {
@@ -144,5 +152,59 @@ describe('parseAmountFromOcrText', () => {
     const result = parseAmountFromOcrText(text);
     expect(result).not.toBeNull();
     expect(typeof result).toBe('number');
+  });
+
+  it('extracts amount without currency symbol from TOTAL line', () => {
+    const text = 'Items\nTOTAL    1234.56\nVISA';
+    expect(parseAmountFromOcrText(text)).toBe(1234.56);
+  });
+
+  it('extracts large valid amount with comma separators from GRAND TOTAL', () => {
+    const text = 'Item 1    £500,000.00\nItem 2    £499,999.99\nGRAND TOTAL    £999,999.99';
+    expect(parseAmountFromOcrText(text)).toBe(999999.99);
+  });
+
+  it('picks the highest scoring amount among multiple candidate lines', () => {
+    const text = '£10.00\n£20.00\n£55.00\nThank you';
+    expect(parseAmountFromOcrText(text)).toBe(55);
+  });
+
+  it('extracts amount despite euro currency symbol', () => {
+    const text = 'Total    €55.00\nVISA';
+    expect(parseAmountFromOcrText(text)).toBe(55);
+  });
+
+  it('extracts dollar amount with specific value', () => {
+    const text = 'TOTAL    $42.50';
+    expect(parseAmountFromOcrText(text)).toBe(42.5);
+  });
+
+  it('extracts amount near bottom with footer line skipped', () => {
+    const text = 'Bread    £2.50\nMilk    £1.50\nTOTAL    £4.00\nCASH    £5.00\nCHANGE    £1.00';
+    expect(parseAmountFromOcrText(text)).toBe(4);
+  });
+
+  it('handles integer amount when no decimal present and value >= 100 on TOTAL line', () => {
+    const text = 'TOTAL    2500';
+    expect(parseAmountFromOcrText(text)).toBe(25);
+  });
+
+  it('extracts amount from neighbor line when keyword line has no number', () => {
+    const text = 'AMOUNT\n€33.00\nChange';
+    expect(parseAmountFromOcrText(text)).toBe(33);
+  });
+
+  it('handles text with dot as thousands separator style', () => {
+    const text = 'TOTAL    £1.234,56';
+    expect(parseAmountFromOcrText(text)).toBe(1234.56);
+  });
+
+  it('returns null for text with only whitespace lines', () => {
+    expect(parseAmountFromOcrText('  \n  \n  ')).toBeNull();
+  });
+
+  it('prefers keyword-matched amount over bottom-scan candidate', () => {
+    const text = 'Item    £5.00\nItem    £10.00\nTOTAL    £15.00\n£100.00';
+    expect(parseAmountFromOcrText(text)).toBe(15);
   });
 });

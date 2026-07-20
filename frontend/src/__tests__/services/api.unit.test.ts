@@ -236,3 +236,204 @@ describe('token management', () => {
     expect(await SecureStore.getItemAsync(REFRESH_TOKEN_KEY)).toBeNull();
   });
 });
+
+describe('edge cases', () => {
+  beforeEach(async () => {
+    fetchMock.resetMocks();
+    await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+    await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+  });
+
+  it('handles empty refresh token gracefully', async () => {
+    setExpiredToken();
+    await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, '   '); // whitespace
+
+    fetchMock.mockResponseOnce('', { status: 401 });
+
+    await expect(api('/me')).rejects.toThrow(ApiAuthError);
+  });
+
+  it('patches data correctly', async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ updated: true }), { status: 200 });
+
+    const result = await api('/items/1', { method: 'PATCH', body: { name: 'new' } });
+
+    expect(fetchMock.mock.calls[0][1].method).toBe('PATCH');
+    expect(result).toEqual({ updated: true });
+  });
+
+  it('handles network error (no response)', async () => {
+    fetchMock.mockRejectOnce(new Error('Network request failed'));
+    setValidToken();
+
+    const err = await api('/test').catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+  });
+});
+
+describe('parseError branches', () => {
+  beforeEach(async () => {
+    fetchMock.resetMocks();
+    await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+    await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+  });
+
+  it('throws ApiError with message field from JSON body (line 120)', async () => {
+    setValidToken();
+    fetchMock.mockResponseOnce(JSON.stringify({ message: 'Validation failed' }), { status: 400 });
+
+    const err = await api('/test').catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 400, message: 'Validation failed' });
+  });
+
+  it('throws ApiError with stringified body when no detail or message field (line 121)', async () => {
+    setValidToken();
+    const body = { foo: 'bar' };
+    fetchMock.mockResponseOnce(JSON.stringify(body), { status: 400 });
+
+    const err = await api('/test').catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 400, message: JSON.stringify(body) });
+  });
+
+  it('uses statusText when response body is empty and not JSON (line 127)', async () => {
+    setValidToken();
+    fetchMock.mockResponseOnce('', { status: 502, statusText: 'Bad Gateway' });
+
+    const err = await api('/bad-gateway').catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 502, message: 'Bad Gateway' });
+  });
+});
+
+describe('api() 401 retry with failed retry', () => {
+  beforeEach(async () => {
+    fetchMock.resetMocks();
+    await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+    await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+  });
+
+  it('throws ApiError when 401 refresh succeeds but retry returns non-ok (lines 204-205)', async () => {
+    setValidToken();
+    setRefreshToken();
+    fetchMock.mockResponseOnce('', { status: 401 });
+    fetchMock.mockResponseOnce(
+      JSON.stringify({ access_token: 'new-access', refresh_token: 'new-refresh' }),
+      { status: 200 },
+    );
+    fetchMock.mockResponseOnce(JSON.stringify({ detail: 'Forbidden' }), { status: 403 });
+
+    const err = await api('/admin').catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 403, message: 'Forbidden' });
+    expect(fetchMock.mock.calls).toHaveLength(3);
+  });
+});
+
+describe('apiService.upload()', () => {
+  beforeEach(async () => {
+    fetchMock.resetMocks();
+    await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+    await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+  });
+
+  it('pre-emptively refreshes expired token before upload (lines 261-265)', async () => {
+    setExpiredToken();
+    setRefreshToken();
+    fetchMock.mockResponseOnce(
+      JSON.stringify({ access_token: 'new-access', refresh_token: 'new-refresh' }),
+      { status: 200 },
+    );
+    fetchMock.mockResponseOnce(JSON.stringify({ uploaded: true }), { status: 200 });
+
+    const formData = new FormData();
+    formData.append('file', 'test');
+    const result = await apiService.upload('/upload', formData);
+
+    expect(result).toEqual({ uploaded: true });
+    expect(fetchMock.mock.calls[0][0]).toContain('/auth/refresh');
+    expect(fetchMock.mock.calls[1][0]).toContain('/upload');
+  });
+
+  it('throws ApiAuthError when pre-emptive refresh fails for upload (line 267)', async () => {
+    setExpiredToken();
+    await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+
+    const formData = new FormData();
+    formData.append('file', 'test');
+
+    await expect(apiService.upload('/upload', formData)).rejects.toThrow(ApiAuthError);
+  });
+
+  it('retries upload on 401 and throws ApiError on retry failure (lines 290-304)', async () => {
+    setValidToken();
+    setRefreshToken();
+    fetchMock.mockResponseOnce('', { status: 401 });
+    fetchMock.mockResponseOnce(
+      JSON.stringify({ access_token: 'new-access', refresh_token: 'new-refresh' }),
+      { status: 200 },
+    );
+    fetchMock.mockResponseOnce(JSON.stringify({ message: 'Upload failed' }), { status: 409 });
+
+    const formData = new FormData();
+    formData.append('file', 'test');
+    const err = await apiService.upload('/upload', formData).catch((e) => e);
+
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 409, message: 'Upload failed' });
+    expect(fetchMock.mock.calls).toHaveLength(3);
+  });
+});
+
+describe('ensureValidAccessToken', () => {
+  beforeEach(async () => {
+    fetchMock.resetMocks();
+    await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+    await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+  });
+
+  it('returns null when no token stored', async () => {
+    const result = await apiService.ensureValidAccessToken();
+    expect(result).toBeNull();
+  });
+
+  it('returns existing token when not expired', async () => {
+    const token = setValidToken();
+    const result = await apiService.ensureValidAccessToken();
+    expect(result).toBe(token);
+  });
+
+  it('refreshes expired token and returns new access token (lines 330-336)', async () => {
+    setExpiredToken();
+    setRefreshToken();
+    fetchMock.mockResponseOnce(
+      JSON.stringify({ access_token: 'refreshed-access', refresh_token: 'new-refresh' }),
+      { status: 200 },
+    );
+
+    const result = await apiService.ensureValidAccessToken();
+    expect(result).toBe('refreshed-access');
+    expect(fetchMock.mock.calls[0][0]).toContain('/auth/refresh');
+  });
+
+  it('returns null when refresh of expired token fails (lines 330-338)', async () => {
+    setExpiredToken();
+    await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+
+    const result = await apiService.ensureValidAccessToken();
+    expect(result).toBeNull();
+  });
+
+  it('returns null for malformed token payload — decodeJWT catch (line 35)', async () => {
+    // Payload is valid base64 but NOT valid JSON, so JSON.parse inside
+    // decodeJWT throws, the catch block returns null, and isTokenExpired
+    // treats it as expired. No refresh token → ensureValidAccessToken returns null.
+    const badToken = 'header.' + btoa('not-json') + '.sig';
+    await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, badToken);
+    await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+
+    const result = await apiService.ensureValidAccessToken();
+    expect(result).toBeNull();
+  });
+});

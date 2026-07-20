@@ -83,6 +83,18 @@ describe('recognizeImageWithOCRSpace', () => {
     expect(result.success).toBe(false);
     expect(result.errorMessage).toBe('No text detected in image');
   });
+
+  it('handles network timeout (AbortError)', async () => {
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    fetchMock.mockReject(abortError);
+
+    const result = await recognizeImageWithOCRSpace('file://photo.jpg', 'test-key');
+
+    expect(result.success).toBe(false);
+    expect(result.text).toBe('');
+    expect(result.errorMessage).toContain('timed out');
+  });
 });
 
 describe('recognizeBase64WithOCRSpace', () => {
@@ -126,6 +138,38 @@ describe('recognizeBase64WithOCRSpace', () => {
     await expect(recognizeBase64WithOCRSpace('data', '')).rejects.toThrow(
       'OCR Space API key is required',
     );
+  });
+
+  it('returns parsed text on successful response', async () => {
+    fetchMock.mockResponseOnce(
+      JSON.stringify({
+        ParsedResults: [{ ParsedText: 'Extracted text from base64' }],
+        IsErroredOnProcessing: false,
+      }),
+      { status: 200 },
+    );
+
+    const result = await recognizeBase64WithOCRSpace('dGVzdA==', 'valid-key');
+
+    expect(result.success).toBe(true);
+    expect(result.text).toBe('Extracted text from base64');
+  });
+
+  it('handles OCR processing error for base64 uploads', async () => {
+    fetchMock.mockResponseOnce(
+      JSON.stringify({
+        IsErroredOnProcessing: true,
+        ErrorMessage: 'Base64 too large',
+        ParsedResults: [{}],
+      }),
+      { status: 200 },
+    );
+
+    const result = await recognizeBase64WithOCRSpace('dGVzdA==', 'valid-key');
+
+    expect(result.success).toBe(false);
+    expect(result.text).toBe('');
+    expect(result.errorMessage).toContain('Base64 too large');
   });
 });
 
@@ -185,10 +229,66 @@ describe('performOcrWithFallback', () => {
     expect(result.text).toBe('File OCR result');
   });
 
+  it('falls back to file upload when base64 is an empty string', async () => {
+    fetchMock.mockResponseOnce(
+      JSON.stringify({
+        ParsedResults: [{ ParsedText: 'Fallback from empty string' }],
+        IsErroredOnProcessing: false,
+      }),
+      { status: 200 },
+    );
+
+    const result = await performOcrWithFallback('file://photo.jpg', '', 'key');
+
+    expect(result.success).toBe(true);
+    expect(result.text).toBe('Fallback from empty string');
+  });
+
+  it('falls back to 2000px preprocessing when base64 and file upload fail', async () => {
+    (ocrHelpers.preprocessImageToBase64 as jest.Mock)
+      .mockResolvedValueOnce(null) // 1400px → null (skip base64 path)
+      .mockResolvedValueOnce('bigger64'); // 2000px → base64 string
+
+    // File upload returns empty text
+    fetchMock.mockResponseOnce(
+      JSON.stringify({
+        ParsedResults: [{ ParsedText: '' }],
+        IsErroredOnProcessing: false,
+      }),
+      { status: 200 },
+    );
+
+    // 2000px base64 OCR succeeds
+    fetchMock.mockResponseOnce(
+      JSON.stringify({
+        ParsedResults: [{ ParsedText: '2000px OCR result' }],
+        IsErroredOnProcessing: false,
+      }),
+      { status: 200 },
+    );
+
+    const result = await performOcrWithFallback('file://photo.jpg', null, 'key');
+
+    expect(result.success).toBe(true);
+    expect(result.text).toBe('2000px OCR result');
+  });
+
   it('returns failure result when all strategies fail', async () => {
     fetchMock.mockReject(new Error('Network error'));
 
     const result = await performOcrWithFallback('file://photo.jpg', null, 'key');
+
+    expect(result.success).toBe(false);
+    expect(result.text).toBe('');
+  });
+
+  it('handles abort error as timeout message for performOcrWithFallback', async () => {
+    const abortError = new Error('Aborted');
+    abortError.name = 'AbortError';
+    fetchMock.mockReject(abortError);
+
+    // All three strategies fail with abort, so expectations check no OCR result
+    const result = await performOcrWithFallback('file://test.jpg', null, 'test-key');
 
     expect(result.success).toBe(false);
     expect(result.text).toBe('');
