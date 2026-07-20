@@ -52,10 +52,15 @@ def _resolve_test_dsn(dsn: str) -> str:
         return dsn.replace("postgres_test:5432", "localhost:5433")
 
 
+# _detect_and_fix_broken_state() in init_db.py reads settings.DATABASE_URL
+# directly (bypassing Alembic's env.py). Alembic's env.py uses
+# TEST_DATABASE_URL in test mode, so the Alembic migration goes to the right
+# place, but _detect_and_fix_broken_state also needs the test database.
 TEST_DSN = _resolve_test_dsn(settings.TEST_DATABASE_URL)
-# Make the rewritten DSN authoritative for anything that reads
-# settings.TEST_DATABASE_URL (including Alembic's migration target).
 settings.TEST_DATABASE_URL = TEST_DSN
+# _detect_and_fix_broken_state() in init_db.py reads settings.DATABASE_URL
+# directly (bypassing Alembic's env.py). Point it at the test database too.
+settings.DATABASE_URL = TEST_DSN
 
 
 @pytest.fixture(scope="session")
