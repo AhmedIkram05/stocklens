@@ -17,7 +17,7 @@ from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import Client
 from langsmith.evaluation import aevaluate
-from langsmith.schemas import Example
+from langsmith.schemas import Example, Run
 
 from src.agent.graph import create_agent_graph
 from src.agent.service import PERSONA_PROMPT
@@ -68,14 +68,16 @@ async def _target(inputs: dict) -> dict:
     return {"response": result["messages"][-1].content}
 
 
-async def _score_criteria(example: Example, prediction: dict) -> dict:
+async def _score_criteria(run: Run, example: Example) -> dict:
     """LLM-as-judge for all criteria in a single Bedrock call.
 
+    LangSmith evaluators receive ``(Run, Example)`` — the run holds the
+    target's outputs, the example holds the dataset question.
     Returns ``EvaluationResults``-compatible dict with both correctness and
     relevance scores, halving the judge latency vs one call per criterion.
     """
     question = (example.inputs or {}).get("question", "")
-    response = (prediction or {}).get("response", "")
+    response = (run.outputs or {}).get("response", "")
     verdict = await _JUDGE_MODEL.ainvoke(
         [
             SystemMessage(
