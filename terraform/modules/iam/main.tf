@@ -86,7 +86,10 @@ resource "aws_iam_policy" "ecs_task_bedrock" {
     Version = "2012-10-17"
     Statement = [{
       Effect = "Allow"
-      Action = "bedrock:InvokeModel"
+      Action = [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream",
+      ]
       Resource = [
         # Nova Lite — agent inference, summarization, NLP pipeline
         "arn:aws:bedrock:${var.aws_region}::foundation-model/amazon.nova-lite-v1:0",
@@ -489,7 +492,10 @@ resource "aws_iam_role_policy" "github_deploy" {
       },
       {
         Effect = "Allow"
-        Action = "bedrock:InvokeModel"
+        Action = [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream",
+        ]
         Resource = [
           "arn:aws:bedrock:${var.aws_region}::foundation-model/amazon.nova-lite-v1:0",
           "arn:aws:bedrock:${var.aws_region}::foundation-model/zai.glm-4.7-flash",
