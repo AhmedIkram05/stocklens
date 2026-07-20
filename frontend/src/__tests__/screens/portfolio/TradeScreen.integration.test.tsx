@@ -166,6 +166,10 @@ describe('TradeScreen', () => {
       name: 'Trade' as any,
     } as any);
 
+    renderWithProviders(<TradeScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
+
     await waitFor(() => {
       expect(mockedPortfolioService.listHoldings).toHaveBeenCalledWith('1');
     });

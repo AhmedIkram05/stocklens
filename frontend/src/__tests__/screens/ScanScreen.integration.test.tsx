@@ -1,6 +1,7 @@
 import React from 'react';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import { Alert } from 'react-native';
+(Alert as any).alert = jest.fn();
 import ScanScreen from '@/screens/ScanScreen';
 import { renderWithProviders } from '../utils';
 import { useReceiptCapture } from '@/hooks/useReceiptCapture';
@@ -184,5 +185,9 @@ describe('ScanScreen', () => {
     fireEvent.press(getByTestId('retake-button'));
 
     expect(hook.actions.resetWorkflowState).toHaveBeenCalled();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 });
