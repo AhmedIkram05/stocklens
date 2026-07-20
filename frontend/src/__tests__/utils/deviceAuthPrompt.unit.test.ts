@@ -61,4 +61,29 @@ describe('deviceAuthPrompt', () => {
     );
     expect(result).toBe(true);
   });
+
+  it('returns false when user declines (presses No)', async () => {
+    mockedDeviceAuth.isDeviceAuthAvailable.mockResolvedValue(true);
+
+    const resultPromise = promptEnableDeviceAuth('test@example.com', 'pass123');
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Enable Device Auth?',
+      expect.any(String),
+      expect.any(Array),
+      expect.any(Object),
+    );
+
+    const alertCall = alertSpy.mock.calls[0];
+    const buttons = alertCall[2] as any[];
+    const noButton = buttons.find((b: any) => b.text === 'No');
+
+    await noButton.onPress();
+
+    const result = await resultPromise;
+    expect(result).toBe(false);
+    expect(mockedDeviceAuth.clearDeviceCredentials).toHaveBeenCalled();
+  });
 });

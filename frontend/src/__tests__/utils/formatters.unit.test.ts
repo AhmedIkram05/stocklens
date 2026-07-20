@@ -55,6 +55,15 @@ describe('formatCurrencyGBP', () => {
   it('handles large amounts', () => {
     expect(formatCurrencyGBP(1000000)).toBe('£1,000,000.00');
   });
+
+  it('falls back to manual formatting when Intl fails', () => {
+    const orig = Intl.NumberFormat;
+    (Intl as any).NumberFormat = jest.fn(() => {
+      throw new Error('fail');
+    });
+    expect(formatCurrencyGBP(42.5)).toBe('£42.50');
+    (Intl as any).NumberFormat = orig;
+  });
 });
 
 describe('formatCurrencyRounded', () => {
@@ -69,6 +78,15 @@ describe('formatCurrencyRounded', () => {
 
   it('handles negative amounts', () => {
     expect(formatCurrencyRounded(-10.5)).toBe('-£10.50');
+  });
+
+  it('falls back to manual formatting when Intl fails', () => {
+    const orig = Intl.NumberFormat;
+    (Intl as any).NumberFormat = jest.fn(() => {
+      throw new Error('fail');
+    });
+    expect(formatCurrencyRounded(99.99)).toBe('£99.99');
+    (Intl as any).NumberFormat = orig;
   });
 });
 
@@ -124,5 +142,14 @@ describe('formatRelativeDate', () => {
     const result = formatRelativeDate('not-a-date');
     // Invalid Date -> toLocaleDateString returns "Invalid Date" in Node
     expect(result).toBe('Invalid Date');
+  });
+
+  it('returns "Receipt" when date formatting throws', () => {
+    jest.spyOn(Date.prototype, 'toLocaleDateString').mockImplementation(() => {
+      throw new Error('boom');
+    });
+    // Use a date >7 days before the fixed "now" so the function reaches toLocaleDateString
+    expect(formatRelativeDate('2025-01-20T12:00:00Z')).toBe('Receipt');
+    jest.restoreAllMocks();
   });
 });
