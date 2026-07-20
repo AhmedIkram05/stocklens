@@ -155,7 +155,14 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Ionicons name="chatbubbles-outline" size={48} color={theme.textSecondary} />
+      <Ionicons name="warning" size={64} color={brandColors.red} />
+      <Text style={[styles.disclaimerTitle, { color: theme.text }]}>AI Assistant Disclaimer</Text>
+      <Text style={[styles.disclaimerBody, { color: theme.textSecondary }]}>
+        This is not financial advice. AI can hallucinate and make mistakes.
+        {'\n'}Always do your own research before making investment decisions.
+      </Text>
+      <View style={styles.disclaimerDivider} />
+      <Ionicons name="chatbubbles-outline" size={28} color={theme.textSecondary} />
       <Text style={[styles.emptyTitle, { color: theme.textSecondary }]}>
         Ask me anything about your portfolio...
       </Text>
@@ -165,78 +172,81 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={[styles.overlay, { backgroundColor: theme.background + 'CC' }]}>
-        <View
-          style={[
-            styles.card,
-            {
-              backgroundColor: theme.background,
-              paddingTop: insets.top + spacing.sm,
-              paddingBottom: insets.bottom,
-            },
-          ]}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.keyboardView}
         >
-          {/* Header */}
-          <View style={[styles.header, { borderBottomColor: theme.border }]}>
-            <Text style={[styles.title, { color: theme.text }]}>AI Assistant</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="close" size={24} color={theme.text} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Messages */}
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            keyExtractor={keyExtractor}
-            renderItem={renderMessage}
-            contentContainerStyle={[
-              styles.messageList,
-              messages.length === 0 && styles.messageListEmpty,
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: theme.background,
+                marginTop: insets.top,
+                marginBottom: insets.bottom,
+              },
             ]}
-            ListEmptyComponent={renderEmptyState}
-            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-          />
-
-          {/* Feedback row — shown after streaming completes, before next message */}
-          {traceId && !isLoading && !feedbackSubmitted && messages.length > 0 && (
-            <View style={styles.feedbackRow}>
-              <Text style={[styles.feedbackLabel, { color: theme.textSecondary }]}>
-                Was this helpful?
-              </Text>
-              <View style={styles.feedbackBtns}>
-                <TouchableOpacity
-                  style={[styles.feedbackBtn, { borderColor: theme.border }]}
-                  onPress={() => handleFeedback('positive')}
-                  disabled={submittingFeedback}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Ionicons name="thumbs-up-outline" size={18} color={theme.text} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.feedbackBtn, { borderColor: theme.border }]}
-                  onPress={() => handleFeedback('negative')}
-                  disabled={submittingFeedback}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Ionicons name="thumbs-down-outline" size={18} color={theme.text} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-          {feedbackSubmitted && (
-            <Text style={[styles.feedbackThanks, { color: theme.textSecondary }]}>
-              Thanks for your feedback!
-            </Text>
-          )}
-
-          {/* Tool indicator */}
-          <ToolIndicator toolName={currentTool} />
-
-          {/* Input bar */}
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            keyboardVerticalOffset={0}
           >
+            {/* Header */}
+            <View style={[styles.header, { borderBottomColor: theme.border }]}>
+              <Text style={[styles.title, { color: theme.text }]}>AI Assistant</Text>
+              <TouchableOpacity
+                onPress={onClose}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close" size={24} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Messages */}
+            <FlatList
+              ref={flatListRef}
+              data={messages}
+              keyExtractor={keyExtractor}
+              renderItem={renderMessage}
+              contentContainerStyle={[
+                styles.messageList,
+                messages.length === 0 && styles.messageListEmpty,
+              ]}
+              ListEmptyComponent={renderEmptyState}
+              onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+            />
+
+            {/* Feedback row — shown after streaming completes, before next message */}
+            {traceId && !isLoading && !feedbackSubmitted && messages.length > 0 && (
+              <View style={styles.feedbackRow}>
+                <Text style={[styles.feedbackLabel, { color: theme.textSecondary }]}>
+                  Was this helpful?
+                </Text>
+                <View style={styles.feedbackBtns}>
+                  <TouchableOpacity
+                    style={[styles.feedbackBtn, { borderColor: theme.border }]}
+                    onPress={() => handleFeedback('positive')}
+                    disabled={submittingFeedback}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="thumbs-up-outline" size={18} color={theme.text} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.feedbackBtn, { borderColor: theme.border }]}
+                    onPress={() => handleFeedback('negative')}
+                    disabled={submittingFeedback}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="thumbs-down-outline" size={18} color={theme.text} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+            {feedbackSubmitted && (
+              <Text style={[styles.feedbackThanks, { color: theme.textSecondary }]}>
+                Thanks for your feedback!
+              </Text>
+            )}
+
+            {/* Tool indicator */}
+            <ToolIndicator toolName={currentTool} />
+
+            {/* Input bar */}
             <View style={[styles.inputBar, { borderTopColor: theme.border }]}>
               <TextInput
                 style={[
@@ -275,8 +285,8 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
                 )}
               </TouchableOpacity>
             </View>
-          </KeyboardAvoidingView>
-        </View>
+          </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
@@ -287,8 +297,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
   },
+  keyboardView: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
   card: {
-    height: '85%',
+    flex: 1,
     borderTopLeftRadius: radii.xl,
     borderTopRightRadius: radii.xl,
   },
@@ -315,6 +329,23 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: 'center',
     gap: spacing.md,
+    paddingHorizontal: spacing.xl,
+  },
+  disclaimerTitle: {
+    ...typography.sectionTitle,
+    textAlign: 'center',
+  },
+  disclaimerBody: {
+    ...typography.caption,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  disclaimerDivider: {
+    width: 40,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#888',
+    opacity: 0.3,
+    marginVertical: spacing.sm,
   },
   emptyTitle: {
     ...typography.body,
