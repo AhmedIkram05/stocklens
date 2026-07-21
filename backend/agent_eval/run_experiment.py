@@ -11,6 +11,7 @@ all questions to avoid redundant compilation and Bedrock client creation.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import re
 
 from langchain_aws import ChatBedrockConverse
@@ -30,7 +31,8 @@ DATASET_NAME = "stocklens-golden"
 # without opening each one.
 _AGENT_SLUG = settings.AGENT_MODEL_ID.replace(".", "-").replace(":", "-")
 _JUDGE_SLUG = settings.AGENT_JUDGE_MODEL_ID.replace(".", "-").replace(":", "-")
-EXPERIMENT_PREFIX = f"stocklens-agent-{_AGENT_SLUG}__judge-{_JUDGE_SLUG}"
+_TIMESTAMP = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+EXPERIMENT_PREFIX = f"stocklens-agent-{_AGENT_SLUG}__judge-{_JUDGE_SLUG}-{_TIMESTAMP}"
 
 _CRITERIA = [
     (
