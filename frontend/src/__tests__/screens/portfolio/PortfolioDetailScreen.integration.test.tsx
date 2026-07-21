@@ -85,6 +85,7 @@ describe('PortfolioDetailScreen', () => {
   let navigateSpy: jest.Mock;
 
   beforeEach(() => {
+    jest.useRealTimers();
     jest.clearAllMocks();
     navigateSpy = jest.fn();
     mockedUseNavigation.mockReturnValue({ navigate: navigateSpy } as any);

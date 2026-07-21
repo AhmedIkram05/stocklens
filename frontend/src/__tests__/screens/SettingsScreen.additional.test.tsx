@@ -30,6 +30,7 @@ const mockedReceiptService = receiptService as jest.Mocked<typeof receiptService
 
 describe('SettingsScreen edge cases', () => {
   beforeEach(() => {
+    jest.useRealTimers();
     jest.clearAllMocks();
     alertSpy.mockClear();
     (deviceAuth.isDeviceAuthAvailable as jest.Mock).mockResolvedValue(true);

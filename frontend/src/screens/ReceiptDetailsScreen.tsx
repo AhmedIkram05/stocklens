@@ -102,7 +102,12 @@ export default function ReceiptDetailsScreen() {
 
   const totalAmount = receipt?.total_amount ?? initialAmount ?? 0;
   const merchantName: string | null = receipt?.merchant_name ?? initialMerchant ?? null;
-  const lineItems: any[] = receipt?.line_items ?? initialItems ?? [];
+  const rawLineItems = receipt?.line_items;
+  const lineItems: any[] = rawLineItems
+    ? Array.isArray(rawLineItems)
+      ? rawLineItems
+      : Object.values(rawLineItems)
+    : (initialItems ?? []);
 
   // Cross-check: sum of line items vs scanned total (flags likely OCR total misread)
   const itemsSubtotal = lineItems.reduce(
