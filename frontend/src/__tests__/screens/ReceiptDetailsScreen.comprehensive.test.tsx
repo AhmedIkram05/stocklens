@@ -51,10 +51,10 @@ describe('ReceiptDetailsScreen comprehensive', () => {
     ocr_raw_text: 'TEST STORE\nTOTAL £85.50',
     ocr_confidence: 92,
     scanned_at: '2025-01-15T10:30:00Z',
-    line_items: [
-      { id: 'item-1', name: 'Item 1', quantity: 2, price: 20.0 },
-      { id: 'item-2', name: 'Item 2', quantity: 1, price: 45.5 },
-    ],
+    line_items: {
+      'item-1': { id: 'item-1', name: 'Item 1', quantity: 2, price: 20.0 },
+      'item-2': { id: 'item-2', name: 'Item 2', quantity: 1, price: 45.5 },
+    },
   };
 
   const defaultRouteParams = {
@@ -87,7 +87,7 @@ describe('ReceiptDetailsScreen comprehensive', () => {
     mockedReceiptService.update.mockResolvedValue(undefined);
     mockedReceiptService.delete.mockResolvedValue(undefined);
     mockedGetHistorical.mockResolvedValue(0.08);
-    mockedEmit.mockResolvedValue(undefined);
+    mockedEmit.mockReturnValue(undefined);
     mockedSubscribe.mockImplementation((_event: string, _handler: () => void) => {
       return () => {};
     });

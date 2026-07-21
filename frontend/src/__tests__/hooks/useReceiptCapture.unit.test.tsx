@@ -64,7 +64,14 @@ describe('useReceiptCapture', () => {
     result.current.actions.setManualModalVisible(true);
     result.current.actions.setManualEntryText('12.34');
     result.current.pendingRef.current = {
-      scanResponse: { id: 'test-123' },
+      scanResponse: {
+        id: 'test-123',
+        extraction: { merchant_name: null, total: null, date: null, currency: 'GBP', items: [] },
+        raw_text: '',
+        source: 'regex',
+        confidence: 0,
+        processing_time_ms: 0,
+      },
       photoUri: 'test-uri.jpg',
     };
 
@@ -146,6 +153,7 @@ describe('useReceiptCapture', () => {
       raw_text: 'TOTAL €50.00',
       source: 'regex',
       confidence: 90,
+      processing_time_ms: 0,
     };
     mockedReceiptService.scan.mockResolvedValue(mockScanResponse);
 
