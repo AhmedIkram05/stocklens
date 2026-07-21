@@ -34,7 +34,7 @@ module.exports = {
     '<rootDir>/src/__tests__/utils/renderWithProviders.tsx',
   ],
   transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|@react-native|@react-navigation|@react-native-community|expo|expo-.*|@expo/vector-icons|@unimodules|unimodules|sentry-expo|native-base|react-native-svg|react-native-chart-kit)/)',
+    'node_modules/(?!((jest-)?react-native|@react-native|@react-navigation|@react-native-community|expo|expo-.*|@expo/vector-icons|@unimodules|unimodules|sentry-expo|native-base|react-native-svg|react-native-chart-kit|react-native-gesture-handler)/)',
   ],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
