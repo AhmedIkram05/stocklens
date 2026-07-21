@@ -1,5 +1,7 @@
 import React from 'react';
 import { fireEvent, waitFor } from '@testing-library/react-native';
+import { Alert } from 'react-native';
+(Alert as any).alert = jest.fn();
 import ScanScreen from '@/screens/ScanScreen';
 import { renderWithProviders } from '../utils';
 import { useReceiptCapture } from '@/hooks/useReceiptCapture';
@@ -48,6 +50,9 @@ const createHookState = () => {
       setManualModalVisible: jest.fn(),
       processReceipt: jest.fn(),
       saveAndNavigate: jest.fn(),
+      discardDraft: jest.fn(),
+      resetWorkflowState: jest.fn(),
+      clearPhotoPreview: jest.fn(),
     },
     pendingRef: { current: {} },
   } as any;
@@ -114,5 +119,75 @@ describe('ScanScreen', () => {
       ),
     );
     expect(hook.actions.setManualModalVisible).toHaveBeenCalledWith(false);
+  });
+
+  it('shows alert when camera capture fails', async () => {
+    mockTakePictureAsync.mockRejectedValue(new Error('camera error'));
+
+    const { getByTestId } = renderScreen();
+
+    fireEvent.press(getByTestId('capture-button'));
+
+    await waitFor(() => {
+      expect(Alert.alert).toHaveBeenCalledWith('Error', 'Failed to capture image');
+    });
+  });
+
+  it('shows invalid amount alert when manual entry value is not a number', async () => {
+    const hook = createHookState();
+    mockTakePictureAsync.mockResolvedValue({ uri: 'file://bad.jpg', base64: 'YmFk' });
+
+    const screen = renderScreen();
+    fireEvent.press(screen.getByTestId('capture-button'));
+    await waitFor(() => expect(hook.actions.processReceipt).toHaveBeenCalled());
+
+    hook.state.manualModalVisible = true;
+    hook.state.manualEntryText = 'abc';
+    screen.rerender(<ScanScreen />);
+
+    fireEvent.press(screen.getByTestId('manual-confirm-button'));
+
+    await waitFor(() => {
+      expect(Alert.alert).toHaveBeenCalledWith('Invalid amount', 'Enter a valid number');
+    });
+  });
+
+  it('cancel manual entry triggers discard and reset', async () => {
+    const hook = createHookState();
+    mockTakePictureAsync.mockResolvedValue({ uri: 'file://cancel.jpg', base64: 'Y2FuY2Vs' });
+
+    const screen = renderScreen();
+    fireEvent.press(screen.getByTestId('capture-button'));
+    await waitFor(() => expect(hook.actions.processReceipt).toHaveBeenCalled());
+
+    hook.state.manualModalVisible = true;
+    screen.rerender(<ScanScreen />);
+
+    fireEvent.press(screen.getByText('Cancel'));
+
+    await waitFor(() => {
+      expect(hook.actions.discardDraft).toHaveBeenCalled();
+      expect(hook.actions.resetWorkflowState).toHaveBeenCalled();
+      expect(hook.actions.setManualModalVisible).toHaveBeenCalledWith(false);
+    });
+  });
+
+  it('retake button resets the camera', async () => {
+    const hook = createHookState();
+    mockTakePictureAsync.mockResolvedValue({ uri: 'file://snap.jpg', base64: 'YmFzZTY0' });
+
+    const { getByTestId, queryByTestId } = renderScreen();
+
+    fireEvent.press(getByTestId('capture-button'));
+
+    await waitFor(() => expect(queryByTestId('scan-preview-image')).toBeTruthy());
+
+    fireEvent.press(getByTestId('retake-button'));
+
+    expect(hook.actions.resetWorkflowState).toHaveBeenCalled();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 });

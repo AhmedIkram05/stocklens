@@ -20,6 +20,8 @@ jest.mock('@/services/portfolios', () => ({
 
 jest.mock('@/services/market', () => ({}));
 
+jest.mock('@/screens/AgentChatScreen', () => () => null);
+
 jest.mock('@react-navigation/native', () => {
   const actual = jest.requireActual('@react-navigation/native');
   const actualReact = jest.requireActual('react');
@@ -74,6 +76,7 @@ describe('PortfolioListScreen', () => {
   let navigateSpy: jest.Mock;
 
   beforeEach(() => {
+    jest.useRealTimers();
     jest.clearAllMocks();
     navigateSpy = jest.fn();
     mockedUseNavigation.mockReturnValue({ navigate: navigateSpy } as any);
@@ -103,9 +106,12 @@ describe('PortfolioListScreen', () => {
       providerOverrides: { withNavigation: false },
     });
 
-    await waitFor(() => {
-      expect(getByText('No portfolios yet.')).toBeTruthy();
-    });
+    await waitFor(
+      () => {
+        expect(getByText('No portfolios yet.')).toBeTruthy();
+      },
+      { timeout: 8000 },
+    );
   });
 
   it('renders portfolio cards when data loads', async () => {

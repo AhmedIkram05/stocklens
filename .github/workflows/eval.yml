@@ -87,6 +87,33 @@ jobs:
           set -euo pipefail
           uv sync --package stocklens-backend --all-extras --index-strategy unsafe-best-match
 
+      # features-engine is a Rust native module that never changes — cache the
+      # compiled wheel so we build once and skip on all subsequent runs (~4min
+      # saved per run).
+      - name: Restore features-engine wheel
+        id: cache-wheel
+        uses: actions/cache@v4
+        with:
+          path: /tmp/features_engine_wheel
+          key: features-engine-cp314-v1
+
+      - name: Build Rust native module (cache miss only)
+        if: steps.cache-wheel.outputs.cache-hit != 'true'
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          curl --retry 3 --retry-delay 5 --connect-timeout 30 \
+            --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y -q
+          . "$HOME/.cargo/env"
+          pip install maturin --quiet
+          cd ml/features-engine
+          maturin build --release --features extension --out /tmp/features_engine_wheel
+
+      - name: Install features-engine wheel
+        working-directory: backend
+        run: |
+          uv pip install /tmp/features_engine_wheel/features_engine*.whl --no-deps
+
       - name: Run database migrations
         working-directory: backend
         run: |

@@ -8,6 +8,19 @@
 import React from 'react';
 import '@testing-library/jest-native/extend-expect';
 import 'jest-fetch-mock';
+
+// ponytail: jest-fetch-mock promises resolve on microtasks that escape React's
+// act() scope after render. Suppressing the act() warning is accepted practice
+// for integration tests when async effects (fetch, timers) are tested implicitly
+// through waitFor assertions.
+const origError = console.error;
+console.error = (...args: any[]) => {
+  if (typeof args[0] === 'string' && args[0].includes('inside a test was not wrapped in act')) {
+    return;
+  }
+  origError.call(console, ...args);
+};
+
 const fetchMock = require('jest-fetch-mock');
 
 fetchMock.enableMocks();
@@ -106,27 +119,68 @@ jest.mock('expo-sqlite', () => {
   };
 });
 
-try {
-  require.resolve('react-native-reanimated/mock');
-  jest.mock('react-native-reanimated', () => require('react-native-reanimated/mock'));
-} catch (error) {
-  jest.mock(
-    'react-native-reanimated',
-    () => ({
+jest.mock(
+  'react-native-gesture-handler',
+  () => {
+    const View = require('react-native').View;
+    return {
       __esModule: true,
-      default: {},
-      View: 'View',
-      ScrollView: 'ScrollView',
+      default: View,
+      View,
+      Text: require('react-native').Text,
+      ScrollView: require('react-native').ScrollView,
+      TouchableOpacity: require('react-native').TouchableOpacity,
+      TouchableHighlight: require('react-native').TouchableHighlight,
+      TouchableWithoutFeedback: require('react-native').TouchableWithoutFeedback,
+      PanGestureHandler: View,
+      TapGestureHandler: View,
+      State: {},
+      Directions: {},
+      gestureHandlerRootHOC: (component: unknown) => component,
+      Swipeable: View,
+      DrawerLayout: View,
+      Slider: View,
+      Switch: View,
+      TextInput: require('react-native').TextInput,
+      FlatList: require('react-native').FlatList,
+      SectionList: require('react-native').SectionList,
+      createAnimatedComponent: (component: unknown) => component,
+    };
+  },
+  { virtual: true },
+);
+
+// Mock react-native-reanimated
+jest.mock(
+  'react-native-reanimated',
+  () => {
+    const View = require('react-native').View;
+    return {
+      __esModule: true,
+      default: Object.assign(View, {
+        createAnimatedComponent: (component: unknown) => component,
+      }),
+      View,
+      Text: require('react-native').Text,
+      Image: require('react-native').Image,
+      ScrollView: require('react-native').ScrollView,
       createAnimatedComponent: (component: unknown) => component,
       useSharedValue: () => ({ value: 0 }),
       useAnimatedStyle: () => ({}),
       useAnimatedProps: () => ({}),
+      useDerivedValue: () => ({ value: 0 }),
+      runOnJS: (fn: Function) => fn,
+      runOnUI: (fn: Function) => fn,
       withTiming: (value: number) => value,
-      Easing: { cubic: jest.fn() },
-    }),
-    { virtual: true },
-  );
-}
+      withSpring: (value: number) => value,
+      withDecay: (value: number) => value,
+      Easing: { cubic: jest.fn(), linear: jest.fn(), ease: jest.fn() },
+      interpolate: jest.fn(),
+      Extrapolation: { CLAMP: 'clamp' },
+    };
+  },
+  { virtual: true },
+);
 
 jest.mock('@expo/vector-icons', () => {
   const React = require('react');

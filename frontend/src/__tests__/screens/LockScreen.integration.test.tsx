@@ -124,4 +124,52 @@ describe('LockScreen', () => {
     expect(buttons?.find((b: any) => b.text === 'Send')).toBeDefined();
     expect(buttons?.find((b: any) => b.text === 'Cancel')).toBeDefined();
   });
+
+  it('shows no account alert when forgot password pressed without email', () => {
+    const { getByText } = renderWithProviders(<LockScreen />, {
+      providerOverrides: {
+        authValue: {
+          unlockWithDeviceAuth: jest.fn(),
+          unlockWithCredentials: jest.fn(),
+          user: null,
+          userProfile: null,
+        },
+      },
+    });
+
+    fireEvent.press(getByText('Forgot password?'));
+
+    expect(alertSpy).toHaveBeenCalledWith('No Account', expect.any(String));
+  });
+
+  it('shows error alert when device auth throws', async () => {
+    unlockWithDeviceAuth.mockRejectedValue(new Error('auth failed'));
+    const { getByText } = renderScreen();
+
+    fireEvent.press(getByText('Unlock with Device Passcode'));
+
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith(
+        'Error',
+        'Device authentication failed. Please use your password.',
+      );
+    });
+  });
+
+  it('sends forgot password and shows success message', async () => {
+    const { getByText } = renderScreen({ email: 'user@test.com' });
+
+    fireEvent.press(getByText('Forgot password?'));
+
+    const alertCall = alertSpy.mock.calls.find((c) => c[0] === 'Send Reset Link?');
+    expect(alertCall).toBeDefined();
+    const buttons = alertCall?.[2];
+    const sendButton = buttons?.find((b: any) => b.text === 'Send');
+    expect(sendButton).toBeDefined();
+    await sendButton!.onPress!();
+
+    await waitFor(() => {
+      expect(authModule.authService.forgotPassword).toHaveBeenCalledWith('user@test.com');
+    });
+  });
 });

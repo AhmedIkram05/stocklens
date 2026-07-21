@@ -11,13 +11,14 @@ all questions to avoid redundant compilation and Bedrock client creation.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import re
 
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import Client
 from langsmith.evaluation import aevaluate
-from langsmith.schemas import Example
+from langsmith.schemas import Example, Run
 
 from src.agent.graph import create_agent_graph
 from src.agent.service import PERSONA_PROMPT
@@ -30,7 +31,8 @@ DATASET_NAME = "stocklens-golden"
 # without opening each one.
 _AGENT_SLUG = settings.AGENT_MODEL_ID.replace(".", "-").replace(":", "-")
 _JUDGE_SLUG = settings.AGENT_JUDGE_MODEL_ID.replace(".", "-").replace(":", "-")
-EXPERIMENT_PREFIX = f"stocklens-agent-{_AGENT_SLUG}__judge-{_JUDGE_SLUG}"
+_TIMESTAMP = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+EXPERIMENT_PREFIX = f"stocklens-agent-{_AGENT_SLUG}__judge-{_JUDGE_SLUG}-{_TIMESTAMP}"
 
 _CRITERIA = [
     (
@@ -63,19 +65,22 @@ async def _target(inputs: dict) -> dict:
                 HumanMessage(content=inputs["question"]),
             ],
             "user_id": "00000000-0000-0000-0000-000000000001",
+            "portfolio_id": "00000000-0000-0000-0000-000000000010",
         }
     )
     return {"response": result["messages"][-1].content}
 
 
-async def _score_criteria(example: Example, prediction: dict) -> dict:
+async def _score_criteria(run: Run, example: Example) -> dict:
     """LLM-as-judge for all criteria in a single Bedrock call.
 
+    LangSmith evaluators receive ``(Run, Example)`` — the run holds the
+    target's outputs, the example holds the dataset question.
     Returns ``EvaluationResults``-compatible dict with both correctness and
     relevance scores, halving the judge latency vs one call per criterion.
     """
     question = (example.inputs or {}).get("question", "")
-    response = (prediction or {}).get("response", "")
+    response = (run.outputs or {}).get("response", "")
     verdict = await _JUDGE_MODEL.ainvoke(
         [
             SystemMessage(

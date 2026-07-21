@@ -2,8 +2,8 @@
 Agent tool definitions — 16 tools wrapping existing data sources.
 
 Each tool is a LangGraph ``@tool`` async function.  The ``user_id`` parameter
-is annotated with ``InjectedToolArg`` so the LLM never sees it — the service
-injects it from ``AgentState``.
+is annotated with ``InjectedState("user_id")`` so the LLM never sees it — ToolNode
+injects it from ``AgentState``.  Same for ``portfolio_id``.
 
 Categories: Portfolio (3), Performance (2), Analysis (2), Market Data (4),
 Forecasting (1), Spending (3), Insights (1).
@@ -19,7 +19,8 @@ from decimal import Decimal
 from typing import Annotated, Any
 
 import yfinance as yf
-from langchain_core.tools import InjectedToolArg, tool
+from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.database.connection import connection_ctx
@@ -53,8 +54,8 @@ def _decimal_to_float(val: Any) -> float:
 
 @tool
 async def get_portfolio_summary(
-    portfolio_id: str,
-    user_id: Annotated[str, InjectedToolArg],
+    portfolio_id: Annotated[str, InjectedState("portfolio_id")],
+    user_id: Annotated[str, InjectedState("user_id")],
 ) -> str:
     """Fetch a portfolio's summary: name, description, total value, cash balance, created date.
 
@@ -153,8 +154,8 @@ async def get_portfolio_summary(
 
 @tool
 async def get_portfolio_holdings(
-    portfolio_id: str,
-    user_id: Annotated[str, InjectedToolArg],
+    portfolio_id: Annotated[str, InjectedState("portfolio_id")],
+    user_id: Annotated[str, InjectedState("user_id")],
 ) -> str:
     """Fetch current holdings for a portfolio.
 
@@ -198,8 +199,8 @@ async def get_portfolio_holdings(
 
 @tool
 async def get_sector_exposure(
-    portfolio_id: str,
-    user_id: Annotated[str, InjectedToolArg],
+    portfolio_id: Annotated[str, InjectedState("portfolio_id")],
+    user_id: Annotated[str, InjectedState("user_id")],
 ) -> str:
     """Calculate sector exposure breakdown for a portfolio using yfinance sector data.
 
@@ -280,8 +281,8 @@ async def get_sector_exposure(
 
 @tool
 async def get_portfolio_performance(
-    portfolio_id: str,
-    user_id: Annotated[str, InjectedToolArg],
+    portfolio_id: Annotated[str, InjectedState("portfolio_id")],
+    user_id: Annotated[str, InjectedState("user_id")],
     include_history: bool = False,
 ) -> str:
     """Fetch portfolio performance metrics including TWR, daily returns, and optional history.
@@ -414,8 +415,8 @@ async def get_portfolio_performance(
 
 @tool
 async def compare_to_benchmark(
-    portfolio_id: str,
-    user_id: Annotated[str, InjectedToolArg],
+    portfolio_id: Annotated[str, InjectedState("portfolio_id")],
+    user_id: Annotated[str, InjectedState("user_id")],
     benchmark_ticker: str = "SPY",
 ) -> str:
     """Compare portfolio performance against a benchmark index (SPY, QQQ, etc.).
@@ -645,8 +646,8 @@ async def compare_to_benchmark(
 
 @tool
 async def get_portfolio_diversification_score(
-    portfolio_id: str,
-    user_id: Annotated[str, InjectedToolArg],
+    portfolio_id: Annotated[str, InjectedState("portfolio_id")],
+    user_id: Annotated[str, InjectedState("user_id")],
 ) -> str:
     """Calculate portfolio diversification using the Herfindahl-Hirschman Index (HHI).
 
@@ -716,7 +717,7 @@ async def get_portfolio_diversification_score(
 @tool
 async def compare_tickers_side_by_side(
     tickers: str,
-    user_id: Annotated[str, InjectedToolArg],
+    user_id: Annotated[str, InjectedState("user_id")],
 ) -> str:
     """Compare multiple tickers side-by-side: price, YTD change, market cap, sector, PE.
 
@@ -775,7 +776,7 @@ async def compare_tickers_side_by_side(
 @tool
 async def get_market_ohlcv(
     ticker: str,
-    user_id: Annotated[str, InjectedToolArg],
+    user_id: Annotated[str, InjectedState("user_id")],
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> str:
@@ -805,7 +806,7 @@ async def get_market_ohlcv(
 @tool
 async def get_market_quote(
     ticker: str,
-    user_id: Annotated[str, InjectedToolArg],
+    user_id: Annotated[str, InjectedState("user_id")],
 ) -> str:
     """Get a real-time (cached up to 60s) price quote for a ticker.
 
@@ -831,7 +832,7 @@ async def get_market_quote(
 @tool
 async def get_ticker_info(
     ticker: str,
-    user_id: Annotated[str, InjectedToolArg],
+    user_id: Annotated[str, InjectedState("user_id")],
 ) -> str:
     """Fetch comprehensive company profile and financial info for a ticker.
 
@@ -875,7 +876,7 @@ async def get_ticker_info(
 @tool
 async def get_market_news(
     ticker: str,
-    user_id: Annotated[str, InjectedToolArg],
+    user_id: Annotated[str, InjectedState("user_id")],
     max_articles: int = 5,
 ) -> str:
     """Fetch recent news articles for a ticker from Yahoo Finance.
@@ -928,7 +929,7 @@ async def get_market_news(
 @tool
 async def get_lstm_forecast(
     ticker: str,
-    user_id: Annotated[str, InjectedToolArg],
+    user_id: Annotated[str, InjectedState("user_id")],
 ) -> str:
     """Fetch the LSTM directional forecast (UP/FLAT/DOWN) for a ticker.
 
@@ -941,13 +942,13 @@ async def get_lstm_forecast(
     Complementary tools: get_ticker_info (for company profile),
     get_market_ohlcv (for price history).
     """
-    from datetime import date as _date
-    from datetime import timedelta as _timedelta
-
-    from src.market.repository import get_ohlcv as _get_ohlcv
-    from src.prediction.service import prediction_service
-
     try:
+        from datetime import date as _date
+        from datetime import timedelta as _timedelta
+
+        from src.market.repository import get_ohlcv as _get_ohlcv
+        from src.prediction.service import prediction_service
+
         end = _date.today()
         start = end - _timedelta(days=365)
         ohlcv_rows = await _get_ohlcv(ticker.upper(), start_date=start, end_date=end, limit=500)
@@ -969,8 +970,8 @@ async def get_lstm_forecast(
 
 @tool
 async def get_spending_analysis(
-    portfolio_id: str,
-    user_id: Annotated[str, InjectedToolArg],
+    portfolio_id: Annotated[str, InjectedState("portfolio_id")],
+    user_id: Annotated[str, InjectedState("user_id")],
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> str:
@@ -1057,8 +1058,8 @@ async def get_spending_analysis(
 
 @tool
 async def get_recent_transactions(
-    portfolio_id: str,
-    user_id: Annotated[str, InjectedToolArg],
+    portfolio_id: Annotated[str, InjectedState("portfolio_id")],
+    user_id: Annotated[str, InjectedState("user_id")],
     limit: int = 10,
 ) -> str:
     """Fetch recent transactions for a portfolio.
@@ -1112,8 +1113,8 @@ async def get_recent_transactions(
 
 @tool
 async def get_cash_flow_summary(
-    portfolio_id: str,
-    user_id: Annotated[str, InjectedToolArg],
+    portfolio_id: Annotated[str, InjectedState("portfolio_id")],
+    user_id: Annotated[str, InjectedState("user_id")],
 ) -> str:
     """Fetch cash flow summary: deposits into a portfolio over time.
 
@@ -1178,7 +1179,7 @@ async def get_cash_flow_summary(
 @tool
 async def get_dividend_insights(
     ticker: str,
-    user_id: Annotated[str, InjectedToolArg],
+    user_id: Annotated[str, InjectedState("user_id")],
 ) -> str:
     """Fetch dividend information for a ticker: yield, rate, payout ratio, ex-dividend date.
 

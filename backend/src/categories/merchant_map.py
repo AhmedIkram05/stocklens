@@ -102,8 +102,14 @@ def _normalise(text: str) -> str:
 def match_by_keyword(merchant_name: str) -> Optional[CategoryRule]:
     """Return the first category whose keywords match the merchant name.
 
-    Matching is case-insensitive and checks if any keyword appears as a
-    substring of the normalised merchant name.
+    Matching is case-insensitive and checks if any keyword appears at a
+    word boundary in the normalised merchant string.  A keyword matches
+    when it is found at the start of the string or immediately after a
+    space (``str.find`` + word-boundary check).  No regex is needed:
+    this handles single-word keywords like ``mcdonald`` inside
+    ``mcdonalds``, multi-word keywords like ``ms food`` inside
+    ``ms food``, and correctly rejects false positives such as ``tfl``
+    inside ``netflix``.
     """
     normalised = _normalise(merchant_name)
     if not normalised:
@@ -111,21 +117,24 @@ def match_by_keyword(merchant_name: str) -> Optional[CategoryRule]:
 
     for category in get_categories():
         for keyword in category.merchant_keywords:
-            # Normalise keyword the same way as merchant name so punctuation
-            # (e.g. "m&s food" → "ms food") is stripped for matching.
             normalised_keyword = _normalise(keyword.lower())
             if not normalised_keyword:
                 continue
-            # Use word-boundary-at-start so "tfl" doesn't match inside "netflix"
-            # but "mcdonald" still matches inside "mcdonalds"
-            if re.search(rf"(?<!\w){re.escape(normalised_keyword)}", normalised):
-                logger.debug(
-                    "category_keyword_match",
-                    merchant=merchant_name,
-                    category=category.name,
-                    keyword=keyword,
-                )
-                return category
+            # Must begin at a word boundary in the merchant name
+            pos = 0
+            while True:
+                pos = normalised.find(normalised_keyword, pos)
+                if pos == -1:
+                    break
+                if pos == 0 or normalised[pos - 1] == " ":
+                    logger.debug(
+                        "category_keyword_match",
+                        merchant=merchant_name,
+                        category=category.name,
+                        keyword=keyword,
+                    )
+                    return category
+                pos += 1
 
     return None
 

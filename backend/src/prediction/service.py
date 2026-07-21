@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
+import warnings
 from pathlib import Path
 
 import boto3
@@ -189,19 +190,27 @@ class PredictionService:
                     computed=feature_values.shape[-1],
                 )
                 # Use per-batch normalisation
-                batch_mean = np.nanmean(feature_values, axis=0)
-                batch_std = np.nanstd(feature_values, axis=0)
-                batch_std[batch_std == 0] = 1.0
-                feature_values = (feature_values - batch_mean) / batch_std
+                if feature_values.size > 0:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", RuntimeWarning)
+                        _batch_mean = np.nanmean(feature_values, axis=0)
+                        _batch_std = np.nanstd(feature_values, axis=0)
+                    _batch_std[_batch_std == 0] = 1.0
+                    feature_values = (feature_values - _batch_mean) / _batch_std
+                # ponytail: empty/all-NaN column → nan_to_num downstream zeroes it
             else:
                 feature_values = (feature_values - means) / stds
         else:
             # Fallback: per-batch standardisation
             logger.warning("no_stored_feature_stats_applying_per_batch_standardisation")
-            batch_mean = np.nanmean(feature_values, axis=0)
-            batch_std = np.nanstd(feature_values, axis=0)
-            batch_std[batch_std == 0] = 1.0
-            feature_values = (feature_values - batch_mean) / batch_std
+            if feature_values.size > 0:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", RuntimeWarning)
+                    _batch_mean = np.nanmean(feature_values, axis=0)
+                    _batch_std = np.nanstd(feature_values, axis=0)
+                _batch_std[_batch_std == 0] = 1.0
+                feature_values = (feature_values - _batch_mean) / _batch_std
+            # ponytail: empty/all-NaN column → nan_to_num downstream zeroes it
 
         feature_values = np.nan_to_num(feature_values, nan=0.0)
 

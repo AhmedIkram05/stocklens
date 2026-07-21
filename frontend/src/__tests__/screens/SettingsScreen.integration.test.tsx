@@ -131,4 +131,74 @@ describe('SettingsScreen', () => {
     // deleteAll now takes no args (JWT-based on backend)
     expect(mockedReceiptService.deleteAll).toHaveBeenCalledWith();
   });
+
+  it('renders device auth toggle with correct title', async () => {
+    const { getByText } = await renderAndAwaitSwitches();
+    expect(getByText('Device Passcode Unlock')).toBeTruthy();
+  });
+
+  it('toggles dark mode back to light', async () => {
+    const setMode = jest.fn();
+    const { switches } = await renderAndAwaitSwitches({
+      providerOverrides: {
+        withNavigation: false,
+        themeValue: { setMode, isDark: true },
+      },
+    });
+
+    const darkModeSwitch = switches[1];
+    fireEvent(darkModeSwitch, 'valueChange', false);
+
+    expect(setMode).toHaveBeenCalledWith('light');
+  });
+
+  it('cancels sign out when cancel is pressed', async () => {
+    const signOutUser = jest.fn().mockResolvedValue(undefined);
+    const { getByText } = renderScreen({
+      providerOverrides: {
+        withNavigation: false,
+        authValue: { signOutUser },
+      },
+    });
+
+    fireEvent.press(getByText('Log Out'));
+
+    const buttons = findAlertButtons('Sign Out');
+    expect(buttons).toBeDefined();
+
+    const cancel = buttons?.find((button) => button.text === 'Cancel');
+    expect(cancel).toBeDefined();
+    expect(signOutUser).not.toHaveBeenCalled();
+  });
+
+  it('renders user email in profile section', () => {
+    const { getByText } = renderScreen({
+      providerOverrides: {
+        withNavigation: false,
+        authValue: { userProfile: { email: 'user@example.com' } as any },
+      },
+    });
+
+    expect(getByText('Settings')).toBeTruthy();
+    expect(getByText('Manage your preferences and security')).toBeTruthy();
+  });
+
+  it('renders notification and security settings rows', async () => {
+    const { getByText } = await renderAndAwaitSwitches();
+
+    expect(getByText('Device Passcode Unlock')).toBeTruthy();
+    expect(getByText('Local Data Storage')).toBeTruthy();
+    expect(getByText('Dark Mode')).toBeTruthy();
+    expect(getByText('Log Out')).toBeTruthy();
+    expect(getByText('Clear All Data')).toBeTruthy();
+  });
+
+  it('renders RefreshControl with correct tint color', async () => {
+    const { UNSAFE_getByType } = await renderAndAwaitSwitches();
+
+    const { RefreshControl } = require('react-native');
+    const rc = UNSAFE_getByType(RefreshControl);
+    expect(rc).toBeTruthy();
+    expect(rc.props.refreshing).toBe(false);
+  });
 });

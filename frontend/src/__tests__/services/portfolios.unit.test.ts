@@ -73,6 +73,31 @@ describe('portfolioService (API)', () => {
     );
   });
 
+  it('updatePortfolio sends PUT and updates portfolio', async () => {
+    const updated = {
+      id: '1',
+      name: 'Updated Portfolio',
+      description: 'Updated description',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-06-01T00:00:00Z',
+    };
+    fetchMock.mockResponseOnce(JSON.stringify(updated), { status: 200 });
+
+    const result = await portfolioService.updatePortfolio('1', {
+      name: 'Updated Portfolio',
+      description: 'Updated description',
+    });
+
+    expect(result).toMatchObject(updated);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/portfolios\/1$/),
+      expect.objectContaining({
+        method: 'PUT',
+        body: expect.stringContaining('"description"'),
+      }),
+    );
+  });
+
   it('deletePortfolio sends DELETE and returns void', async () => {
     fetchMock.mockResponseOnce('', { status: 204 });
 
@@ -81,6 +106,64 @@ describe('portfolioService (API)', () => {
     expect(result).toBeUndefined();
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringMatching(/\/portfolios\/7$/),
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+
+  it('createHolding sends POST and returns holding', async () => {
+    const holding = {
+      id: 'h1',
+      portfolio_id: '1',
+      ticker: 'AAPL',
+      shares: 100,
+      average_cost_basis: 150,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    };
+    fetchMock.mockResponseOnce(JSON.stringify(holding), { status: 201 });
+
+    const result = await portfolioService.createHolding('1', {
+      ticker: 'AAPL',
+      shares: 100,
+      average_cost_basis: 150,
+    });
+
+    expect(result).toMatchObject(holding);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/portfolios\/1\/holdings$/),
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('updateHolding sends PUT and returns updated holding', async () => {
+    const updated = {
+      id: 'h1',
+      portfolio_id: '1',
+      ticker: 'AAPL',
+      shares: 200,
+      average_cost_basis: 155,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-06-01T00:00:00Z',
+    };
+    fetchMock.mockResponseOnce(JSON.stringify(updated), { status: 200 });
+
+    const result = await portfolioService.updateHolding('h1', { shares: 200 });
+
+    expect(result).toMatchObject(updated);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/holdings\/h1$/),
+      expect.objectContaining({ method: 'PUT' }),
+    );
+  });
+
+  it('deleteHolding sends DELETE and returns void', async () => {
+    fetchMock.mockResponseOnce('', { status: 204 });
+
+    const result = await portfolioService.deleteHolding('h1');
+
+    expect(result).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/holdings\/h1$/),
       expect.objectContaining({ method: 'DELETE' }),
     );
   });
@@ -136,7 +219,7 @@ describe('portfolioService (API)', () => {
     );
   });
 
-  it('getBenchmark returns BenchmarkComparison', async () => {
+  it('getBenchmark returns BenchmarkComparison with query params', async () => {
     const bench = {
       portfolio_id: '1',
       portfolio_return: 0.12,
@@ -159,6 +242,74 @@ describe('portfolioService (API)', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringMatching(/\/portfolio\/benchmark\/1\?benchmark=SPY/),
       expect.any(Object),
+    );
+  });
+
+  it('getBenchmark works without optional parameters', async () => {
+    const bench = {
+      portfolio_id: '1',
+      benchmark_ticker: 'SPY',
+      portfolio_return: 0.05,
+      benchmark_return: 0.04,
+      period_start: '2024-01-01',
+      period_end: '2024-12-31',
+      methodology: 'daily',
+      daily_returns_count: 252,
+      calculated_at: '2024-01-01T00:00:00Z',
+    };
+    fetchMock.mockResponseOnce(JSON.stringify(bench), { status: 200 });
+
+    const result = await portfolioService.getBenchmark('1');
+
+    expect(result).toMatchObject(bench);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/^.*\/portfolio\/benchmark\/1$/),
+      expect.any(Object),
+    );
+  });
+
+  it('createCashFlow sends POST and returns cash flow', async () => {
+    const cf = {
+      id: 'cf1',
+      portfolio_id: '1',
+      amount: 5000,
+      source: 'manual',
+      source_id: null,
+      notes: 'Initial deposit',
+      created_at: '2024-01-01T00:00:00Z',
+    };
+    fetchMock.mockResponseOnce(JSON.stringify(cf), { status: 201 });
+
+    const result = await portfolioService.createCashFlow('1', {
+      amount: 5000,
+      source: 'manual',
+    });
+
+    expect(result).toMatchObject(cf);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/portfolios\/1\/cash-flows$/),
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('updateCashFlowNotes sends PATCH with notes', async () => {
+    const updated = {
+      id: 'cf1',
+      portfolio_id: '1',
+      amount: 5000,
+      source: 'manual',
+      source_id: null,
+      notes: 'Updated notes',
+      created_at: '2024-01-01T00:00:00Z',
+    };
+    fetchMock.mockResponseOnce(JSON.stringify(updated), { status: 200 });
+
+    const result = await portfolioService.updateCashFlowNotes('1', 'cf1', 'Updated notes');
+
+    expect(result).toMatchObject(updated);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/portfolios\/1\/cash-flows\/cf1$/),
+      expect.objectContaining({ method: 'PATCH' }),
     );
   });
 

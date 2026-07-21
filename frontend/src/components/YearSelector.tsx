@@ -51,6 +51,7 @@ export default function YearSelector({ options, value, onChange, compact = false
 
   return (
     <View
+      testID="year-selector-container"
       style={[
         {
           flexDirection: 'row',

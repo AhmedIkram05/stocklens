@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import platform
 import sys
 import tempfile
 from unittest.mock import MagicMock, patch
@@ -200,6 +201,10 @@ class TestLSTMObjective:
         assert obj.n_epochs == 2
         assert obj.vocab_size == 10
 
+    @pytest.mark.skipif(
+        platform.machine() == "arm64" and sys.platform == "darwin",
+        reason="torch.compile inductor C++ compile fails on ARM macOS with spaces in cwd",
+    )
     def test_call_returns_float(self):
         """Full objective call with a real tiny model — validates training pipeline integration."""
         n_features = 17

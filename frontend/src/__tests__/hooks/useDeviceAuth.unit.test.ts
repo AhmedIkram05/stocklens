@@ -59,6 +59,14 @@ describe('useDeviceAuth', () => {
 
       expect(result).toBe(false);
     });
+
+    it('returns false when hardware check throws', async () => {
+      mockedLocalAuth.hasHardwareAsync.mockRejectedValue(new Error('denied'));
+
+      const result = await isDeviceAuthAvailable();
+
+      expect(result).toBe(false);
+    });
   });
 
   /**
@@ -90,6 +98,15 @@ describe('useDeviceAuth', () => {
       expect(result.success).toBe(false);
       expect(result.error).toBe('User canceled');
     });
+
+    it('returns failure when authentication throws', async () => {
+      mockedLocalAuth.authenticateAsync.mockRejectedValue(new Error('biometrics unavailable'));
+
+      const result = await authenticateDevice();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('biometrics unavailable');
+    });
   });
 
   /**
@@ -118,10 +135,24 @@ describe('useDeviceAuth', () => {
       expect(result).toEqual({ email: 'user@example.com', password: 'pass123' });
     });
 
+    it('returns null when getDeviceCredentials throws', async () => {
+      mockedSecureStore.getItemAsync.mockRejectedValue(new Error('decryption failed'));
+
+      const result = await getDeviceCredentials();
+
+      expect(result).toBeNull();
+    });
+
     it('clears credentials and disables device auth', async () => {
       await clearDeviceCredentials();
 
       expect(mockedSecureStore.deleteItemAsync).toHaveBeenCalledWith('device_credentials');
+      expect(mockedSecureStore.deleteItemAsync).toHaveBeenCalledWith('device_enabled');
+    });
+
+    it('disables device auth by deleting the enabled flag', async () => {
+      await setDeviceEnabled(false);
+
       expect(mockedSecureStore.deleteItemAsync).toHaveBeenCalledWith('device_enabled');
     });
   });
@@ -142,6 +173,14 @@ describe('useDeviceAuth', () => {
       mockedSecureStore.getItemAsync.mockResolvedValue('1');
       const result = await isDeviceEnabled();
       expect(result).toBe(true);
+    });
+
+    it('returns false when isDeviceEnabled check throws', async () => {
+      mockedSecureStore.getItemAsync.mockRejectedValue(new Error('locked'));
+
+      const result = await isDeviceEnabled();
+
+      expect(result).toBe(false);
     });
   });
 });

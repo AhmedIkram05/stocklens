@@ -8,7 +8,7 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { useTheme, brandColors } from '../../contexts/ThemeContext';
 import { spacing, radii, typography } from '../../styles/theme';
 import type { AgentMessage } from '../../services/agent';
@@ -31,15 +31,9 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
             : [styles.assistantBubble, { backgroundColor: theme.surface }],
         ]}
       >
-        <ScrollView
-          style={styles.bubbleScroll}
-          nestedScrollEnabled
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={[styles.bubbleText, { color: isUser ? brandColors.white : theme.text }]}>
-            {message.content}
-          </Text>
-        </ScrollView>
+        <Text style={[styles.bubbleText, { color: isUser ? brandColors.white : theme.text }]}>
+          {message.content}
+        </Text>
       </View>
       {message.toolCalls && message.toolCalls.length > 0 && (
         <View style={styles.toolsRow}>
@@ -79,9 +73,6 @@ const styles = StyleSheet.create({
   },
   assistantBubble: {
     borderBottomLeftRadius: radii.sm,
-  },
-  bubbleScroll: {
-    maxHeight: 300,
   },
   bubbleText: {
     ...typography.body,
