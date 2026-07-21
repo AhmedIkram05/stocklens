@@ -78,7 +78,11 @@ class TestProcessMessage:
 
         events = [
             {"event": "on_tool_start", "name": "get_portfolio_summary", "data": {}},
-            {"event": "on_tool_end", "name": "get_portfolio_summary", "data": {}},
+            {
+                "event": "on_tool_end",
+                "name": "get_portfolio_summary",
+                "data": {"output": '{"total": 100, "currency": "GBP"}'},
+            },
             {
                 "event": "on_chain_end",
                 "name": "LangGraph",
@@ -91,6 +95,43 @@ class TestProcessMessage:
         assert len(tool_starts) == 1
         assert tool_starts[0]["data"] == "get_portfolio_summary"
         assert len(tool_ends) == 1
+        # tool_end data is now a dict with tool_name + base64 result
+        end_data = tool_ends[0]["data"]
+        assert isinstance(end_data, dict)
+        assert end_data["tool_name"] == "get_portfolio_summary"
+        assert end_data["result"] is not None  # base64-encoded JSON
+        # Decode and verify result content
+        import base64
+
+        decoded = base64.b64decode(end_data["result"]).decode("utf-8")
+        assert '"total": 100' in decoded
+
+    async def test_tool_end_without_output(self):
+        """tool_end events without output should still emit the tool name with null result."""
+        svc = AgentService()
+        cid = uuid4()
+        async with connection_ctx() as conn:
+            cid = await create_conversation(conn, USER_ID)
+
+        events = [
+            {"event": "on_tool_start", "name": "get_market_quote", "data": {}},
+            {
+                "event": "on_tool_end",
+                "name": "get_market_quote",
+                "data": {"output": ""},
+            },
+            {
+                "event": "on_chain_end",
+                "name": "LangGraph",
+                "data": {"output": {"messages": [AIMessage(content="done")]}},
+            },
+        ]
+        emitted = await self._run_with_events(svc, cid, USER_ID, "quote?", events)
+        tool_ends = [e for e in emitted if e["event"] == "tool_end"]
+        assert len(tool_ends) == 1
+        end_data = tool_ends[0]["data"]
+        assert end_data["tool_name"] == "get_market_quote"
+        assert end_data["result"] is None
 
     async def test_first_turn_title_autogen(self):
         svc = AgentService()

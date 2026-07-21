@@ -9,6 +9,7 @@ Tier 2 — PostgreSQL: persists every user/assistant message to the
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import random
@@ -441,10 +442,35 @@ class AgentService:
                 )
                 yield {"event": "tool_start", "data": event.get("name", "unknown")}
             elif kind == "on_tool_end":
+                output = event.get("data", {}).get("output", "")
+                # Base64-encode the tool output to avoid SSE formatting issues
+                # with complex nested JSON in the tool result.
+                result_b64: str | None = None
+                if output:
+                    try:
+                        output_str = output if isinstance(output, str) else json.dumps(output)
+                        result_b64 = base64.b64encode(output_str.encode("utf-8")).decode("ascii")
+                    except (TypeError, ValueError):
+                        logger.warning("tool_result_serialization_failed", tool=event.get("name"))
+
                 for t in tools_used:
                     if t.get("name") == event.get("name") and t.get("status") == "started":
                         t["status"] = "completed"
-                yield {"event": "tool_end", "data": event.get("name", "unknown")}
+                        if output:
+                            try:
+                                t["result"] = (
+                                    json.loads(output) if isinstance(output, str) else output
+                                )
+                            except (json.JSONDecodeError, TypeError):
+                                t["result"] = {"raw": str(output)[:500]}
+
+                yield {
+                    "event": "tool_end",
+                    "data": {
+                        "tool_name": event.get("name", "unknown"),
+                        "result": result_b64,
+                    },
+                }
             elif kind == "on_chain_end" and event.get("name") == "LangGraph":
                 final_state = event["data"]["output"]
                 trace_id = str(event.get("run_id", ""))
