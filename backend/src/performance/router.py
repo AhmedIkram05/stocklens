@@ -8,6 +8,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -31,6 +32,7 @@ from src.performance.calculations import (
 )
 from src.performance.schemas import (
     BenchmarkComparisonResponse,
+    BulkPerformanceResponse,
     PortfolioPerformanceResponse,
 )
 
@@ -142,7 +144,6 @@ async def _fetch_live_quotes(
 
     Failures are logged and silently skipped — the caller falls back to OHLCV data.
     """
-    import asyncio
 
     tasks = [fetch_quote(t) for t in tickers]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -154,6 +155,198 @@ async def _fetch_live_quotes(
             continue
         quotes[ticker] = (result["price"], result["previous_close"])
     return quotes
+
+
+# ── Batch helpers ────────────────────────────────────────────────────────────
+
+
+async def _batch_verify_ownership(portfolio_ids: list[str], user_id: str) -> dict[str, str]:
+    """Verify all portfolios belong to *user_id*; return {id: name}."""
+    async with connection_ctx() as conn:
+        rows = await conn.fetch(
+            "SELECT id, name FROM portfolios WHERE id = ANY($1::uuid[]) AND user_id = $2::uuid",
+            portfolio_ids,
+            user_id,
+        )
+    return {str(r["id"]): r["name"] for r in rows}
+
+
+async def _batch_get_holdings(
+    portfolio_ids: list[str],
+) -> dict[str, list[dict[str, Any]]]:
+    async with connection_ctx() as conn:
+        rows = await conn.fetch(
+            "SELECT id, portfolio_id, ticker, shares, average_cost_basis, "
+            "currency, fx_rate_to_gbp, average_cost_basis_gbp "
+            "FROM holdings WHERE portfolio_id = ANY($1::uuid[]) "
+            "ORDER BY ticker",
+            portfolio_ids,
+        )
+    result: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for r in rows:
+        result[str(r["portfolio_id"])].append(dict(r))
+    return result
+
+
+async def _batch_get_transactions(
+    portfolio_ids: list[str],
+) -> dict[str, list[dict[str, Any]]]:
+    async with connection_ctx() as conn:
+        rows = await conn.fetch(
+            "SELECT id, portfolio_id, ticker, type, shares, price_per_share, "
+            "total_amount, total_amount_gbp, transaction_date "
+            "FROM transactions WHERE portfolio_id = ANY($1::uuid[]) "
+            "ORDER BY transaction_date ASC, created_at ASC, id ASC",
+            portfolio_ids,
+        )
+    result: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for r in rows:
+        d = dict(r)
+        d["date"] = d.pop("transaction_date")
+        result[str(d["portfolio_id"])].append(d)
+    return result
+
+
+async def _batch_get_cash_flows(
+    portfolio_ids: list[str],
+) -> dict[str, list[dict[str, Any]]]:
+    async with connection_ctx() as conn:
+        rows = await conn.fetch(
+            "SELECT id, portfolio_id, amount, source, source_id, notes, created_at "
+            "FROM cash_flows WHERE portfolio_id = ANY($1::uuid[]) "
+            "ORDER BY created_at ASC, id ASC",
+            portfolio_ids,
+        )
+    result: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for r in rows:
+        result[str(r["portfolio_id"])].append(dict(r))
+    return result
+
+
+# ── Bulk endpoint (must be registered before the parameterised route) ────────
+
+
+@router.get(
+    "/portfolio/performance/bulk",
+    response_model=BulkPerformanceResponse,
+)
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
+async def bulk_portfolio_performance(
+    request: Request,
+    portfolio_ids: str = Query(..., description="Comma-separated portfolio UUIDs"),
+    current_user: UserInDB = Depends(get_current_user),
+) -> BulkPerformanceResponse:
+    """Return performance metrics for multiple portfolios in one call.
+
+    Avoids the N+1 problem from calling the single-portfolio endpoint N times
+    by batching all database reads into a handful of bulk queries.
+    """
+    ids = [p.strip() for p in portfolio_ids.split(",") if p.strip()]
+    if not ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one portfolio_id is required",
+        )
+
+    # 1. Verify ownership + get portfolio names (1 query)
+    portfolio_names = await _batch_verify_ownership(ids, current_user.id)
+    if not portfolio_names:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No portfolios found for this user",
+        )
+
+    # 2. Batch all domain data (3 queries total)
+    holdings_by_pid = await _batch_get_holdings(ids)
+    txns_by_pid = await _batch_get_transactions(ids)
+    cfs_by_pid = await _batch_get_cash_flows(ids)
+
+    # 3. Collect all unique tickers across all portfolios
+    all_tickers: set[str] = set()
+    for holdings in holdings_by_pid.values():
+        all_tickers.update(h["ticker"] for h in holdings)
+
+    # Price data (batched across all tickers)
+    end_date = date.today()
+    start_date = end_date - timedelta(days=365)
+
+    if all_tickers:
+        tickers = list(all_tickers)
+        price_map = await _build_price_map(tickers, start_date, end_date)
+        live_quotes = await _fetch_live_quotes(tickers)
+
+        # FX rates per ticker
+        fx_rates: dict[str, Decimal] = {}
+        for holdings in holdings_by_pid.values():
+            for h in holdings:
+                t = h["ticker"]
+                if t not in fx_rates and h.get("fx_rate_to_gbp") is not None:
+                    fx_rates[t] = h["fx_rate_to_gbp"]
+    else:
+        price_map = {}
+        live_quotes = {}
+        fx_rates = {}
+
+    # 4. Compute per-portfolio performance
+    results: dict[str, PortfolioPerformanceResponse] = {}
+    for pid in ids:
+        name = portfolio_names.get(pid)
+        if name is None:
+            continue
+
+        holdings = holdings_by_pid.get(pid, [])
+        transactions = txns_by_pid.get(pid, [])
+        cash_flows = cfs_by_pid.get(pid, [])
+
+        if not holdings:
+            # Empty portfolio — just compute free cash
+            total_deposits = sum(
+                (Decimal(str(cf["amount"])) for cf in cash_flows),
+                Decimal(0),
+            )
+            net_invested = sum(
+                (
+                    Decimal(str(t.get("total_amount_gbp", t["total_amount"])))
+                    for t in transactions
+                    if t["type"] == "BUY"
+                ),
+                Decimal(0),
+            ) - sum(
+                (
+                    Decimal(str(t.get("total_amount_gbp", t["total_amount"])))
+                    for t in transactions
+                    if t["type"] == "SELL"
+                ),
+                Decimal(0),
+            )
+            results[pid] = PortfolioPerformanceResponse(
+                portfolio_id=pid,
+                portfolio_name=name,
+                total_cost_basis=Decimal(0),
+                twr=None,
+                twr_methodology="cash-flow-based",
+                total_holdings=0,
+                free_cash_balance=total_deposits - net_invested,
+                holdings=[],
+                data_quality="complete",
+                calculated_at=datetime.now(timezone.utc),
+            )
+        else:
+            results[pid] = compute_portfolio_performance(
+                portfolio_id=pid,
+                portfolio_name=name,
+                holdings_data=holdings,
+                transactions=transactions,
+                cash_flows=cash_flows,
+                price_map=price_map,
+                start_date=start_date,
+                end_date=end_date,
+                enable_twr=settings.ENABLE_TWR,
+                live_quotes=live_quotes,
+                fx_rates=fx_rates,
+            )
+
+    return BulkPerformanceResponse(portfolios=results)
 
 
 @router.get(
