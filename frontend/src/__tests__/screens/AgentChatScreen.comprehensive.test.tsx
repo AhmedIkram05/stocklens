@@ -13,6 +13,8 @@ jest.mock('@/services/agent', () => ({
   agentService: {
     sendMessage: jest.fn(),
     submitFeedback: jest.fn(),
+    listConversations: jest.fn(),
+    getConversation: jest.fn(),
   },
 }));
 
@@ -24,6 +26,14 @@ const mockSubmitFeedback = agentService.submitFeedback as jest.MockedFunction<
   typeof agentService.submitFeedback
 >;
 
+const mockListConversations = agentService.listConversations as jest.MockedFunction<
+  typeof agentService.listConversations
+>;
+
+const mockGetConversation = agentService.getConversation as jest.MockedFunction<
+  typeof agentService.getConversation
+>;
+
 describe('AgentChatScreen comprehensive', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -33,6 +43,20 @@ describe('AgentChatScreen comprehensive', () => {
       traceId: 'test-trace',
     });
     mockSubmitFeedback.mockResolvedValue({ status: 'success' });
+    mockListConversations.mockResolvedValue([]);
+    mockGetConversation.mockResolvedValue({
+      conversation: {
+        id: 'c1',
+        title: 'Test',
+        messageCount: 2,
+        createdAt: '2025-01-01',
+        updatedAt: '2025-01-01',
+      },
+      messages: [
+        { role: 'user', content: 'Hello', created_at: '2025-01-01T00:00:00Z' },
+        { role: 'assistant', content: 'Hi there', created_at: '2025-01-01T00:00:01Z' },
+      ],
+    } as any);
   });
 
   it('renders empty state with disclaimer when no messages', () => {
@@ -245,5 +269,84 @@ describe('AgentChatScreen comprehensive', () => {
     expect(() =>
       renderWithProviders(<AgentChatScreen visible={false} onClose={jest.fn()} />),
     ).not.toThrow();
+  });
+
+  // ── New Chat button ───────────────────────────────────────────────────────
+
+  it('renders New Chat button in header', () => {
+    const { getByLabelText } = renderWithProviders(
+      <AgentChatScreen visible onClose={jest.fn()} />,
+      { providerOverrides: { withNavigation: false } },
+    );
+    expect(getByLabelText('New chat')).toBeTruthy();
+  });
+
+  it('shows empty disclaimer again after New Chat clears messages', async () => {
+    const result = renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
+      providerOverrides: { withNavigation: false },
+    });
+    const { getByPlaceholderText, getByLabelText, queryByText } = result;
+    const input = getByPlaceholderText('Ask about your portfolio...');
+
+    // Send a message
+    fireEvent.changeText(input, 'Hello');
+    fireEvent(input, 'submitEditing');
+
+    await waitFor(() => {
+      expect(mockSendMessage).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(queryByText('Hello')).toBeTruthy();
+    });
+
+    // Disclaimer should be hidden while messages exist
+    expect(queryByText('AI Assistant Disclaimer')).toBeNull();
+
+    // Press New Chat
+    fireEvent.press(getByLabelText('New chat'));
+
+    // Empty state disclaimer should reappear
+    await waitFor(() => {
+      expect(queryByText('AI Assistant Disclaimer')).toBeTruthy();
+    });
+    // The old message should be gone
+    expect(queryByText('Hello')).toBeNull();
+  });
+
+  it('resets conversationId and conversationTitle on New Chat', async () => {
+    const result = renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
+      providerOverrides: { withNavigation: false },
+    });
+    const { getByPlaceholderText, getByLabelText, queryByText } = result;
+    const input = getByPlaceholderText('Ask about your portfolio...');
+
+    // Send a message to trigger conversation title fetch
+    fireEvent.changeText(input, 'Test');
+    fireEvent(input, 'submitEditing');
+
+    await waitFor(() => {
+      expect(mockSendMessage).toHaveBeenCalled();
+    });
+    // Title fetch fires in the background after send
+    await waitFor(() => {
+      expect(mockGetConversation).toHaveBeenCalled();
+    });
+
+    // The title subtitle should be gone after New Chat
+    fireEvent.press(getByLabelText('New chat'));
+    await waitFor(() => {
+      // Messages cleared so disclaimer visible
+      expect(queryByText('AI Assistant Disclaimer')).toBeTruthy();
+    });
+    // No subtitle with a title should be visible
+    expect(queryByText('Test')).toBeNull();
+  });
+
+  it('does not error when New Chat is pressed with no messages', () => {
+    const { getByLabelText } = renderWithProviders(
+      <AgentChatScreen visible onClose={jest.fn()} />,
+      { providerOverrides: { withNavigation: false } },
+    );
+    expect(() => fireEvent.press(getByLabelText('New chat'))).not.toThrow();
   });
 });
