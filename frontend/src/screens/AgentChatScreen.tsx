@@ -296,6 +296,8 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
                     <TouchableOpacity
                       onPress={onClose}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      accessibilityLabel="Close"
+                      accessibilityRole="button"
                     >
                       <Ionicons name="close" size={24} color={theme.text} />
                     </TouchableOpacity>
@@ -339,6 +341,8 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
                       onPress={() => handleFeedbackTap('positive')}
                       disabled={submittingFeedback}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      accessibilityLabel="Thumbs up"
+                      accessibilityRole="button"
                     >
                       <Ionicons name="thumbs-up-outline" size={18} color={theme.text} />
                     </TouchableOpacity>
@@ -347,6 +351,8 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
                       onPress={() => handleFeedbackTap('negative')}
                       disabled={submittingFeedback}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      accessibilityLabel="Thumbs down"
+                      accessibilityRole="button"
                     >
                       <Ionicons name="thumbs-down-outline" size={18} color={theme.text} />
                     </TouchableOpacity>

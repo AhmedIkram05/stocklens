@@ -1,4 +1,11 @@
 import { portfolioService } from '@/services/portfolios';
+import { emit } from '@/services/eventBus';
+
+jest.mock('@/services/eventBus', () => ({
+  emit: jest.fn(),
+}));
+
+const mockEmit = emit as jest.MockedFunction<typeof emit>;
 
 const fetchMock = require('jest-fetch-mock');
 
@@ -477,5 +484,190 @@ describe('portfolioService (API)', () => {
       type: 'SELL',
     });
     expect(sellResult.type).toBe('SELL');
+  });
+});
+
+describe('portfolioService agent endpoints', () => {
+  it('getSectorExposure returns sector exposure data', async () => {
+    const data = {
+      total_value_gbp: 50000,
+      sectors: [
+        { sector: 'Technology', value_gbp: 30000, allocation_pct: 60, tickers: ['AAPL'] },
+        { sector: 'Finance', value_gbp: 20000, allocation_pct: 40, tickers: ['JPM'] },
+      ],
+    };
+    fetchMock.mockResponseOnce(JSON.stringify(data), { status: 200 });
+
+    const result = await portfolioService.getSectorExposure('1');
+
+    expect(result.sectors).toHaveLength(2);
+    expect(result.sectors[0].sector).toBe('Technology');
+    expect(result.sectors[0].allocation_pct).toBe(60);
+    expect(result.total_value_gbp).toBe(50000);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/agent\/sector-exposure\/1$/),
+      expect.any(Object),
+    );
+  });
+
+  it('getSectorExposure handles empty sectors', async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ total_value_gbp: 0, sectors: [] }), {
+      status: 200,
+    });
+
+    const result = await portfolioService.getSectorExposure('1');
+    expect(result.sectors).toHaveLength(0);
+  });
+
+  it('getDiversificationScore returns score data', async () => {
+    const data = {
+      overall_score: 85,
+      breakdown: {
+        holdings_diversity_score: 70,
+        holdings_diversity_weight_pct: 50,
+        hhi_concentration_score: 30,
+        hhi_concentration_weight_pct: 30,
+        hhi_raw_value: 1200,
+        top_holding_weight_score: 80,
+        top_holding_weight_pct: 20,
+        top_holding_ticker: 'AAPL',
+        top_holding_exposure_pct: 25,
+        sector_diversity_score: 65,
+        sector_diversity_weight_pct: 20,
+        sector_hhi_value: 800,
+      },
+      total_holdings: 5,
+      effective_holdings: 8.33,
+      recommendations: [],
+    };
+    fetchMock.mockResponseOnce(JSON.stringify(data), { status: 200 });
+
+    const result = await portfolioService.getDiversificationScore('1');
+
+    expect(result.overall_score).toBe(85);
+    expect(result.total_holdings).toBe(5);
+    expect(result.effective_holdings).toBe(8.33);
+    expect(result.recommendations).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/agent\/diversification-score\/1$/),
+      expect.any(Object),
+    );
+  });
+
+  it('getSpendingAnalysis returns spending analysis data', async () => {
+    const data = {
+      portfolio_name: 'Test',
+      period_months: 12,
+      total_spent_gbp: 15000,
+      categories: [
+        {
+          category: 'Groceries',
+          category_id: null,
+          transaction_count: 10,
+          total_spend_gbp: 6000,
+          pct_of_total: 40,
+        },
+        {
+          category: 'Transport',
+          category_id: null,
+          transaction_count: 5,
+          total_spend_gbp: 3000,
+          pct_of_total: 20,
+        },
+      ],
+      month_over_month: {},
+    };
+    fetchMock.mockResponseOnce(JSON.stringify(data), { status: 200 });
+
+    const result = await portfolioService.getSpendingAnalysis('1', 12);
+
+    expect(result.total_spent_gbp).toBe(15000);
+    expect(result.categories).toHaveLength(2);
+    expect(result.categories[0].category).toBe('Groceries');
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/agent\/spending-analysis\/1\?months=12$/),
+      expect.any(Object),
+    );
+  });
+});
+
+describe('portfolioService emit events', () => {
+  beforeEach(() => {
+    mockEmit.mockClear();
+  });
+
+  it('createPortfolio emits historical-updated event', async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ id: '1', name: 'Test' }), { status: 201 });
+    await portfolioService.createPortfolio({ name: 'Test' });
+    expect(mockEmit).toHaveBeenCalledWith('historical-updated', { action: 'create' });
+  });
+
+  it('updatePortfolio emits historical-updated event', async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ id: '1', name: 'Updated' }), { status: 200 });
+    await portfolioService.updatePortfolio('1', { name: 'Updated' });
+    expect(mockEmit).toHaveBeenCalledWith('historical-updated', { action: 'update' });
+  });
+
+  it('deletePortfolio emits historical-updated event', async () => {
+    fetchMock.mockResponseOnce('', { status: 204 });
+    await portfolioService.deletePortfolio('1');
+    expect(mockEmit).toHaveBeenCalledWith('historical-updated', { action: 'delete' });
+  });
+
+  it('createHolding emits historical-updated event', async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ id: 'h1', ticker: 'AAPL' }), { status: 201 });
+    await portfolioService.createHolding('1', {
+      ticker: 'AAPL',
+      shares: 10,
+      average_cost_basis: 150,
+    });
+    expect(mockEmit).toHaveBeenCalledWith('historical-updated', {
+      action: 'create-holding',
+      portfolioId: '1',
+    });
+  });
+
+  it('updateHolding emits historical-updated event', async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ id: 'h1', shares: 200 }), { status: 200 });
+    await portfolioService.updateHolding('h1', { shares: 200 });
+    expect(mockEmit).toHaveBeenCalledWith('historical-updated', { action: 'update-holding' });
+  });
+
+  it('deleteHolding emits historical-updated event', async () => {
+    fetchMock.mockResponseOnce('', { status: 204 });
+    await portfolioService.deleteHolding('h1');
+    expect(mockEmit).toHaveBeenCalledWith('historical-updated', { action: 'delete-holding' });
+  });
+
+  it('createTransaction emits historical-updated event', async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ id: 't1', type: 'BUY' }), { status: 201 });
+    await portfolioService.createTransaction('1', {
+      ticker: 'AAPL',
+      shares: 10,
+      price_per_share: 150,
+      type: 'BUY',
+    });
+    expect(mockEmit).toHaveBeenCalledWith('historical-updated', {
+      action: 'create-transaction',
+      portfolioId: '1',
+    });
+  });
+
+  it('createCashFlow emits historical-updated event', async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ id: 'cf1', amount: 5000 }), { status: 201 });
+    await portfolioService.createCashFlow('1', { amount: 5000, source: 'manual' });
+    expect(mockEmit).toHaveBeenCalledWith('historical-updated', {
+      action: 'create-cashflow',
+      portfolioId: '1',
+    });
+  });
+
+  it('updateCashFlowNotes emits historical-updated event', async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ id: 'cf1', notes: 'Updated' }), { status: 200 });
+    await portfolioService.updateCashFlowNotes('1', 'cf1', 'Updated');
+    expect(mockEmit).toHaveBeenCalledWith('historical-updated', {
+      action: 'update-cashflow',
+      portfolioId: '1',
+    });
   });
 });

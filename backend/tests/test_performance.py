@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 # ──────────────────────────────────────────────────────────────────────
 # Holding Performance — pure function tests
@@ -1260,3 +1263,329 @@ class TestBulkPerformanceEndpoint:
             "/portfolio/performance/bulk?portfolio_ids=11111111-1111-1111-1111-111111111111",
         )
         assert resp.status_code == 401
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Router helpers — DB-dependent unit tests
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestRouterHelpers:
+    """Direct tests for internal router helper functions."""
+
+    async def test_get_transactions_sorted(self):
+        """Returns transactions sorted by date ascending."""
+        from src.database.connection import connection_ctx
+        from src.performance.router import _get_transactions_sorted
+
+        pid = "11111111-1111-1111-1111-111111111111"
+        async with connection_ctx() as conn:
+            # Clear existing transactions for clean assertion
+            await conn.execute(
+                "INSERT INTO transactions "
+                "(portfolio_id, ticker, type, shares, price_per_share, "
+                "total_amount, currency, fx_rate_to_gbp, total_amount_gbp, transaction_date) "
+                "VALUES ($1::uuid, 'AAPL', 'BUY', 10, 150.0, 1500.0, 'GBP', 1.0, 1500.0, '2024-06-01')",
+                pid,
+            )
+
+        result = await _get_transactions_sorted(pid)
+        assert len(result) >= 1
+        assert result[0]["ticker"] == "AAPL"
+        assert "date" in result[0]
+        assert result[0]["type"] == "BUY"
+
+    async def test_get_cash_flows_sorted(self):
+        """Returns cash flows sorted by date ascending."""
+        from src.database.connection import connection_ctx
+        from src.performance.router import _get_cash_flows_sorted
+
+        pid = "11111111-1111-1111-1111-111111111111"
+        async with connection_ctx() as conn:
+            await conn.execute(
+                "INSERT INTO cash_flows (portfolio_id, amount) VALUES ($1::uuid, 1000)",
+                pid,
+            )
+
+        result = await _get_cash_flows_sorted(pid)
+        assert len(result) >= 1
+        assert result[0]["amount"] == 1000
+
+    async def test_get_free_cash_balance(self):
+        """Free cash = deposits - net invested."""
+        from src.database.connection import connection_ctx
+        from src.performance.router import _get_free_cash_balance
+
+        pid = "11111111-1111-1111-1111-111111111111"
+        async with connection_ctx() as conn:
+            await conn.execute(
+                "INSERT INTO cash_flows (portfolio_id, amount) VALUES ($1::uuid, 5000)",
+                pid,
+            )
+            await conn.execute(
+                "INSERT INTO transactions "
+                "(portfolio_id, ticker, type, shares, price_per_share, "
+                "total_amount, currency, fx_rate_to_gbp, total_amount_gbp, transaction_date) "
+                "VALUES ($1::uuid, 'AAPL', 'BUY', 10, 100.0, 1000.0, 'GBP', 1.0, 1000.0, '2024-01-15')",
+                pid,
+            )
+
+        balance = await _get_free_cash_balance(pid)
+        # 5000 deposit - 1000 buy = 4000
+        assert balance > 0
+        assert balance == 4000
+
+    async def test_fetch_live_quotes_skips_failures(self, mocker):
+        """Failed quote fetches are logged and skipped."""
+        from src.performance.router import _fetch_live_quotes
+
+        mock_fetch = mocker.AsyncMock()
+        mock_fetch.side_effect = [ValueError("API error"), {"price": 200, "previous_close": 198}]
+        mocker.patch("src.performance.router.fetch_quote", mock_fetch)
+
+        result = await _fetch_live_quotes(["FAILER", "AAPL"])
+        assert "FAILER" not in result
+        assert "AAPL" in result
+        assert result["AAPL"] == (200, 198)
+
+
+class TestComputePortfolioDailyReturns:
+    """Tests for the _compute_portfolio_daily_returns helper."""
+
+    def _make_price_map(self, tickers, dates_prices: dict):
+        """Build {ticker: {date: adj_close}}."""
+        return {t: {d: v for d, v in items} for t, items in dates_prices.items()}
+
+    def test_empty_price_map(self):
+        """No price data → empty returns."""
+        from src.performance.router import _compute_portfolio_daily_returns
+
+        dates, returns = _compute_portfolio_daily_returns(
+            holdings=[{"ticker": "AAPL", "shares": 10}],
+            transactions=[],
+            price_map={},
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 12, 31),
+        )
+        assert dates == []
+        assert returns == []
+
+    def test_single_trading_day(self):
+        """Fewer than 2 trading days → empty returns."""
+        from src.performance.router import _compute_portfolio_daily_returns
+
+        pm = {"AAPL": {date(2024, 6, 1): Decimal("150")}}
+        dates, returns = _compute_portfolio_daily_returns(
+            holdings=[{"ticker": "AAPL", "shares": 10}],
+            transactions=[],
+            price_map=pm,
+            start_date=date(2024, 6, 1),
+            end_date=date(2024, 6, 1),
+        )
+        assert returns == []
+
+    def test_positive_return(self):
+        """Holdings held across 2+ days → daily return computed."""
+        from src.performance.router import _compute_portfolio_daily_returns
+
+        pm = {
+            "AAPL": {
+                date(2024, 6, 1): Decimal("100"),
+                date(2024, 6, 2): Decimal("110"),
+            },
+        }
+        # Add a BUY on day 1 to seed initial holdings (current starts empty)
+        txns = [
+            {"ticker": "AAPL", "type": "BUY", "shares": Decimal("10"), "date": date(2024, 6, 1)},
+        ]
+        dates, returns = _compute_portfolio_daily_returns(
+            holdings=[{"ticker": "AAPL", "shares": 10}],
+            transactions=txns,
+            price_map=pm,
+            start_date=date(2024, 6, 1),
+            end_date=date(2024, 6, 2),
+        )
+        assert len(returns) == 1
+        # 10*110 - 10*100 / 10*100 = 0.1
+        assert returns[0] == Decimal("0.1")
+        assert dates == [date(2024, 6, 1), date(2024, 6, 2)]
+
+    def test_with_buy_transaction(self):
+        """BUY transaction mid-period increases shares."""
+        from src.performance.router import _compute_portfolio_daily_returns
+
+        pm = {
+            "AAPL": {
+                date(2024, 6, 1): Decimal("100"),
+                date(2024, 6, 2): Decimal("110"),
+                date(2024, 6, 3): Decimal("120"),
+            },
+        }
+        txns = [
+            {"ticker": "AAPL", "type": "BUY", "shares": Decimal("10"), "date": date(2024, 6, 1)},
+            {
+                "ticker": "AAPL",
+                "type": "BUY",
+                "shares": Decimal("5"),
+                "date": date(2024, 6, 2),
+            },
+        ]
+        dates, returns = _compute_portfolio_daily_returns(
+            holdings=[{"ticker": "AAPL", "shares": 15}],
+            transactions=txns,
+            price_map=pm,
+            start_date=date(2024, 6, 1),
+            end_date=date(2024, 6, 3),
+        )
+        assert len(dates) == 3
+        assert dates == [date(2024, 6, 1), date(2024, 6, 2), date(2024, 6, 3)]
+        assert len(returns) == 2
+        # Day 1: BUY 10 AAPL → current={"AAPL": 10}, value=10*100=1000, i=0 skip.
+        # Day 2: BUY 5 AAPL  → current={"AAPL": 15}, value=15*110=1650
+        #        return = (1650-1000)/1000 = 0.65
+        # Day 3:              current={"AAPL": 15}, value=15*120=1800
+        #        return = (1800-1650)/1650 ≈ 0.0909
+        assert float(returns[0]) == pytest.approx(0.65, rel=1e-9)
+        assert float(returns[1]) == pytest.approx(0.090909, rel=1e-5)
+
+    def test_with_sell_transaction_removes_ticker(self):
+        """SELL that removes position entirely still handles remaining holdings."""
+        from src.performance.router import _compute_portfolio_daily_returns
+
+        pm = {
+            "AAPL": {
+                date(2024, 6, 1): Decimal("100"),
+                date(2024, 6, 2): Decimal("110"),
+            },
+            "MSFT": {
+                date(2024, 6, 1): Decimal("200"),
+                date(2024, 6, 2): Decimal("210"),
+            },
+        }
+        txns = [
+            {"ticker": "AAPL", "type": "BUY", "shares": Decimal("10"), "date": date(2024, 6, 1)},
+            {"ticker": "MSFT", "type": "BUY", "shares": Decimal("5"), "date": date(2024, 6, 1)},
+            {
+                "ticker": "MSFT",
+                "type": "SELL",
+                "shares": Decimal("5"),
+                "date": date(2024, 6, 2),
+            },
+        ]
+        dates, returns = _compute_portfolio_daily_returns(
+            holdings=[
+                {"ticker": "AAPL", "shares": 10},
+                {"ticker": "MSFT", "shares": 0},
+            ],
+            transactions=txns,
+            price_map=pm,
+            start_date=date(2024, 6, 1),
+            end_date=date(2024, 6, 2),
+            fx_rates={"AAPL": Decimal("1"), "MSFT": Decimal("1")},
+        )
+        assert dates == [date(2024, 6, 1), date(2024, 6, 2)]
+        assert len(returns) == 1
+        # After sell: only AAPL at 10 shares * 110 = 1100
+        # Prev: AAPL 10*100 + MSFT 5*200 = 2000
+        # Return: (1100 - 2000) / 2000 = -0.45
+        assert float(returns[0]) == pytest.approx(-0.45, rel=1e-9)
+
+    def test_zero_previous_value(self):
+        """Zero previous value → return 0 for that day."""
+        from src.performance.router import _compute_portfolio_daily_returns
+
+        pm = {
+            "AAPL": {date(2024, 6, 1): Decimal("100"), date(2024, 6, 2): Decimal("110")},
+        }
+        # No holdings initially → prev value is 0 on day 1
+        dates, returns = _compute_portfolio_daily_returns(
+            holdings=[{"ticker": "AAPL", "shares": 0}],
+            transactions=[],
+            price_map=pm,
+            start_date=date(2024, 6, 1),
+            end_date=date(2024, 6, 2),
+        )
+        # returns should be empty because previous_value starts at 0 and i=0 doesn't compute
+        # Hold with 0 shares means current stays 0
+        assert len(returns) == 0 or all(r == Decimal(0) for r in returns)
+
+    def test_fx_rates_applied(self):
+        """FX rates convert prices to base currency."""
+        from src.performance.router import _compute_portfolio_daily_returns
+
+        pm = {
+            "AAPL": {date(2024, 6, 1): Decimal("100"), date(2024, 6, 2): Decimal("110")},
+        }
+        txns = [
+            {"ticker": "AAPL", "type": "BUY", "shares": Decimal("10"), "date": date(2024, 6, 1)},
+        ]
+        dates, returns = _compute_portfolio_daily_returns(
+            holdings=[{"ticker": "AAPL", "shares": 10}],
+            transactions=txns,
+            price_map=pm,
+            start_date=date(2024, 6, 1),
+            end_date=date(2024, 6, 2),
+            fx_rates={"AAPL": Decimal("0.8")},  # 1 USD = 0.8 GBP
+        )
+        assert dates == [date(2024, 6, 1), date(2024, 6, 2)]
+        assert len(returns) == 1
+        # 10*110*0.8 - 10*100*0.8 / 10*100*0.8 = 0.1 (same % return)
+        assert float(returns[0]) == pytest.approx(0.1, rel=1e-9)
+
+
+class TestBenchmarkExceptionHandler:
+    """Tests for the benchmark endpoint's outer exception handler."""
+
+    async def test_handler_re_raises_http_exception(self):
+        """Non-existent portfolio → 404 HTTPException from _get_benchmark_comparison_inner."""
+        from uuid import UUID
+
+        from fastapi import HTTPException
+
+        from src.performance.router import _get_benchmark_comparison_inner
+
+        fake_user = MagicMock()
+        fake_user.id = "00000000-0000-0000-0000-000000000000"
+        with pytest.raises(HTTPException, match="Portfolio not found"):
+            await _get_benchmark_comparison_inner(
+                portfolio_id=UUID("00000000-0000-0000-0000-000000000000"),
+                benchmark="SPY",
+                start_date=None,
+                end_date=None,
+                current_user=fake_user,
+            )
+
+    async def test_handler_logs_and_raises_generic_exception(self):
+        """Generic exceptions are caught and re-raised by get_benchmark_comparison."""
+        from uuid import UUID
+
+        from starlette.requests import Request
+
+        from src.performance.router import get_benchmark_comparison
+
+        request = Request(
+            scope={
+                "type": "http",
+                "method": "GET",
+                "path": "/portfolio/benchmark/test",
+                "headers": [],
+                "query_string": b"",
+                "scheme": "http",
+                "server": ("test", 80),
+            }
+        )
+        fake_user = MagicMock()
+        fake_user.id = "00000000-0000-0000-0000-000000000000"
+        with patch(
+            "src.performance.router._get_benchmark_comparison_inner",
+            side_effect=ValueError("Unexpected DB error"),
+        ):
+            with pytest.raises(ValueError, match="Unexpected DB error"):
+                await get_benchmark_comparison(
+                    request=request,
+                    portfolio_id=UUID("00000000-0000-0000-0000-000000000000"),
+                    benchmark="SPY",
+                    start_date=None,
+                    end_date=None,
+                    current_user=fake_user,
+                )

@@ -1,4 +1,5 @@
 import React from 'react';
+import { RefreshControl } from 'react-native';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 
 import PortfolioDetailScreen from '@/screens/portfolio/PortfolioDetailScreen';
@@ -257,5 +258,64 @@ describe('PortfolioDetailScreen', () => {
       expect(mockedPortfolioService.getPerformance).toHaveBeenCalledTimes(2);
       expect(getByText('Test Portfolio')).toBeTruthy();
     });
+  });
+
+  it('pull-to-refresh refetches performance data', async () => {
+    const { getByText, UNSAFE_getAllByType } = renderWithProviders(<PortfolioDetailScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
+
+    await waitFor(() => {
+      expect(getByText('Test Portfolio')).toBeTruthy();
+    });
+
+    mockedPortfolioService.getPerformance.mockClear();
+    mockedPortfolioService.getPerformance.mockResolvedValue(mockPerformance);
+
+    // Trigger refresh via RefreshControl
+    const refreshControls = UNSAFE_getAllByType(RefreshControl);
+    expect(refreshControls.length).toBeGreaterThanOrEqual(1);
+    fireEvent(refreshControls[0], 'refresh');
+
+    await waitFor(() => {
+      expect(mockedPortfolioService.getPerformance).toHaveBeenCalled();
+    });
+  });
+
+  it('handles null holding values gracefully', async () => {
+    const nullHoldings = [
+      {
+        ticker: 'AAPL',
+        shares: 10,
+        average_cost_basis: 150,
+        current_price: null,
+        cost_basis: 1500,
+        market_value: null,
+        unrealised_pl: 300,
+        unrealised_pl_pct: 20,
+        day_change: null,
+        day_change_pct: null,
+        portfolio_weight_pct: 12,
+        currency: 'USD',
+        id: 'h1',
+        portfolio_id: '1',
+      },
+    ];
+    mockedPortfolioService.getPerformance.mockResolvedValue({
+      ...mockPerformance,
+      holdings: nullHoldings,
+    });
+
+    const { getByText, getAllByText } = renderWithProviders(<PortfolioDetailScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
+
+    await waitFor(() => {
+      expect(getByText('Holdings (1)')).toBeTruthy();
+    });
+
+    // Null values should show '--' for price and market value
+    const dashes = getAllByText('--');
+    expect(dashes.length).toBeGreaterThanOrEqual(2);
   });
 });

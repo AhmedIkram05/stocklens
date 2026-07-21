@@ -349,4 +349,61 @@ describe('AgentChatScreen comprehensive', () => {
     );
     expect(() => fireEvent.press(getByLabelText('New chat'))).not.toThrow();
   });
+
+  it('calls onClose when close button pressed', () => {
+    const onClose = jest.fn();
+    const { getByLabelText } = renderWithProviders(<AgentChatScreen visible onClose={onClose} />, {
+      providerOverrides: { withNavigation: false },
+    });
+    fireEvent.press(getByLabelText('Close'));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('shows feedback modal on thumbs up and submits comment', async () => {
+    const { getByLabelText, getByText, getByPlaceholderText, findByText } = renderWithProviders(
+      <AgentChatScreen visible onClose={jest.fn()} />,
+      { providerOverrides: { withNavigation: false } },
+    );
+
+    const input = getByPlaceholderText('Ask about your portfolio...');
+    fireEvent.changeText(input, 'How is my portfolio?');
+    fireEvent(input, 'submitEditing');
+
+    await waitFor(() => {
+      expect(getByText('Was this helpful?')).toBeTruthy();
+    });
+
+    fireEvent.press(getByLabelText('Thumbs up'));
+    expect(getByText('Glad we could help!')).toBeTruthy();
+
+    fireEvent.changeText(getByPlaceholderText('Tell us more (optional)'), 'Great response!');
+    fireEvent.press(getByText('Submit'));
+
+    await findByText('Thanks for your feedback!');
+    expect(mockSubmitFeedback).toHaveBeenCalledWith('positive', 'test-trace', 'Great response!');
+  });
+
+  it('shows feedback modal on thumbs down and skips without submitting', async () => {
+    const { getByLabelText, getByText, getByPlaceholderText, queryByText } = renderWithProviders(
+      <AgentChatScreen visible onClose={jest.fn()} />,
+      { providerOverrides: { withNavigation: false } },
+    );
+
+    const input = getByPlaceholderText('Ask about your portfolio...');
+    fireEvent.changeText(input, 'How is my portfolio?');
+    fireEvent(input, 'submitEditing');
+
+    await waitFor(() => {
+      expect(getByText('Was this helpful?')).toBeTruthy();
+    });
+
+    fireEvent.press(getByLabelText('Thumbs down'));
+    expect(getByText('Sorry about that')).toBeTruthy();
+
+    fireEvent.changeText(getByPlaceholderText('Tell us more (optional)'), 'Not helpful');
+    fireEvent.press(getByText('Skip'));
+
+    expect(queryByText('Sorry about that')).toBeNull();
+    expect(mockSubmitFeedback).not.toHaveBeenCalled();
+  });
 });

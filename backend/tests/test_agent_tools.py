@@ -629,3 +629,383 @@ class TestToolReliability:
         with pytest.raises(ValueError, match="persistent error 3"):
             _always_fails()
         assert call_count == 3  # all 3 attempts exhausted
+
+
+# ── Shared helper edge cases ──────────────────────────────────────────────
+
+
+class TestDecimalToFloat:
+    """Edge cases for _decimal_to_float helper."""
+
+    def test_decimal_converts_to_float(self):
+        from src.agent.tools import _decimal_to_float
+
+        assert _decimal_to_float(Decimal("42.5")) == 42.5
+
+    def test_int_converts_to_float(self):
+        from src.agent.tools import _decimal_to_float
+
+        assert _decimal_to_float(42) == 42.0
+
+    def test_float_passes_through(self):
+        from src.agent.tools import _decimal_to_float
+
+        assert _decimal_to_float(3.14) == 3.14
+
+    def test_none_returns_zero(self):
+        from src.agent.tools import _decimal_to_float
+
+        assert _decimal_to_float(None) == 0.0
+
+    def test_string_returns_zero(self):
+        from src.agent.tools import _decimal_to_float
+
+        assert _decimal_to_float("not-a-number") == 0.0
+
+    def test_bool_true_returns_one(self):
+        """bool is subclass of int, so True → 1.0."""
+        from src.agent.tools import _decimal_to_float
+
+        assert _decimal_to_float(True) == 1.0
+
+
+# ── Exception / error-branch coverage ─────────────────────────────────────
+
+
+class TestGetSectorExposureErrors:
+    """Error-handling branches for get_sector_exposure."""
+
+    async def test_yfinance_exception_skipped_gracefully(self):
+        """When _fetch_sector raises, the exception is logged and skipped."""
+        from unittest.mock import PropertyMock
+
+        async with connection_ctx() as conn:
+            await _seed_holding(conn, "AAPL", 10, 100.0)
+            await _seed_holding(conn, "MSFT", 10, 100.0)
+
+        with patch("src.agent.tools.yf") as mock_yf:
+            mock_ticker = MagicMock()
+            type(mock_ticker).info = PropertyMock(side_effect=ValueError("YF down"))
+            mock_yf.Ticker.return_value = mock_ticker
+            result_str = await TOOLS["get_sector_exposure"].ainvoke(
+                {"portfolio_id": TEST_PORTFOLIO, "user_id": USER_ID}
+            )
+
+        data = json.loads(result_str)
+        # Both tickers failed → both land in "Unknown" sector
+        assert data["total_value_gbp"] > 0
+        unknown = [s for s in data["sectors"] if s["sector"] == "Unknown"]
+        assert len(unknown) == 1
+
+
+class TestGetPortfolioPerformanceErrors:
+    """Error-handling branches for get_portfolio_performance."""
+
+    async def test_portfolio_not_found(self):
+        """Wrong user_id → 'Portfolio not found'."""
+        result_str = await TOOLS["get_portfolio_performance"].ainvoke(
+            {"portfolio_id": TEST_PORTFOLIO, "user_id": "99999999-9999-9999-9999-999999999999"}
+        )
+        assert json.loads(result_str)["error"] == "Portfolio not found"
+
+    async def test_ohlcv_batch_exception_uses_empty(self):
+        """get_ohlcv_batch exception → returns empty dict, calculation proceeds."""
+        async with connection_ctx() as conn:
+            await _seed_holding(conn, "AAPL", 10, 100.0)
+            await _seed_transaction(conn, "AAPL", "BUY", 10, 100, 1000.0, date(2024, 1, 2))
+
+        perf_model = {
+            "twr": Decimal("0.0"),
+            "twr_annualised": Decimal("0.0"),
+            "total_gain_loss": Decimal("0"),
+            "total_gain_loss_pct": Decimal("0"),
+            "periods": [],
+        }
+
+        with (
+            patch(
+                "src.performance.calculations.compute_portfolio_performance",
+                return_value=perf_model,
+            ),
+            patch(
+                "src.market.provider.fetch_quote",
+                new=AsyncMock(return_value={"price": Decimal("1")}),
+            ),
+            patch(
+                "src.market.repository.get_ohlcv_batch",
+                new=AsyncMock(side_effect=ValueError("DB timeout")),
+            ),
+        ):
+            result_str = await TOOLS["get_portfolio_performance"].ainvoke(
+                {"portfolio_id": TEST_PORTFOLIO, "user_id": USER_ID}
+            )
+
+        data = json.loads(result_str)
+        assert data["portfolio_name"]
+
+    async def test_compute_exception_returns_error(self):
+        """compute_portfolio_performance raises → returns error JSON."""
+        async with connection_ctx() as conn:
+            await _seed_holding(conn, "AAPL", 10, 100.0)
+
+        with (
+            patch(
+                "src.performance.calculations.compute_portfolio_performance",
+                side_effect=RuntimeError("compute bug"),
+            ),
+            patch(
+                "src.market.provider.fetch_quote",
+                new=AsyncMock(return_value={"price": Decimal("1")}),
+            ),
+            patch(
+                "src.market.repository.get_ohlcv_batch",
+                new=AsyncMock(return_value={}),
+            ),
+        ):
+            result_str = await TOOLS["get_portfolio_performance"].ainvoke(
+                {"portfolio_id": TEST_PORTFOLIO, "user_id": USER_ID}
+            )
+
+        data = json.loads(result_str)
+        assert "error" in data
+        assert "compute bug" in data["error"]
+
+
+class TestCompareToBenchmarkErrors:
+    """Error-handling branches for compare_to_benchmark."""
+
+    async def test_portfolio_not_found(self):
+        """Wrong user_id → 'Portfolio not found'."""
+        result_str = await TOOLS["compare_to_benchmark"].ainvoke(
+            {"portfolio_id": TEST_PORTFOLIO, "user_id": "99999999-9999-9999-9999-999999999999"}
+        )
+        assert json.loads(result_str)["error"] == "Portfolio not found"
+
+    async def test_ohlcv_batch_exception_uses_empty(self):
+        """get_ohlcv_batch exception → empty dict, benchmark data missing."""
+        async with connection_ctx() as conn:
+            await _seed_holding(conn, "AAPL", 10, 100.0)
+            await _seed_transaction(conn, "AAPL", "BUY", 10, 100, 1000.0, date(2024, 1, 2))
+
+        with patch(
+            "src.market.repository.get_ohlcv_batch",
+            new=AsyncMock(side_effect=ValueError("DB timeout")),
+        ):
+            result_str = await TOOLS["compare_to_benchmark"].ainvoke(
+                {"portfolio_id": TEST_PORTFOLIO, "user_id": USER_ID, "benchmark_ticker": "SPY"}
+            )
+
+        data = json.loads(result_str)
+        assert "error" in data
+
+    async def test_compute_performance_exception(self):
+        """compute_portfolio_performance raises during benchmark → error."""
+        async with connection_ctx() as conn:
+            await _seed_holding(conn, "AAPL", 10, 100.0)
+            await _seed_transaction(conn, "AAPL", "BUY", 10, 100, 1000.0, date(2024, 1, 2))
+
+        d1 = date(2024, 1, 2)
+        d2 = date(2024, 1, 3)
+        batch_results = {
+            "AAPL": [
+                {"date": d1, "adjusted_close": Decimal("100")},
+                {"date": d2, "adjusted_close": Decimal("110")},
+            ],
+            "SPY": [
+                {"date": d1, "adjusted_close": Decimal("100")},
+                {"date": d2, "adjusted_close": Decimal("105")},
+            ],
+        }
+
+        with (
+            patch(
+                "src.performance.calculations.compute_portfolio_performance",
+                side_effect=RuntimeError("perf crash"),
+            ),
+            patch(
+                "src.market.provider.fetch_quote",
+                new=AsyncMock(return_value={"price": Decimal("1")}),
+            ),
+            patch(
+                "src.market.repository.get_ohlcv_batch",
+                new=AsyncMock(return_value=batch_results),
+            ),
+        ):
+            result_str = await TOOLS["compare_to_benchmark"].ainvoke(
+                {"portfolio_id": TEST_PORTFOLIO, "user_id": USER_ID, "benchmark_ticker": "SPY"}
+            )
+
+        data = json.loads(result_str)
+        assert "error" in data
+        assert "perf crash" in data["error"]
+
+    async def test_benchmark_comparison_exception(self):
+        """compute_benchmark_comparison raises → error."""
+        async with connection_ctx() as conn:
+            await _seed_holding(conn, "AAPL", 10, 100.0)
+            await _seed_transaction(conn, "AAPL", "BUY", 10, 100, 1000.0, date(2024, 1, 2))
+
+        d1 = date(2024, 1, 2)
+        d2 = date(2024, 1, 3)
+        batch_results = {
+            "AAPL": [
+                {"date": d1, "adjusted_close": Decimal("100")},
+                {"date": d2, "adjusted_close": Decimal("110")},
+            ],
+            "SPY": [
+                {"date": d1, "adjusted_close": Decimal("100")},
+                {"date": d2, "adjusted_close": Decimal("105")},
+            ],
+        }
+        perf_model = MagicMock()
+        perf_model.twr = Decimal("0.05")
+
+        with (
+            patch(
+                "src.performance.calculations.compute_portfolio_performance",
+                return_value=perf_model,
+            ),
+            patch(
+                "src.performance.calculations.compute_benchmark_comparison",
+                side_effect=RuntimeError("comparison crash"),
+            ),
+            patch(
+                "src.market.provider.fetch_quote",
+                new=AsyncMock(return_value={"price": Decimal("1")}),
+            ),
+            patch(
+                "src.market.repository.get_ohlcv_batch",
+                new=AsyncMock(return_value=batch_results),
+            ),
+        ):
+            result_str = await TOOLS["compare_to_benchmark"].ainvoke(
+                {"portfolio_id": TEST_PORTFOLIO, "user_id": USER_ID, "benchmark_ticker": "SPY"}
+            )
+
+        data = json.loads(result_str)
+        assert "error" in data
+        assert "comparison crash" in data["error"]
+
+
+class TestGetDiversificationScoreErrors:
+    """Error-handling branches for get_portfolio_diversification_score."""
+
+    async def test_zero_total_value(self):
+        """Holdings with zero cost basis → zero total → error."""
+        async with connection_ctx() as conn:
+            await _seed_holding(conn, "AAPL", 10, 0.0)
+        result_str = await TOOLS["get_portfolio_diversification_score"].ainvoke(
+            {"portfolio_id": TEST_PORTFOLIO, "user_id": USER_ID}
+        )
+        data = json.loads(result_str)
+        assert "error" in data
+        assert "zero or negative total value" in data["error"].lower()
+
+
+class TestCompareTickersErrors:
+    """Error-handling branches for compare_tickers_side_by_side."""
+
+    async def test_yfinance_exception_appended(self):
+        """When _fetch_info raises, error dict is appended."""
+        from unittest.mock import PropertyMock
+
+        with patch("src.agent.tools.yf") as mock_yf:
+            mock_yf.Ticker.return_value = MagicMock()
+            type(mock_yf.Ticker.return_value).info = PropertyMock(side_effect=ValueError("No data"))
+            result_str = await TOOLS["compare_tickers_side_by_side"].ainvoke(
+                {"tickers": "AAPL", "user_id": USER_ID}
+            )
+        data = json.loads(result_str)
+        assert len(data["tickers"]) == 1
+        assert "error" in data["tickers"][0]
+
+
+class TestGetMarketOHLCVErrors:
+    """Error-handling branches for get_market_ohlcv."""
+
+    async def test_get_ohlcv_exception(self):
+        """get_ohlcv raises → error JSON returned."""
+        with patch(
+            "src.agent.tools.get_ohlcv", new=AsyncMock(side_effect=RuntimeError("API down"))
+        ):
+            result_str = await TOOLS["get_market_ohlcv"].ainvoke(
+                {"ticker": "AAPL", "user_id": USER_ID}
+            )
+        data = json.loads(result_str)
+        assert "error" in data
+        assert "API down" in data["error"]
+
+
+class TestGetMarketQuoteErrors:
+    """Error-handling branches for get_market_quote."""
+
+    async def test_fetch_quote_exception(self):
+        """fetch_quote raises → error JSON returned."""
+        with patch(
+            "src.market.provider.fetch_quote",
+            new=AsyncMock(side_effect=RuntimeError("Quote provider down")),
+        ):
+            result_str = await TOOLS["get_market_quote"].ainvoke(
+                {"ticker": "AAPL", "user_id": USER_ID}
+            )
+        data = json.loads(result_str)
+        assert "error" in data
+        assert "Quote provider down" in data["error"]
+
+
+class TestGetMarketNewsLimits:
+    """Limit-clamping for get_market_news."""
+
+    async def test_min_articles_clamped(self):
+        """max_articles < 1 is clamped to 1."""
+        result_str = await TOOLS["get_market_news"].ainvoke(
+            {"ticker": "AAPL", "user_id": USER_ID, "max_articles": -5}
+        )
+        data = json.loads(result_str)
+        assert data["ticker"] == "AAPL"
+
+
+class TestGetLSTMForecastErrors:
+    """Error-handling branches for get_lstm_forecast."""
+
+    async def test_prediction_returns_none(self):
+        """prediction_service.predict returns None → error."""
+        ohlcv = [{"date": date(2024, 1, 1), "adjusted_close": 1}]
+        with (
+            patch("src.market.repository.get_ohlcv", new=AsyncMock(return_value=ohlcv)),
+            patch("src.prediction.service.prediction_service") as mock_ps,
+        ):
+            mock_ps.predict.return_value = None
+            result_str = await TOOLS["get_lstm_forecast"].ainvoke(
+                {"ticker": "AAPL", "user_id": USER_ID}
+            )
+        data = json.loads(result_str)
+        assert "error" in data
+        assert "No forecast available" in data["error"]
+
+    async def test_prediction_service_exception(self):
+        """prediction_service.predict raises → error JSON."""
+        ohlcv = [{"date": date(2024, 1, 1), "adjusted_close": 1}]
+        with (
+            patch("src.market.repository.get_ohlcv", new=AsyncMock(return_value=ohlcv)),
+            patch("src.prediction.service.prediction_service") as mock_ps,
+        ):
+            mock_ps.predict.side_effect = RuntimeError("Model unavailable")
+            result_str = await TOOLS["get_lstm_forecast"].ainvoke(
+                {"ticker": "AAPL", "user_id": USER_ID}
+            )
+        data = json.loads(result_str)
+        assert "error" in data
+        assert "Forecast failed" in data["error"]
+
+
+class TestGetRecentTransactionsLimits:
+    """Limit-clamping for get_recent_transactions."""
+
+    async def test_min_limit_clamped(self):
+        """limit < 1 is clamped to 1."""
+        result_str = await TOOLS["get_recent_transactions"].ainvoke(
+            {"portfolio_id": TEST_PORTFOLIO, "user_id": USER_ID, "limit": -5}
+        )
+        data = json.loads(result_str)
+        assert data["total"] >= 0

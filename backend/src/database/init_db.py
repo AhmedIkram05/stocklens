@@ -290,7 +290,13 @@ async def _detect_and_fix_broken_state() -> None:
     dsn = _normalise_dsn(settings.DATABASE_URL)
     conn = await asyncpg.connect(dsn)
     try:
-        version = await conn.fetchval("SELECT version_num FROM alembic_version")
+        try:
+            version = await conn.fetchval("SELECT version_num FROM alembic_version")
+        except asyncpg.exceptions.UndefinedTableError:
+            # alembic_version table doesn't exist yet — either the DB is
+            # brand-new and Alembic hasn't run, or another ECS task is
+            # still inside its migration transaction.  Safe to skip.
+            return
         if version != "d2f4e1b3c5a7":
             return  # clean state
 

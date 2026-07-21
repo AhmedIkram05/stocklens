@@ -12,14 +12,17 @@ pytest-asyncio event loop.
 from __future__ import annotations
 
 import json
+from unittest.mock import AsyncMock, patch
 
 import numpy as np
 import pytest
 
 from src.prediction.prediction_logger import (
     FEATURE_NAMES,
+    _is_nan,
     _log_prediction,
     compute_feature_stats,
+    log_prediction_sync,
 )
 
 
@@ -248,3 +251,106 @@ async def test_logged_raw_feature_names_match_constant() -> None:
 
             stored_names = json.loads(stored_names)
         assert stored_names == FEATURE_NAMES
+
+
+class TestIsNan:
+    """Tests for _is_nan helper."""
+
+    def test_nan_float(self):
+
+        assert _is_nan(float("nan")) is True
+
+    def test_nan_numpy(self):
+        import numpy as np
+
+        assert _is_nan(np.float64("nan")) is True
+
+    def test_finite_float(self):
+        assert _is_nan(42.0) is False
+
+    def test_non_numeric_returns_false(self):
+        """TypeError in np.isnan → _is_nan returns False."""
+        result = _is_nan("not a number")  # type: ignore[arg-type]
+        assert result is False
+
+    def test_none_returns_false(self):
+        result = _is_nan(None)  # type: ignore[arg-type]
+        assert result is False
+
+
+class TestLogPredictionSync:
+    """Tests for log_prediction_sync — the thread-pool entry point."""
+
+    def test_log_prediction_sync_without_main_loop(self, monkeypatch):
+        """When no main loop is captured, asyncio.run is used."""
+
+        calls = []
+
+        async def fake_log(**kwargs):
+            calls.append(kwargs)
+            return None
+
+        monkeypatch.setattr("src.prediction.prediction_logger._main_loop", None)
+        monkeypatch.setattr("src.prediction.prediction_logger._log_prediction", fake_log)
+
+        log_prediction_sync(
+            ticker="AAPL",
+            model_version="v1",
+            prediction="UP",
+            confidence=0.8,
+            probabilities={"UP": 0.8, "DOWN": 0.1, "FLAT": 0.1},
+            feature_values=None,
+            feature_window=None,
+        )
+
+        assert len(calls) == 1
+        assert calls[0]["ticker"] == "AAPL"
+
+    def test_log_prediction_sync_exception_logged(self, monkeypatch):
+        """When the coroutine raises, the exception is caught."""
+        import warnings
+
+        monkeypatch.setattr("src.prediction.prediction_logger._main_loop", None)
+
+        async def failing_log(**kwargs):
+            raise RuntimeError("DB unavailable")
+
+        monkeypatch.setattr("src.prediction.prediction_logger._log_prediction", failing_log)
+
+        # Should not raise
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            log_prediction_sync(
+                ticker="AAPL",
+                model_version="v1",
+                prediction="UP",
+                confidence=0.8,
+                probabilities={"UP": 0.8, "DOWN": 0.1, "FLAT": 0.1},
+                feature_values=None,
+                feature_window=None,
+            )
+
+    def test_log_prediction_sync_with_main_loop(self, monkeypatch):
+        """When a running main loop is captured, run_coroutine_threadsafe is used."""
+        from unittest.mock import MagicMock
+
+        main_loop = MagicMock()
+        main_loop.is_running.return_value = True
+        monkeypatch.setattr("src.prediction.prediction_logger._main_loop", main_loop)
+        monkeypatch.setattr(
+            "src.prediction.prediction_logger._log_prediction",
+            AsyncMock(return_value=None),
+        )
+        with patch(
+            "src.prediction.prediction_logger.asyncio.run_coroutine_threadsafe"
+        ) as mock_schedule:
+            log_prediction_sync(
+                ticker="AAPL",
+                model_version="v1",
+                prediction="UP",
+                confidence=0.8,
+                probabilities={"UP": 0.8, "DOWN": 0.1, "FLAT": 0.1},
+                feature_values=None,
+                feature_window=None,
+            )
+            mock_schedule.assert_called_once()

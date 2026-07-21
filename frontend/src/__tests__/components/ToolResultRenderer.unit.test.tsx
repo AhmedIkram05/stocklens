@@ -78,6 +78,29 @@ describe('PortfolioSummaryRenderer', () => {
   it('renders gracefully with empty data', () => {
     expect(() => renderWithProviders(renderToolResult('get_portfolio_summary', {}))).not.toThrow();
   });
+
+  it('renders description when present', () => {
+    const { getByText } = renderWithProviders(
+      renderToolResult('get_portfolio_summary', sampleData),
+    );
+    expect(getByText('Test portfolio')).toBeTruthy();
+  });
+
+  it('hides description section when absent', () => {
+    const { queryByText } = renderWithProviders(
+      renderToolResult('get_portfolio_summary', { name: 'My Portfolio' }),
+    );
+    expect(queryByText('Test portfolio')).toBeNull();
+  });
+
+  it('handles null values gracefully', () => {
+    const { getAllByText } = renderWithProviders(
+      renderToolResult('get_portfolio_summary', { name: 'Test' }),
+    );
+    // formatCurrency returns '—' for null values (Total Value, Cost Basis, Cash Balance).
+    // P&L uses `?? 0` default, so shows '0.00 GBP' instead of '—'.
+    expect(getAllByText('—').length).toBeGreaterThanOrEqual(3);
+  });
 });
 
 describe('PortfolioHoldingsRenderer', () => {
@@ -302,6 +325,35 @@ describe('TickerInfoRenderer', () => {
     expect(getByText('Apple Inc.')).toBeTruthy();
     expect(getByText(/2500\.00B/)).toBeTruthy();
   });
+
+  it('renders description when present', () => {
+    const data = {
+      company_name: 'Apple Inc.',
+      description: 'A technology company that designs consumer electronics.',
+      sector: 'Technology',
+    };
+    const { getByText } = renderWithProviders(renderToolResult('get_ticker_info', data));
+    expect(getByText('A technology company that designs consumer electronics.')).toBeTruthy();
+  });
+
+  it('renders country and exchange when present', () => {
+    const data = {
+      company_name: 'Apple Inc.',
+      sector: 'Technology',
+      country: 'US',
+      exchange: 'NASDAQ',
+    };
+    const { getByText } = renderWithProviders(renderToolResult('get_ticker_info', data));
+    expect(getByText('US')).toBeTruthy();
+    expect(getByText('NASDAQ')).toBeTruthy();
+  });
+
+  it('handles null company_name gracefully', () => {
+    const { getByText } = renderWithProviders(
+      renderToolResult('get_ticker_info', { ticker: 'AAPL', sector: 'Technology' }),
+    );
+    expect(getByText('AAPL')).toBeTruthy();
+  });
 });
 
 describe('NewsRenderer', () => {
@@ -431,6 +483,23 @@ describe('CashFlowSummaryRenderer', () => {
       renderWithProviders(renderToolResult('get_cash_flow_summary', data)),
     ).not.toThrow();
   });
+
+  it('renders last_deposit details when present', () => {
+    const data = {
+      total_deposits_gbp: 50000,
+      deposit_count: 12,
+      most_recent_deposit: { amount: 5000, date: '2026-07-20T00:00:00' },
+    };
+    const { getByText } = renderWithProviders(renderToolResult('get_cash_flow_summary', data));
+    expect(getByText(/Last Deposit/)).toBeTruthy();
+    expect(getByText(/5,000\.00 GBP on 2026-07-20/)).toBeTruthy();
+  });
+
+  it('hides last_deposit section when most_recent_deposit is null', () => {
+    const data = { total_deposits_gbp: 0, deposit_count: 0, most_recent_deposit: null };
+    const { queryByText } = renderWithProviders(renderToolResult('get_cash_flow_summary', data));
+    expect(queryByText(/Last Deposit/)).toBeNull();
+  });
 });
 
 describe('DividendInsightsRenderer', () => {
@@ -448,6 +517,30 @@ describe('DividendInsightsRenderer', () => {
 
   it('handles missing fields gracefully', () => {
     expect(() => renderWithProviders(renderToolResult('get_dividend_insights', {}))).not.toThrow();
+  });
+
+  it('renders last_dividend_date when present', () => {
+    const data = {
+      ticker: 'AAPL',
+      dividend_yield: 0.005,
+      dividend_rate: 0.96,
+      ex_dividend_date: '2026-08-10',
+      last_dividend_date: '2026-07-01',
+      last_dividend_value: 0.24,
+    };
+    const { getByText } = renderWithProviders(renderToolResult('get_dividend_insights', data));
+    expect(getByText(/Last Dividend/)).toBeTruthy();
+    expect(getByText(/0\.24/)).toBeTruthy();
+  });
+
+  it('hides last_dividend_date section when absent', () => {
+    const data = {
+      ticker: 'AAPL',
+      dividend_yield: 0.005,
+      dividend_rate: 0.96,
+    };
+    const { queryByText } = renderWithProviders(renderToolResult('get_dividend_insights', data));
+    expect(queryByText(/Last Dividend/)).toBeNull();
   });
 });
 

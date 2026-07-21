@@ -283,8 +283,247 @@ class TestGetRunDetails:
         assert response.status_code == 401
 
 
-class TestEdgeCases:
-    """Edge case tests."""
+class TestBuildReferenceDataframe:
+    """Tests for _build_reference_dataframe helper."""
+
+    def test_empty_feature_histograms_returns_none(self):
+        from src.drift.router import _build_reference_dataframe
+
+        assert _build_reference_dataframe({}) is None
+
+    def test_empty_histograms_dict_returns_none(self):
+        from src.drift.router import _build_reference_dataframe
+
+        assert _build_reference_dataframe({"feature_histograms": {}}) is None
+
+    def test_builds_dataframe_from_histograms(self):
+        import pandas as pd
+
+        from src.drift.router import _build_reference_dataframe
+
+        result = _build_reference_dataframe(
+            {
+                "feature_histograms": {
+                    "log_ret_1d": {"values": [0.1, 0.2, 0.3]},
+                    "rsi_14": {"values": [50.0, 55.0, 60.0]},
+                }
+            }
+        )
+        assert result is not None
+        assert isinstance(result, pd.DataFrame)
+        assert list(result.columns) == ["log_ret_1d", "rsi_14"]
+        assert len(result) == 3
+
+    def test_truncates_at_1000_samples(self):
+        from src.drift.router import _build_reference_dataframe
+
+        values = list(range(2000))
+        result = _build_reference_dataframe({"feature_histograms": {"f1": {"values": values}}})
+        assert result is not None
+        assert len(result) == 1000
+
+    def test_uneven_feature_lengths_uses_min(self):
+        from src.drift.router import _build_reference_dataframe
+
+        result = _build_reference_dataframe(
+            {
+                "feature_histograms": {
+                    "f1": {"values": [1, 2, 3]},
+                    "f2": {"values": [4, 5]},
+                }
+            }
+        )
+        assert result is not None
+        assert len(result) == 2
+
+    def test_empty_values_result_has_zero_rows(self):
+        """Empty value lists produce a 0-row DataFrame (n_samples=0)."""
+        import pandas as pd
+
+        from src.drift.router import _build_reference_dataframe
+
+        result = _build_reference_dataframe({"feature_histograms": {"f1": {"values": []}}})
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) == 0
+
+
+class TestBuildCurrentDataframe:
+    """Tests for _build_current_dataframe helper."""
+
+    def test_empty_logs_returns_none(self):
+        from src.drift.router import _build_current_dataframe
+
+        assert _build_current_dataframe({}) is None
+
+    def test_logs_without_features_skipped(self):
+        from src.drift.router import _build_current_dataframe
+
+        logs = {"AAPL": [{"ticker": "AAPL", "features": None}]}
+        assert _build_current_dataframe(logs) is None
+
+    def test_builds_dataframe_from_logs(self):
+        import pandas as pd
+
+        from src.drift.router import _build_current_dataframe
+
+        logs = {
+            "AAPL": [
+                {
+                    "features": {
+                        "stats": {"means": [0.5, 0.3]},
+                    }
+                }
+            ]
+        }
+        result = _build_current_dataframe(logs)
+        assert result is not None
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) == 1
+
+    def test_features_without_stats_skipped(self):
+        from src.drift.router import _build_current_dataframe
+
+        logs = {"AAPL": [{"features": {"no_stats": True}}]}
+        assert _build_current_dataframe(logs) is None
+
+
+class TestReportGenerationPath:
+    """Tests for the Evidently report generation path in trigger_drift_run."""
+
+    @patch("src.drift.router.get_current_user_id")
+    @patch("src.drift.router._get_reporter")
+    @patch("src.drift.router.upload_report_to_s3")
+    @patch("src.drift.router.generate_presigned_url")
+    @patch("src.drift.router.build_s3_key")
+    @patch("src.drift.router._build_current_dataframe")
+    @patch("src.drift.router._build_reference_dataframe")
+    @patch("src.drift.router.create_drift_metric")
+    @patch("src.drift.router.DriftDetector.compute_drift")
+    @patch("src.drift.router.connection_ctx")
+    @patch("src.drift.router.generate_drift_run_id")
+    async def test_generate_report_happy_path(
+        self,
+        mock_run_id,
+        mock_conn_ctx,
+        mock_compute_drift,
+        mock_create_metric,
+        mock_build_ref,
+        mock_build_cur,
+        mock_s3_key,
+        mock_presigned,
+        mock_upload,
+        mock_reporter,
+        mock_get_user,
+        client,
+        auth_headers,
+    ):
+        """When generate_report=True and reference_dist has histograms, report is generated."""
+        mock_get_user.return_value = "test-user"
+        mock_run_id.return_value = "test-run-456"
+
+        mock_conn = AsyncMock()
+        mock_conn.fetchrow.return_value = {
+            "mlflow_run_id": "mlflow-1",
+            "model_version": "v1.0",
+            "metrics": {
+                "reference_distributions": {
+                    "feature_histograms": {"log_ret_1d": {"values": [0.1, 0.2]}}
+                }
+            },
+        }
+        mock_conn.fetch.return_value = []
+        mock_conn_ctx.return_value.__aenter__.return_value = mock_conn
+
+        mock_compute_drift.return_value = {
+            "metrics": [],
+            "alerts_triggered": 0,
+            "max_psi": 0.0,
+            "max_js_divergence": 0.0,
+            "overall_verdict": "stable",
+        }
+
+        # Report generation mocks
+        import pandas as pd
+
+        ref_df = pd.DataFrame({"f1": [0.1]})
+        cur_df = pd.DataFrame({"f1": [0.2]})
+        mock_build_ref.return_value = ref_df
+        mock_build_cur.return_value = cur_df
+
+        mock_reporter.return_value.generate_drift_report.return_value = (
+            "/tmp/report.html",
+            "report-id-1",
+        )
+        mock_s3_key.return_value = "drift_reports/2024-01-01/drift_report_report-id-1.html"
+        mock_upload.return_value = True
+        mock_presigned.return_value = "https://presigned.url"
+
+        response = await client.post(
+            "/drift/run",
+            json={"tickers": ["AAPL"], "lookback_days": 7, "generate_report": True},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["report_url"] == "https://presigned.url"
+        mock_reporter.return_value.generate_drift_report.assert_called_once_with(ref_df, cur_df)
+        mock_upload.assert_called_once()
+        mock_presigned.assert_called_once()
+
+    @patch("src.drift.router.get_current_user_id")
+    @patch("src.drift.router._get_reporter")
+    @patch("src.drift.router._build_current_dataframe")
+    @patch("src.drift.router._build_reference_dataframe")
+    @patch("src.drift.router.create_drift_metric")
+    @patch("src.drift.router.DriftDetector.compute_drift")
+    @patch("src.drift.router.connection_ctx")
+    @patch("src.drift.router.generate_drift_run_id")
+    async def test_report_skipped_when_ref_df_none(
+        self,
+        mock_run_id,
+        mock_conn_ctx,
+        mock_compute_drift,
+        mock_create_metric,
+        mock_build_ref,
+        mock_build_cur,
+        mock_reporter,
+        mock_get_user,
+        client,
+        auth_headers,
+    ):
+        """When _build_reference_dataframe returns None, report is skipped."""
+        mock_get_user.return_value = "test-user"
+        mock_run_id.return_value = "test-run-789"
+
+        mock_conn = AsyncMock()
+        mock_conn.fetchrow.return_value = {
+            "mlflow_run_id": "mlflow-1",
+            "model_version": "v1.0",
+            "metrics": {"reference_distributions": {}},
+        }
+        mock_conn.fetch.return_value = []
+        mock_conn_ctx.return_value.__aenter__.return_value = mock_conn
+
+        mock_compute_drift.return_value = {
+            "metrics": [],
+            "alerts_triggered": 0,
+            "max_psi": 0.0,
+            "max_js_divergence": 0.0,
+            "overall_verdict": "stable",
+        }
+
+        mock_build_ref.return_value = None
+
+        response = await client.post(
+            "/drift/run",
+            json={"tickers": ["AAPL"], "generate_report": True},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["report_url"] is None
+        mock_reporter.return_value.generate_drift_report.assert_not_called()
 
     @patch("src.drift.router.get_current_user_id")
     @patch("src.drift.router.connection_ctx")

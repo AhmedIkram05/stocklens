@@ -6,7 +6,8 @@ Tests keyword matching, fuzzy matching, and edge cases.
 
 from __future__ import annotations
 
-from unittest.mock import patch
+import json
+from unittest.mock import MagicMock, patch
 
 from src.categories.merchant_map import (
     CategoryRule,
@@ -189,6 +190,163 @@ class TestResolveCategory:
     async def test_none_merchant_returns_none(self):
         category = await resolve_category(None)  # type: ignore[arg-type]
         assert category is None
+
+
+class TestGetCategories:
+    """Tests for get_categories."""
+
+    def test_returns_cached_categories(self):
+        from src.categories import merchant_map
+
+        merchant_map._category_cache = None
+        from src.categories.merchant_map import get_categories
+
+        cats = get_categories()
+        assert len(cats) > 0
+        assert all(isinstance(c, CategoryRule) for c in cats)
+
+
+class TestGetBedrockClient:
+    """Tests for _get_bedrock_client."""
+
+    def test_returns_boto3_client(self):
+        from unittest.mock import MagicMock, patch
+
+        with patch("boto3.client") as mock_client:
+            mock_client.return_value = MagicMock(name="bedrock_client")
+            from src.categories.merchant_map import _get_bedrock_client
+
+            client = _get_bedrock_client()
+            assert client is not None
+            # Verify it creates a bedrock-runtime client with some region
+            mock_client.assert_called_once()
+            assert mock_client.call_args[0][0] == "bedrock-runtime"
+            assert "region_name" in mock_client.call_args[1]
+
+
+class TestSanitiseMerchant:
+    """Tests for _sanitise_merchant."""
+
+    def test_strips_control_chars(self):
+        from src.categories.merchant_map import _sanitise_merchant
+
+        assert _sanitise_merchant("Tes\x00co") == "Tesco"
+
+    def test_truncates_long_names(self):
+        from src.categories.merchant_map import _sanitise_merchant
+
+        long_name = "a" * 300
+        result = _sanitise_merchant(long_name)
+        assert len(result) == 256
+
+    def test_preserves_normal_names(self):
+        from src.categories.merchant_map import _sanitise_merchant
+
+        assert _sanitise_merchant("Tesco") == "Tesco"
+
+
+class TestBuildBedrockPrompt:
+    """Tests for _build_bedrock_prompt."""
+
+    def test_includes_categories(self):
+        from src.categories.merchant_map import _build_bedrock_prompt
+
+        cats = [
+            CategoryRule(id="1", name="Groceries", description="Food"),
+            CategoryRule(id="2", name="Transport", description="Travel"),
+        ]
+        prompt = _build_bedrock_prompt("Tesco", cats)
+        assert "Groceries" in prompt
+        assert "Transport" in prompt
+        assert "Tesco" in prompt
+        assert "Merchant:" in prompt
+
+
+class TestClassifyWithBedrock:
+    """Tests for classify_with_bedrock."""
+
+    async def test_no_categories_returns_none(self):
+        from src.categories import merchant_map
+
+        saved = merchant_map._category_cache
+        merchant_map._category_cache = []
+        try:
+            from src.categories.merchant_map import classify_with_bedrock
+
+            result = await classify_with_bedrock("Tesco")
+            assert result is None
+        finally:
+            merchant_map._category_cache = saved
+
+    async def test_known_category_match(self):
+        from unittest.mock import patch
+
+        with patch("src.categories.merchant_map._get_bedrock_client") as mock_client:
+            mock_instance = mock_client.return_value
+            mock_instance.invoke_model.return_value = {
+                "body": MagicMock(
+                    read=MagicMock(
+                        return_value=json.dumps({"content": [{"text": "Groceries"}]}).encode()
+                    )
+                )
+            }
+            from src.categories.merchant_map import classify_with_bedrock, load_categories
+
+            load_categories(None)
+            result = await classify_with_bedrock("Some Market")
+            assert result is not None
+            assert result.name == "Groceries"
+
+    async def test_unrecognised_category_returns_none(self):
+        from unittest.mock import MagicMock, patch
+
+        with patch("src.categories.merchant_map._get_bedrock_client") as mock_client:
+            mock_instance = mock_client.return_value
+            mock_instance.invoke_model.return_value = {
+                "body": MagicMock(
+                    read=MagicMock(
+                        return_value=json.dumps({"content": [{"text": "NonExistent"}]}).encode()
+                    )
+                )
+            }
+            from src.categories.merchant_map import classify_with_bedrock
+
+            result = await classify_with_bedrock("Unknown")
+            assert result is None
+
+    async def test_exception_returns_none(self):
+        from unittest.mock import patch
+
+        with patch("src.categories.merchant_map._get_bedrock_client") as mock_client:
+            mock_client.side_effect = RuntimeError("AWS down")
+            from src.categories.merchant_map import classify_with_bedrock
+
+            result = await classify_with_bedrock("Tesco")
+            assert result is None
+
+
+class TestMatchByKeywordEdgeCases:
+    """Additional edge cases for keyword matching."""
+
+    def test_empty_keyword_skipped(self):
+        from src.categories import merchant_map
+        from src.categories.merchant_map import CategoryRule, match_by_keyword
+
+        saved = merchant_map._category_cache
+        merchant_map._category_cache = [
+            CategoryRule(id="1", name="Test", merchant_keywords=[""]),
+        ]
+        try:
+            result = match_by_keyword("anything")
+            assert result is None
+        finally:
+            merchant_map._category_cache = saved
+
+    def test_normalised_empty_returns_none(self):
+        from src.categories.merchant_map import match_by_keyword
+
+        result = match_by_keyword("")
+        assert result is None
 
 
 class TestEdgeCases:

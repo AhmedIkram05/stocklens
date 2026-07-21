@@ -273,3 +273,122 @@ describe('agentService REST methods (via apiService mock)', () => {
     );
   });
 });
+
+describe('agentService.sendMessage edge cases', () => {
+  it('handles tool_end with object format and base64 decoded result', async () => {
+    const sseChunks = [
+      'event: tool_start\ndata: "get_portfolio_summary"\n\n',
+      'event: tool_end\ndata: {"tool_name":"get_portfolio_summary","result":"eyJ0ZXN0IjogInZhbHVlIn0="}\n\n',
+      'event: done\ndata: {"conversation_id":"conv-1","full_response":"Done"}\n\n',
+    ];
+
+    const mockFetch = jest.fn().mockResolvedValue(mockStreamResponse(sseChunks));
+    const originalFetch = global.fetch;
+    global.fetch = mockFetch;
+
+    try {
+      const onToolEnd = jest.fn();
+      await agentService.sendMessage('Test', 'conv-1', undefined, undefined, onToolEnd);
+
+      expect(onToolEnd).toHaveBeenCalledWith('get_portfolio_summary', { test: 'value' });
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('handles tool_end with invalid base64 gracefully', async () => {
+    const sseChunks = [
+      'event: tool_end\ndata: {"tool_name":"get_portfolio_summary","result":"bm90IGpzb24="}\n\n',
+      'event: done\ndata: {"conversation_id":"conv-1","full_response":"Done"}\n\n',
+    ];
+
+    const mockFetch = jest.fn().mockResolvedValue(mockStreamResponse(sseChunks));
+    const originalFetch = global.fetch;
+    global.fetch = mockFetch;
+
+    try {
+      const onToolEnd = jest.fn();
+      await agentService.sendMessage('Test', 'conv-1', undefined, undefined, onToolEnd);
+
+      // Invalid base64 leaves parsedResult undefined
+      expect(onToolEnd).toHaveBeenCalledWith('get_portfolio_summary', undefined);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('handles empty token from server', async () => {
+    const sseChunks = [
+      'event: token\ndata: ""\n\n',
+      'event: done\ndata: {"conversation_id":"conv-1","full_response":""}\n\n',
+    ];
+
+    const mockFetch = jest.fn().mockResolvedValue(mockStreamResponse(sseChunks));
+    const originalFetch = global.fetch;
+    global.fetch = mockFetch;
+
+    try {
+      const onToken = jest.fn();
+      await agentService.sendMessage('Test', undefined, onToken);
+
+      expect(onToken).toHaveBeenCalledWith('');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('works without token callback', async () => {
+    const sseChunks = [
+      'event: token\ndata: "Hello"\n\n',
+      'event: done\ndata: {"conversation_id":"conv-1","full_response":"Hello"}\n\n',
+    ];
+
+    const mockFetch = jest.fn().mockResolvedValue(mockStreamResponse(sseChunks));
+    const originalFetch = global.fetch;
+    global.fetch = mockFetch;
+
+    try {
+      const result = await agentService.sendMessage(
+        'Test',
+        'conv-1',
+        undefined,
+        undefined,
+        undefined,
+      );
+      expect(result.conversationId).toBe('conv-1');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('handles multiple tool_start/tool_end pairs in sequence', async () => {
+    const sseChunks = [
+      'event: tool_start\ndata: "tool1"\n\n',
+      'event: tool_end\ndata: "tool1"\n\n',
+      'event: token\ndata: "First result"\n\n',
+      'event: tool_start\ndata: "tool2"\n\n',
+      'event: tool_end\ndata: "tool2"\n\n',
+      'event: token\ndata: "Second result"\n\n',
+      'event: done\ndata: {"conversation_id":"conv-1","full_response":"Results"}\n\n',
+    ];
+
+    const mockFetch = jest.fn().mockResolvedValue(mockStreamResponse(sseChunks));
+    const originalFetch = global.fetch;
+    global.fetch = mockFetch;
+
+    try {
+      const onToolStart = jest.fn();
+      const onToolEnd = jest.fn();
+      await agentService.sendMessage('Test', undefined, undefined, onToolStart, onToolEnd);
+
+      expect(onToolStart).toHaveBeenCalledTimes(2);
+      expect(onToolStart).toHaveBeenNthCalledWith(1, 'tool1');
+      expect(onToolStart).toHaveBeenNthCalledWith(2, 'tool2');
+      expect(onToolEnd).toHaveBeenCalledTimes(2);
+      expect(onToolEnd).toHaveBeenNthCalledWith(1, 'tool1', undefined);
+      expect(onToolEnd).toHaveBeenNthCalledWith(2, 'tool2', undefined);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+});
