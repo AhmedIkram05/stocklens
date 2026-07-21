@@ -70,6 +70,42 @@ class TestProcessMessage:
         token_data = "".join(e["data"] for e in emitted if e["event"] == "token")
         assert token_data == "Hello world"
 
+    async def test_persist_list_content_blocks(self):
+        """AIMessage with list content blocks should persist as a flat string."""
+        svc = AgentService()
+        cid = uuid4()
+        async with connection_ctx() as conn:
+            cid = await create_conversation(conn, USER_ID)
+
+        events = [
+            {
+                "event": "on_chain_end",
+                "name": "LangGraph",
+                "data": {
+                    "output": {
+                        "messages": [
+                            AIMessage(
+                                content=[
+                                    {"type": "text", "text": "Your portfolio "},
+                                    {"type": "text", "text": "is up 3.2%"},
+                                ]
+                            )
+                        ]
+                    }
+                },
+            },
+        ]
+        await self._run_with_events(svc, cid, USER_ID, "how is my portfolio?", events)
+
+        async with connection_ctx() as conn:
+            rows = await conn.fetch(
+                "SELECT role, content FROM agent_conversations "
+                "WHERE conversation_id = $1::uuid ORDER BY id",
+                cid,
+            )
+        assistant = [r for r in rows if r["role"] == "assistant"][0]
+        assert assistant["content"] == "Your portfolio is up 3.2%"
+
     async def test_tool_tracking(self):
         svc = AgentService()
         cid = uuid4()
@@ -235,6 +271,37 @@ class TestSerializeDeserialize:
     def test_deserialize_unknown_role_defaults_human(self):
         back = AgentService._deserialize_msg({"role": "weird", "content": "x"})
         assert isinstance(back, HumanMessage)
+
+    def test_extract_text_from_string_passthrough(self):
+        svc = AgentService()
+        assert svc._extract_text("hello") == "hello"
+        assert svc._extract_text("") == ""
+
+    def test_extract_text_from_list_content_blocks(self):
+        svc = AgentService()
+        blocks = [
+            {"type": "text", "text": "Hello "},
+            {"type": "text", "text": "world"},
+        ]
+        assert svc._extract_text(blocks) == "Hello world"
+
+    def test_extract_text_filters_non_text_blocks(self):
+        svc = AgentService()
+        blocks = [
+            {"type": "text", "text": "Price is "},
+            {"type": "tool_use", "id": "x", "name": "calc", "input": {}},
+            {"type": "text", "text": "£42"},
+        ]
+        assert svc._extract_text(blocks) == "Price is £42"
+
+    def test_extract_text_serialize_roundtrip(self):
+        """Content blocks should survive serialize→deserialize as a flat string."""
+        svc = AgentService()
+        msg = AIMessage(content=[{"type": "text", "text": "Your portfolio is up 5%"}])
+        d = svc._serialize_msg(msg)
+        assert d["content"] == "Your portfolio is up 5%"
+        back = AgentService._deserialize_msg(d)
+        assert back.content == "Your portfolio is up 5%"
 
 
 class TestServiceCRUD:

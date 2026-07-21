@@ -173,7 +173,7 @@ async def scan_receipt(
 
     if not cascade_result.raw_text.strip():
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
                 "Could not extract text from the image. "
                 "Please retake the photo with better lighting."
@@ -182,7 +182,7 @@ async def scan_receipt(
 
     if cascade_result.extraction.total is None:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
                 "Could not extract the total amount from the receipt. Please enter it manually."
             ),

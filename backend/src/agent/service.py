@@ -14,6 +14,7 @@ import json
 import os
 import random
 from collections.abc import AsyncGenerator
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -159,9 +160,22 @@ class AgentService:
 
         return state
 
+    @staticmethod
+    def _extract_text(content: Any) -> str:
+        """Normalize LangChain content (str or list[dict]) into a plain string."""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return "".join(
+                b["text"]
+                for b in content
+                if isinstance(b, dict) and b.get("type") == "text" and "text" in b
+            )
+        return str(content)
+
     def _serialize_msg(self, msg) -> dict:
         """Serialize a LangChain BaseMessage for JSON storage."""
-        return {"role": msg.type, "content": msg.content}
+        return {"role": msg.type, "content": self._extract_text(msg.content)}
 
     @staticmethod
     def _deserialize_msg(d: dict):
@@ -210,7 +224,7 @@ class AgentService:
             # Extract final assistant response
             last_msg = final_state.get("messages", [None])[-1]
             if last_msg:
-                response_text = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
+                response_text = self._extract_text(getattr(last_msg, "content", str(last_msg)))
                 await agent_repo.add_message(
                     conn,
                     conversation_id,
@@ -274,7 +288,7 @@ class AgentService:
 
         # Build a text block of the oldest messages for the summary model
         history_text = "\n".join(
-            f"{'User' if isinstance(m, HumanMessage) else 'Assistant'}: {m.content[:500]}"
+            f"{'User' if isinstance(m, HumanMessage) else 'Assistant'}: {self._extract_text(m.content)[:500]}"  # noqa: E501
             for m in oldest
         )
 
@@ -487,7 +501,7 @@ class AgentService:
                     if final_state.get("messages"):
                         last_msg = final_state["messages"][-1]
                         if hasattr(last_msg, "content"):
-                            last_content = last_msg.content
+                            last_content = self._extract_text(last_msg.content)
                     await self._run_eval_background(
                         conversation_id,
                         user_id,

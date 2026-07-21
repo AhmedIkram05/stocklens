@@ -19,6 +19,7 @@ Retry policy
 from __future__ import annotations
 
 import json
+import re
 
 import structlog
 from pydantic import BaseModel, Field
@@ -153,7 +154,15 @@ async def extract_with_llm(
 
     # ── 4. Parse response ────────────────────────────────────────────────
     try:
-        parsed = json.loads(result_json)
+        # Strip markdown code fences that Bedrock sometimes wraps JSON in
+        cleaned = re.sub(
+            r"^```(?:json)?\s*\n?",
+            "",
+            result_json.strip(),
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(r"\n?\s*```$", "", cleaned).strip()
+        parsed = json.loads(cleaned)
         if not isinstance(parsed, dict):
             logger.warning("llm_response_not_object", type=type(parsed).__name__)
             return None
