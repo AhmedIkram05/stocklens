@@ -234,8 +234,14 @@ class AgentService:
                     tools_used=tools_used,
                 )
 
-            # Update conversation metadata
-            await agent_repo.update_conversation_metadata(conn, conversation_id)
+            # Update conversation metadata — count both messages just added
+            count = await conn.fetchval(
+                "SELECT COUNT(*) FROM agent_conversations WHERE conversation_id = $1::uuid",
+                conversation_id,
+            )
+            await agent_repo.update_conversation_metadata(
+                conn, conversation_id, message_count=count
+            )
 
         # Refresh Redis state
         try:
@@ -475,7 +481,8 @@ class AgentService:
                                 t["result"] = (
                                     json.loads(output) if isinstance(output, str) else output
                                 )
-                            except (json.JSONDecodeError, TypeError):
+                                json.dumps(t["result"])  # validate serializable
+                            except (json.JSONDecodeError, TypeError, ValueError):
                                 t["result"] = {"raw": str(output)[:500]}
 
                 yield {

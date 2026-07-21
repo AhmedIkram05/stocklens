@@ -213,7 +213,7 @@ async def scan_receipt(
             category,
             cascade_result.raw_text,
             cascade_result.overall_confidence,
-            json.dumps([item.model_dump() for item in cascade_result.extraction.items]),
+            json.dumps([item.model_dump(mode="json") for item in cascade_result.extraction.items]),
             datetime.now(timezone.utc),
             cascade_result.source,
             cascade_result.extraction.date,
