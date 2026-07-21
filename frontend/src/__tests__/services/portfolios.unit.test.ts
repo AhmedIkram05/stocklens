@@ -245,6 +245,69 @@ describe('portfolioService (API)', () => {
     );
   });
 
+  it('getBulkPerformance returns Record<string, PortfolioPerformance>', async () => {
+    const bulkResponse = {
+      portfolios: {
+        '1': {
+          portfolio_id: '1',
+          portfolio_name: 'Test',
+          total_market_value: 50000,
+          total_cost_basis: 40000,
+          total_unrealised_pl: 10000,
+          total_unrealised_pl_pct: 25,
+          day_change: 200,
+          day_change_pct: 0.4,
+          twr: 1.15,
+          twr_annualised: 0.12,
+          twr_start_date: null,
+          twr_end_date: null,
+          twr_methodology: 'sub-period',
+          data_quality: 'good',
+          free_cash_balance: 5000,
+          total_holdings: 1,
+          calculated_at: '2024-01-01T00:00:00Z',
+          holdings: [
+            {
+              ticker: 'AAPL',
+              shares: 100,
+              average_cost_basis: 150,
+              current_price: 200,
+              market_value: 20000,
+              cost_basis: 15000,
+              unrealised_pl: 5000,
+              unrealised_pl_pct: 33.33,
+              day_change: 50,
+              day_change_pct: 0.25,
+              portfolio_weight_pct: 0.4,
+            },
+          ],
+        },
+      },
+    };
+    fetchMock.mockResponseOnce(JSON.stringify(bulkResponse), { status: 200 });
+
+    const result = await portfolioService.getBulkPerformance(['1']);
+
+    expect(result['1'].total_market_value).toBe(50000);
+    expect(result['1'].holdings).toHaveLength(1);
+    expect(result['1'].holdings[0].ticker).toBe('AAPL');
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/portfolio\/performance\/bulk\?portfolio_ids=1$/),
+      expect.any(Object),
+    );
+  });
+
+  it('getBulkPerformance with multiple IDs formats URL correctly', async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ portfolios: {} }), { status: 200 });
+
+    await portfolioService.getBulkPerformance(['1', '2', '3']);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/portfolio\/performance\/bulk\?portfolio_ids=1,2,3$/),
+      expect.any(Object),
+    );
+  });
+
   it('getBenchmark works without optional parameters', async () => {
     const bench = {
       portfolio_id: '1',

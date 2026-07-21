@@ -17,6 +17,8 @@ jest.mock('@/screens/portfolio/CreatePortfolioScreen', () => () => null);
 jest.mock('@/screens/portfolio/DepositScreen', () => () => null);
 jest.mock('@/screens/portfolio/TradeScreen', () => () => null);
 jest.mock('@/screens/portfolio/BenchmarkScreen', () => () => null);
+jest.mock('@/screens/SectorExposureScreen', () => () => null);
+jest.mock('@/screens/DiversificationScoreScreen', () => () => null);
 
 jest.mock('@react-navigation/stack', () => {
   const Screen = ({ component: Component }: any) => (Component ? <Component /> : null);

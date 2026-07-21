@@ -15,6 +15,7 @@ jest.mock('@/services/portfolios', () => ({
   portfolioService: {
     listPortfolios: jest.fn(),
     getPerformance: jest.fn(),
+    getBulkPerformance: jest.fn(),
   },
 }));
 
@@ -81,7 +82,13 @@ describe('PortfolioListScreen', () => {
     navigateSpy = jest.fn();
     mockedUseNavigation.mockReturnValue({ navigate: navigateSpy } as any);
     mockedPortfolioService.listPortfolios.mockResolvedValue(mockPortfolios);
+    // getPerformance is only used as fallback; mock it by default
     mockedPortfolioService.getPerformance.mockResolvedValue(mockPerformance);
+    // getBulkPerformance returns a map of id → performance for all portfolios
+    mockedPortfolioService.getBulkPerformance.mockResolvedValue({
+      '1': mockPerformance,
+      '2': { ...mockPerformance, portfolio_id: '2', portfolio_name: 'Dividend Portfolio' },
+    });
   });
 
   afterEach(() => {
@@ -127,6 +134,30 @@ describe('PortfolioListScreen', () => {
     expect(getAllByText('£15,000.00')).toHaveLength(2);
     expect(getAllByText('£5,000.00')).toHaveLength(2);
     expect(getAllByText('+50.00%')).toHaveLength(2);
+
+    // Bulk is the primary data path
+    expect(mockedPortfolioService.getBulkPerformance).toHaveBeenCalledWith(['1', '2']);
+    // Individual getPerformance is NOT called in the happy path
+    expect(mockedPortfolioService.getPerformance).not.toHaveBeenCalled();
+  });
+
+  it('falls back to individual getPerformance when bulk fails', async () => {
+    mockedPortfolioService.getBulkPerformance.mockRejectedValue(new Error('Bulk unavailable'));
+
+    const { getByText } = renderWithProviders(<PortfolioListScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
+
+    await waitFor(() => {
+      expect(getByText('Growth Fund')).toBeTruthy();
+      expect(getByText('Dividend Portfolio')).toBeTruthy();
+    });
+
+    // Fallback path calls getPerformance per portfolio
+    expect(mockedPortfolioService.getBulkPerformance).toHaveBeenCalledWith(['1', '2']);
+    expect(mockedPortfolioService.getPerformance).toHaveBeenCalledTimes(2);
+    expect(mockedPortfolioService.getPerformance).toHaveBeenCalledWith('1');
+    expect(mockedPortfolioService.getPerformance).toHaveBeenCalledWith('2');
   });
 
   it('navigates to CreatePortfolio when "+" is pressed', async () => {
