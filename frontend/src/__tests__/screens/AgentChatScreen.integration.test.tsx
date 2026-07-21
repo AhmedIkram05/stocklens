@@ -26,11 +26,30 @@ const mockSendMessage = agentService.sendMessage as jest.MockedFunction<
 describe('AgentChatScreen disclaimer', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockSendMessage.mockResolvedValue({
-      conversationId: 'test-conv-id',
-      fullResponse: 'Test response text.',
-      traceId: 'test-trace',
-    });
+    mockSendMessage.mockImplementation(
+      async (
+        _message: string,
+        _conversationId?: string,
+        onToken?: (token: string) => void,
+        _onToolStart?: (toolName: string) => void,
+        onToolEnd?: (toolName: string, result?: any) => void,
+      ) => {
+        // Simulate streaming callbacks for realistic test behavior
+        _onToolStart?.('get_portfolio_summary');
+        onToolEnd?.('get_portfolio_summary', {
+          name: 'Test Portfolio',
+          total_market_value_gbp: 50000,
+          total_cost_basis_gbp: 45000,
+          unrealised_pl_gbp: 5000,
+        });
+        onToken?.('Test response text.');
+        return {
+          conversationId: 'test-conv-id',
+          fullResponse: 'Test response text.',
+          traceId: 'test-trace',
+        };
+      },
+    );
   });
 
   it('shows the AI disclaimer heading in empty state', () => {
@@ -70,6 +89,27 @@ describe('AgentChatScreen disclaimer', () => {
     await waitFor(() => {
       expect(queryByText('AI Assistant Disclaimer')).toBeNull();
     });
+  });
+
+  it('renders tool results in message bubble after streaming', async () => {
+    const { getByText, getByPlaceholderText } = renderWithProviders(
+      <AgentChatScreen visible onClose={jest.fn()} />,
+    );
+
+    // Send a message
+    const input = getByPlaceholderText('Ask about your portfolio...');
+    fireEvent.changeText(input, 'How is my portfolio?');
+    fireEvent(input, 'submitEditing');
+
+    // Wait for tool result accordion to appear
+    await waitFor(() => {
+      // ToolResultsAccordion shows tool name in the header
+      expect(getByText(/get_portfolio_summary/)).toBeTruthy();
+    });
+
+    // Verify the tool result data is rendered (inside the accordion)
+    // The tool name text should be visible
+    expect(getByText(/get_portfolio_summary/)).toBeTruthy();
   });
 
   it('does not crash when rendered hidden', () => {
