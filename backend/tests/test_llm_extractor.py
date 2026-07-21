@@ -153,6 +153,40 @@ class TestExtractWithLLM:
         assert result.total_amount == 47.99
 
     @pytest.mark.asyncio
+    async def test_markdown_code_fences_stripped(self, mocker):
+        """JSON wrapped in ```json ... ``` should be parsed successfully."""
+        mocker.patch("src.receipts.llm_extractor.get_cached_llm", return_value=None)
+        mock_response = mocker.MagicMock()
+        mock_response.content = (
+            "```json\n"
+            '{"merchant_name": "Sainsbury", "total_amount": 12.50, "date": "2026-07-21"}\n'
+            "```"
+        )
+        mock_llm = mocker.patch("langchain_aws.ChatBedrock")
+        mock_llm.return_value.ainvoke = AsyncMock(return_value=mock_response)
+        mocker.patch("src.receipts.llm_extractor.set_cached_llm")
+
+        result = await extract_with_llm("Sainsbury\nMilk £2.50\nTotal £12.50")
+
+        assert result is not None
+        assert result.merchant_name == "Sainsbury"
+        assert result.total_amount == 12.50
+
+    @pytest.mark.asyncio
+    async def test_markdown_fences_without_language_tag(self, mocker):
+        """Code fences without the json tag (plain ```) should also work."""
+        mocker.patch("src.receipts.llm_extractor.get_cached_llm", return_value=None)
+        mock_response = mocker.MagicMock()
+        mock_response.content = '```\n{"merchant_name": "ASDA", "total_amount": 33.00}\n```'
+        mock_llm = mocker.patch("langchain_aws.ChatBedrock")
+        mock_llm.return_value.ainvoke = AsyncMock(return_value=mock_response)
+        mocker.patch("src.receipts.llm_extractor.set_cached_llm")
+
+        result = await extract_with_llm("ASDA\nTotal £33")
+        assert result is not None
+        assert result.merchant_name == "ASDA"
+
+    @pytest.mark.asyncio
     async def test_all_null_not_cached(self, mocker):
         """When all fields are null, the result should not be cached."""
         mocker.patch("src.receipts.llm_extractor.get_cached_llm", return_value=None)

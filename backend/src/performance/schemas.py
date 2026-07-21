@@ -13,6 +13,12 @@ from pydantic import BaseModel, Field
 from src.type_aliases import DecimalAsFloat
 
 
+class BulkPerformanceResponse(BaseModel):
+    """Batch performance results keyed by portfolio_id."""
+
+    portfolios: dict[str, PortfolioPerformanceResponse]
+
+
 class HoldingPerformance(BaseModel):
     """Performance metrics for a single holding."""
 

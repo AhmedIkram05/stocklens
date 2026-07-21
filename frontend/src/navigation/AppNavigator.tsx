@@ -33,6 +33,8 @@ import CreatePortfolioScreen from '../screens/portfolio/CreatePortfolioScreen';
 import DepositScreen from '../screens/portfolio/DepositScreen';
 import TradeScreen from '../screens/portfolio/TradeScreen';
 import BenchmarkScreen from '../screens/portfolio/BenchmarkScreen';
+import SectorExposureScreen from '../screens/SectorExposureScreen';
+import DiversificationScoreScreen from '../screens/DiversificationScoreScreen';
 
 /** Root stack navigation parameter list - defines all stack screens and their params */
 export type RootStackParamList = {
@@ -70,6 +72,8 @@ export type PortfolioStackParamList = {
   Deposit: { portfolioId: string };
   Trade: { portfolioId: string; mode: 'buy' | 'sell' };
   Benchmark: { portfolioId: string; benchmarkTicker?: string };
+  SectorExposure: { portfolioId: string };
+  DiversificationScore: { portfolioId: string };
 };
 
 /** Bottom tab navigation parameter list - defines all tab screens */
@@ -118,6 +122,8 @@ function PortfolioStackNavigator() {
         <PortfolioStack.Screen name="Deposit" component={DepositScreen} />
         <PortfolioStack.Screen name="Trade" component={TradeScreen} />
         <PortfolioStack.Screen name="Benchmark" component={BenchmarkScreen} />
+        <PortfolioStack.Screen name="SectorExposure" component={SectorExposureScreen} />
+        <PortfolioStack.Screen name="DiversificationScore" component={DiversificationScoreScreen} />
       </PortfolioStack.Navigator>
     </View>
   );

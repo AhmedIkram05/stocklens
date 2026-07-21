@@ -45,14 +45,25 @@ export default function PortfolioListScreen() {
     setError(null);
     try {
       const list = await portfolioService.listPortfolios();
-      const perfResults = await Promise.allSettled(
-        list.map((p) => portfolioService.getPerformance(p.id)),
-      );
-      const withPerf = list.map((p, i) => ({
-        ...p,
-        performance: perfResults[i].status === 'fulfilled' ? perfResults[i].value : undefined,
-      }));
-      setPortfolios(withPerf);
+      const ids = list.map((p) => p.id);
+      let perfMap: Record<string, PortfolioPerformance> = {};
+      if (ids.length > 0) {
+        try {
+          perfMap = await portfolioService.getBulkPerformance(ids);
+        } catch {
+          // bulk not available — fall back to individual calls
+          const perfResults = await Promise.allSettled(
+            ids.map((id) => portfolioService.getPerformance(id)),
+          );
+          perfMap = {};
+          ids.forEach((id, i) => {
+            if (perfResults[i].status === 'fulfilled') {
+              perfMap[id] = perfResults[i].value;
+            }
+          });
+        }
+      }
+      setPortfolios(list.map((p) => ({ ...p, performance: perfMap[p.id] })));
     } catch (e) {
       setError('Failed to load portfolios');
     } finally {

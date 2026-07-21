@@ -399,6 +399,18 @@ export default function PortfolioDetailScreen() {
           >
             <Text style={styles.actionButtonText}>Benchmark</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: '#10b981' }]}
+            onPress={() => navigation.navigate('SectorExposure', { portfolioId })}
+          >
+            <Text style={styles.actionButtonText}>Sector Exposure</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: '#AF52DE' }]}
+            onPress={() => navigation.navigate('DiversificationScore', { portfolioId })}
+          >
+            <Text style={styles.actionButtonText}>Diversification</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>

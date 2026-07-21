@@ -173,6 +173,70 @@ interface WrappedCashFlowList {
   offset: number;
 }
 
+// ── Agent analysis types ───────────────────────────────────────────────────────
+
+export interface SectorExposureSector {
+  sector: string;
+  value_gbp: number;
+  allocation_pct: number;
+  tickers: string[];
+}
+
+export interface SectorExposureData {
+  total_value_gbp: number;
+  sectors: SectorExposureSector[];
+}
+
+export interface DiversificationBreakdown {
+  holdings_diversity_score: number;
+  holdings_diversity_weight_pct: number;
+  hhi_concentration_score: number;
+  hhi_concentration_weight_pct: number;
+  hhi_raw_value: number;
+  top_holding_weight_score: number;
+  top_holding_weight_pct: number;
+  top_holding_ticker: string;
+  top_holding_exposure_pct: number;
+  sector_diversity_score: number;
+  sector_diversity_weight_pct: number;
+  sector_hhi_value: number;
+}
+
+export interface DiversificationScoreData {
+  overall_score: number;
+  breakdown: DiversificationBreakdown;
+  total_holdings: number;
+  effective_holdings: number;
+  recommendations: string[];
+}
+
+export interface BulkPerformanceResponse {
+  portfolios: Record<string, PortfolioPerformance>;
+}
+
+export interface SpendingCategory {
+  category: string;
+  category_id: string | null;
+  transaction_count: number;
+  total_spend_gbp: number;
+  pct_of_total: number;
+}
+
+export interface SpendingMonthOverMonth {
+  current_month_spend_gbp: number;
+  previous_month_spend_gbp: number;
+  change_gbp: number;
+  change_pct: number;
+}
+
+export interface SpendingAnalysisData {
+  portfolio_name: string;
+  period_months: number;
+  total_spent_gbp: number;
+  categories: SpendingCategory[];
+  month_over_month: Record<string, SpendingMonthOverMonth>;
+}
+
 // ── Service ───────────────────────────────────────────────────────────────────
 
 export const portfolioService = {
@@ -268,6 +332,27 @@ export const portfolioService = {
 
   async getPerformance(portfolioId: string): Promise<PortfolioPerformance> {
     return apiService.get<PortfolioPerformance>(`/portfolio/performance/${portfolioId}`);
+  },
+
+  async getBulkPerformance(portfolioIds: string[]): Promise<Record<string, PortfolioPerformance>> {
+    const res = await apiService.get<BulkPerformanceResponse>(
+      `/portfolio/performance/bulk?portfolio_ids=${portfolioIds.join(',')}`,
+    );
+    return res.portfolios;
+  },
+
+  async getSectorExposure(portfolioId: string): Promise<SectorExposureData> {
+    return apiService.get<SectorExposureData>(`/agent/sector-exposure/${portfolioId}`);
+  },
+
+  async getDiversificationScore(portfolioId: string): Promise<DiversificationScoreData> {
+    return apiService.get<DiversificationScoreData>(`/agent/diversification-score/${portfolioId}`);
+  },
+
+  async getSpendingAnalysis(portfolioId: string, months = 6): Promise<SpendingAnalysisData> {
+    return apiService.get<SpendingAnalysisData>(
+      `/agent/spending-analysis/${portfolioId}?months=${months}`,
+    );
   },
 
   async getBenchmark(

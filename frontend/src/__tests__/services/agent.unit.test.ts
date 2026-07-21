@@ -93,7 +93,7 @@ describe('agentService.sendMessage (SSE streaming)', () => {
       await agentService.sendMessage('Test', 'conv-1', undefined, onToolStart, onToolEnd);
 
       expect(onToolStart).toHaveBeenCalledWith('get_portfolio_summary');
-      expect(onToolEnd).toHaveBeenCalledWith('get_portfolio_summary');
+      expect(onToolEnd).toHaveBeenCalledWith('get_portfolio_summary', undefined);
     } finally {
       global.fetch = originalFetch;
     }

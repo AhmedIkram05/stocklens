@@ -1,7 +1,9 @@
 /**
  * SummaryScreen
  *
- * Analytics view showing spending statistics and insights.
+ * Analytics view showing portfolio spending analysis with category breakdown
+ * and month-over-month change. Falls back to local receipt computation when
+ * no portfolio data is available.
  */
 
 import React from 'react';
@@ -11,12 +13,12 @@ import PageHeader from '../components/PageHeader';
 import { brandColors, useTheme } from '../contexts/ThemeContext';
 import { radii, spacing, typography } from '../styles/theme';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { ScrollView, RefreshControl } from 'react-native';
 import { subscribe } from '../services/eventBus';
 import useReceipts, { ReceiptShape } from '../hooks/useReceipts';
 import { ActivityIndicator } from 'react-native';
-import { formatCurrencyRounded } from '../utils/formatters';
+import { formatCurrencyRounded, formatCurrencyGBP } from '../utils/formatters';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,6 +27,12 @@ import ResponsiveContainer from '../components/ResponsiveContainer';
 import { EmptyStateWithOnboarding } from '../components/EmptyStateWithOnboarding';
 import IconValue from '../components/IconValue';
 import ExpandableCard from '../components/ExpandableCard';
+import {
+  SpendingAnalysisData,
+  SpendingCategory,
+  SpendingMonthOverMonth,
+} from '../services/portfolios';
+import { categoryService } from '../services/categories';
 
 /** Summary/analytics screen. */
 export default function SummaryScreen() {
@@ -41,10 +49,105 @@ export default function SummaryScreen() {
   // is survivorship-biased (~20%); 12% is a reasonable broad-market baseline.
   const LSTMRATE = 0.12;
 
+  // ── Spending analysis (API data source) ──
+  const [spendingAnalysis, setSpendingAnalysis] = useState<SpendingAnalysisData | null>(null);
+  const [, setPortfolioLoading] = useState(true);
+  const [, setPortfolioError] = useState<string | null>(null);
+  const portfolioLoadedRef = useRef(false);
+
   const { receipts, loading: receiptsLoading, refetch } = useReceipts();
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadTotals = useCallback(async () => {
+  const loadSpendingAnalysis = useCallback(async () => {
+    try {
+      setPortfolioError(null);
+      const r = receipts || [];
+      if (r.length === 0) {
+        setSpendingAnalysis(null);
+        setPortfolioLoading(false);
+        return;
+      }
+
+      // Build category name lookup
+      const catList = await categoryService.listCategories();
+      const categoryMap = new Map<string, string>();
+      catList.forEach((c) => categoryMap.set(c.id, c.name));
+
+      // Group receipts by category — compute total + count per group
+      const groups: Record<string, { total: number; count: number }> = {};
+      let totalSpent = 0;
+      r.forEach((receipt) => {
+        const catKey = receipt.categoryId || '__uncategorised__';
+        const amt = receipt.amount || 0;
+        totalSpent += amt;
+        if (!groups[catKey]) groups[catKey] = { total: 0, count: 0 };
+        groups[catKey].total += amt;
+        groups[catKey].count += 1;
+      });
+
+      const spendingCategories: SpendingCategory[] = Object.entries(groups)
+        .map(([catKey, data]) => ({
+          category:
+            catKey === '__uncategorised__' ? 'Uncategorised' : categoryMap.get(catKey) || 'Unknown',
+          category_id: catKey === '__uncategorised__' ? null : catKey,
+          transaction_count: data.count,
+          total_spend_gbp: Math.round(data.total * 100) / 100,
+          pct_of_total: totalSpent > 0 ? Math.round((data.total / totalSpent) * 10000) / 100 : 0,
+        }))
+        .sort((a, b) => b.total_spend_gbp - a.total_spend_gbp);
+
+      // Month-over-month: compare last full month with previous
+      const monthBuckets: Record<string, { byCat: Record<string, number> }> = {};
+      r.forEach((receipt) => {
+        const d = receipt.date ? new Date(receipt.date) : new Date();
+        const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const catKey = receipt.categoryId || '__uncategorised__';
+        const amt = receipt.amount || 0;
+        if (!monthBuckets[mk]) monthBuckets[mk] = { byCat: {} };
+        monthBuckets[mk].byCat[catKey] = (monthBuckets[mk].byCat[catKey] || 0) + amt;
+      });
+
+      const sortedMonths = Object.keys(monthBuckets).sort();
+      const monthOverMonth: Record<string, SpendingMonthOverMonth> = {};
+      if (sortedMonths.length >= 2) {
+        const cur = sortedMonths[sortedMonths.length - 1];
+        const prev = sortedMonths[sortedMonths.length - 2];
+        const allCatKeys = new Set([
+          ...Object.keys(monthBuckets[cur].byCat),
+          ...Object.keys(monthBuckets[prev].byCat),
+        ]);
+        allCatKeys.forEach((catKey) => {
+          const curAmt = monthBuckets[cur].byCat[catKey] || 0;
+          const prevAmt = monthBuckets[prev].byCat[catKey] || 0;
+          const change = curAmt - prevAmt;
+          const changePct = prevAmt > 0 ? Math.round((change / prevAmt) * 10000) / 100 : 0;
+          const catName =
+            catKey === '__uncategorised__' ? 'Uncategorised' : categoryMap.get(catKey) || 'Unknown';
+          monthOverMonth[catName] = {
+            current_month_spend_gbp: Math.round(curAmt * 100) / 100,
+            previous_month_spend_gbp: Math.round(prevAmt * 100) / 100,
+            change_gbp: Math.round(change * 100) / 100,
+            change_pct: changePct,
+          };
+        });
+      }
+
+      setSpendingAnalysis({
+        portfolio_name: 'All Receipts',
+        period_months: 6,
+        total_spent_gbp: Math.round(totalSpent * 100) / 100,
+        categories: spendingCategories,
+        month_over_month: monthOverMonth,
+      });
+      portfolioLoadedRef.current = true;
+    } catch (err) {
+      setPortfolioError('Failed to analyse spending');
+    } finally {
+      setPortfolioLoading(false);
+    }
+  }, [receipts]);
+
+  const loadReceiptTotals = useCallback(async () => {
     try {
       const r = receipts || [];
       const total = r.reduce((s, it) => s + (it.amount || 0), 0);
@@ -77,22 +180,30 @@ export default function SummaryScreen() {
   }, [receipts, user?.uid]);
 
   useEffect(() => {
-    loadTotals().catch(() => {});
+    loadSpendingAnalysis().catch(() => {});
     const unsubHist = subscribe('historical-updated', () => {
-      loadTotals().catch(() => {});
+      loadReceiptTotals().catch(() => {});
     });
     return () => {
       try {
         unsubHist();
       } catch (e) {}
     };
-  }, [loadTotals]);
+  }, [loadSpendingAnalysis]);
+
+  // Separate effect: compute receipt totals when receipts arrive
+  useEffect(() => {
+    if (!receiptsLoading) {
+      loadReceiptTotals().catch(() => {});
+    }
+  }, [loadReceiptTotals, receiptsLoading]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.allSettled([refetch(), loadTotals()]);
+    portfolioLoadedRef.current = false;
+    await Promise.allSettled([refetch(), loadSpendingAnalysis(), loadReceiptTotals()]);
     setRefreshing(false);
-  }, [refetch, loadTotals]);
+  }, [refetch, loadSpendingAnalysis, loadReceiptTotals]);
 
   const formatCurrency = (value: number) => formatCurrencyRounded(value);
 
@@ -492,7 +603,7 @@ export default function SummaryScreen() {
               <ActivityIndicator size="large" color={theme.primary} />
             </View>
           </ResponsiveContainer>
-        ) : receiptsScanned === 0 ? (
+        ) : receiptsScanned === 0 && !spendingAnalysis ? (
           <ResponsiveContainer maxWidth={screenWidth - contentHorizontalPadding * 2}>
             <EmptyStateWithOnboarding
               iconName="stats-chart-outline"
@@ -563,6 +674,7 @@ export default function SummaryScreen() {
                 />
               </View>
 
+              {/* Third row: receipt cards */}
               <View style={[styles.cardsGrid, cardsGridStyle]}>
                 <StatCard
                   value={
@@ -587,7 +699,6 @@ export default function SummaryScreen() {
                   variant="green"
                   style={cardLayoutStyle}
                 />
-
                 <StatCard
                   value={
                     <IconValue
@@ -602,7 +713,6 @@ export default function SummaryScreen() {
                   variant="blue"
                   style={cardLayoutStyle}
                 />
-
                 <StatCard
                   value={
                     <IconValue
@@ -618,6 +728,87 @@ export default function SummaryScreen() {
                   style={cardLayoutStyle}
                 />
               </View>
+
+              {/* Spending analysis (API data) — extra section below receipt cards */}
+              {spendingAnalysis && (
+                <>
+                  <View
+                    style={[
+                      styles.spendingSection,
+                      { marginTop: spacing.xl, marginBottom: spacing.xs },
+                    ]}
+                  >
+                    <Text
+                      style={[styles.sectionTitle, { color: theme.text, marginBottom: spacing.md }]}
+                    >
+                      Spending by Category
+                    </Text>
+                    {spendingAnalysis.categories.map((cat) => (
+                      <View key={cat.category_id || cat.category} style={styles.categoryRow}>
+                        <View style={styles.categoryHeader}>
+                          <Text
+                            style={[styles.categoryLabel, { color: theme.text }]}
+                            numberOfLines={1}
+                          >
+                            {cat.category}
+                          </Text>
+                          <Text style={[styles.categoryValue, { color: theme.text }]}>
+                            {formatCurrencyGBP(cat.total_spend_gbp)}
+                          </Text>
+                        </View>
+                        <View style={[styles.categoryTrack, { backgroundColor: theme.border }]}>
+                          <View
+                            style={[
+                              styles.categoryBar,
+                              {
+                                width: `${cat.pct_of_total}%` as any,
+                                backgroundColor: theme.primary,
+                              },
+                            ]}
+                          />
+                        </View>
+                        <Text style={[styles.categoryPct, { color: theme.textSecondary }]}>
+                          {cat.pct_of_total.toFixed(1)}% · {cat.transaction_count} transaction
+                          {cat.transaction_count !== 1 ? 's' : ''}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  {Object.keys(spendingAnalysis.month_over_month).length > 0 && (
+                    <View style={[styles.momCard, { backgroundColor: theme.surface }]}>
+                      <Text style={[styles.momTitle, { color: theme.text }]}>
+                        Month-over-Month Change
+                      </Text>
+                      {Object.entries(spendingAnalysis.month_over_month).map(([catName, mom]) => {
+                        const isPositive = mom.change_gbp >= 0;
+                        return (
+                          <View key={catName} style={styles.momRow}>
+                            <Text
+                              style={[styles.momLabel, { color: theme.text }]}
+                              numberOfLines={1}
+                            >
+                              {catName}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.momValue,
+                                { color: isPositive ? brandColors.red : brandColors.green },
+                              ]}
+                            >
+                              {isPositive ? '+' : ''}
+                              {formatCurrencyGBP(mom.change_gbp)}
+                              {mom.change_pct !== 0
+                                ? ` (${mom.change_pct > 0 ? '+' : ''}${mom.change_pct.toFixed(1)}%)`
+                                : ''}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </>
+              )}
 
               <View style={styles.sectionHeader}>
                 <Text style={[styles.sectionTitle, { color: theme.text }]}>
@@ -814,5 +1005,91 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     flex: 1,
     textAlign: 'left',
+  },
+  spendingSection: {
+    marginBottom: spacing.md,
+  },
+  // ── Spending analysis styles ──
+  portfolioSpendingCard: {
+    borderRadius: radii.md,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    alignItems: 'center',
+  },
+  spendingTitle: {
+    ...typography.bodyStrong,
+    fontSize: 18,
+    marginBottom: spacing.xs,
+  },
+  spendingTotal: {
+    ...typography.metric,
+    fontWeight: '700',
+    marginBottom: spacing.xs,
+  },
+  spendingPeriod: {
+    ...typography.caption,
+  },
+  sectionSubtitle: {
+    ...typography.bodyStrong,
+    fontSize: 15,
+    marginBottom: spacing.md,
+  },
+  categoryRow: {
+    marginBottom: 14,
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  categoryLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+    marginRight: 8,
+  },
+  categoryValue: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  categoryTrack: {
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 2,
+  },
+  categoryBar: {
+    height: '100%',
+    borderRadius: 4,
+    minWidth: 2,
+  },
+  categoryPct: {
+    fontSize: 11,
+  },
+  momCard: {
+    borderRadius: radii.md,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  momTitle: {
+    ...typography.bodyStrong,
+    fontSize: 15,
+    marginBottom: spacing.md,
+  },
+  momRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  momLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+    marginRight: 8,
+  },
+  momValue: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

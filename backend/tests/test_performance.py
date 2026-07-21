@@ -938,3 +938,325 @@ class TestPerformanceRouter:
         )
         assert resp.status_code == 400
         assert "must be SPY or QQQ" in resp.json()["detail"]
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Bulk Performance — schema, batch helpers, and endpoint tests
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestBulkPerformanceSchema:
+    """Tests for BulkPerformanceResponse Pydantic schema."""
+
+    def test_bulk_performance_response_schema(self):
+        """BulkPerformanceResponse wraps a dict of PortfolioPerformanceResponse."""
+        from datetime import datetime, timezone
+        from decimal import Decimal
+
+        from src.performance.schemas import BulkPerformanceResponse, PortfolioPerformanceResponse
+
+        data = BulkPerformanceResponse(
+            portfolios={
+                "p1": PortfolioPerformanceResponse(
+                    portfolio_id="p1",
+                    portfolio_name="Test",
+                    total_cost_basis=Decimal("10000"),
+                    total_holdings=2,
+                    holdings=[],
+                    free_cash_balance=Decimal("0"),
+                    twr=None,
+                    twr_methodology="cash-flow-based",
+                    data_quality="complete",
+                    calculated_at=datetime.now(timezone.utc),
+                ),
+            },
+        )
+        assert "p1" in data.portfolios
+        assert data.portfolios["p1"].portfolio_name == "Test"
+        assert data.portfolios["p1"].total_holdings == 2
+
+    def test_bulk_performance_response_empty(self):
+        """Empty portfolios dict is valid."""
+        from src.performance.schemas import BulkPerformanceResponse
+
+        data = BulkPerformanceResponse(portfolios={})
+        assert data.portfolios == {}
+
+
+class TestBatchHelpers:
+    """Tests for batch database helper functions used by the bulk endpoint."""
+
+    async def test_batch_verify_ownership_found(self):
+        """All requested portfolios belong to the user."""
+        from src.performance.router import _batch_verify_ownership
+
+        result = await _batch_verify_ownership(
+            [
+                "11111111-1111-1111-1111-111111111111",
+                "22222222-2222-2222-2222-222222222222",
+            ],
+            "00000000-0000-0000-0000-000000000001",
+        )
+        assert len(result) == 2
+        assert result["11111111-1111-1111-1111-111111111111"] == "Test Portfolio"
+        assert result["22222222-2222-2222-2222-222222222222"] == "Other Portfolio"
+
+    async def test_batch_verify_ownership_partial_match(self):
+        """Only some IDs belong to the user — partial result."""
+        from src.performance.router import _batch_verify_ownership
+
+        result = await _batch_verify_ownership(
+            [
+                "11111111-1111-1111-1111-111111111111",
+                "00000000-0000-0000-0000-000000000000",
+            ],
+            "00000000-0000-0000-0000-000000000001",
+        )
+        assert len(result) == 1
+        assert "11111111-1111-1111-1111-111111111111" in result
+
+    async def test_batch_verify_ownership_wrong_user(self):
+        """None of the IDs belong to the specified user."""
+        from src.performance.router import _batch_verify_ownership
+
+        result = await _batch_verify_ownership(
+            ["11111111-1111-1111-1111-111111111111"],
+            "00000000-0000-0000-0000-000000000002",  # user2
+        )
+        assert len(result) == 0
+
+    async def test_batch_get_holdings(self):
+        """Holdings are returned grouped by portfolio_id."""
+        from src.database.connection import connection_ctx
+        from src.performance.router import _batch_get_holdings
+
+        async with connection_ctx() as conn:
+            await conn.execute(
+                "INSERT INTO holdings "
+                "(id, portfolio_id, ticker, shares, average_cost_basis, average_cost_basis_gbp) "
+                "VALUES ($1, $2, $3, $4, $5, $6)",
+                "33333333-3333-3333-3333-333333333333",
+                "11111111-1111-1111-1111-111111111111",
+                "AAPL",
+                10,
+                150.0,
+                150.0,
+            )
+
+        result = await _batch_get_holdings(["11111111-1111-1111-1111-111111111111"])
+        assert "11111111-1111-1111-1111-111111111111" in result
+        holdings = result["11111111-1111-1111-1111-111111111111"]
+        assert len(holdings) == 1
+        assert holdings[0]["ticker"] == "AAPL"
+
+    async def test_batch_get_holdings_empty(self):
+        """No holdings for any portfolio → empty dict."""
+        from src.performance.router import _batch_get_holdings
+
+        result = await _batch_get_holdings(["11111111-1111-1111-1111-111111111111"])
+        assert result == {}
+
+    async def test_batch_get_holdings_multiple_portfolios(self):
+        """Holdings for different portfolios are separate."""
+        from src.database.connection import connection_ctx
+        from src.performance.router import _batch_get_holdings
+
+        async with connection_ctx() as conn:
+            await conn.execute(
+                "INSERT INTO holdings "
+                "(id, portfolio_id, ticker, shares, average_cost_basis, average_cost_basis_gbp) "
+                "VALUES ($1, $2, $3, $4, $5, $6)",
+                "33333333-3333-3333-3333-333333333333",
+                "11111111-1111-1111-1111-111111111111",
+                "AAPL",
+                10,
+                150.0,
+                150.0,
+            )
+            await conn.execute(
+                "INSERT INTO holdings "
+                "(id, portfolio_id, ticker, shares, average_cost_basis, average_cost_basis_gbp) "
+                "VALUES ($1, $2, $3, $4, $5, $6)",
+                "44444444-4444-4444-4444-444444444444",
+                "22222222-2222-2222-2222-222222222222",
+                "GOOGL",
+                5,
+                100.0,
+                100.0,
+            )
+        result = await _batch_get_holdings(
+            [
+                "11111111-1111-1111-1111-111111111111",
+                "22222222-2222-2222-2222-222222222222",
+            ]
+        )
+        assert len(result["11111111-1111-1111-1111-111111111111"]) == 1
+        assert len(result["22222222-2222-2222-2222-222222222222"]) == 1
+
+    async def test_batch_get_transactions(self):
+        """Transactions are returned grouped by portfolio_id."""
+        from src.database.connection import connection_ctx
+        from src.performance.router import _batch_get_transactions
+
+        async with connection_ctx() as conn:
+            await conn.execute(
+                "INSERT INTO transactions "
+                "(id, portfolio_id, ticker, type, shares, price_per_share, total_amount, total_amount_gbp, transaction_date) "
+                "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                "55555555-5555-5555-5555-555555555555",
+                "11111111-1111-1111-1111-111111111111",
+                "AAPL",
+                "BUY",
+                10,
+                150.0,
+                1500.0,
+                1500.0,
+                date(2024, 6, 15),
+            )
+
+        result = await _batch_get_transactions(["11111111-1111-1111-1111-111111111111"])
+        assert "11111111-1111-1111-1111-111111111111" in result
+        txns = result["11111111-1111-1111-1111-111111111111"]
+        assert len(txns) == 1
+        assert txns[0]["type"] == "BUY"
+        assert "date" in txns[0]  # transaction_date renamed to date
+
+    async def test_batch_get_transactions_empty(self):
+        """No transactions → empty dict."""
+        from src.performance.router import _batch_get_transactions
+
+        result = await _batch_get_transactions(["11111111-1111-1111-1111-111111111111"])
+        assert result == {}
+
+    async def test_batch_get_cash_flows(self):
+        """Cash flows are returned grouped by portfolio_id."""
+        from src.database.connection import connection_ctx
+        from src.performance.router import _batch_get_cash_flows
+
+        async with connection_ctx() as conn:
+            await conn.execute(
+                "INSERT INTO cash_flows (id, portfolio_id, amount, source) VALUES ($1, $2, $3, $4)",
+                "66666666-6666-6666-6666-666666666666",
+                "11111111-1111-1111-1111-111111111111",
+                5000.0,
+                "manual",
+            )
+
+        result = await _batch_get_cash_flows(["11111111-1111-1111-1111-111111111111"])
+        assert "11111111-1111-1111-1111-111111111111" in result
+        cfs = result["11111111-1111-1111-1111-111111111111"]
+        assert len(cfs) == 1
+        assert cfs[0]["amount"] == 5000
+
+    async def test_batch_get_cash_flows_empty(self):
+        """No cash flows → empty dict."""
+        from src.performance.router import _batch_get_cash_flows
+
+        result = await _batch_get_cash_flows(["11111111-1111-1111-1111-111111111111"])
+        assert result == {}
+
+
+class TestBulkPerformanceEndpoint:
+    """HTTP-level tests for the bulk performance endpoint."""
+
+    async def _create_portfolio_via_api(self, client, auth_headers) -> str:
+        resp = await client.post(
+            "/portfolios",
+            json={"name": "Bulk Test Portfolio"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 201
+        return resp.json()["id"]
+
+    async def _seed_holding(self, client, auth_headers, portfolio_id: str, ticker: str):
+        resp = await client.post(
+            f"/portfolios/{portfolio_id}/holdings",
+            json={"ticker": ticker, "shares": 10, "average_cost_basis": 150.0},
+            headers=auth_headers,
+        )
+        return resp
+
+    async def test_bulk_happy_path_multiple_with_holdings(self, client, auth_headers):
+        """Multiple portfolios with holdings returns performance per portfolio."""
+        pid1 = await self._create_portfolio_via_api(client, auth_headers)
+        pid2 = await self._create_portfolio_via_api(client, auth_headers)
+        await self._seed_holding(client, auth_headers, pid1, "AAPL")
+        await self._seed_holding(client, auth_headers, pid2, "GOOGL")
+
+        resp = await client.get(
+            f"/portfolio/performance/bulk?portfolio_ids={pid1},{pid2}",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "portfolios" in data
+        assert pid1 in data["portfolios"]
+        assert pid2 in data["portfolios"]
+
+        p1 = data["portfolios"][pid1]
+        assert p1["total_holdings"] == 1
+        assert p1["portfolio_name"] == "Bulk Test Portfolio"
+        assert p1["holdings"][0]["ticker"] == "AAPL"
+        # yfinance returns live prices in this environment
+        assert p1["holdings"][0]["current_price"] > 0
+
+        p2 = data["portfolios"][pid2]
+        assert p2["total_holdings"] == 1
+        assert p2["holdings"][0]["ticker"] == "GOOGL"
+
+    async def test_bulk_empty_portfolios(self, client, auth_headers):
+        """Portfolios without any holdings return zeros."""
+        pid1 = await self._create_portfolio_via_api(client, auth_headers)
+        pid2 = await self._create_portfolio_via_api(client, auth_headers)
+
+        resp = await client.get(
+            f"/portfolio/performance/bulk?portfolio_ids={pid1},{pid2}",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["portfolios"][pid1]["total_holdings"] == 0
+        assert data["portfolios"][pid1]["holdings"] == []
+        assert data["portfolios"][pid1]["total_cost_basis"] == 0
+        assert data["portfolios"][pid1]["data_quality"] == "complete"
+
+    async def test_bulk_empty_ids_returns_400(self, client, auth_headers):
+        """portfolio_ids with no values returns 400."""
+        resp = await client.get(
+            "/portfolio/performance/bulk?portfolio_ids=",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 400
+        assert "At least one portfolio_id is required" in resp.json()["detail"]
+
+    async def test_bulk_no_matching_portfolios_404(self, client, auth_headers):
+        """IDs that don't belong to the user return 404."""
+        fake_id = "00000000-0000-0000-0000-000000000000"
+        resp = await client.get(
+            f"/portfolio/performance/bulk?portfolio_ids={fake_id}",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 404
+        assert "No portfolios found" in resp.json()["detail"]
+
+    async def test_bulk_mixed_holdings_and_empty(self, client, auth_headers):
+        """Some portfolios with holdings, some empty — all returned."""
+        pid1 = await self._create_portfolio_via_api(client, auth_headers)
+        pid2 = await self._create_portfolio_via_api(client, auth_headers)
+        await self._seed_holding(client, auth_headers, pid1, "AAPL")
+
+        resp = await client.get(
+            f"/portfolio/performance/bulk?portfolio_ids={pid1},{pid2}",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["portfolios"][pid1]["total_holdings"] == 1
+        assert data["portfolios"][pid2]["total_holdings"] == 0
+
+    async def test_bulk_requires_auth(self, client):
+        """Unauthenticated request returns 401."""
+        resp = await client.get(
+            "/portfolio/performance/bulk?portfolio_ids=11111111-1111-1111-1111-111111111111",
+        )
+        assert resp.status_code == 401

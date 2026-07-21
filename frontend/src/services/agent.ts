@@ -48,7 +48,7 @@ export const agentService = {
     conversationId?: string,
     onToken?: (token: string) => void,
     onToolStart?: (toolName: string) => void,
-    onToolEnd?: (toolName: string) => void,
+    onToolEnd?: (toolName: string, result?: any) => void,
   ): Promise<{ conversationId: string; fullResponse: string; traceId: string }> {
     const token = await apiService.ensureValidAccessToken();
     if (!token) {
@@ -96,9 +96,28 @@ export const agentService = {
             case 'tool_start':
               onToolStart?.(data);
               break;
-            case 'tool_end':
-              onToolEnd?.(data);
+            case 'tool_end': {
+              // tool_end data is either:
+              //   (old) string tool name — backward compat
+              //   (new) { tool_name, result: base64-encoded JSON }
+              let toolName: string;
+              let parsedResult: any = undefined;
+              if (typeof data === 'string') {
+                toolName = data;
+              } else {
+                toolName = data.tool_name ?? 'unknown';
+                if (data.result) {
+                  try {
+                    const decoded = atob(data.result);
+                    parsedResult = JSON.parse(decoded);
+                  } catch (_e) {
+                    // If base64 decode or JSON parse fails, skip result
+                  }
+                }
+              }
+              onToolEnd?.(toolName, parsedResult);
               break;
+            }
             case 'done':
               resolvedConversationId = data.conversation_id || resolvedConversationId;
               resolvedTraceId = data.trace_id || '';

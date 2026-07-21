@@ -72,4 +72,62 @@ describe('MessageBubble', () => {
     };
     expect(() => renderWithProviders(<MessageBubble message={msg} />)).not.toThrow();
   });
+
+  // ── Phase 1: Tool Results Accordion ─────────────────────────────────
+
+  it('renders tool results accordion for assistant messages with toolResults', () => {
+    const msgWithResults: AgentMessage = {
+      role: 'assistant',
+      content: 'Here is your portfolio data.',
+      toolResults: [
+        {
+          toolName: 'get_portfolio_summary',
+          result: { name: 'My Portfolio', total_market_value_gbp: 50000 },
+        },
+        {
+          toolName: 'get_sector_exposure',
+          result: { sectors: [{ sector: 'Tech', allocation_pct: 60 }] },
+        },
+      ],
+      createdAt: '2026-07-19T00:00:00Z',
+    };
+    const { getByText } = renderWithProviders(<MessageBubble message={msgWithResults} />);
+    // Accordion shows tool names in header
+    expect(getByText(/get_portfolio_summary/)).toBeTruthy();
+    expect(getByText(/get_sector_exposure/)).toBeTruthy();
+  });
+
+  it('does not render tool results accordion for user messages', () => {
+    const msg: AgentMessage = {
+      role: 'user',
+      content: 'How is my portfolio?',
+      toolResults: [{ toolName: 'get_portfolio_summary', result: { value: 100 } }],
+      createdAt: '',
+    };
+    const { queryByText } = renderWithProviders(<MessageBubble message={msg} />);
+    // Tool results accordion should not render for user messages
+    expect(queryByText(/get_portfolio_summary/)).toBeNull();
+  });
+
+  it('does not render tool results accordion when toolResults is empty', () => {
+    const msg: AgentMessage = {
+      role: 'assistant',
+      content: 'No tools used',
+      toolResults: [],
+      createdAt: '',
+    };
+    const { queryByText } = renderWithProviders(<MessageBubble message={msg} />);
+    // Accordion renders tool names like get_portfolio_summary, never generic "tool" text
+    expect(queryByText(/get_portfolio/)).toBeNull();
+    expect(queryByText(/^TWR$/)).toBeNull();
+  });
+
+  it('does not render tool results accordion when toolResults is undefined', () => {
+    const msg: AgentMessage = {
+      role: 'assistant',
+      content: 'Simple response',
+      createdAt: '',
+    };
+    expect(() => renderWithProviders(<MessageBubble message={msg} />)).not.toThrow();
+  });
 });

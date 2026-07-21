@@ -9,10 +9,12 @@ Tier 2 — PostgreSQL: persists every user/assistant message to the
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import random
 from collections.abc import AsyncGenerator
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -158,9 +160,22 @@ class AgentService:
 
         return state
 
+    @staticmethod
+    def _extract_text(content: Any) -> str:
+        """Normalize LangChain content (str or list[dict]) into a plain string."""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return "".join(
+                b["text"]
+                for b in content
+                if isinstance(b, dict) and b.get("type") == "text" and "text" in b
+            )
+        return str(content)
+
     def _serialize_msg(self, msg) -> dict:
         """Serialize a LangChain BaseMessage for JSON storage."""
-        return {"role": msg.type, "content": msg.content}
+        return {"role": msg.type, "content": self._extract_text(msg.content)}
 
     @staticmethod
     def _deserialize_msg(d: dict):
@@ -209,7 +224,7 @@ class AgentService:
             # Extract final assistant response
             last_msg = final_state.get("messages", [None])[-1]
             if last_msg:
-                response_text = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
+                response_text = self._extract_text(getattr(last_msg, "content", str(last_msg)))
                 await agent_repo.add_message(
                     conn,
                     conversation_id,
@@ -273,7 +288,7 @@ class AgentService:
 
         # Build a text block of the oldest messages for the summary model
         history_text = "\n".join(
-            f"{'User' if isinstance(m, HumanMessage) else 'Assistant'}: {m.content[:500]}"
+            f"{'User' if isinstance(m, HumanMessage) else 'Assistant'}: {self._extract_text(m.content)[:500]}"  # noqa: E501
             for m in oldest
         )
 
@@ -441,10 +456,35 @@ class AgentService:
                 )
                 yield {"event": "tool_start", "data": event.get("name", "unknown")}
             elif kind == "on_tool_end":
+                output = event.get("data", {}).get("output", "")
+                # Base64-encode the tool output to avoid SSE formatting issues
+                # with complex nested JSON in the tool result.
+                result_b64: str | None = None
+                if output:
+                    try:
+                        output_str = output if isinstance(output, str) else json.dumps(output)
+                        result_b64 = base64.b64encode(output_str.encode("utf-8")).decode("ascii")
+                    except (TypeError, ValueError):
+                        logger.warning("tool_result_serialization_failed", tool=event.get("name"))
+
                 for t in tools_used:
                     if t.get("name") == event.get("name") and t.get("status") == "started":
                         t["status"] = "completed"
-                yield {"event": "tool_end", "data": event.get("name", "unknown")}
+                        if output:
+                            try:
+                                t["result"] = (
+                                    json.loads(output) if isinstance(output, str) else output
+                                )
+                            except (json.JSONDecodeError, TypeError):
+                                t["result"] = {"raw": str(output)[:500]}
+
+                yield {
+                    "event": "tool_end",
+                    "data": {
+                        "tool_name": event.get("name", "unknown"),
+                        "result": result_b64,
+                    },
+                }
             elif kind == "on_chain_end" and event.get("name") == "LangGraph":
                 final_state = event["data"]["output"]
                 trace_id = str(event.get("run_id", ""))
@@ -461,7 +501,7 @@ class AgentService:
                     if final_state.get("messages"):
                         last_msg = final_state["messages"][-1]
                         if hasattr(last_msg, "content"):
-                            last_content = last_msg.content
+                            last_content = self._extract_text(last_msg.content)
                     await self._run_eval_background(
                         conversation_id,
                         user_id,
