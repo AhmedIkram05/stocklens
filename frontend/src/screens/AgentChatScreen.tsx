@@ -102,8 +102,22 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
           setCurrentTool(toolName);
         },
         // onToolEnd
-        (_toolName: string) => {
+        (_toolName: string, result?: any) => {
           setCurrentTool(null);
+          if (result !== undefined) {
+            setMessages((prev) => {
+              const updated = [...prev];
+              const lastIdx = updated.length - 1;
+              if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+                const msg = updated[lastIdx];
+                updated[lastIdx] = {
+                  ...msg,
+                  toolResults: [...(msg.toolResults ?? []), { toolName: _toolName, result }],
+                };
+              }
+              return updated;
+            });
+          }
         },
       );
 

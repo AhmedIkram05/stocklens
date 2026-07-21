@@ -5,6 +5,7 @@
  * - User messages: right-aligned with primary background
  * - Assistant messages: left-aligned with surface background
  * - Shows tool indicators inline below assistant messages
+ * - Tool results rendered as tap-to-expand accordion (Phase 1)
  */
 
 import React from 'react';
@@ -12,6 +13,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useTheme, brandColors } from '../../contexts/ThemeContext';
 import { spacing, radii, typography } from '../../styles/theme';
 import type { AgentMessage } from '../../services/agent';
+import ToolResultsAccordion from './ToolResultsAccordion';
 
 interface MessageBubbleProps {
   message: AgentMessage;
@@ -47,6 +49,10 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
             </Text>
           ))}
         </View>
+      )}
+      {/* Phase 1: tool results as tap-to-expand accordion */}
+      {!isUser && message.toolResults && message.toolResults.length > 0 && (
+        <ToolResultsAccordion results={message.toolResults} />
       )}
     </View>
   );
