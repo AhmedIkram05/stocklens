@@ -942,13 +942,13 @@ async def get_lstm_forecast(
     Complementary tools: get_ticker_info (for company profile),
     get_market_ohlcv (for price history).
     """
-    from datetime import date as _date
-    from datetime import timedelta as _timedelta
-
-    from src.market.repository import get_ohlcv as _get_ohlcv
-    from src.prediction.service import prediction_service
-
     try:
+        from datetime import date as _date
+        from datetime import timedelta as _timedelta
+
+        from src.market.repository import get_ohlcv as _get_ohlcv
+        from src.prediction.service import prediction_service
+
         end = _date.today()
         start = end - _timedelta(days=365)
         ohlcv_rows = await _get_ohlcv(ticker.upper(), start_date=start, end_date=end, limit=500)
