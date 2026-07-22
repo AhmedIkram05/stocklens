@@ -36,6 +36,24 @@ describe('MessageBubble', () => {
     expect(getByText('Your portfolio is up 5.2% this quarter.')).toBeTruthy();
   });
 
+  it('renders Markdown bold markers as bold text rather than literal asterisks', () => {
+    const { getByText, queryByText } = renderWithProviders(
+      <MessageBubble message={{ ...assistantMessage, content: 'Your **portfolio** is up.' }} />,
+    );
+    expect(getByText('portfolio')).toBeTruthy();
+    expect(queryByText('**portfolio**')).toBeNull();
+  });
+
+  it('shows model reasoning above the final answer', () => {
+    const { getByText } = renderWithProviders(
+      <MessageBubble
+        message={{ ...assistantMessage, reasoning: 'I checked the latest holdings.' }}
+      />,
+    );
+    expect(getByText('Thinking')).toBeTruthy();
+    expect(getByText('I checked the latest holdings.')).toBeTruthy();
+  });
+
   it('displays tool call indicators below assistant messages', () => {
     const { getByText } = renderWithProviders(<MessageBubble message={messageWithTools} />);
     expect(getByText(/get_portfolio_summary/)).toBeTruthy();

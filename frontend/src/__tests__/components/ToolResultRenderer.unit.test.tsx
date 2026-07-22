@@ -544,6 +544,23 @@ describe('DividendInsightsRenderer', () => {
   });
 });
 
+describe('Tool result numeric coercion', () => {
+  it('renders numeric strings from tool output without throwing', () => {
+    expect(() =>
+      renderWithProviders(
+        renderToolResult('get_market_quote', {
+          ticker: 'AAPL',
+          price: '208.12',
+          change: '1.27',
+          change_pct: '0.61',
+          previous_close: '206.85',
+          volume: '1234567',
+        }),
+      ),
+    ).not.toThrow();
+  });
+});
+
 describe('renderToolResult fallback for _raw / error / string data', () => {
   it('falls back to JSON for string data', () => {
     // String data is wrapped as { _raw: <string> } and rendered via JsonFallbackRenderer
