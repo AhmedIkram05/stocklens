@@ -18,7 +18,7 @@ import os
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from src.agent.repository import add_message, create_conversation
 from src.agent.service import AgentService
@@ -169,6 +169,47 @@ class TestProcessMessage:
         assert end_data["tool_name"] == "get_market_quote"
         assert end_data["result"] is None
 
+    async def test_tool_end_with_toolmessage_output(self):
+        """ToolMessage output should be serialized as fallback {'raw': ...} in tools_used."""
+        svc = AgentService()
+        cid = uuid4()
+        async with connection_ctx() as conn:
+            cid = await create_conversation(conn, USER_ID)
+
+        events = [
+            {"event": "on_tool_start", "name": "get_market_quote", "data": {}},
+            {
+                "event": "on_tool_end",
+                "name": "get_market_quote",
+                "data": {"output": ToolMessage(content="42.50", tool_call_id="call_1")},
+            },
+            {
+                "event": "on_chain_end",
+                "name": "LangGraph",
+                "data": {"output": {"messages": [AIMessage(content="done")]}},
+            },
+        ]
+        await self._run_with_events(svc, cid, USER_ID, "quote", events)
+
+        # tools_used should be persisted as valid JSONB
+        async with connection_ctx() as conn:
+            rows = await conn.fetch(
+                "SELECT tools_used FROM agent_conversations "
+                "WHERE conversation_id = $1::uuid AND role = 'assistant' ORDER BY id",
+                cid,
+            )
+        assert len(rows) == 1
+        tools_used = rows[0]["tools_used"]
+        assert tools_used is not None
+        assert len(tools_used) == 1
+        assert tools_used[0]["name"] == "get_market_quote"
+        assert tools_used[0]["status"] == "completed"
+        # ToolMessage should end up as raw string fallback
+        result = tools_used[0].get("result")
+        assert result is not None
+        assert "raw" in result
+        assert "42.50" in result["raw"]
+
     async def test_first_turn_title_autogen(self):
         svc = AgentService()
         cid = uuid4()
@@ -302,6 +343,51 @@ class TestSerializeDeserialize:
         assert d["content"] == "Your portfolio is up 5%"
         back = AgentService._deserialize_msg(d)
         assert back.content == "Your portfolio is up 5%"
+
+
+class TestStripThinkingTags:
+    """Tests for _strip_thinking_tags — Amazon Nova inline reasoning removal."""
+
+    def test_no_tags_passthrough(self):
+        assert AgentService._strip_thinking_tags("Hello world") == "Hello world"
+
+    def test_strips_complete_pair(self):
+        result = AgentService._strip_thinking_tags(
+            "<thinking>Let me calculate</thinking>The total is £42"
+        )
+        assert result == "The total is £42"
+
+    def test_strips_multiline_pair(self):
+        result = AgentService._strip_thinking_tags(
+            "<thinking>Line one\nLine two\nLine three</thinking>Final answer"
+        )
+        assert result == "Final answer"
+
+    def test_strips_trailing_whitespace_after_closing_tag(self):
+        result = AgentService._strip_thinking_tags("<thinking>calc</thinking>   \nHere is data")
+        assert result == "Here is data"
+
+    def test_strips_unterminated_thinking_tag(self):
+        result = AgentService._strip_thinking_tags("<thinking>Never closed</thinking")
+        # Unterminated — eat from <thinking> to end
+        assert result == ""
+
+    def test_strips_stray_closing_tag(self):
+        result = AgentService._strip_thinking_tags("Answer</thinking>")
+        assert result == "Answer"
+
+    def test_strips_multiple_pairs(self):
+        result = AgentService._strip_thinking_tags(
+            "<thinking>first</thinking>Middle<thinking>second</thinking>End"
+        )
+        assert result == "MiddleEnd"
+
+    def test_thinking_only(self):
+        result = AgentService._strip_thinking_tags("<thinking>just reasoning</thinking>")
+        assert result == ""
+
+    def test_empty_string(self):
+        assert AgentService._strip_thinking_tags("") == ""
 
 
 class TestServiceCRUD:
