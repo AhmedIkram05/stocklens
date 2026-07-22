@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import json
 from unittest.mock import MagicMock, patch
+from uuid import UUID
+
+import pytest
 
 from src.categories.merchant_map import (
     CategoryRule,
@@ -375,3 +378,46 @@ class TestEdgeCases:
         category = match_by_keyword("Tesco")
         assert category is not None
         assert "TSCO.L" in category.associated_tickers
+
+
+class TestCategoryUUID:
+    """Seed placeholders vs real UUIDs (Fix 5A / 5B)."""
+
+    def test_seed_data_uses_placeholder_ids(self):
+        """When only seed data is loaded, IDs are placeholders like 'seed_0'."""
+        from src.categories import merchant_map
+
+        merchant_map._category_cache = None
+        from src.categories.merchant_map import load_categories, match_by_keyword
+
+        load_categories(None)
+
+        cat = match_by_keyword("Tesco")
+        assert cat is not None
+        with pytest.raises((ValueError, AttributeError)):
+            UUID(cat.id)
+
+    async def test_db_data_returns_real_uuids(self, _seed_categories):
+        """When loaded from DB, category IDs are real UUIDs that pass the router guard.
+
+        Uses json.loads on JSONB columns (*_keywords, *_tickers) because
+        asyncpg returns them as raw JSON strings rather than parsed lists.
+        The test data is seeded by the _seed_categories fixture.
+        """
+        from src.categories import merchant_map
+        from src.categories.merchant_map import load_categories, resolve_category
+        from src.database.connection import connection_ctx
+
+        merchant_map._category_cache = None
+        async with connection_ctx() as conn:
+            rows = await conn.fetch("SELECT * FROM spending_categories")
+            parsed = [dict(r) for r in rows]
+            for d in parsed:
+                for col in ("merchant_keywords", "associated_tickers"):
+                    if isinstance(d.get(col), str):
+                        d[col] = json.loads(d[col])
+            load_categories(parsed)
+
+        cat = await resolve_category("Tesco")
+        assert cat is not None
+        UUID(cat.id)  # should not raise

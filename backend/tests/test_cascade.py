@@ -7,6 +7,7 @@ All tests are pure function tests that mock the LLM and OCR layer.
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from decimal import Decimal
 
@@ -478,3 +479,39 @@ class TestCascadeExtract:
 
         assert result.source in ("cascade", "degraded")
         assert mock_llm.called
+
+
+# ── Decimal serialisation (Fix 6) ─────────────────────────────────────
+
+
+class TestDecimalSerialization:
+    """model_dump(mode='json') must produce JSON-serialisable output."""
+
+    def test_model_dump_json_mode_serializable(self):
+        from src.receipts.models import ExtractedItem
+
+        item = ExtractedItem(name="Test", quantity=2, price=Decimal("42.50"))
+        data = item.model_dump(mode="json")
+        # Should not raise
+        blob = json.dumps(data)
+        assert '"price": 42.5' in blob
+
+    def test_model_dump_json_mode_on_items_list_serializable(self):
+        from src.receipts.models import ExtractedItem
+
+        items = [
+            ExtractedItem(name="Milk", quantity=1, price=Decimal("1.65")),
+            ExtractedItem(name="Bread", quantity=2, price=Decimal("1.20")),
+        ]
+        blob = json.dumps([i.model_dump(mode="json") for i in items])
+        assert "Milk" in blob
+        assert "Bread" in blob
+        assert "1.65" in blob
+
+    def test_plain_model_dump_contains_decimals(self):
+        """Without mode='json', Decimal values survive — proving why mode='json' is needed."""
+        from src.receipts.models import ExtractedItem
+
+        item = ExtractedItem(name="Test", quantity=1, price=Decimal("42.50"))
+        data = item.model_dump()  # no mode="json"
+        assert isinstance(data["price"], Decimal)
