@@ -172,6 +172,11 @@ async def scan_receipt(
     cascade_result = await cascade_extract(image_bytes)
 
     if not cascade_result.raw_text.strip():
+        logger.warning(
+            "scan_empty_text",
+            source=cascade_result.source,
+            overall_confidence=cascade_result.overall_confidence,
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
@@ -181,6 +186,14 @@ async def scan_receipt(
         )
 
     if cascade_result.extraction.total is None:
+        logger.warning(
+            "scan_missing_total",
+            source=cascade_result.source,
+            overall_confidence=cascade_result.overall_confidence,
+            merchant_name=cascade_result.extraction.merchant_name,
+            items_count=len(cascade_result.extraction.items),
+            raw_text_preview=cascade_result.raw_text[:300],
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
