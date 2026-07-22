@@ -700,8 +700,20 @@ export function getToolRenderer(toolName: string): RendererFn {
 
 /**
  * Render a tool result using the appropriate renderer.
+ * Falls back to JSON dump for raw/string-only data.
  */
 export function renderToolResult(toolName: string, data: any): React.ReactElement {
+  // If the result is a string (json.loads failed on backend), wrap it
+  if (typeof data === 'string') {
+    return <JsonFallbackRenderer data={{ _raw: data }} />;
+  }
+  // If the result only has _raw or error keys, use JSON fallback
+  if (data && typeof data === 'object') {
+    const keys = Object.keys(data);
+    if (keys.length === 1 && (keys[0] === '_raw' || keys[0] === 'error')) {
+      return <JsonFallbackRenderer data={data} />;
+    }
+  }
   const Renderer = getToolRenderer(toolName);
   return <Renderer data={data} />;
 }
