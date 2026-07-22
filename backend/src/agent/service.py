@@ -13,6 +13,7 @@ import base64
 import json
 import os
 import random
+import re
 from collections.abc import AsyncGenerator
 from typing import Any
 from uuid import UUID
@@ -173,6 +174,25 @@ class AgentService:
             )
         return str(content)
 
+    @staticmethod
+    def _strip_thinking_tags(text: str) -> str:
+        """Remove Amazon Nova <thinking> reasoning tags from response text.
+
+        Nova models sometimes inline <thinking>...</thinking> reasoning blocks
+        into text content when tools are bound. These are internal reasoning
+        traces, not user-facing output.
+        """
+        # 1) Complete <thinking>...</thinking> pairs (non-greedy, multiline)
+        # 2) Unterminated <thinking> to end of string
+        # 3) Stray </thinking> tags
+        pattern = re.compile(
+            r"<thinking>.*?</thinking>\s*"  # complete pair
+            r"|<thinking>.*"  # unclosed tag — eat to end
+            r"|\s*</thinking>",  # stray closing tag
+            re.DOTALL,
+        )
+        return pattern.sub("", text)
+
     def _serialize_msg(self, msg) -> dict:
         """Serialize a LangChain BaseMessage for JSON storage."""
         return {"role": msg.type, "content": self._extract_text(msg.content)}
@@ -224,7 +244,9 @@ class AgentService:
             # Extract final assistant response
             last_msg = final_state.get("messages", [None])[-1]
             if last_msg:
-                response_text = self._extract_text(getattr(last_msg, "content", str(last_msg)))
+                response_text = self._strip_thinking_tags(
+                    self._extract_text(getattr(last_msg, "content", str(last_msg)))
+                ).strip()
                 await agent_repo.add_message(
                     conn,
                     conversation_id,
@@ -450,9 +472,12 @@ class AgentService:
                             if isinstance(b, dict) and b.get("type") == "text" and "text" in b
                         )
                         if text:
-                            yield {"event": "token", "data": text}
+                            yield {"event": "token", "data": self._strip_thinking_tags(text)}
                     elif isinstance(chunk.content, str):
-                        yield {"event": "token", "data": chunk.content}
+                        yield {
+                            "event": "token",
+                            "data": self._strip_thinking_tags(chunk.content),
+                        }
             elif kind == "on_tool_start":
                 tools_used.append(
                     {
@@ -468,7 +493,9 @@ class AgentService:
                 result_b64: str | None = None
                 if output:
                     try:
-                        output_str = output if isinstance(output, str) else json.dumps(output)
+                        output_str = (
+                            output if isinstance(output, str) else json.dumps(output, default=str)
+                        )
                         result_b64 = base64.b64encode(output_str.encode("utf-8")).decode("ascii")
                     except (TypeError, ValueError):
                         logger.warning("tool_result_serialization_failed", tool=event.get("name"))
@@ -481,7 +508,9 @@ class AgentService:
                                 t["result"] = (
                                     json.loads(output) if isinstance(output, str) else output
                                 )
-                                json.dumps(t["result"])  # validate serializable
+                                # Round-trip through json to coerce non-serializable types
+                                # (e.g. ToolMessage objects) into plain JSON-safe values.
+                                t["result"] = json.loads(json.dumps(t["result"]))
                             except (json.JSONDecodeError, TypeError, ValueError):
                                 t["result"] = {"raw": str(output)[:500]}
 
