@@ -574,7 +574,7 @@ class AgentService:
                                 # Round-trip through json to coerce non-serializable types
                                 t["result"] = json.loads(json.dumps(t["result"]))
                             except (json.JSONDecodeError, TypeError, ValueError):
-                                t["result"] = {"raw": str(output_value)[:500]}
+                                t["result"] = str(output_value)[:500]
 
                 yield {
                     "event": "tool_end",
