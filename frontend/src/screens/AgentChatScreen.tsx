@@ -216,6 +216,21 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
             return updated;
           });
         },
+        // onReasoning — model-provided reasoning is displayed separately in a
+        // subdued style above the final answer.
+        (reasoning: string) => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            const lastIdx = updated.length - 1;
+            if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+              updated[lastIdx] = {
+                ...updated[lastIdx],
+                reasoning: (updated[lastIdx].reasoning ?? '') + reasoning,
+              };
+            }
+            return updated;
+          });
+        },
       );
 
       setConversationId(result.conversationId);
@@ -317,6 +332,7 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
         (data.messages ?? []).map((m: any) => ({
           role: m.role as 'user' | 'assistant',
           content: m.content,
+          reasoning: m.reasoning_steps?.thinking,
           toolResults: (m.tools_used ?? [])
             .filter((t: any) => t.status === 'completed' && t.result != null)
             .map((t: any) => ({

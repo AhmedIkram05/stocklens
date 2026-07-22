@@ -15,6 +15,8 @@ const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 export interface AgentMessage {
   role: 'user' | 'assistant';
   content: string;
+  /** User-visible model-provided reasoning emitted before the final answer. */
+  reasoning?: string;
   toolCalls?: any[];
   toolResults?: any[];
   createdAt: string;
@@ -49,6 +51,7 @@ export const agentService = {
     onToken?: (token: string) => void,
     onToolStart?: (toolName: string) => void,
     onToolEnd?: (toolName: string, result?: any) => void,
+    onReasoning?: (reasoning: string) => void,
   ): Promise<{ conversationId: string; fullResponse: string; traceId: string }> {
     const token = await apiService.ensureValidAccessToken();
     if (!token) {
@@ -82,6 +85,9 @@ export const agentService = {
           case 'token':
             fullResponse += data;
             onToken?.(data);
+            break;
+          case 'reasoning':
+            onReasoning?.(data);
             break;
           case 'tool_start':
             onToolStart?.(data);
