@@ -74,22 +74,26 @@ async def add_message(
     role: str,
     content: str,
     tools_used: list[dict] | None = None,
+    reasoning_steps: dict[str, Any] | None = None,
 ) -> int:
     """Insert a message into agent_conversations and return the id (BigInteger).
 
     *role* is ``"user"`` or ``"assistant"``.
     *tools_used* is a list of {name, status} dicts (JSONB).
+    *reasoning_steps* stores the model-provided, user-visible reasoning for
+    conversation history (JSONB).
     """
     row = await conn.fetchrow(
         "INSERT INTO agent_conversations "
-        "(conversation_id, user_id, role, content, tools_used) "
-        "VALUES ($1::uuid, $2::uuid, $3, $4, $5::jsonb) "
+        "(conversation_id, user_id, role, content, tools_used, reasoning_steps) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4, $5::jsonb, $6::jsonb) "
         "RETURNING id",
         conversation_id,
         user_id,
         role,
         content,
         tools_used,
+        reasoning_steps,
     )
     return row["id"]
 
