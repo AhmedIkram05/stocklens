@@ -430,96 +430,41 @@ class TestStripThinkingTags:
         assert AgentService._strip_thinking_tags("") == ""
 
 
-class TestThinkingTagStripper:
-    """Tests for _ThinkingTagStripper — stateful streaming tag removal."""
+class TestThinkingTagSplitter:
+    """Tests for streaming separate model reasoning and final answer."""
 
-    def _make_stripper(self):
-        svc = AgentService()
-        return svc._ThinkingTagStripper(svc._strip_thinking_tags)
+    @staticmethod
+    def _make_splitter():
+        return AgentService._ThinkingTagSplitter()
 
     def test_no_tags_passthrough(self):
-        """Tokens without tags pass through unchanged."""
-        stripper = self._make_stripper()
-        assert stripper.process("Hello ") == "Hello "
-        assert stripper.process("world") == "world"
-        assert stripper.process("!") == "!"
-
-    def test_whitespace_preserved_between_tokens(self):
-        """Trailing spaces on individual tokens are preserved."""
-        stripper = self._make_stripper()
-        parts = []
-        for tok in ["The ", "quick ", "brown ", "fox"]:
-            parts.append(stripper.process(tok))
-        assert "".join(parts) == "The quick brown fox"
+        splitter = self._make_splitter()
+        assert splitter.process("Hello ") == ("Hello ", "")
+        assert splitter.process("world") == ("world", "")
 
     def test_complete_tag_in_one_token(self):
-        """A complete <thinking>...</thinking> in one token is stripped,
-        and trailing whitespace after </thinking> is consumed by the regex."""
-        stripper = self._make_stripper()
-        assert stripper.process("Hello") == "Hello"
-        # <thinking>reason</thinking> spans 1 token — stripped silently
-        assert stripper.process("<thinking>reason</thinking>") == ""
-        # The leading space before "world" is consumed by \s* after </thinking>
-        assert stripper.process(" world") == "world"
-        # Reconstruct and verify no thinking text leaked
-        full = "Hello <thinking>reason</thinking> world"
-        assert stripper._strip(full) == "Hello world"
+        splitter = self._make_splitter()
+        assert splitter.process("Hello<thinking>reason</thinking> answer") == (
+            "Hello answer",
+            "reason",
+        )
 
-    def test_tag_across_two_tokens(self):
-        """Tag split across two tokens — no partial tag leaks."""
-        stripper = self._make_stripper()
-        tok2 = stripper.process("</thinking>answer")
-        # tok1 might emit partial text if no match yet
-        assert tok2 == "answer"
+    def test_tag_split_across_chunks(self):
+        splitter = self._make_splitter()
+        assert splitter.process("<thin") == ("", "")
+        assert splitter.process("king>reason") == ("", "")
+        assert splitter.process("ing</think") == ("", "reasoning")
+        assert splitter.process("ing>answer") == ("answer", "")
 
-    def test_tag_across_three_tokens(self):
-        r"""Tag split across three tokens — opening tag, content, then closing+answer.
-        Leading whitespace after </thinking> is consumed by the regex \s*."""
-        stripper = self._make_stripper()
-        assert stripper.process("<thinking>") == ""  # opening tag — no output
-        assert stripper.process("reasoning") == ""  # thinking content — suppressed
-        assert stripper.process("</thinking>") == ""  # closing tag — suppressed
-        tok4 = stripper.process(" The answer is 42")  # final answer text
-        # Leading space consumed by \s* after </thinking>
-        assert tok4 == "The answer is 42"
-
-    def test_thinking_only_across_tokens(self):
-        """Content that is entirely thinking tags emits nothing."""
-        stripper = self._make_stripper()
-        assert stripper.process("<thinking>") == ""
-        assert stripper.process("reasoning") == ""
-        assert stripper.process("</thinking>") == ""
-
-    def test_multiple_tags_across_tokens(self):
-        r"""Multiple thinking/reasoning sections across tokens.
-        The regex \s* after </thinking> consumes adjacent whitespace."""
-        stripper = self._make_stripper()
-        parts = []
-        for tok in [
-            "Hello ",
-            "<thinking>first</thinking>",
-            " middle ",
-            "<thinking>second</thinking>",
-            "end",
-        ]:
-            out = stripper.process(tok)
-            if out:
-                parts.append(out)
-        # Space after first </thinking> consumed by \s*, "middle " emitted;
-        # space after "middle " consumed by second \s*, "end" emitted.
-        assert "".join(parts) == "Hello middle end"
-
-    def test_empty_string_returns_empty(self):
-        """Empty input returns empty string."""
-        stripper = self._make_stripper()
-        assert stripper.process("") == ""
-
-    def test_stray_closing_tag(self):
-        """A lone </thinking> without opening is stripped."""
-        stripper = self._make_stripper()
-        assert stripper.process("Reply") == "Reply"
-        assert stripper.process("</thinking>") == ""
-        assert stripper.process(" answer") == " answer"
+    def test_multiple_thinking_blocks(self):
+        splitter = self._make_splitter()
+        answers, reasoning = [], []
+        for token in ["A<thinking>one</thinking>B", "<thinking>two</thinking>C"]:
+            answer, thought = splitter.process(token)
+            answers.append(answer)
+            reasoning.append(thought)
+        assert "".join(answers) == "ABC"
+        assert "".join(reasoning) == "onetwo"
 
 
 class TestProcessMessageIntegration:

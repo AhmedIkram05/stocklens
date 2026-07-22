@@ -9,7 +9,9 @@ are mocked so the suite runs offline.
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pytest
 
@@ -158,6 +160,50 @@ async def test_feedback_route_skipped_without_key(monkeypatch):
 
     assert resp == {"status": "skipped", "reason": "langsmith_disabled"}
     client_cls.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_feedback_route_saves_conversation_and_langsmith_trace(monkeypatch):
+    """An in-app thumbs rating must not prevent trace feedback from being sent."""
+    from src.agent import router as agent_router
+    from src.agent.schemas import AgentFeedbackRequest
+    from src.config import settings
+
+    monkeypatch.setattr(settings, "LANGCHAIN_API_KEY", "test-key")
+    fake_user = MagicMock()
+    fake_user.id = "user-9"
+
+    @asynccontextmanager
+    async def fake_connection_ctx():
+        yield MagicMock()
+
+    monkeypatch.setattr(agent_router, "connection_ctx", fake_connection_ctx)
+    monkeypatch.setattr(
+        agent_router.agent_repo, "get_conversation", AsyncMock(return_value={"id": "c"})
+    )
+    set_feedback = AsyncMock()
+    monkeypatch.setattr(agent_router.agent_repo, "set_conversation_feedback", set_feedback)
+
+    conversation_id = uuid4()
+    with patch("src.agent.router.Client") as client_cls:
+        response = await agent_router.submit_feedback(
+            AgentFeedbackRequest(
+                rating="positive",
+                trace_id="trace-abc",
+                conversation_id=conversation_id,
+            ),
+            current_user=fake_user,
+        )
+
+    assert response == {"status": "ok", "source": "conversation+langsmith"}
+    set_feedback.assert_awaited_once()
+    client_cls.return_value.create_feedback.assert_called_once_with(
+        feedback_key="positive",
+        trace_id="trace-abc",
+        comment="user=user-9",
+        feedback_source_type="app",
+        source_metadata={"user_id": "user-9"},
+    )
 
 
 # ── Background eval logging ──────────────────────────────────────────────────
