@@ -99,6 +99,34 @@ describe('agentService.sendMessage (SSE streaming)', () => {
     }
   });
 
+  it('fires the reasoning callback for a reasoning SSE event', async () => {
+    const mockFetch = jest
+      .fn()
+      .mockResolvedValue(
+        mockStreamResponse([
+          'event: reasoning\ndata: "Checking the portfolio data"\n\n',
+          'event: done\ndata: {"conversation_id":"conv-1"}\n\n',
+        ]),
+      );
+    const originalFetch = global.fetch;
+    global.fetch = mockFetch;
+
+    try {
+      const onReasoning = jest.fn();
+      await agentService.sendMessage(
+        'Test',
+        'conv-1',
+        undefined,
+        undefined,
+        undefined,
+        onReasoning,
+      );
+      expect(onReasoning).toHaveBeenCalledWith('Checking the portfolio data');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it('throws on error SSE event', async () => {
     const sseChunks = ['event: error\ndata: {"error":"Rate limit exceeded"}\n\n'];
 

@@ -97,6 +97,7 @@ describe('AgentChatScreen comprehensive', () => {
       expect.any(Function),
       expect.any(Function),
       expect.any(Function),
+      expect.any(Function),
     );
   });
 
@@ -259,6 +260,7 @@ describe('AgentChatScreen comprehensive', () => {
       2,
       'Second message',
       'conv-1',
+      expect.any(Function),
       expect.any(Function),
       expect.any(Function),
       expect.any(Function),
