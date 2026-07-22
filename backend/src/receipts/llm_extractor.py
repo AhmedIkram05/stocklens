@@ -14,6 +14,12 @@ Retry policy
 - Transient failures (timeout, 5xx): retry ``LLM_MAX_RETRIES`` times with
   exponential backoff starting at ``LLM_RETRY_BACKOFF`` seconds.
 - Permanent failures (4xx, unparseable JSON): return ``None`` immediately.
+
+Vision path
+-----------
+``extract_with_vision()`` sends the receipt *image* directly to Bedrock via
+the Converse API so the model sees the layout and fonts — much better than
+the legacy path which sends garbled Tesseract text.
 """
 
 from __future__ import annotations
@@ -71,6 +77,88 @@ _EXTRACTION_PROMPT_TEMPLATE = (
 def _build_extraction_prompt(raw_text: str) -> str:
     """Build a prompt for structured JSON extraction via Bedrock."""
     return _EXTRACTION_PROMPT_TEMPLATE.format(raw_text=raw_text)
+
+
+# ── Vision prompt template ────────────────────────────────────────────────
+
+_VISION_EXTRACTION_PROMPT: str = (
+    "Extract receipt information from this image. "
+    "Return ONLY valid JSON, no other text or markdown:\n"
+    '{"merchant_name": "str or null", '
+    '"total_amount": 0.0 or null, '
+    '"date": "YYYY-MM-DD or null", '
+    '"line_items": [{"description": "str", "quantity": 1, "amount": 0.0}], '
+    '"category": "Groceries|Dining|Transport|Utilities|Entertainment|Healthcare|Shopping|Travel|Education|Uncategorised", '  # noqa: E501
+    '"confidence": {"merchant_name": 0.0-1.0, "total_amount": 0.0-1.0, "date": 0.0-1.0, "line_items": 0.0-1.0}}'  # noqa: E501
+)
+
+
+def _image_format_from_bytes(image_bytes: bytes) -> str:
+    """Detect image format from magic bytes for Bedrock Converse API."""
+    if image_bytes[:3] == b"\xff\xd8\xff":
+        return "jpeg"
+    if image_bytes[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    # ponytail: HEIC/HEIF not supported by Nova — convert in caller if needed
+    return "jpeg"
+
+
+async def extract_with_vision(image_bytes: bytes) -> LLMExtractionResult | None:
+    """Extract receipt data by sending the image directly to a vision model.
+
+    Uses the Bedrock Converse API (``boto3.client('bedrock-runtime').converse``)
+    with a multimodal prompt — the model sees the receipt layout, not a garbled
+    OCR transcript.  Falls back to ``None`` on any failure so the caller can
+    degrade to the Tesseract-based pipeline.
+    """
+    # ponytail: no retry decorator — just try once and fall through on failure
+    import boto3
+
+    try:
+        client = boto3.client("bedrock-runtime", region_name=settings.AWS_REGION)
+        img_format = _image_format_from_bytes(image_bytes)
+
+        response = client.converse(
+            modelId=settings.BEDROCK_MODEL_ID,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"text": _VISION_EXTRACTION_PROMPT},
+                        {"image": {"format": img_format, "source": {"bytes": image_bytes}}},
+                    ],
+                }
+            ],
+            inferenceConfig={
+                "temperature": 0,
+                "maxTokens": settings.LLM_MAX_TOKENS,
+            },
+        )
+    except Exception:
+        logger.warning("vision_api_failed", exc_info=True)
+        return None
+
+    # ── Parse response ────────────────────────────────────────────────
+    try:
+        content_blocks = response["output"]["message"]["content"]
+        response_text = next(b["text"] for b in content_blocks if "text" in b)
+    except (KeyError, StopIteration):
+        logger.warning("vision_response_no_text", response=str(response)[:200])
+        return None
+
+    # Strip markdown code fences that models sometimes wrap JSON in
+    cleaned = re.sub(r"^```(?:json)?\s*\n?", "", response_text.strip(), flags=re.IGNORECASE)
+    cleaned = re.sub(r"\n?\s*```$", "", cleaned).strip()
+
+    try:
+        parsed = json.loads(cleaned)
+        if not isinstance(parsed, dict):
+            logger.warning("vision_response_not_object", type=type(parsed).__name__)
+            return None
+        return LLMExtractionResult(**parsed)
+    except (json.JSONDecodeError, Exception):
+        logger.warning("vision_response_unparseable", response=response_text[:200])
+        return None
 
 
 # ── Transient-failure predicate ───────────────────────────────────────────

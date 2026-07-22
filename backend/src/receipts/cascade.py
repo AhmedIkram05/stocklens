@@ -35,7 +35,7 @@ import structlog
 
 from src.categories.seed import SEED_CATEGORIES
 from src.config import settings
-from src.receipts.llm_extractor import LLMExtractionResult, extract_with_llm
+from src.receipts.llm_extractor import LLMExtractionResult, extract_with_llm, extract_with_vision
 from src.receipts.merchant_match import fuzzy_match_merchant
 from src.receipts.models import (
     CascadeResult,
@@ -538,7 +538,7 @@ async def cascade_extract(
             raw_text=raw_text,
         )
 
-    # ── 5. Escalate to LLM ─────────────────────────────────────────────
+    # ── 5. Escalate to LLM (vision first, text fallback) ──────────────
     logger.info(
         "cascade_escalating_to_llm",
         overall_confidence=overall,
@@ -546,9 +546,12 @@ async def cascade_extract(
         reasons=reasons,
     )
 
-    llm_result = await extract_with_llm(raw_text)
+    llm_result = await extract_with_vision(image_bytes)
 
-    # ── 6. LLM failed — return degraded ────────────────────────────────
+    if llm_result is None:
+        logger.info("cascade_vision_failed_falling_back_to_text")
+        llm_result = await extract_with_llm(raw_text)
+
     if llm_result is None:
         logger.warning("cascade_llm_failed_falling_back")
         return CascadeResult(
