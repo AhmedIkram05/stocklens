@@ -382,18 +382,50 @@ class TestCascadeExtract:
         assert result.extraction.total == Decimal("47.99")
 
     @pytest.mark.asyncio
-    async def test_escalates_to_llm_when_low_confidence(self, mocker):
-        """When confidence is below threshold, cascade calls LLM."""
-        mocker.patch("src.receipts.cascade.process_receipt")
+    async def test_vision_success(self, mocker):
+        """When vision LLM succeeds, cascade returns cascade source with vision data."""
         mocker.patch("src.receipts.cascade.process_receipt").return_value = {
-            "total_amount": Decimal("47.99"),
-            "merchant_name": None,  # No merchant → low confidence
+            "total_amount": None,
+            "merchant_name": None,
             "line_items": [],
-            "date": None,  # No date → low confidence
+            "date": None,
             "ocr_confidence": 0.3,
             "ocr_raw_text": "Some garbled text\nTotal £47.99",
         }
 
+        mock_vision = mocker.patch("src.receipts.cascade.extract_with_vision")
+        mock_vision.return_value = LLMExtractionResult(
+            merchant_name="Tesco",
+            total_amount=47.99,
+            date="2026-06-25",
+            confidence={
+                "merchant_name": 0.9,
+                "total_amount": 0.95,
+                "date": 0.85,
+                "line_items": 0.0,
+            },
+        )
+
+        result = await cascade_extract(b"fake_image_bytes")
+
+        assert mock_vision.called
+        assert result.source == "cascade"
+        assert result.extraction.merchant_name == "Tesco"
+        assert result.extraction.total == Decimal("47.99")
+
+    @pytest.mark.asyncio
+    async def test_vision_fallback_to_text_llm(self, mocker):
+        """When vision fails, cascade falls back to text LLM."""
+        mocker.patch("src.receipts.cascade.process_receipt").return_value = {
+            "total_amount": Decimal("47.99"),
+            "merchant_name": None,
+            "line_items": [],
+            "date": None,
+            "ocr_confidence": 0.3,
+            "ocr_raw_text": "Some garbled text\nTotal £47.99",
+        }
+
+        mocker.patch("src.receipts.cascade.extract_with_vision", return_value=None)
         mock_llm = mocker.patch("src.receipts.cascade.extract_with_llm")
         mock_llm.return_value = LLMExtractionResult(
             merchant_name="Tesco",
@@ -414,7 +446,7 @@ class TestCascadeExtract:
 
     @pytest.mark.asyncio
     async def test_degraded_when_llm_fails(self, mocker):
-        """When LLM fails, cascade returns degraded regex result."""
+        """When vision AND text LLM both fail, cascade returns degraded regex result."""
         mocker.patch("src.receipts.cascade.process_receipt").return_value = {
             "total_amount": Decimal("47.99"),
             "merchant_name": None,
@@ -424,8 +456,9 @@ class TestCascadeExtract:
             "ocr_raw_text": "Some garbled text\nTotal £47.99",
         }
 
+        mocker.patch("src.receipts.cascade.extract_with_vision", return_value=None)
         mock_llm = mocker.patch("src.receipts.cascade.extract_with_llm")
-        mock_llm.return_value = None  # LLM failed
+        mock_llm.return_value = None  # both failed
 
         result = await cascade_extract(b"fake_image_bytes")
 
@@ -462,6 +495,7 @@ class TestCascadeExtract:
             "ocr_raw_text": "OLD NAME\n01/01/2026\nTotal £10.00",
         }
 
+        mocker.patch("src.receipts.cascade.extract_with_vision", return_value=None)
         mock_llm = mocker.patch("src.receipts.cascade.extract_with_llm")
         mock_llm.return_value = LLMExtractionResult(
             merchant_name="NEW NAME",
@@ -477,7 +511,7 @@ class TestCascadeExtract:
 
         result = await cascade_extract(b"fake_image_bytes")
 
-        assert result.source in ("cascade", "degraded")
+        assert result.source == "cascade"
         assert mock_llm.called
 
 

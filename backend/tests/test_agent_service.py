@@ -209,6 +209,47 @@ class TestProcessMessage:
         assert result is not None
         assert result == 42.50
 
+    async def test_tool_end_string_fallback_when_json_invalid(self):
+        """When tool output is a non-JSON string, tools_used.result falls back to str(...)."""
+        svc = AgentService()
+        cid = uuid4()
+        async with connection_ctx() as conn:
+            cid = await create_conversation(conn, USER_ID)
+
+        events = [
+            {"event": "on_tool_start", "name": "get_market_quote", "data": {}},
+            {
+                "event": "on_tool_end",
+                "name": "get_market_quote",
+                "data": {
+                    "output": ToolMessage(content="error: something broke", tool_call_id="call_1")
+                },
+            },
+            {
+                "event": "on_chain_end",
+                "name": "LangGraph",
+                "data": {"output": {"messages": [AIMessage(content="done")]}},
+            },
+        ]
+        await self._run_with_events(svc, cid, USER_ID, "quote", events)
+
+        async with connection_ctx() as conn:
+            rows = await conn.fetch(
+                "SELECT tools_used FROM agent_conversations "
+                "WHERE conversation_id = $1::uuid AND role = 'assistant' ORDER BY id",
+                cid,
+            )
+        assert len(rows) == 1
+        tools = rows[0]["tools_used"]
+        assert tools is not None
+        assert len(tools) == 1
+        assert tools[0]["status"] == "completed"
+        # The raw value failed JSON parse, so it's stored as a string
+        result = tools[0].get("result")
+        assert isinstance(result, str)
+        assert "error:" in result
+        assert result == "error: something broke"
+
     async def test_first_turn_title_autogen(self):
         svc = AgentService()
         cid = uuid4()
