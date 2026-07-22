@@ -486,6 +486,11 @@ async def cascade_extract(
     raw_text = result.get("ocr_raw_text", "")
 
     if not raw_text.strip():
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        logger.warning(
+            "cascade_ocr_empty",
+            processing_time_ms=round(elapsed_ms, 2),
+        )
         return CascadeResult(
             extraction=ReceiptExtraction(),
             field_confidences={},

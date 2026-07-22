@@ -191,11 +191,14 @@ def extract_text(
             break
 
     cleaned = best.strip()
-    logger.debug(
-        "ocr_extracted",
-        char_count=len(cleaned),
-        line_count=cleaned.count("\n") + 1 if cleaned else 0,
-    )
+    if not cleaned:
+        logger.warning("ocr_all_psm_modes_empty", attempted_modes="6,4,11")
+    else:
+        logger.debug(
+            "ocr_extracted",
+            char_count=len(cleaned),
+            line_count=cleaned.count("\n") + 1 if cleaned else 0,
+        )
     return cleaned
 
 

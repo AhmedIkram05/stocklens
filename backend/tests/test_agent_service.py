@@ -390,6 +390,162 @@ class TestStripThinkingTags:
         assert AgentService._strip_thinking_tags("") == ""
 
 
+class TestThinkingTagStripper:
+    """Tests for _ThinkingTagStripper — stateful streaming tag removal."""
+
+    def _make_stripper(self):
+        svc = AgentService()
+        return svc._ThinkingTagStripper(svc._strip_thinking_tags)
+
+    def test_no_tags_passthrough(self):
+        """Tokens without tags pass through unchanged."""
+        stripper = self._make_stripper()
+        assert stripper.process("Hello ") == "Hello "
+        assert stripper.process("world") == "world"
+        assert stripper.process("!") == "!"
+
+    def test_whitespace_preserved_between_tokens(self):
+        """Trailing spaces on individual tokens are preserved."""
+        stripper = self._make_stripper()
+        parts = []
+        for tok in ["The ", "quick ", "brown ", "fox"]:
+            parts.append(stripper.process(tok))
+        assert "".join(parts) == "The quick brown fox"
+
+    def test_complete_tag_in_one_token(self):
+        """A complete <thinking>...</thinking> in one token is stripped,
+        and trailing whitespace after </thinking> is consumed by the regex."""
+        stripper = self._make_stripper()
+        assert stripper.process("Hello") == "Hello"
+        # <thinking>reason</thinking> spans 1 token — stripped silently
+        assert stripper.process("<thinking>reason</thinking>") == ""
+        # The leading space before "world" is consumed by \s* after </thinking>
+        assert stripper.process(" world") == "world"
+        # Reconstruct and verify no thinking text leaked
+        full = "Hello <thinking>reason</thinking> world"
+        assert stripper._strip(full) == "Hello world"
+
+    def test_tag_across_two_tokens(self):
+        """Tag split across two tokens — no partial tag leaks."""
+        stripper = self._make_stripper()
+        tok2 = stripper.process("</thinking>answer")
+        # tok1 might emit partial text if no match yet
+        assert tok2 == "answer"
+
+    def test_tag_across_three_tokens(self):
+        r"""Tag split across three tokens — opening tag, content, then closing+answer.
+        Leading whitespace after </thinking> is consumed by the regex \s*."""
+        stripper = self._make_stripper()
+        assert stripper.process("<thinking>") == ""  # opening tag — no output
+        assert stripper.process("reasoning") == ""  # thinking content — suppressed
+        assert stripper.process("</thinking>") == ""  # closing tag — suppressed
+        tok4 = stripper.process(" The answer is 42")  # final answer text
+        # Leading space consumed by \s* after </thinking>
+        assert tok4 == "The answer is 42"
+
+    def test_thinking_only_across_tokens(self):
+        """Content that is entirely thinking tags emits nothing."""
+        stripper = self._make_stripper()
+        assert stripper.process("<thinking>") == ""
+        assert stripper.process("reasoning") == ""
+        assert stripper.process("</thinking>") == ""
+
+    def test_multiple_tags_across_tokens(self):
+        r"""Multiple thinking/reasoning sections across tokens.
+        The regex \s* after </thinking> consumes adjacent whitespace."""
+        stripper = self._make_stripper()
+        parts = []
+        for tok in [
+            "Hello ",
+            "<thinking>first</thinking>",
+            " middle ",
+            "<thinking>second</thinking>",
+            "end",
+        ]:
+            out = stripper.process(tok)
+            if out:
+                parts.append(out)
+        # Space after first </thinking> consumed by \s*, "middle " emitted;
+        # space after "middle " consumed by second \s*, "end" emitted.
+        assert "".join(parts) == "Hello middle end"
+
+    def test_empty_string_returns_empty(self):
+        """Empty input returns empty string."""
+        stripper = self._make_stripper()
+        assert stripper.process("") == ""
+
+    def test_stray_closing_tag(self):
+        """A lone </thinking> without opening is stripped."""
+        stripper = self._make_stripper()
+        assert stripper.process("Reply") == "Reply"
+        assert stripper.process("</thinking>") == ""
+        assert stripper.process(" answer") == " answer"
+
+
+class TestProcessMessageIntegration:
+    """Tests exercising process_message with mocked graph events."""
+
+    async def test_streaming_removes_thinking_across_tokens(self):
+        """Thinking tag across realistic chunks is stripped from token output."""
+        svc = AgentService()
+        cid = uuid4()
+        async with connection_ctx() as conn:
+            cid = await create_conversation(conn, USER_ID)
+
+        events = [
+            # Nova Lite streams <thinking> as its own chunk, then content, then </thinking>
+            {"event": "on_chat_model_stream", "data": {"chunk": MagicMock(content="<thinking>")}},
+            {
+                "event": "on_chat_model_stream",
+                "data": {"chunk": MagicMock(content="Let me recall the user's portfolio data")},
+            },
+            {"event": "on_chat_model_stream", "data": {"chunk": MagicMock(content="</thinking>")}},
+            {
+                "event": "on_chat_model_stream",
+                "data": {"chunk": MagicMock(content="Your portfolio ")},
+            },
+            {
+                "event": "on_chat_model_stream",
+                "data": {"chunk": MagicMock(content="is up 3.2% today")},
+            },
+            {
+                "event": "on_chain_end",
+                "name": "LangGraph",
+                "data": {
+                    "output": {
+                        "messages": [
+                            AIMessage(
+                                content="<thinking>Let me recall the user's portfolio data</thinking>Your portfolio is up 3.2% today"
+                            )
+                        ]
+                    }
+                },
+            },
+        ]
+
+        emitted = await self._run_with_events(svc, cid, USER_ID, "hi", events)
+        token_data = "".join(e["data"] for e in emitted if e["event"] == "token")
+        assert token_data == "Your portfolio is up 3.2% today"
+        # Verify no tag fragments leaked into any event
+        for e in emitted:
+            if e["event"] == "token":
+                assert "<thinking>" not in str(e["data"])
+                assert "</thinking>" not in str(e["data"])
+
+    async def _run_with_events(self, svc, conversation_id, user_id, message, events):
+        async def _fake_stream(*args, **kwargs):
+            for ev in events:
+                yield ev
+
+        svc.graph = MagicMock()
+        svc.graph.astream_events = _fake_stream
+        with patch.object(svc, "_run_eval_background", new=AsyncMock()):
+            emitted = []
+            async for ev in svc.process_message(conversation_id, user_id, message):
+                emitted.append(ev)
+        return emitted
+
+
 class TestServiceCRUD:
     async def test_list_conversations(self):
         svc = AgentService()
