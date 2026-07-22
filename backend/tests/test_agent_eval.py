@@ -129,7 +129,7 @@ async def test_feedback_route(monkeypatch):
             current_user=fake_user,
         )
 
-    assert resp == {"status": "ok"}
+    assert resp == {"status": "ok", "source": "langsmith"}
     client_cls.return_value.create_feedback.assert_called_once_with(
         feedback_key="positive",
         trace_id="trace-abc",
