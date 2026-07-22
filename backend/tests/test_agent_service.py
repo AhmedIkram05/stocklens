@@ -204,11 +204,10 @@ class TestProcessMessage:
         assert len(tools_used) == 1
         assert tools_used[0]["name"] == "get_market_quote"
         assert tools_used[0]["status"] == "completed"
-        # ToolMessage should end up as raw string fallback
+        # ToolMessage content is the JSON string from the tool — parsed directly
         result = tools_used[0].get("result")
         assert result is not None
-        assert "raw" in result
-        assert "42.50" in result["raw"]
+        assert result == 42.50
 
     async def test_first_turn_title_autogen(self):
         svc = AgentService()
