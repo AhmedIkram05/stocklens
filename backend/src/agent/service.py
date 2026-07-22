@@ -93,6 +93,19 @@ class AgentService:
         self.graph = graph.compile()
         logger.info("agent_graph_compiled", tool_count=len(tools))
 
+    # ── Portfolio resolution ─────────────────────────────────────────────
+
+    @staticmethod
+    async def _resolve_portfolio_id(user_id: str) -> str:
+        """Get the user's default portfolio ID (first by creation date)."""
+        async with connection_ctx() as conn:
+            row = await conn.fetchrow(
+                "SELECT id FROM portfolios WHERE user_id = $1::uuid "
+                "ORDER BY created_at DESC LIMIT 1",
+                user_id,
+            )
+        return str(row["id"]) if row else ""
+
     # ── State management ─────────────────────────────────────────────────
 
     async def _load_state(self, conversation_id: UUID, user_id: str) -> list:
@@ -472,8 +485,10 @@ class AgentService:
         # Append current message
         state.append(HumanMessage(content=message))
 
-        # Build graph input
-        graph_input = {"messages": state, "user_id": user_id}
+        # Build graph input — resolve portfolio_id so tools using
+        # InjectedState("portfolio_id") don't crash with KeyError.
+        portfolio_id = await self._resolve_portfolio_id(user_id)
+        graph_input = {"messages": state, "user_id": user_id, "portfolio_id": portfolio_id}
         config = {"configurable": {"thread_id": str(conversation_id)}}
 
         # Track tool calls for persistence

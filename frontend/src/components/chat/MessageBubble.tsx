@@ -4,8 +4,7 @@
  * Single chat message bubble for the Agent Chat UI.
  * - User messages: right-aligned with primary background
  * - Assistant messages: left-aligned with surface background
- * - Tool calls (thinking/pre-answer) rendered ABOVE the answer text
- * - Answer text below
+ * - Tool calls rendered below the answer text as a collapsible accordion
  */
 
 import React from 'react';
@@ -26,14 +25,6 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
 
   return (
     <View style={[styles.container, isUser ? styles.userContainer : styles.assistantContainer]}>
-      {/* Tool/thinking section — above answer */}
-      {hasTools && (
-        <View style={[styles.toolSection, { backgroundColor: theme.surface }]}>
-          <Text style={[styles.toolSectionLabel, { color: theme.textSecondary }]}>Steps taken</Text>
-          <ToolResultsAccordion results={message.toolResults!} />
-        </View>
-      )}
-
       {/* Answer text */}
       <View
         style={[
@@ -47,6 +38,13 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
           {message.content}
         </Text>
       </View>
+
+      {/* Tool/thinking section — below answer */}
+      {hasTools && (
+        <View style={[styles.toolSection, { backgroundColor: theme.surface }]}>
+          <ToolResultsAccordion results={message.toolResults!} />
+        </View>
+      )}
     </View>
   );
 }
@@ -85,11 +83,5 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#333',
-  },
-  toolSectionLabel: {
-    ...typography.caption,
-    fontSize: 11,
-    marginBottom: spacing.xs,
-    opacity: 0.6,
   },
 });
