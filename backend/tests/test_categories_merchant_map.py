@@ -397,6 +397,29 @@ class TestCategoryUUID:
         with pytest.raises((ValueError, AttributeError)):
             UUID(cat.id)
 
+    def test_load_categories_handles_jsonb_strings(self):
+        """load_categories must parse JSONB strings from asyncpg into lists."""
+        from src.categories import merchant_map
+
+        saved = merchant_map._category_cache
+        merchant_map._category_cache = None
+        try:
+            db_cats = [
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440000",
+                    "name": "Test Category",
+                    "description": "Test",
+                    "merchant_keywords": '["tesco", "sainsbury"]',  # JSON string, not list
+                    "associated_tickers": '["TSCO.L", "SBRY.L"]',  # JSON string, not list
+                }
+            ]
+            cats = load_categories(db_cats)
+            assert len(cats) == 1
+            assert cats[0].merchant_keywords == ["tesco", "sainsbury"]
+            assert cats[0].associated_tickers == ["TSCO.L", "SBRY.L"]
+        finally:
+            merchant_map._category_cache = saved
+
     async def test_db_data_returns_real_uuids(self, _seed_categories):
         """When loaded from DB, category IDs are real UUIDs that pass the router guard.
 

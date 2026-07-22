@@ -60,8 +60,16 @@ def load_categories(db_categories: list[dict[str, Any]] | None = None) -> list[C
                 id=str(c["id"]),
                 name=c["name"],
                 description=c.get("description"),
-                merchant_keywords=c.get("merchant_keywords") or [],
-                associated_tickers=c.get("associated_tickers") or [],
+                merchant_keywords=(
+                    json.loads(c["merchant_keywords"])
+                    if isinstance(c.get("merchant_keywords"), str)
+                    else c.get("merchant_keywords") or []
+                ),
+                associated_tickers=(
+                    json.loads(c["associated_tickers"])
+                    if isinstance(c.get("associated_tickers"), str)
+                    else c.get("associated_tickers") or []
+                ),
             )
             for c in db_categories
         ]
