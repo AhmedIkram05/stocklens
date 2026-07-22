@@ -206,29 +206,70 @@ class AgentService:
         )
         return pattern.sub("", text)
 
-    class _ThinkingTagStripper:
-        """Stateful streaming stripper for <thinking> tags.
+    class _ThinkingTagSplitter:
+        """Split streamed ``<thinking>`` blocks from the final answer.
 
-        ``process(token)`` accumulates all tokens and applies
-        ``_strip_thinking_tags`` to the accumulated text, returning only
-        the *delta* of clean text not yet emitted.  This correctly handles
-        tags that span multiple tokens (the common case during SSE streaming).
+        The Bedrock model emits these blocks as normal text and can split a
+        tag across arbitrary stream chunks.  Holding only a possible tag
+        prefix avoids leaking markup while emitting the reasoning and answer
+        as separate SSE events for the client.
         """
 
-        def __init__(self, strip_fn):
-            self._accumulated = ""
-            self._emitted_len = 0
-            self._strip = strip_fn
+        _OPEN_TAG = "<thinking"
+        _CLOSE_TAG = "</thinking>"
 
-        def process(self, token: str) -> str:
-            """Add *token* and return the new clean content to emit."""
-            self._accumulated += token
-            clean = self._strip(self._accumulated)
-            if len(clean) > self._emitted_len:
-                delta = clean[self._emitted_len :]
-                self._emitted_len = len(clean)
-                return delta
-            return ""
+        def __init__(self):
+            self._buffer = ""
+            self._in_thinking = False
+
+        def process(self, token: str) -> tuple[str, str]:
+            """Return ``(answer_delta, reasoning_delta)`` for *token*."""
+            self._buffer += token
+            answer_parts: list[str] = []
+            reasoning_parts: list[str] = []
+
+            while self._buffer:
+                if self._in_thinking:
+                    close_index = self._buffer.lower().find(self._CLOSE_TAG)
+                    if close_index < 0:
+                        # Keep a possible partial closing tag for the next chunk.
+                        keep = min(len(self._buffer), len(self._CLOSE_TAG) - 1)
+                        emit_until = len(self._buffer) - keep
+                        if emit_until > 0:
+                            reasoning_parts.append(self._buffer[:emit_until])
+                            self._buffer = self._buffer[emit_until:]
+                        break
+                    reasoning_parts.append(self._buffer[:close_index])
+                    self._buffer = self._buffer[close_index + len(self._CLOSE_TAG) :]
+                    self._in_thinking = False
+                    continue
+
+                open_index = self._buffer.lower().find(self._OPEN_TAG)
+                if open_index >= 0:
+                    tag_end = self._buffer.find(">", open_index)
+                    if tag_end < 0:
+                        answer_parts.append(self._buffer[:open_index])
+                        self._buffer = self._buffer[open_index:]
+                        break
+                    answer_parts.append(self._buffer[:open_index])
+                    self._buffer = self._buffer[tag_end + 1 :]
+                    self._in_thinking = True
+                    continue
+
+                # Hold the longest tail that could become "<thinking".
+                lower_buffer = self._buffer.lower()
+                held = 0
+                for length in range(min(len(lower_buffer), len(self._OPEN_TAG) - 1), 0, -1):
+                    if self._OPEN_TAG.startswith(lower_buffer[-length:]):
+                        held = length
+                        break
+                emit_until = len(self._buffer) - held
+                if emit_until:
+                    answer_parts.append(self._buffer[:emit_until])
+                    self._buffer = self._buffer[emit_until:]
+                break
+
+            return "".join(answer_parts), "".join(reasoning_parts)
 
     def _serialize_msg(self, msg) -> dict:
         """Serialize a LangChain BaseMessage for JSON storage."""
@@ -260,6 +301,7 @@ class AgentService:
         user_message: str,
         final_state: dict,
         tools_used: list | None = None,
+        reasoning: str = "",
     ) -> None:
         """After graph completes: persist to both tiers.
 
@@ -291,6 +333,7 @@ class AgentService:
                     "assistant",
                     response_text,
                     tools_used=tools_used,
+                    reasoning_steps={"thinking": reasoning} if reasoning else None,
                 )
 
             # Update conversation metadata — count both messages just added
@@ -495,8 +538,9 @@ class AgentService:
         tools_used: list[dict] = []
         trace_id = ""
 
-        # Stateful streaming stripper for <thinking> tags across multiple tokens
-        tag_stripper = self._ThinkingTagStripper(self._strip_thinking_tags)
+        # Split model-provided reasoning from answer text across streaming chunks.
+        thinking_splitter = self._ThinkingTagSplitter()
+        reasoning_parts: list[str] = []
 
         async for event in self.graph.astream_events(
             graph_input,
@@ -514,16 +558,19 @@ class AgentService:
                             if isinstance(b, dict) and b.get("type") == "text" and "text" in b
                         )
                         if text:
-                            clean = tag_stripper.process(text)
-                            if clean:
-                                yield {"event": "token", "data": clean}
+                            answer, reasoning = thinking_splitter.process(text)
+                            if reasoning:
+                                reasoning_parts.append(reasoning)
+                                yield {"event": "reasoning", "data": reasoning}
+                            if answer:
+                                yield {"event": "token", "data": answer}
                     elif isinstance(chunk.content, str):
-                        clean = tag_stripper.process(chunk.content)
-                        if clean:
-                            yield {
-                                "event": "token",
-                                "data": clean,
-                            }
+                        answer, reasoning = thinking_splitter.process(chunk.content)
+                        if reasoning:
+                            reasoning_parts.append(reasoning)
+                            yield {"event": "reasoning", "data": reasoning}
+                        if answer:
+                            yield {"event": "token", "data": answer}
             elif kind == "on_tool_start":
                 tools_used.append(
                     {
@@ -592,6 +639,7 @@ class AgentService:
                     message,
                     final_state,
                     tools_used,
+                    reasoning="".join(reasoning_parts).strip(),
                 )
                 # Fire-and-forget evaluation sampling
                 if random.random() < settings.AGENT_EVAL_SAMPLE_RATE:
