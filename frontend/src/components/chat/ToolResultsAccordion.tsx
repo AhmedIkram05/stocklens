@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { spacing, radii, typography } from '../../styles/theme';
@@ -72,7 +72,9 @@ export default function ToolResultsAccordion({ results }: ToolResultsAccordionPr
 
             {isExpanded && (
               <View style={[styles.body, { borderTopColor: theme.border }]}>
-                {renderToolResult(entry.toolName, entry.result)}
+                <ScrollView nestedScrollEnabled showsVerticalScrollIndicator>
+                  {renderToolResult(entry.toolName, entry.result)}
+                </ScrollView>
               </View>
             )}
           </View>
@@ -120,5 +122,6 @@ const styles = StyleSheet.create({
   },
   body: {
     borderTopWidth: StyleSheet.hairlineWidth,
+    maxHeight: 260,
   },
 });

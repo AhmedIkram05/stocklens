@@ -18,6 +18,31 @@ interface MessageBubbleProps {
   message: AgentMessage;
 }
 
+/**
+ * Render the small Markdown subset the agent uses in prose without adding a
+ * heavyweight renderer to the mobile bundle.  Text remains selectable and
+ * wraps exactly like a regular React Native Text node.
+ */
+function MarkdownText({ text, style }: { text: string; style: object }) {
+  const parts = text.split(/(\*\*[^*]+\*\*|__[^_]+__)/g);
+  return (
+    <Text style={style}>
+      {parts.map((part, index) => {
+        const isBold =
+          (part.startsWith('**') && part.endsWith('**')) ||
+          (part.startsWith('__') && part.endsWith('__'));
+        return isBold ? (
+          <Text key={index} style={styles.boldText}>
+            {part.slice(2, -2)}
+          </Text>
+        ) : (
+          part
+        );
+      })}
+    </Text>
+  );
+}
+
 export default function MessageBubble({ message }: MessageBubbleProps) {
   const { theme } = useTheme();
   const isUser = message.role === 'user';
@@ -34,9 +59,19 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
             : [styles.assistantBubble, { backgroundColor: theme.surface }],
         ]}
       >
-        <Text style={[styles.bubbleText, { color: isUser ? brandColors.white : theme.text }]}>
-          {message.content}
-        </Text>
+        {!isUser && message.reasoning ? (
+          <View style={[styles.reasoning, { borderBottomColor: theme.border }]}>
+            <Text style={[styles.reasoningLabel, { color: theme.textSecondary }]}>Thinking</Text>
+            <MarkdownText
+              text={message.reasoning}
+              style={[styles.reasoningText, { color: theme.textSecondary }]}
+            />
+          </View>
+        ) : null}
+        <MarkdownText
+          text={message.content}
+          style={[styles.bubbleText, { color: isUser ? brandColors.white : theme.text }]}
+        />
       </View>
 
       {/* Tool/thinking section — below answer */}
@@ -74,6 +109,24 @@ const styles = StyleSheet.create({
   bubbleText: {
     ...typography.body,
     lineHeight: 22,
+  },
+  boldText: {
+    fontWeight: '700',
+  },
+  reasoning: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginBottom: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  reasoningLabel: {
+    ...typography.captionStrong,
+    fontSize: 11,
+    marginBottom: 2,
+  },
+  reasoningText: {
+    ...typography.caption,
+    fontStyle: 'italic',
+    lineHeight: 18,
   },
   toolSection: {
     borderRadius: radii.md,
