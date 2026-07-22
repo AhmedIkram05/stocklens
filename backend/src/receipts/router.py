@@ -194,6 +194,13 @@ async def scan_receipt(
     if cascade_result.extraction.merchant_name:
         matched = await resolve_category(cascade_result.extraction.merchant_name)
         category = matched.id if matched else None
+        # ponytail: seed-data fallback uses placeholder IDs ("seed_0"…)
+        # that are not valid UUIDs — discard them to avoid a DB crash.
+        if category:
+            try:
+                UUID(category)
+            except (ValueError, AttributeError):
+                category = None
 
     elapsed = (time.perf_counter() - start_time) * 1000
 
