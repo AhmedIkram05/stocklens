@@ -67,66 +67,83 @@ export const agentService = {
       throw new Error(`Chat request failed: ${response.status}`);
     }
 
-    const reader = response.body!.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
     let fullResponse = '';
     let resolvedConversationId = conversationId || '';
     let resolvedTraceId = '';
     let currentEvent = ''; // Track current SSE event type
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          currentEvent = line.slice(7).trim();
-        } else if (line.startsWith('data: ')) {
-          const data = JSON.parse(line.slice(6));
-          switch (currentEvent) {
-            case 'token':
-              fullResponse += data;
-              onToken?.(data);
-              break;
-            case 'tool_start':
-              onToolStart?.(data);
-              break;
-            case 'tool_end': {
-              // tool_end data is either:
-              //   (old) string tool name — backward compat
-              //   (new) { tool_name, result: base64-encoded JSON }
-              let toolName: string;
-              let parsedResult: any = undefined;
-              if (typeof data === 'string') {
-                toolName = data;
-              } else {
-                toolName = data.tool_name ?? 'unknown';
-                if (data.result) {
-                  try {
-                    const decoded = atob(data.result);
-                    parsedResult = JSON.parse(decoded);
-                  } catch (_e) {
-                    // If base64 decode or JSON parse fails, skip result
-                  }
+    // ── Shared SSE line handler ──────────────────────────────────────────
+    function processLine(line: string) {
+      if (line.startsWith('event: ')) {
+        currentEvent = line.slice(7).trim();
+      } else if (line.startsWith('data: ')) {
+        const data = JSON.parse(line.slice(6));
+        switch (currentEvent) {
+          case 'token':
+            fullResponse += data;
+            onToken?.(data);
+            break;
+          case 'tool_start':
+            onToolStart?.(data);
+            break;
+          case 'tool_end': {
+            // tool_end data is either:
+            //   (old) string tool name — backward compat
+            //   (new) { tool_name, result: base64-encoded JSON }
+            let toolName: string;
+            let parsedResult: any = undefined;
+            if (typeof data === 'string') {
+              toolName = data;
+            } else {
+              toolName = data.tool_name ?? 'unknown';
+              if (data.result) {
+                try {
+                  const decoded = atob(data.result);
+                  parsedResult = JSON.parse(decoded);
+                } catch (_e) {
+                  // If base64 decode or JSON parse fails, skip result
                 }
               }
-              onToolEnd?.(toolName, parsedResult);
-              break;
             }
-            case 'done':
-              resolvedConversationId = data.conversation_id || resolvedConversationId;
-              resolvedTraceId = data.trace_id || '';
-              break;
-            case 'error':
-              throw new Error(data.error);
+            onToolEnd?.(toolName, parsedResult);
+            break;
           }
-          currentEvent = ''; // Reset after consuming
+          case 'done':
+            resolvedConversationId = data.conversation_id || resolvedConversationId;
+            resolvedTraceId = data.trace_id || '';
+            break;
+          case 'error':
+            throw new Error(data.error);
         }
+        currentEvent = ''; // Reset after consuming
+      }
+    }
+
+    // React Native (Hermes) may not expose response.body as a ReadableStream.
+    // Prefer streaming when available, fall back to reading the full body.
+    if (response.body && typeof response.body.getReader === 'function') {
+      // ── Streaming path (browsers, newer Hermes) ──
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          processLine(line);
+        }
+      }
+    } else {
+      // ── Fallback: read full body, parse SSE lines (Hermes / React Native) ──
+      const fullText = await response.text();
+      for (const line of fullText.split('\n')) {
+        processLine(line);
       }
     }
 
