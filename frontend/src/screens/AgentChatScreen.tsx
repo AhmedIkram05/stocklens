@@ -168,16 +168,17 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
 
   const handleFeedbackTap = useCallback(
     (rating: 'positive' | 'negative') => {
-      if (!traceId || submittingFeedback || feedbackSubmitted) return;
+      if ((!traceId && !conversationId) || submittingFeedback || feedbackSubmitted) return;
       setFeedbackRating(rating);
       setFeedbackComment('');
       setShowFeedbackModal(true);
     },
-    [traceId, submittingFeedback, feedbackSubmitted],
+    [traceId, conversationId, submittingFeedback, feedbackSubmitted],
   );
 
   const handleFeedbackSubmit = useCallback(async () => {
-    if (!traceId || !feedbackRating) return;
+    if (!feedbackRating) return;
+    if (!traceId && !conversationId) return;
     setSubmittingFeedback(true);
     setShowFeedbackModal(false);
     try {
@@ -185,6 +186,7 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
         feedbackRating,
         traceId,
         feedbackComment.trim() || undefined,
+        conversationId,
       );
       setFeedbackSubmitted(true);
     } catch {
@@ -194,7 +196,7 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
       setFeedbackRating(null);
       setFeedbackComment('');
     }
-  }, [traceId, feedbackRating, feedbackComment]);
+  }, [traceId, conversationId, feedbackRating, feedbackComment]);
 
   const handleFeedbackSkip = useCallback(() => {
     setShowFeedbackModal(false);
@@ -210,13 +212,20 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
         (data.messages ?? []).map((m: any) => ({
           role: m.role as 'user' | 'assistant',
           content: m.content,
+          toolResults: (m.tools_used ?? [])
+            .filter((t: any) => t.status === 'completed' && t.result != null)
+            .map((t: any) => ({ toolName: t.name, result: t.result })),
           createdAt: m.created_at ?? m.createdAt,
         })),
       );
       setConversationId(convId);
       setConversationTitle(data.conversation?.title ?? null);
+      // Restore feedback state from stored rating if available
+      const convData = data.conversation as any;
+      if (convData?.user_rating) {
+        setFeedbackSubmitted(true);
+      }
       setTraceId('');
-      setFeedbackSubmitted(false);
     } catch {
       Alert.alert('Error', 'Failed to load conversation.');
     }
@@ -331,35 +340,38 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
               />
 
               {/* Feedback row — shown after streaming completes, before next message */}
-              {traceId && !isLoading && !feedbackSubmitted && messages.length > 0 && (
-                <View style={styles.feedbackRow}>
-                  <Text style={[styles.feedbackLabel, { color: theme.textSecondary }]}>
-                    Was this helpful?
-                  </Text>
-                  <View style={styles.feedbackBtns}>
-                    <TouchableOpacity
-                      style={[styles.feedbackBtn, { borderColor: theme.border }]}
-                      onPress={() => handleFeedbackTap('positive')}
-                      disabled={submittingFeedback}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      accessibilityLabel="Thumbs up"
-                      accessibilityRole="button"
-                    >
-                      <Ionicons name="thumbs-up-outline" size={18} color={theme.text} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.feedbackBtn, { borderColor: theme.border }]}
-                      onPress={() => handleFeedbackTap('negative')}
-                      disabled={submittingFeedback}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      accessibilityLabel="Thumbs down"
-                      accessibilityRole="button"
-                    >
-                      <Ionicons name="thumbs-down-outline" size={18} color={theme.text} />
-                    </TouchableOpacity>
+              {(traceId || conversationId) &&
+                !isLoading &&
+                !feedbackSubmitted &&
+                messages.length > 0 && (
+                  <View style={styles.feedbackRow}>
+                    <Text style={[styles.feedbackLabel, { color: theme.textSecondary }]}>
+                      Was this helpful?
+                    </Text>
+                    <View style={styles.feedbackBtns}>
+                      <TouchableOpacity
+                        style={[styles.feedbackBtn, { borderColor: theme.border }]}
+                        onPress={() => handleFeedbackTap('positive')}
+                        disabled={submittingFeedback}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityLabel="Thumbs up"
+                        accessibilityRole="button"
+                      >
+                        <Ionicons name="thumbs-up-outline" size={18} color={theme.text} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.feedbackBtn, { borderColor: theme.border }]}
+                        onPress={() => handleFeedbackTap('negative')}
+                        disabled={submittingFeedback}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityLabel="Thumbs down"
+                        accessibilityRole="button"
+                      >
+                        <Ionicons name="thumbs-down-outline" size={18} color={theme.text} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                </View>
-              )}
+                )}
               {feedbackSubmitted && (
                 <Text style={[styles.feedbackThanks, { color: theme.textSecondary }]}>
                   Thanks for your feedback!

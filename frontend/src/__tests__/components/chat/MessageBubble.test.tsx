@@ -19,7 +19,10 @@ describe('MessageBubble', () => {
   const messageWithTools: AgentMessage = {
     role: 'assistant',
     content: 'I found the data.',
-    toolCalls: ['get_portfolio_summary', 'get_portfolio_performance'],
+    toolResults: [
+      { toolName: 'get_portfolio_summary', result: { value: 50000 } },
+      { toolName: 'get_portfolio_performance', result: { return_pct: 5.2 } },
+    ],
     createdAt: '2026-07-19T00:00:00Z',
   };
 

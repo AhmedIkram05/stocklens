@@ -199,6 +199,7 @@ describe('agentService.submitFeedback', () => {
         body: JSON.stringify({
           rating: 'positive',
           trace_id: 'trace-abc',
+          conversation_id: null,
           comment: null,
         }),
       }),
@@ -217,7 +218,27 @@ describe('agentService.submitFeedback', () => {
         body: JSON.stringify({
           rating: 'negative',
           trace_id: 'trace-xyz',
+          conversation_id: null,
           comment: 'Wrong answer',
+        }),
+      }),
+    );
+  });
+
+  it('sends conversation_id when provided', async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ status: 'ok' }), { status: 200 });
+
+    await agentService.submitFeedback('positive', '', undefined, 'conv-123');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/agent\/feedback$/),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          rating: 'positive',
+          trace_id: null,
+          conversation_id: 'conv-123',
+          comment: null,
         }),
       }),
     );

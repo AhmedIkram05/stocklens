@@ -137,6 +137,9 @@ export const agentService = {
 
         for (const line of lines) {
           processLine(line);
+          // Yield to event loop so React renders each token's state update
+          // before processing the next line in this chunk.
+          await new Promise((r) => setTimeout(r, 0));
         }
       }
     } else {
@@ -144,6 +147,9 @@ export const agentService = {
       const fullText = await response.text();
       for (const line of fullText.split('\n')) {
         processLine(line);
+        // Yield to the event loop so React can flush batched state updates
+        // (token content, tool results) between tokens instead of all at once.
+        await new Promise((r) => setTimeout(r, 0));
       }
     }
 
@@ -168,10 +174,12 @@ export const agentService = {
     rating: string,
     traceId: string,
     comment?: string,
+    conversationId?: string,
   ): Promise<FeedbackResponse> {
     return apiService.post('/agent/feedback', {
       rating,
-      trace_id: traceId,
+      trace_id: traceId || null,
+      conversation_id: conversationId || null,
       comment: comment || null,
     });
   },
