@@ -147,6 +147,7 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
         }
       }
     } catch (err) {
+      console.error('Agent stream error:', err instanceof Error ? err.message : String(err));
       // Mark the assistant message with an error
       setMessages((prev) => {
         const updated = [...prev];
