@@ -7,7 +7,7 @@ No checkpointer — state persistence is handled manually via two-tier Redis+RDS
 
 from __future__ import annotations
 
-from typing import Annotated, Sequence
+from typing import Annotated, NotRequired, Sequence
 
 import structlog
 from langchain_aws import ChatBedrockConverse
@@ -27,7 +27,10 @@ class AgentState(TypedDict):
 
     messages: Annotated[Sequence[BaseMessage], add_messages]
     user_id: str
-    portfolio_id: str
+    # Optional — not set until the user mentions a specific portfolio.
+    # Tools that need it will receive an empty string and gracefully report
+    # "portfolio not found" rather than crashing the graph.
+    portfolio_id: NotRequired[str]
 
 
 def create_agent_graph(tools: list) -> StateGraph:

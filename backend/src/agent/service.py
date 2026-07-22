@@ -193,6 +193,30 @@ class AgentService:
         )
         return pattern.sub("", text)
 
+    class _ThinkingTagStripper:
+        """Stateful streaming stripper for <thinking> tags.
+
+        ``process(token)`` accumulates all tokens and applies
+        ``_strip_thinking_tags`` to the accumulated text, returning only
+        the *delta* of clean text not yet emitted.  This correctly handles
+        tags that span multiple tokens (the common case during SSE streaming).
+        """
+
+        def __init__(self, strip_fn):
+            self._accumulated = ""
+            self._emitted_len = 0
+            self._strip = strip_fn
+
+        def process(self, token: str) -> str:
+            """Add *token* and return the new clean content to emit."""
+            self._accumulated += token
+            clean = self._strip(self._accumulated)
+            if len(clean) > self._emitted_len:
+                delta = clean[self._emitted_len :]
+                self._emitted_len = len(clean)
+                return delta
+            return ""
+
     def _serialize_msg(self, msg) -> dict:
         """Serialize a LangChain BaseMessage for JSON storage."""
         return {"role": msg.type, "content": self._extract_text(msg.content)}
@@ -456,6 +480,9 @@ class AgentService:
         tools_used: list[dict] = []
         trace_id = ""
 
+        # Stateful streaming stripper for <thinking> tags across multiple tokens
+        tag_stripper = self._ThinkingTagStripper(self._strip_thinking_tags)
+
         async for event in self.graph.astream_events(
             graph_input,
             config,
@@ -472,12 +499,16 @@ class AgentService:
                             if isinstance(b, dict) and b.get("type") == "text" and "text" in b
                         )
                         if text:
-                            yield {"event": "token", "data": self._strip_thinking_tags(text)}
+                            clean = tag_stripper.process(text)
+                            if clean:
+                                yield {"event": "token", "data": clean}
                     elif isinstance(chunk.content, str):
-                        yield {
-                            "event": "token",
-                            "data": self._strip_thinking_tags(chunk.content),
-                        }
+                        clean = tag_stripper.process(chunk.content)
+                        if clean:
+                            yield {
+                                "event": "token",
+                                "data": clean,
+                            }
             elif kind == "on_tool_start":
                 tools_used.append(
                     {

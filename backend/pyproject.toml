@@ -38,6 +38,7 @@ dependencies = [
     "mlflow>=3.14.0",
     "psutil>=6.0.0",
     "psycopg2-binary>=2.9",
+    "maturin>=1.14.1",
 ]
 
 [project.optional-dependencies]
@@ -109,3 +110,8 @@ exclude_lines = [
 ]
 fail_under = 60
 show_missing = true
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

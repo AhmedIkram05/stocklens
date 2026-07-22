@@ -4,8 +4,8 @@
  * Single chat message bubble for the Agent Chat UI.
  * - User messages: right-aligned with primary background
  * - Assistant messages: left-aligned with surface background
- * - Shows tool indicators inline below assistant messages
- * - Tool results rendered as tap-to-expand accordion (Phase 1)
+ * - Tool calls (thinking/pre-answer) rendered ABOVE the answer text
+ * - Answer text below
  */
 
 import React from 'react';
@@ -22,9 +22,19 @@ interface MessageBubbleProps {
 export default function MessageBubble({ message }: MessageBubbleProps) {
   const { theme } = useTheme();
   const isUser = message.role === 'user';
+  const hasTools = !isUser && (message.toolResults?.length ?? 0) > 0;
 
   return (
     <View style={[styles.container, isUser ? styles.userContainer : styles.assistantContainer]}>
+      {/* Tool/thinking section — above answer */}
+      {hasTools && (
+        <View style={[styles.toolSection, { backgroundColor: theme.surface }]}>
+          <Text style={[styles.toolSectionLabel, { color: theme.textSecondary }]}>Steps taken</Text>
+          <ToolResultsAccordion results={message.toolResults!} />
+        </View>
+      )}
+
+      {/* Answer text */}
       <View
         style={[
           styles.bubble,
@@ -37,23 +47,6 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
           {message.content}
         </Text>
       </View>
-      {message.toolCalls && message.toolCalls.length > 0 && (
-        <View style={styles.toolsRow}>
-          {message.toolCalls.map((tool, idx) => (
-            <Text
-              key={idx}
-              style={[styles.toolLabel, { color: theme.textSecondary }]}
-              numberOfLines={1}
-            >
-              🔧 {typeof tool === 'string' ? tool : (tool.name ?? 'tool')}
-            </Text>
-          ))}
-        </View>
-      )}
-      {/* Phase 1: tool results as tap-to-expand accordion */}
-      {!isUser && message.toolResults && message.toolResults.length > 0 && (
-        <ToolResultsAccordion results={message.toolResults} />
-      )}
     </View>
   );
 }
@@ -84,15 +77,19 @@ const styles = StyleSheet.create({
     ...typography.body,
     lineHeight: 22,
   },
-  toolsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-    paddingHorizontal: spacing.xs,
+  toolSection: {
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
+    marginBottom: spacing.xs,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#333',
   },
-  toolLabel: {
+  toolSectionLabel: {
     ...typography.caption,
     fontSize: 11,
+    marginBottom: spacing.xs,
+    opacity: 0.6,
   },
 });
