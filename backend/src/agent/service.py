@@ -196,11 +196,11 @@ class AgentService:
         traces, not user-facing output.
         """
         # 1) Complete <thinking>...</thinking> pairs (non-greedy, multiline)
-        # 2) Unterminated <thinking> to end of string
+        # 2) Unterminated <thinking> or <thinking to end of string
         # 3) Stray </thinking> tags
         pattern = re.compile(
             r"<thinking>.*?</thinking>\s*"  # complete pair
-            r"|<thinking>.*"  # unclosed tag — eat to end
+            r"|<thinking\b.*"  # unclosed tag — eat to end (catches <thinking> and <thinking)
             r"|\s*</thinking>",  # stray closing tag
             re.DOTALL,
         )
@@ -534,13 +534,27 @@ class AgentService:
                 yield {"event": "tool_start", "data": event.get("name", "unknown")}
             elif kind == "on_tool_end":
                 output = event.get("data", {}).get("output", "")
+                # The "output" from astream_events v2 is a ToolMessage, not the
+                # raw tool return value.  Extract its text content directly --
+                # the tool already returns json.dumps(result), so the content
+                # IS the JSON string we need.
+                output_value = (
+                    output.content
+                    if hasattr(output, "content") and not isinstance(output, str)
+                    else output
+                )
+                if not output_value:
+                    output_value = str(output)
+
                 # Base64-encode the tool output to avoid SSE formatting issues
                 # with complex nested JSON in the tool result.
                 result_b64: str | None = None
-                if output:
+                if output_value:
                     try:
                         output_str = (
-                            output if isinstance(output, str) else json.dumps(output, default=str)
+                            output_value
+                            if isinstance(output_value, str)
+                            else json.dumps(output_value, default=str)
                         )
                         result_b64 = base64.b64encode(output_str.encode("utf-8")).decode("ascii")
                     except (TypeError, ValueError):
@@ -549,16 +563,18 @@ class AgentService:
                 for t in tools_used:
                     if t.get("name") == event.get("name") and t.get("status") == "started":
                         t["status"] = "completed"
-                        if output:
+                        if output_value:
                             try:
+                                # output_value is already the JSON string from the tool
                                 t["result"] = (
-                                    json.loads(output) if isinstance(output, str) else output
+                                    json.loads(output_value)
+                                    if isinstance(output_value, str)
+                                    else output_value
                                 )
                                 # Round-trip through json to coerce non-serializable types
-                                # (e.g. ToolMessage objects) into plain JSON-safe values.
                                 t["result"] = json.loads(json.dumps(t["result"]))
                             except (json.JSONDecodeError, TypeError, ValueError):
-                                t["result"] = {"raw": str(output)[:500]}
+                                t["result"] = {"raw": str(output_value)[:500]}
 
                 yield {
                     "event": "tool_end",

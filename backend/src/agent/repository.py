@@ -155,6 +155,21 @@ async def get_user_conversations_count(conn: Any, user_id: str) -> int:
     return row["cnt"] if row else 0
 
 
+async def set_conversation_feedback(
+    conn: Any,
+    conversation_id: UUID,
+    rating: str,
+    comment: str | None = None,
+) -> None:
+    """Store user feedback (thumbs up/down + optional comment) on a conversation."""
+    await conn.execute(
+        "UPDATE conversations SET user_rating = $1, user_rating_comment = $2 WHERE id = $3::uuid",
+        rating,
+        comment,
+        conversation_id,
+    )
+
+
 async def delete_conversation(conn: Any, conversation_id: UUID) -> None:
     """Delete a conversation (cascades to messages via FK)."""
     await conn.execute(

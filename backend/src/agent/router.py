@@ -158,7 +158,30 @@ async def submit_feedback(
     body: AgentFeedbackRequest,
     current_user: UserInDB = Depends(get_current_user),
 ):
-    """Record user feedback against a LangSmith trace."""
+    """Record user feedback.
+
+    Two modes:
+    1. If trace_id is provided, push feedback to LangSmith.
+    2. If conversation_id is provided, store feedback in the DB.
+    """
+    # Mode 2: conversation-level feedback (works without LangSmith)
+    if body.conversation_id:
+        async with connection_ctx() as conn:
+            conv = await agent_repo.get_conversation(conn, body.conversation_id, current_user.id)
+            if not conv:
+                raise HTTPException(status_code=404, detail="Conversation not found")
+            await agent_repo.set_conversation_feedback(
+                conn,
+                body.conversation_id,
+                body.rating,
+                body.comment,
+            )
+        return {"status": "ok", "source": "conversation"}
+
+    # Mode 1: LangSmith trace feedback
+    if not body.trace_id:
+        return {"status": "skipped", "reason": "no_trace_or_conversation_id"}
+
     if not settings.LANGCHAIN_API_KEY:
         return {"status": "skipped", "reason": "langsmith_disabled"}
 
@@ -170,4 +193,4 @@ async def submit_feedback(
         feedback_source_type="app",
         source_metadata={"user_id": str(current_user.id)},
     )
-    return {"status": "ok"}
+    return {"status": "ok", "source": "langsmith"}
