@@ -498,7 +498,7 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
                           styles.feedbackBtn,
                           {
                             borderColor:
-                              feedbackRating === 'negative' ? theme.primary : theme.border,
+                              feedbackRating === 'negative' ? brandColors.red : theme.border,
                           },
                         ]}
                         onPress={() => handleFeedbackTap('negative')}
@@ -512,7 +512,7 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
                             feedbackRating === 'negative' ? 'thumbs-down' : 'thumbs-down-outline'
                           }
                           size={18}
-                          color={feedbackRating === 'negative' ? theme.primary : theme.text}
+                          color={feedbackRating === 'negative' ? brandColors.red : theme.text}
                         />
                       </TouchableOpacity>
                     </View>

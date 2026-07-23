@@ -206,8 +206,8 @@ export default function SettingsScreen() {
           <SettingRow
             icon="shield-checkmark"
             iconBgColor={theme.border}
-            title="Local Data Storage"
-            subtitle="All processing kept on device (No cloud Storage)"
+            title="Secure Cloud Storage"
+            subtitle="Data stored securely on AWS with encryption"
           />
         </View>
 
