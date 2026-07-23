@@ -64,7 +64,7 @@ jobs:
       REQUESTS_CA_BUNDLE: ''
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v5
