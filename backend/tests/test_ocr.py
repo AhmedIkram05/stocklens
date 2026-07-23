@@ -126,8 +126,10 @@ class TestParseLineItems:
     def test_skips_total_line(self):
         text = "Item 5.00\nTotal 5.00"
         items = parse_line_items(text)
-        # "Total 5.00" should be excluded (>= total_amount)
-        assert len(items) == 0  # item is same as total, filtered out
+        # A legitimate single item can equal the total; exclude the summary
+        # line by label rather than amount.
+        assert len(items) == 1
+        assert items[0]["description"] == "Item"
 
     def test_skips_vat_line(self):
         text = "Milk 1.65\nVAT 0.33\nTotal 1.98"
@@ -138,8 +140,28 @@ class TestParseLineItems:
     def test_item_with_quantity_prefix(self):
         text = "2 x Milk 3.30\nTotal 3.30"
         items = parse_line_items(text)
-        # Item price == total amount, so it's filtered out (no items returned)
-        assert len(items) == 0
+        assert len(items) == 1
+        assert items[0]["description"] == "Milk"
+        assert items[0]["quantity"] == 2
+
+    def test_decimal_comma_and_quantity_suffix(self):
+        items = parse_line_items("Coffee beans 3 x 12,50\nTotal 12,50")
+        assert len(items) == 1
+        assert items[0]["description"] == "Coffee beans"
+        assert items[0]["quantity"] == 3
+        assert items[0]["amount"] == Decimal("12.50")
+
+    def test_service_line_inferred_from_total(self):
+        items = parse_line_items("PureGym\n01/08/2026\nMonthly Membership\nTotal £29.99")
+        assert len(items) == 1
+        assert items[0]["description"] == "Monthly Membership"
+        assert items[0]["amount"] == Decimal("29.99")
+
+    def test_skips_shipping_lines(self):
+        text = "Amazon.co.uk\nClean Code 42.99\nShipping 0.00\nTotal $42.99"
+        items = parse_line_items(text)
+        assert len(items) == 1
+        assert items[0]["description"] == "Clean Code"
 
 
 # ── parse_date ───────────────────────────────────────────────────────────────
@@ -214,13 +236,10 @@ class TestCleanNumber:
         assert _clean_number("1,234.56") == Decimal("1234.56")
 
     def test_european_with_dot_thousands(self):
-        """European 1.234,56 — source strips dot but keeps comma, can't parse."""
+        """European thousands and decimal separators are normalised."""
         from src.receipts.ocr import _clean_number
 
-        # The source strips the thousands dot (→"1234,56") but doesn't then
-        # replace the comma, so Decimal rejects it.  Accept None here.
-        result = _clean_number("1.234,56")
-        assert result is None
+        assert _clean_number("1.234,56") == Decimal("1234.56")
 
     def test_empty_string(self):
         from src.receipts.ocr import _clean_number
@@ -399,18 +418,22 @@ class TestExtractText:
             assert mock_ts.tesseract_cmd == "/custom/tesseract"
 
     def test_tries_multiple_configs(self):
-        """Falls through PSM configs until one returns >20 chars."""
+        """Scores all PSM configs and picks the best by receipt evidence."""
         import numpy as np
 
         from src.receipts.ocr import extract_text
 
         with patch("src.receipts.ocr.pytesseract") as mock_ts:
-            # First config returns short text, second returns long enough
-            mock_ts.image_to_string.side_effect = ["Short", "Long enough text for test"]
+            # Third config has the highest score (has total keyword)
+            mock_ts.image_to_string.side_effect = [
+                "Some text",
+                "More text",
+                "Total £10.00",  # Best - has total
+            ]
             img = np.zeros((100, 100), dtype=np.uint8)
             result = extract_text(img)
-            assert result == "Long enough text for test"
-            assert mock_ts.image_to_string.call_count == 2
+            assert result == "Total £10.00"
+            assert mock_ts.image_to_string.call_count == 3
 
     def test_exception_during_ocr_continues(self):
         """If a config raises, the next config is tried."""
@@ -553,13 +576,17 @@ class TestParseMerchantExtended:
         result = parse_merchant(text)
         assert result == "TESCO"
 
-    def test_no_candidates_returns_none(self):
-        from src.receipts.ocr import parse_merchant
+    def test_tesco_ocr_typo(self):
+        text = "TESC0 STORES LTD\n25/06/2026\nMilk 1.65\nTotal £2.85"
+        assert parse_merchant(text) == "TESC0 STORES LTD"
 
-        # All lines have digits or noise
-        text = "12.50\n34.00\nTotal 46.50"
-        result = parse_merchant(text)
-        assert result is None
+    def test_domain_style_merchant(self):
+        text = "Amazon.com\n22/08/2026\nKindle Book 14.99\nTotal $24.98"
+        assert parse_merchant(text) == "Amazon.com"
+
+    def test_rescuer_skips_product_lines(self):
+        text = "Sainsbury's Supermarket\n14/03/2026\nApple Juice 2.50\nTotal £5.70"
+        assert parse_merchant(text) == "Sainsbury's Supermarket"
 
 
 class TestParseDateExtended2:

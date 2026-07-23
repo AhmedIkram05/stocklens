@@ -14,6 +14,7 @@ from decimal import Decimal
 import pytest
 
 from src.receipts.cascade import (
+    _apply_reconciliation,
     _compute_overall_confidence,
     _detect_discrepancies,
     _merge_results,
@@ -60,7 +61,7 @@ class TestScoreHeuristicConfidence:
         assert "merchant" in confs
         assert "date" in confs
         assert "items" in confs
-        assert confs["total"].confidence == 0.95
+        assert confs["total"].confidence == 0.88
         assert confs["merchant"].confidence == 0.95  # boosted by fuzzy match
         assert confs["date"].confidence == 0.85
         assert confs["items"].confidence > 0.5
@@ -306,6 +307,63 @@ class TestMergeResults:
         merged = _merge_results(heuristic, llm, discrepancies)
         assert len(merged.discrepancies) == 1
         assert merged.discrepancies[0]["field"] == "merchant"
+
+
+# ── _should_escalate ────────────────────────────────────────────────────
+
+
+class TestReconciliation:
+    """Arithmetic cross-check between line items and total."""
+
+    def test_reconciled_items_boost_confidence(self, known_merchants):
+        result = {
+            "total_amount": Decimal("4.85"),
+            "merchant_name": "RANDOM SHOP",  # Not in known_merchants - no fuzzy boost
+            "line_items": [
+                {"description": "Milk", "quantity": 1, "amount": Decimal("1.65")},
+                {"description": "Bread", "quantity": 1, "amount": Decimal("1.20")},
+                {"description": "Eggs", "quantity": 1, "amount": Decimal("2.00")},
+            ],
+            "date": date(2026, 6, 25),
+            "ocr_confidence": 0.87,
+            "ocr_raw_text": "text",
+        }
+        confs = _score_heuristic_confidence(result, "", known_merchants)
+        # Verify base confidence before reconciliation
+        assert confs["total"].confidence == 0.88  # Base total confidence
+        assert confs["items"].confidence == 0.80  # Base: 0.5 + 3*0.1
+        updated, mismatch = _apply_reconciliation(result, confs)
+        assert mismatch is False
+        assert updated["total"].confidence == 0.94  # 0.88 + 0.06
+        assert updated["items"].confidence == 0.90  # 0.80 + 0.10
+
+    def test_mismatch_lowers_total_confidence(self, known_merchants):
+        result = {
+            "total_amount": Decimal("10.00"),
+            "merchant_name": "Shop",
+            "line_items": [
+                {"description": "A", "quantity": 1, "amount": Decimal("4.00")},
+                {"description": "B", "quantity": 1, "amount": Decimal("3.00")},
+            ],
+            "date": date(2026, 1, 1),
+            "ocr_confidence": 0.9,
+            "ocr_raw_text": "text",
+        }
+        confs = _score_heuristic_confidence(result, "", known_merchants)
+        original_total_conf = confs["total"].confidence
+        updated, mismatch = _apply_reconciliation(result, confs)
+        assert mismatch is True
+        assert updated["total"].confidence < original_total_conf
+
+    def test_escalates_on_reconciliation_mismatch(self):
+        confs = {
+            "merchant": FieldConfidence(value="Shop", confidence=0.95, source="regex"),
+            "total": FieldConfidence(value=10.0, confidence=0.88, source="regex"),
+            "date": FieldConfidence(value="2026-01-01", confidence=0.85, source="regex"),
+        }
+        escalate, reasons = _should_escalate(0.89, confs, 0.9, reconciliation_mismatch=True)
+        assert escalate is True
+        assert "reconciliation_mismatch" in reasons
 
 
 # ── _should_escalate ────────────────────────────────────────────────────
