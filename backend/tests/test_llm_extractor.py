@@ -14,7 +14,9 @@ import pytest
 from src.receipts.llm_extractor import (
     _build_extraction_prompt,
     _call_bedrock_with_retry,
+    _image_format_from_bytes,
     extract_with_llm,
+    extract_with_vision,
 )
 
 # ── _build_extraction_prompt ──────────────────────────────────────────────
@@ -228,6 +230,120 @@ class TestExtractWithLLM:
         assert result.total_amount is None
         assert result.date is None
         assert isinstance(result.confidence, dict)
+
+
+# ── _image_format_from_bytes ──────────────────────────────────────────────
+
+
+class TestImageFormatFromBytes:
+    """Detect image format from magic bytes."""
+
+    def test_jpeg(self):
+        data = b"\xff\xd8\xff\xe0\x00\x10JFIF"
+        assert _image_format_from_bytes(data) == "jpeg"
+
+    def test_png(self):
+        data = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+        assert _image_format_from_bytes(data) == "png"
+
+    def test_default_to_jpeg(self):
+        """Unknown / unsupported formats default to jpeg."""
+        data = b"\x00\x00\x00\x00garbage"
+        assert _image_format_from_bytes(data) == "jpeg"
+
+
+# ── extract_with_vision ──────────────────────────────────────────────────
+
+
+class TestExtractWithVision:
+    """Vision extraction via Bedrock Converse API (mocked)."""
+
+    @pytest.fixture
+    def _mock_converse(self, mocker):
+        """Fixture that patches boto3.client and returns the mock converse."""
+        mock_converse = mocker.MagicMock()
+        mocker.patch("boto3.client").return_value.converse = mock_converse
+        return mock_converse
+
+    @pytest.mark.asyncio
+    async def test_successful_vision_extraction(self, _mock_converse):
+        """Valid vision response returns a parsed LLMExtractionResult."""
+        _mock_converse.return_value = {
+            "output": {
+                "message": {
+                    "content": [{"text": '{"merchant_name": "Tesco", "total_amount": 47.99}'}]
+                }
+            }
+        }
+
+        result = await extract_with_vision(b"fake_image_bytes")
+
+        assert result is not None
+        assert result.merchant_name == "Tesco"
+        assert result.total_amount == 47.99
+
+    @pytest.mark.asyncio
+    async def test_vision_markdown_fences(self, _mock_converse):
+        """Code fences around JSON are stripped."""
+        _mock_converse.return_value = {
+            "output": {
+                "message": {
+                    "content": [
+                        {
+                            "text": "```json\n"
+                            '{"merchant_name": "Sainsbury", "total_amount": 12.50}\n'
+                            "```"
+                        }
+                    ]
+                }
+            }
+        }
+
+        result = await extract_with_vision(b"fake_image_bytes")
+
+        assert result is not None
+        assert result.merchant_name == "Sainsbury"
+        assert result.total_amount == 12.50
+
+    @pytest.mark.asyncio
+    async def test_vision_api_failure_returns_none(self, mocker):
+        """When boto3 raises, extract_with_vision returns None."""
+        mocker.patch("boto3.client", side_effect=Exception("Connection refused"))
+
+        result = await extract_with_vision(b"fake_image_bytes")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_vision_unparseable_response(self, _mock_converse):
+        """Non-JSON response returns None."""
+        _mock_converse.return_value = {
+            "output": {"message": {"content": [{"text": "I see a receipt with some text on it."}]}}
+        }
+
+        result = await extract_with_vision(b"fake_image_bytes")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_vision_empty_response_content(self, _mock_converse):
+        """Empty text content returns None."""
+        _mock_converse.return_value = {"output": {"message": {"content": [{"text": ""}]}}}
+
+        result = await extract_with_vision(b"fake_image_bytes")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_vision_no_text_block(self, _mock_converse):
+        """Content blocks without a text entry returns None."""
+        _mock_converse.return_value = {
+            "output": {"message": {"content": [{"something_else": "not text"}]}}
+        }
+
+        result = await extract_with_vision(b"fake_image_bytes")
+
+        assert result is None
 
 
 # ── Cache double-call safety ──────────────────────────────────────────────

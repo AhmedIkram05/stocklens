@@ -78,6 +78,7 @@ export default function ReceiptDetailsScreen() {
     lineItems: initialItems,
   } = route.params;
   const source = route.params.source as SourceBadgeKey | undefined;
+  const confidencePct = confidence != null ? Math.round(confidence * 100) : null;
 
   const [selectedYears, setSelectedYears] = useState<string>('5Y');
   const [selectedFutureYears, setSelectedFutureYears] = useState<string>('5Y');
@@ -544,7 +545,7 @@ export default function ReceiptDetailsScreen() {
           // Low confidence (near 3-class floor) — model is a near-tie; don't
           // assert a direction. ponytail: threshold pinned to CONTEXT.md <0.4.
           badgeTextToShow = `LSTM ? · ${(conf * 100).toFixed(0)}%`;
-          badgeColorToShow = theme.textSecondary;
+          badgeColorToShow = '#000000';
         } else if (pred.direction === 'UP') {
           badgeTextToShow = `LSTM ↑ · ${(conf * 100).toFixed(0)}%`;
           badgeColorToShow = brandColors.green;
@@ -553,11 +554,11 @@ export default function ReceiptDetailsScreen() {
           badgeColorToShow = brandColors.red;
         } else {
           badgeTextToShow = `LSTM — · ${(conf * 100).toFixed(0)}%`;
-          badgeColorToShow = brandColors.blue;
+          badgeColorToShow = '#000000';
         }
       } else {
         badgeTextToShow = 'LSTM unavailable';
-        badgeColorToShow = brandColors.blue;
+        badgeColorToShow = '#000000';
       }
     } else {
       if (investmentValue.ticker === bestPastTicker) badgeTextToShow = 'Overperformer';
@@ -780,7 +781,7 @@ export default function ReceiptDetailsScreen() {
                     </Text>
                   </View>
                 </View>
-                {confidence != null && confidence > 0 && (
+                {confidencePct != null && confidencePct > 0 && (
                   <View style={styles.cascadeRow}>
                     <Text style={[styles.cascadeLabel, { color: theme.textSecondary }]}>
                       Confidence
@@ -791,11 +792,11 @@ export default function ReceiptDetailsScreen() {
                           style={[
                             styles.confidenceBarFill,
                             {
-                              width: `${confidence}%`,
+                              width: `${confidencePct}%`,
                               backgroundColor:
-                                confidence > 70
+                                confidencePct > 70
                                   ? '#22c55e'
-                                  : confidence > 40
+                                  : confidencePct > 40
                                     ? '#f97316'
                                     : '#ef4444',
                             },
@@ -803,7 +804,7 @@ export default function ReceiptDetailsScreen() {
                         />
                       </View>
                       <Text style={[styles.confidenceText, { color: theme.text }]}>
-                        {Math.round(confidence)}%
+                        {confidencePct}%
                       </Text>
                     </View>
                   </View>

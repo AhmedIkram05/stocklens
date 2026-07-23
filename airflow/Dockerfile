@@ -125,6 +125,4 @@ RUN chmod +x /opt/airflow/scripts/init_airflow_variables.sh
 CMD ["bash", "-c", "\
     airflow db migrate \
     && bash /opt/airflow/scripts/init_airflow_variables.sh \
-    && airflow dag-processor & \
-    airflow scheduler & \
-    airflow api-server --port 8080"]
+    && (airflow dag-processor & airflow scheduler & exec airflow api-server --port 8080)"]

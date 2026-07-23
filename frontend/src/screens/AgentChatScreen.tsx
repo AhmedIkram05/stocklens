@@ -62,16 +62,24 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
   const [feedbackRating, setFeedbackRating] = useState<'positive' | 'negative' | null>(null);
   const [feedbackComment, setFeedbackComment] = useState('');
   const flatListRef = useRef<FlatList>(null);
+  // Stateful thinking-tag stripper for streaming tokens.
+  // Holds back text that could be the start of a <thinking> tag
+  // so we never emit partial tags during streaming.
+  const thinkingStripperRef = useRef<{
+    buffer: string;
+    inTag: boolean;
+  }>({ buffer: '', inTag: false });
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text || isLoading) return;
 
-    // Reset feedback state for the new response
+    // Reset feedback state and thinking tag stripper for the new response
     setTraceId('');
     setFeedbackSubmitted(false);
     setInput('');
     setIsLoading(true);
+    thinkingStripperRef.current = { buffer: '', inTag: false };
 
     // Add user message immediately
     const userMessage: AgentMessage = {
@@ -93,19 +101,97 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
       const result = await agentService.sendMessage(
         text,
         conversationId,
-        // onToken
+        // onToken — stateful thinking-tag stripper
         (token: string) => {
-          setMessages((prev) => {
-            const updated = [...prev];
-            const lastIdx = updated.length - 1;
-            if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
-              updated[lastIdx] = {
-                ...updated[lastIdx],
-                content: updated[lastIdx].content + token,
-              };
+          const s = thinkingStripperRef.current;
+          s.buffer += token;
+
+          if (s.inTag) {
+            // Inside a <thinking> tag — look for closing </thinking>
+            const closeIdx = s.buffer.indexOf('</thinking>');
+            if (closeIdx === -1) return; // Still inside — discard
+            // Tag closed — emit text after </thinking>
+            const after = s.buffer.slice(closeIdx + '</thinking>'.length);
+            s.buffer = '';
+            s.inTag = false;
+            if (after) {
+              setMessages((prev) => {
+                const updated = [...prev];
+                const lastIdx = updated.length - 1;
+                if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+                  updated[lastIdx] = {
+                    ...updated[lastIdx],
+                    content: updated[lastIdx].content + after,
+                  };
+                }
+                return updated;
+              });
             }
-            return updated;
-          });
+            return;
+          }
+
+          // Not in tag — look for <thinking anywhere in the buffer
+          const openIdx = s.buffer.indexOf('<thinking');
+          if (openIdx !== -1) {
+            const before = s.buffer.slice(0, openIdx);
+            s.buffer = s.buffer.slice(openIdx);
+            s.inTag = true;
+            if (before) {
+              setMessages((prev) => {
+                const updated = [...prev];
+                const lastIdx = updated.length - 1;
+                if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+                  updated[lastIdx] = {
+                    ...updated[lastIdx],
+                    content: updated[lastIdx].content + before,
+                  };
+                }
+                return updated;
+              });
+            }
+            // After entering tag, check if the same buffer also closes it
+            const closeIdx = s.buffer.indexOf('</thinking>');
+            if (closeIdx !== -1) {
+              const after = s.buffer.slice(closeIdx + '</thinking>'.length);
+              s.buffer = '';
+              s.inTag = false;
+              if (after) {
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  const lastIdx = updated.length - 1;
+                  if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+                    updated[lastIdx] = {
+                      ...updated[lastIdx],
+                      content: updated[lastIdx].content + after,
+                    };
+                  }
+                  return updated;
+                });
+              }
+            }
+            return;
+          }
+
+          // Buffer doesn't contain <thinking — but if it ends with <
+          // it could be the start of one in the next token. Hold back.
+          if (s.buffer.endsWith('<')) return;
+
+          // Safe to emit
+          const safe = s.buffer;
+          s.buffer = '';
+          if (safe) {
+            setMessages((prev) => {
+              const updated = [...prev];
+              const lastIdx = updated.length - 1;
+              if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+                updated[lastIdx] = {
+                  ...updated[lastIdx],
+                  content: updated[lastIdx].content + safe,
+                };
+              }
+              return updated;
+            });
+          }
         },
         // onToolStart
         (toolName: string) => {
@@ -114,26 +200,60 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
         // onToolEnd
         (_toolName: string, result?: any) => {
           setCurrentTool(null);
-          if (result !== undefined) {
-            setMessages((prev) => {
-              const updated = [...prev];
-              const lastIdx = updated.length - 1;
-              if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
-                const msg = updated[lastIdx];
-                updated[lastIdx] = {
-                  ...msg,
-                  toolResults: [...(msg.toolResults ?? []), { toolName: _toolName, result }],
-                };
-              }
-              return updated;
-            });
-          }
+          setMessages((prev) => {
+            const updated = [...prev];
+            const lastIdx = updated.length - 1;
+            if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+              const msg = updated[lastIdx];
+              updated[lastIdx] = {
+                ...msg,
+                toolResults: [
+                  ...(msg.toolResults ?? []),
+                  { toolName: _toolName, result: result ?? { _raw: String(result) } },
+                ],
+              };
+            }
+            return updated;
+          });
+        },
+        // onReasoning — model-provided reasoning is displayed separately in a
+        // subdued style above the final answer.
+        (reasoning: string) => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            const lastIdx = updated.length - 1;
+            if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+              updated[lastIdx] = {
+                ...updated[lastIdx],
+                reasoning: (updated[lastIdx].reasoning ?? '') + reasoning,
+              };
+            }
+            return updated;
+          });
         },
       );
 
       setConversationId(result.conversationId);
       if (result.traceId) {
         setTraceId(result.traceId);
+      }
+      // Strip any <thinking> tags that may have leaked through streaming
+      if (result.fullResponse && /<thinking/i.test(result.fullResponse)) {
+        const clean = result.fullResponse
+          .replace(/<thinking>[\s\S]*?<\/thinking>\s*/g, '')
+          .replace(/<thinking\b[\s\S]*/g, '')
+          .replace(/\s*<\/thinking>/g, '')
+          .trim();
+        if (clean !== result.fullResponse) {
+          setMessages((prev) => {
+            const updated = [...prev];
+            const lastIdx = updated.length - 1;
+            if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+              updated[lastIdx] = { ...updated[lastIdx], content: clean };
+            }
+            return updated;
+          });
+        }
       }
       // Fetch the auto-generated title for the conversation
       if (result.conversationId && !conversationTitle) {
@@ -147,6 +267,7 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
         }
       }
     } catch (err) {
+      console.error('Agent stream error:', err instanceof Error ? err.message : String(err));
       // Mark the assistant message with an error
       setMessages((prev) => {
         const updated = [...prev];
@@ -167,16 +288,17 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
 
   const handleFeedbackTap = useCallback(
     (rating: 'positive' | 'negative') => {
-      if (!traceId || submittingFeedback || feedbackSubmitted) return;
+      if ((!traceId && !conversationId) || submittingFeedback || feedbackSubmitted) return;
       setFeedbackRating(rating);
       setFeedbackComment('');
       setShowFeedbackModal(true);
     },
-    [traceId, submittingFeedback, feedbackSubmitted],
+    [traceId, conversationId, submittingFeedback, feedbackSubmitted],
   );
 
   const handleFeedbackSubmit = useCallback(async () => {
-    if (!traceId || !feedbackRating) return;
+    if (!feedbackRating) return;
+    if (!traceId && !conversationId) return;
     setSubmittingFeedback(true);
     setShowFeedbackModal(false);
     try {
@@ -184,6 +306,7 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
         feedbackRating,
         traceId,
         feedbackComment.trim() || undefined,
+        conversationId,
       );
       setFeedbackSubmitted(true);
     } catch {
@@ -193,7 +316,7 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
       setFeedbackRating(null);
       setFeedbackComment('');
     }
-  }, [traceId, feedbackRating, feedbackComment]);
+  }, [traceId, conversationId, feedbackRating, feedbackComment]);
 
   const handleFeedbackSkip = useCallback(() => {
     setShowFeedbackModal(false);
@@ -209,13 +332,24 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
         (data.messages ?? []).map((m: any) => ({
           role: m.role as 'user' | 'assistant',
           content: m.content,
+          reasoning: m.reasoning_steps?.thinking,
+          toolResults: (m.tools_used ?? [])
+            .filter((t: any) => t.status === 'completed' && t.result != null)
+            .map((t: any) => ({
+              toolName: t.name,
+              result: typeof t.result === 'string' ? { _raw: t.result } : t.result,
+            })),
           createdAt: m.created_at ?? m.createdAt,
         })),
       );
       setConversationId(convId);
       setConversationTitle(data.conversation?.title ?? null);
+      // Restore feedback state from stored rating if available
+      const convData = data.conversation as any;
+      if (convData?.user_rating) {
+        setFeedbackSubmitted(true);
+      }
       setTraceId('');
-      setFeedbackSubmitted(false);
     } catch {
       Alert.alert('Error', 'Failed to load conversation.');
     }
@@ -330,35 +464,60 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
               />
 
               {/* Feedback row — shown after streaming completes, before next message */}
-              {traceId && !isLoading && !feedbackSubmitted && messages.length > 0 && (
-                <View style={styles.feedbackRow}>
-                  <Text style={[styles.feedbackLabel, { color: theme.textSecondary }]}>
-                    Was this helpful?
-                  </Text>
-                  <View style={styles.feedbackBtns}>
-                    <TouchableOpacity
-                      style={[styles.feedbackBtn, { borderColor: theme.border }]}
-                      onPress={() => handleFeedbackTap('positive')}
-                      disabled={submittingFeedback}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      accessibilityLabel="Thumbs up"
-                      accessibilityRole="button"
-                    >
-                      <Ionicons name="thumbs-up-outline" size={18} color={theme.text} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.feedbackBtn, { borderColor: theme.border }]}
-                      onPress={() => handleFeedbackTap('negative')}
-                      disabled={submittingFeedback}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      accessibilityLabel="Thumbs down"
-                      accessibilityRole="button"
-                    >
-                      <Ionicons name="thumbs-down-outline" size={18} color={theme.text} />
-                    </TouchableOpacity>
+              {(traceId || conversationId) &&
+                !isLoading &&
+                !feedbackSubmitted &&
+                messages.length > 0 && (
+                  <View style={styles.feedbackRow}>
+                    <Text style={[styles.feedbackLabel, { color: theme.textSecondary }]}>
+                      Was this helpful?
+                    </Text>
+                    <View style={styles.feedbackBtns}>
+                      <TouchableOpacity
+                        style={[
+                          styles.feedbackBtn,
+                          {
+                            borderColor:
+                              feedbackRating === 'positive' ? theme.primary : theme.border,
+                          },
+                        ]}
+                        onPress={() => handleFeedbackTap('positive')}
+                        disabled={submittingFeedback}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityLabel="Thumbs up"
+                        accessibilityRole="button"
+                      >
+                        <Ionicons
+                          name={feedbackRating === 'positive' ? 'thumbs-up' : 'thumbs-up-outline'}
+                          size={18}
+                          color={feedbackRating === 'positive' ? theme.primary : theme.text}
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.feedbackBtn,
+                          {
+                            borderColor:
+                              feedbackRating === 'negative' ? brandColors.red : theme.border,
+                          },
+                        ]}
+                        onPress={() => handleFeedbackTap('negative')}
+                        disabled={submittingFeedback}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityLabel="Thumbs down"
+                        accessibilityRole="button"
+                      >
+                        <Ionicons
+                          name={
+                            feedbackRating === 'negative' ? 'thumbs-down' : 'thumbs-down-outline'
+                          }
+                          size={18}
+                          color={feedbackRating === 'negative' ? brandColors.red : theme.text}
+                        />
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                </View>
-              )}
+                )}
               {feedbackSubmitted && (
                 <Text style={[styles.feedbackThanks, { color: theme.textSecondary }]}>
                   Thanks for your feedback!

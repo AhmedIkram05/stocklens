@@ -7,6 +7,7 @@ Tests cover app metadata, router mounting, CORS, lifespan, and health endpoint.
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
@@ -146,6 +147,87 @@ class TestLifespan:
         await gen.aclose()  # shutdown
 
         mock_close_pool.assert_awaited_once()
+
+    @patch("src.database.connection.connection_ctx")
+    @patch("src.categories.merchant_map.load_categories")
+    @patch("src.main.run_migrations", new_callable=AsyncMock)
+    @patch("src.main.init_pool", new_callable=AsyncMock)
+    @patch("src.categories.seed.seed_categories", new_callable=AsyncMock, return_value=3)
+    @patch("src.prediction.service.prediction_service")
+    @patch("src.main.close_pool", new_callable=AsyncMock)
+    async def test_lifespan_reloads_category_cache_after_seeding(
+        self,
+        mock_close_pool,
+        mock_prediction_service,
+        mock_seed,
+        mock_init_pool,
+        mock_migrations,
+        mock_load_cats,
+        mock_conn_ctx,
+    ):
+        """After seed_categories inserts DB rows, lifespan reloads the cache with real UUIDs."""
+        from src.main import lifespan
+
+        class MockApp:
+            pass
+
+        mock_prediction_service.load_model.return_value = False
+        mock_conn = AsyncMock()
+        mock_conn.fetch.return_value = [
+            {
+                "id": str(uuid4()),
+                "name": "Groceries",
+                "description": "Food & drink",
+                "merchant_keywords": "tesco,sainsbury",
+                "associated_tickers": "TSCO.L",
+            },
+        ]
+        mock_conn_ctx.return_value.__aenter__.return_value = mock_conn
+
+        gen = lifespan(MockApp())
+        await gen.__anext__()
+        await gen.aclose()
+
+        mock_seed.assert_awaited_once()
+        mock_load_cats.assert_called_once()
+        args, _ = mock_load_cats.call_args
+        assert len(args[0]) == 1
+        assert args[0][0]["name"] == "Groceries"
+        assert args[0][0]["id"] is not None
+
+    @patch("src.database.connection.connection_ctx")
+    @patch("src.categories.merchant_map.load_categories")
+    @patch("src.main.run_migrations", new_callable=AsyncMock)
+    @patch("src.main.init_pool", new_callable=AsyncMock)
+    @patch("src.categories.seed.seed_categories", new_callable=AsyncMock, return_value=3)
+    @patch("src.prediction.service.prediction_service")
+    @patch("src.main.close_pool", new_callable=AsyncMock)
+    async def test_lifespan_skips_cache_reload_if_no_rows(
+        self,
+        mock_close_pool,
+        mock_prediction_service,
+        mock_seed,
+        mock_init_pool,
+        mock_migrations,
+        mock_load_cats,
+        mock_conn_ctx,
+    ):
+        """When seed_categories returns 0 and DB is empty, load_categories should not be called."""
+        from src.main import lifespan
+
+        class MockApp:
+            pass
+
+        mock_prediction_service.load_model.return_value = False
+        mock_conn = AsyncMock()
+        mock_conn.fetch.return_value = []  # empty DB
+        mock_conn_ctx.return_value.__aenter__.return_value = mock_conn
+
+        gen = lifespan(MockApp())
+        await gen.__anext__()
+        await gen.aclose()
+
+        mock_load_cats.assert_not_called()
 
 
 class TestHealthEndpoint:

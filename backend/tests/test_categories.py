@@ -47,6 +47,10 @@ class TestKeywordMatching:
     """Tests for the ``match_by_keyword`` function."""
 
     def setup_method(self):
+        # Reset global cache to ensure seed data is used (not DB data from other tests)
+        import src.categories.merchant_map as mm
+
+        mm._category_cache = None
         # Ensure categories are loaded from seed data
         load_categories()
 

@@ -158,8 +158,37 @@ async def submit_feedback(
     body: AgentFeedbackRequest,
     current_user: UserInDB = Depends(get_current_user),
 ):
-    """Record user feedback against a LangSmith trace."""
+    """Record user feedback.
+
+    Saves feedback in both places when both identifiers are supplied:
+    1. ``conversation_id`` keeps the in-app conversation state in sync.
+    2. ``trace_id`` attaches the same thumbs-up/down to the LangSmith trace.
+    """
+    conversation_saved = False
+    if body.conversation_id:
+        async with connection_ctx() as conn:
+            conv = await agent_repo.get_conversation(conn, body.conversation_id, current_user.id)
+            if not conv:
+                raise HTTPException(status_code=404, detail="Conversation not found")
+            await agent_repo.set_conversation_feedback(
+                conn,
+                body.conversation_id,
+                body.rating,
+                body.comment,
+            )
+        conversation_saved = True
+
+    # A locally stored rating is still useful when tracing is disabled, but do
+    # not return early: that previously prevented every active agent response
+    # from appearing in LangSmith's Feedback table.
+    if not body.trace_id:
+        if conversation_saved:
+            return {"status": "ok", "source": "conversation"}
+        return {"status": "skipped", "reason": "no_trace_or_conversation_id"}
+
     if not settings.LANGCHAIN_API_KEY:
+        if conversation_saved:
+            return {"status": "ok", "source": "conversation"}
         return {"status": "skipped", "reason": "langsmith_disabled"}
 
     client = Client()
@@ -170,4 +199,7 @@ async def submit_feedback(
         feedback_source_type="app",
         source_metadata={"user_id": str(current_user.id)},
     )
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "source": "conversation+langsmith" if conversation_saved else "langsmith",
+    }

@@ -44,6 +44,7 @@ export interface ReceiptUpdate {
   ocr_raw_text?: string;
   ocr_confidence?: number;
   line_items?: Record<string, unknown>;
+  receipt_image_s3_key?: string;
   transaction_date?: string;
 }
 

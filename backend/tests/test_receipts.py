@@ -7,6 +7,10 @@ All database access runs inside the per-test transaction provided by
 
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
+from unittest.mock import AsyncMock, patch
+
 import httpx
 
 
@@ -230,4 +234,366 @@ class TestDeleteReceipt:
         rid = rcpt["id"]
         await client.delete(f"/receipts/{rid}", headers=auth_headers)
         response = await client.get(f"/receipts/{rid}", headers=auth_headers)
+        assert response.status_code == 404
+
+
+# ── Health endpoints ────────────────────────────────────────────────────────
+
+
+class TestHealthEndpoints:
+    """GET /receipts/health and /receipts/cascade/health"""
+
+    async def test_health_endpoint(self, client: httpx.AsyncClient, auth_headers: dict[str, str]):
+        response = await client.get("/receipts/health", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["module"] == "receipts"
+        assert "tesseract_configured" in data
+        assert "bedrock_configured" in data
+
+    @patch("src.receipts.router.get_redis", new_callable=AsyncMock)
+    async def test_cascade_health_degraded_bedrock(
+        self, mock_redis, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        """Bedrock fails (no AWS creds in CI) -> degraded. Redis mocked ok."""
+        mock_redis.return_value.ping = AsyncMock(return_value=True)
+        response = await client.get("/receipts/cascade/health", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        # In test env bedrock will fail (no AWS creds)
+        assert data["status"] == "degraded"
+        assert data["checks"]["redis"] == "ok"
+        assert "cascade_threshold" in data
+
+    @patch("src.receipts.router.get_redis", new_callable=AsyncMock)
+    async def test_cascade_health_redis_unavailable(
+        self, mock_redis, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        mock_redis.return_value.ping.side_effect = RuntimeError("redis down")
+        response = await client.get("/receipts/cascade/health", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "degraded"
+        assert data["checks"]["redis"] == "unavailable"
+        assert "cascade_threshold" in data
+
+
+# ── Scan endpoint (cascade OCR) ─────────────────────────────────────────────
+
+
+class TestScanReceipt:
+    """POST /receipts/scan — cascade OCR pipeline"""
+
+    @patch("src.receipts.router.cascade_extract", new_callable=AsyncMock)
+    async def test_scan_success_regex_path(
+        self, mock_cascade, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        from src.receipts.cascade import FieldConfidence as CascadeFieldConfidence
+        from src.receipts.models import CascadeResult, ReceiptExtraction
+
+        mock_cascade.return_value = CascadeResult(
+            raw_text="TESCO\nMilk 1.65\nTotal 15.50",
+            source="regex",
+            overall_confidence=0.92,
+            extraction=ReceiptExtraction(
+                merchant_name="TESCO",
+                total=Decimal("15.50"),
+                date=date(2024, 1, 15),
+                items=[{"name": "Milk 2L", "quantity": 1, "price": Decimal("1.65")}],
+            ),
+            field_confidences={
+                "merchant_name": CascadeFieldConfidence(confidence=0.9, source="regex"),
+                "total": CascadeFieldConfidence(confidence=0.95, source="regex"),
+            },
+            discrepancies=[],
+            llm_category=None,
+        )
+
+        files = {"file": ("receipt.jpg", b"fake image data", "image/jpeg")}
+        response = await client.post("/receipts/scan", files=files, headers=auth_headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["source"] == "regex"
+        assert data["confidence"] == 0.92
+        assert data["extraction"]["merchant_name"] == "TESCO"
+        assert float(data["extraction"]["total"]) == 15.50
+
+    @patch("src.receipts.router.cascade_extract", new_callable=AsyncMock)
+    async def test_scan_success_cascade_path(
+        self, mock_cascade, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        from src.receipts.cascade import FieldConfidence as CascadeFieldConfidence
+        from src.receipts.models import CascadeResult, ReceiptExtraction
+
+        mock_cascade.return_value = CascadeResult(
+            raw_text="BLURRY STORE\nTotal 25.00",
+            source="cascade",
+            overall_confidence=0.78,
+            extraction=ReceiptExtraction(
+                merchant_name="BLURRY STORE",
+                total=Decimal("25.00"),
+                date=date(2024, 2, 10),
+                items=[{"name": "Item 1", "quantity": 1, "price": Decimal("25.00")}],
+            ),
+            field_confidences={
+                "merchant_name": CascadeFieldConfidence(confidence=0.7, source="llm"),
+                "total": CascadeFieldConfidence(confidence=0.85, source="regex"),
+            },
+            discrepancies=[{"field": "merchant_name", "regex": "BLURRY", "llm": "BLURRY STORE"}],
+            llm_category="Food & Dining",
+        )
+
+        files = {"file": ("receipt.png", b"fake png data", "image/png")}
+        response = await client.post("/receipts/scan", files=files, headers=auth_headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["source"] == "cascade"
+        assert data["confidence"] == 0.78
+        assert data["extraction"]["merchant_name"] == "BLURRY STORE"
+        assert float(data["extraction"]["total"]) == 25.0
+
+    @patch("src.receipts.router.cascade_extract", new_callable=AsyncMock)
+    async def test_scan_rejects_invalid_content_type(
+        self, mock_cascade, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        files = {"file": ("receipt.pdf", b"fake pdf", "application/pdf")}
+        response = await client.post("/receipts/scan", files=files, headers=auth_headers)
+        assert response.status_code == 400
+        assert "Unsupported file type" in response.json()["detail"]
+
+    @patch("src.receipts.router.cascade_extract", new_callable=AsyncMock)
+    async def test_scan_rejects_oversized_file(
+        self, mock_cascade, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        # 11 MB file (limit is 10 MB)
+        big_data = b"x" * (11 * 1024 * 1024)
+        files = {"file": ("big.jpg", big_data, "image/jpeg")}
+        response = await client.post("/receipts/scan", files=files, headers=auth_headers)
+        assert response.status_code == 413
+        assert "exceeds maximum" in response.json()["detail"]
+
+    @patch("src.receipts.router.cascade_extract", new_callable=AsyncMock)
+    async def test_scan_empty_ocr_text_returns_422(
+        self, mock_cascade, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        from src.receipts.models import CascadeResult, ReceiptExtraction
+
+        mock_cascade.return_value = CascadeResult(
+            raw_text="",  # empty OCR result
+            source="regex",
+            overall_confidence=0.1,
+            extraction=ReceiptExtraction(),
+            field_confidences={},
+            discrepancies=[],
+        )
+
+        files = {"file": ("blank.jpg", b"blank image", "image/jpeg")}
+        response = await client.post("/receipts/scan", files=files, headers=auth_headers)
+        assert response.status_code == 422
+        assert "Could not extract text" in response.json()["detail"]
+
+    @patch("src.receipts.router.cascade_extract", new_callable=AsyncMock)
+    async def test_scan_missing_total_returns_422(
+        self, mock_cascade, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        from src.receipts.models import CascadeResult, ReceiptExtraction
+
+        mock_cascade.return_value = CascadeResult(
+            raw_text="STORE\nItem 5.00\nItem 3.00",
+            source="regex",
+            overall_confidence=0.5,
+            extraction=ReceiptExtraction(
+                merchant_name="STORE",
+                total=None,  # missing total
+                items=[{"name": "Item", "quantity": 1, "price": Decimal("5.00")}],
+            ),
+            field_confidences={},
+            discrepancies=[],
+        )
+
+        files = {"file": ("nototal.jpg", b"data", "image/jpeg")}
+        response = await client.post("/receipts/scan", files=files, headers=auth_headers)
+        assert response.status_code == 422
+        assert "Could not extract the total amount" in response.json()["detail"]
+
+
+# ── Enrichment status ───────────────────────────────────────────────────────
+
+
+class TestEnrichmentStatus:
+    """GET /receipts/{id}/enrich-status"""
+
+    @patch("src.receipts.router.get_enrich_status", new_callable=AsyncMock)
+    async def test_enrich_status_pending(
+        self, mock_redis, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        mock_redis.return_value = "pending"
+        rcpt = await _create_receipt(client, auth_headers)
+        rid = rcpt["id"]
+
+        response = await client.get(f"/receipts/{rid}/enrich-status", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "pending"
+        assert data["receipt_id"] == rid
+
+    @patch("src.receipts.router.get_enrich_status", new_callable=AsyncMock)
+    async def test_enrich_status_completed_from_db(
+        self, mock_redis, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        mock_redis.return_value = None  # Redis returns None, falls back to DB
+        rcpt = await _create_receipt(client, auth_headers)
+        rid = rcpt["id"]
+        # Update source to "cascade" to simulate completed
+        from src.database.connection import connection_ctx
+
+        async with connection_ctx() as conn:
+            await conn.execute("UPDATE receipts SET source = 'cascade' WHERE id = $1::uuid", rid)
+
+        response = await client.get(f"/receipts/{rid}/enrich-status", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "completed"
+        assert data["source"] == "cascade"
+
+    @patch("src.receipts.router.get_enrich_status", new_callable=AsyncMock)
+    async def test_enrich_status_failed_from_db(
+        self, mock_redis, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        mock_redis.return_value = None
+        rcpt = await _create_receipt(client, auth_headers)
+        rid = rcpt["id"]
+        from src.database.connection import connection_ctx
+
+        async with connection_ctx() as conn:
+            await conn.execute("UPDATE receipts SET source = 'degraded' WHERE id = $1::uuid", rid)
+
+        response = await client.get(f"/receipts/{rid}/enrich-status", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "failed"
+
+    @patch("src.receipts.router.get_enrich_status", new_callable=AsyncMock)
+    async def test_enrich_status_not_needed(
+        self, mock_redis, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        mock_redis.return_value = None
+        rcpt = await _create_receipt(client, auth_headers)
+        rid = rcpt["id"]
+        from src.database.connection import connection_ctx
+
+        async with connection_ctx() as conn:
+            await conn.execute("UPDATE receipts SET source = 'regex' WHERE id = $1::uuid", rid)
+
+        response = await client.get(f"/receipts/{rid}/enrich-status", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "not_needed"
+
+    @patch("src.receipts.router.get_enrich_status", new_callable=AsyncMock)
+    async def test_enrich_status_unknown_receipt(
+        self, mock_redis, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        mock_redis.return_value = None
+        response = await client.get(
+            "/receipts/00000000-0000-0000-0000-000000000000/enrich-status",
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "unknown"
+
+
+# ── Update receipt field-type branches ──────────────────────────────────────
+
+
+class TestUpdateReceiptFieldTypes:
+    """Edge cases in update_receipt for different field types"""
+
+    async def test_update_line_items_jsonb(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        """line_items uses ::jsonb cast (lines 590-591)"""
+        rcpt = await _create_receipt(client, auth_headers)
+        rid = rcpt["id"]
+        response = await client.put(
+            f"/receipts/{rid}",
+            json={"line_items": [{"description": "New item", "amount": 10.0, "quantity": 2}]},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["line_items"] is not None
+        assert len(data["line_items"]) == 1
+        assert data["line_items"][0]["description"] == "New item"
+
+    async def test_update_ocr_confidence_real_cast(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        """ocr_confidence uses ::real cast (line 593)"""
+        rcpt = await _create_receipt(client, auth_headers)
+        rid = rcpt["id"]
+        response = await client.put(
+            f"/receipts/{rid}",
+            json={"ocr_confidence": 0.95},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        # Float precision - use approximate comparison
+        assert abs(float(response.json()["ocr_confidence"]) - 0.95) < 0.001
+
+    async def test_update_total_amount_numeric_cast(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        """total_amount uses ::numeric cast (line 595)"""
+        rcpt = await _create_receipt(client, auth_headers)
+        rid = rcpt["id"]
+        response = await client.put(
+            f"/receipts/{rid}",
+            json={"total_amount": "123.45"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        assert float(response.json()["total_amount"]) == 123.45
+
+    async def test_update_transaction_date_date_cast(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        """transaction_date uses ::date cast (line 597)"""
+        rcpt = await _create_receipt(client, auth_headers)
+        rid = rcpt["id"]
+        response = await client.put(
+            f"/receipts/{rid}",
+            json={"transaction_date": "2024-12-25"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["transaction_date"] == "2024-12-25"
+
+    async def test_update_no_fields_returns_400(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        """Empty set_clauses -> 400 (line 604-606)"""
+        rcpt = await _create_receipt(client, auth_headers)
+        rid = rcpt["id"]
+        response = await client.put(
+            f"/receipts/{rid}",
+            json={},  # no fields
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+        assert "At least one field must be provided" in response.json()["detail"]
+
+    async def test_update_nonexistent_receipt_returns_404(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        """row is None after UPDATE -> 404 (line 625-628)"""
+        response = await client.put(
+            "/receipts/00000000-0000-0000-0000-000000000000",
+            json={"merchant_name": "Ghost"},
+            headers=auth_headers,
+        )
         assert response.status_code == 404

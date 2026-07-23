@@ -35,7 +35,7 @@ import structlog
 
 from src.categories.seed import SEED_CATEGORIES
 from src.config import settings
-from src.receipts.llm_extractor import LLMExtractionResult, extract_with_llm
+from src.receipts.llm_extractor import LLMExtractionResult, extract_with_llm, extract_with_vision
 from src.receipts.merchant_match import fuzzy_match_merchant
 from src.receipts.models import (
     CascadeResult,
@@ -54,6 +54,81 @@ KNOWN_MERCHANTS: list[str] = [kw for cat in SEED_CATEGORIES for kw in cat["merch
 # ponytail: merchant at/above this conf was fuzzy-verified vs known merchants;
 # below it, the regex found a name but couldn't confirm it → worth an LLM check.
 MERCHANT_VERIFIED_CONFIDENCE = 0.95
+RECONCILIATION_TOLERANCE = Decimal("0.05")
+
+
+# ── Arithmetic reconciliation ─────────────────────────────────────────────
+
+
+def _sum_item_amounts(items: list[dict] | None) -> Decimal | None:
+    """Sum line-item amounts when every item has a numeric amount."""
+    if not items:
+        return None
+    total = Decimal("0")
+    for item in items:
+        amount = item.get("amount")
+        if amount is None:
+            return None
+        total += Decimal(str(amount))
+    return total
+
+
+def _apply_reconciliation(
+    result: dict[str, Any],
+    field_confs: dict[str, FieldConfidence],
+) -> tuple[dict[str, FieldConfidence], bool]:
+    """Cross-check total vs line items and adjust field confidence.
+
+    Returns updated confidences and whether a reconciliation mismatch was found.
+    When items sum to the extracted total (± tolerance), both fields get a
+    confidence boost. A mismatch lowers total confidence so the cascade can
+    escalate to vision/LLM correction.
+    """
+    items = result.get("line_items") or []
+    total = result.get("total_amount")
+    items_sum = _sum_item_amounts(items)
+
+    if total is None or items_sum is None or not items:
+        return field_confs, False
+
+    # Single-item receipts are often service lines priced only at the total row.
+    if len(items) < 2:
+        return field_confs, False
+
+    total_dec = Decimal(str(total))
+    delta = abs(items_sum - total_dec)
+    reconciled = delta <= RECONCILIATION_TOLERANCE
+
+    total_fc = field_confs.get("total")
+    items_fc = field_confs.get("items")
+
+    if reconciled:
+        if total_fc is not None and total_fc.value is not None:
+            field_confs["total"] = total_fc.model_copy(
+                update={"confidence": min(0.96, total_fc.confidence + 0.06)}
+            )
+        if items_fc is not None and items_fc.value is not None:
+            field_confs["items"] = items_fc.model_copy(
+                update={"confidence": min(0.95, items_fc.confidence + 0.10)}
+            )
+        logger.debug(
+            "reconciliation_passed",
+            items_sum=float(items_sum),
+            total=float(total_dec),
+        )
+        return field_confs, False
+
+    if total_fc is not None and total_fc.value is not None:
+        field_confs["total"] = total_fc.model_copy(
+            update={"confidence": max(0.55, total_fc.confidence - 0.20)}
+        )
+    logger.info(
+        "reconciliation_mismatch",
+        items_sum=float(items_sum),
+        total=float(total_dec),
+        delta=float(delta),
+    )
+    return field_confs, True
 
 
 # ── Heuristic confidence scoring ─────────────────────────────────────────
@@ -68,7 +143,8 @@ def _score_heuristic_confidence(
 
     Confidence guidelines
     ---------------------
-    - ``total``: 0.95 if found (strong pattern match), 0.0 if missing.
+    - ``total``: 0.88 if found (a labelled regex match is useful but can
+      still be an OCR digit error), 0.0 if missing.
     - ``merchant``: 0.90 if found, boosted to 0.95 if fuzzy-matched against
       known merchants, 0.0 if missing.
     - ``date``: 0.85 if found, 0.0 if missing.
@@ -98,7 +174,7 @@ def _score_heuristic_confidence(
     if total is not None:
         confidences["total"] = FieldConfidence(
             value=float(total),
-            confidence=0.95,
+            confidence=0.88,
             source="regex",
         )
     else:
@@ -194,6 +270,7 @@ def _should_escalate(
     overall: float,
     field_confs: dict[str, FieldConfidence],
     ocr_confidence: float | None,
+    reconciliation_mismatch: bool = False,
 ) -> tuple[bool, str]:
     """Decide whether to escalate the regex result to the LLM correction layer.
 
@@ -208,6 +285,7 @@ def _should_escalate(
     * the merchant was extracted but NOT fuzzy-verified against known
       merchants (confidence ``< MERCHANT_VERIFIED_CONFIDENCE``) — let the LLM
       confirm/correct the name.
+    * line-item amounts do not reconcile with the extracted total.
 
     Returns ``(escalate, reasons)`` where ``reasons`` is a comma-joined string
     for logging.
@@ -227,6 +305,9 @@ def _should_escalate(
         and merchant.confidence < MERCHANT_VERIFIED_CONFIDENCE
     ):
         reasons.append("unverified_merchant")
+
+    if reconciliation_mismatch:
+        reasons.append("reconciliation_mismatch")
 
     return (len(reasons) > 0, ",".join(reasons))
 
@@ -299,6 +380,27 @@ def _detect_discrepancies(
 # ── Merge results ─────────────────────────────────────────────────────────
 
 
+def _should_prefer_llm(
+    heuristic: FieldConfidence | None,
+    llm_value: object,
+    llm_confidence: float,
+) -> bool:
+    """Choose a model correction only when it is credible and auditable.
+
+    A regex match is not ground truth: OCR can preserve a ``TOTAL`` label
+    while reading one digit incorrectly.  Let a confident vision/text model
+    correct a disagreeing, non-verified heuristic value, while keeping a
+    known-merchant match (0.95) as the conservative tie-breaker.
+    """
+    if llm_value is None or llm_confidence < 0.75:
+        return False
+    if heuristic is None or heuristic.value is None:
+        return True
+    if not _values_differ(heuristic.value, llm_value):
+        return llm_confidence > heuristic.confidence
+    return heuristic.confidence < MERCHANT_VERIFIED_CONFIDENCE
+
+
 def _merge_results(
     heuristic: dict[str, FieldConfidence],
     llm: LLMExtractionResult,
@@ -316,11 +418,11 @@ def _merge_results(
     h_date = heuristic.get("date")
     items = heuristic.get("items")
 
-    # Override with LLM if it has higher confidence or heuristic is None
+    # Prefer high-confidence LLM corrections for disputed OCR values.  Every
+    # disagreement remains in ``discrepancies`` for monitoring and review.
     if llm.merchant_name is not None:
         llm_merchant_conf = llm.confidence.get("merchant_name", 0.0)
-        h_merchant_conf = merchant.confidence if merchant else 0.0
-        if llm_merchant_conf > h_merchant_conf:
+        if _should_prefer_llm(merchant, llm.merchant_name, llm_merchant_conf):
             merchant = FieldConfidence(
                 value=llm.merchant_name,
                 confidence=llm_merchant_conf,
@@ -329,8 +431,7 @@ def _merge_results(
 
     if llm.total_amount is not None:
         llm_total_conf = llm.confidence.get("total_amount", 0.0)
-        h_total_conf = total.confidence if total else 0.0
-        if llm_total_conf > h_total_conf:
+        if _should_prefer_llm(total, llm.total_amount, llm_total_conf):
             total = FieldConfidence(
                 value=llm.total_amount,
                 confidence=llm_total_conf,
@@ -339,8 +440,7 @@ def _merge_results(
 
     if llm.date is not None:
         llm_date_conf = llm.confidence.get("date", 0.0)
-        h_date_conf = h_date.confidence if h_date else 0.0
-        if llm_date_conf > h_date_conf:
+        if _should_prefer_llm(h_date, llm.date, llm_date_conf):
             h_date = FieldConfidence(
                 value=llm.date,
                 confidence=llm_date_conf,
@@ -349,8 +449,7 @@ def _merge_results(
 
     if llm.line_items:
         llm_items_conf = llm.confidence.get("line_items", 0.0)
-        h_items_conf = items.confidence if items else 0.0
-        if llm_items_conf > h_items_conf:
+        if _should_prefer_llm(items, llm.line_items, llm_items_conf):
             items = FieldConfidence(
                 value=llm.line_items,
                 confidence=llm_items_conf,
@@ -408,13 +507,17 @@ def _raw_items_to_model(items: list[dict]) -> list[ExtractedItem]:
             continue
         name = item.get("description") or ""
         quantity = item.get("quantity", 1)
-        price = item.get("amount", 0.0)
+        price = item.get("amount")
         # ponytail: naive int conversion — fromisoformat decimal later if needed
         try:
             qty = int(quantity) if quantity is not None else 1
         except (ValueError, TypeError):
             qty = 1
-        result.append(ExtractedItem(name=str(name), quantity=qty, price=float(price)))
+        try:
+            price_f = float(price) if price is not None else 0.0
+        except (ValueError, TypeError):
+            price_f = 0.0
+        result.append(ExtractedItem(name=str(name), quantity=qty, price=price_f))
     return result
 
 
@@ -486,6 +589,11 @@ async def cascade_extract(
     raw_text = result.get("ocr_raw_text", "")
 
     if not raw_text.strip():
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        logger.warning(
+            "cascade_ocr_empty",
+            processing_time_ms=round(elapsed_ms, 2),
+        )
         return CascadeResult(
             extraction=ReceiptExtraction(),
             field_confidences={},
@@ -498,6 +606,7 @@ async def cascade_extract(
     # ── 2. Score heuristic confidence ──────────────────────────────────
     merchants = known_merchants if known_merchants is not None else KNOWN_MERCHANTS
     field_confs = _score_heuristic_confidence(result, raw_text, merchants)
+    field_confs, reconciliation_mismatch = _apply_reconciliation(result, field_confs)
     overall = _compute_overall_confidence(field_confs)
 
     # ── 3. Build base extraction ───────────────────────────────────────
@@ -513,7 +622,9 @@ async def cascade_extract(
     # ── 4. Decide whether the fast regex path is good enough ──────────
     # Escalate to the LLM when overall is low, the OCR read quality is poor,
     # or the merchant was extracted but not confirmed against known merchants.
-    should_escalate, reasons = _should_escalate(overall, field_confs, result.get("ocr_confidence"))
+    should_escalate, reasons = _should_escalate(
+        overall, field_confs, result.get("ocr_confidence"), reconciliation_mismatch
+    )
     if not should_escalate:
         logger.info(
             "cascade_regex_only",
@@ -529,7 +640,7 @@ async def cascade_extract(
             raw_text=raw_text,
         )
 
-    # ── 5. Escalate to LLM ─────────────────────────────────────────────
+    # ── 5. Escalate to LLM (vision first, text fallback) ──────────────
     logger.info(
         "cascade_escalating_to_llm",
         overall_confidence=overall,
@@ -537,9 +648,12 @@ async def cascade_extract(
         reasons=reasons,
     )
 
-    llm_result = await extract_with_llm(raw_text)
+    llm_result = await extract_with_vision(image_bytes)
 
-    # ── 6. LLM failed — return degraded ────────────────────────────────
+    if llm_result is None:
+        logger.info("cascade_vision_failed_falling_back_to_text")
+        llm_result = await extract_with_llm(raw_text)
+
     if llm_result is None:
         logger.warning("cascade_llm_failed_falling_back")
         return CascadeResult(

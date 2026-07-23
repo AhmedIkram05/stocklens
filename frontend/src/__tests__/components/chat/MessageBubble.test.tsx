@@ -19,7 +19,10 @@ describe('MessageBubble', () => {
   const messageWithTools: AgentMessage = {
     role: 'assistant',
     content: 'I found the data.',
-    toolCalls: ['get_portfolio_summary', 'get_portfolio_performance'],
+    toolResults: [
+      { toolName: 'get_portfolio_summary', result: { value: 50000 } },
+      { toolName: 'get_portfolio_performance', result: { return_pct: 5.2 } },
+    ],
     createdAt: '2026-07-19T00:00:00Z',
   };
 
@@ -31,6 +34,24 @@ describe('MessageBubble', () => {
   it('renders assistant message text', () => {
     const { getByText } = renderWithProviders(<MessageBubble message={assistantMessage} />);
     expect(getByText('Your portfolio is up 5.2% this quarter.')).toBeTruthy();
+  });
+
+  it('renders Markdown bold markers as bold text rather than literal asterisks', () => {
+    const { getByText, queryByText } = renderWithProviders(
+      <MessageBubble message={{ ...assistantMessage, content: 'Your **portfolio** is up.' }} />,
+    );
+    expect(getByText('portfolio')).toBeTruthy();
+    expect(queryByText('**portfolio**')).toBeNull();
+  });
+
+  it('shows model reasoning above the final answer', () => {
+    const { getByText } = renderWithProviders(
+      <MessageBubble
+        message={{ ...assistantMessage, reasoning: 'I checked the latest holdings.' }}
+      />,
+    );
+    expect(getByText('Thinking')).toBeTruthy();
+    expect(getByText('I checked the latest holdings.')).toBeTruthy();
   });
 
   it('displays tool call indicators below assistant messages', () => {

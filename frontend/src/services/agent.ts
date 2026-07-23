@@ -15,6 +15,8 @@ const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 export interface AgentMessage {
   role: 'user' | 'assistant';
   content: string;
+  /** User-visible model-provided reasoning emitted before the final answer. */
+  reasoning?: string;
   toolCalls?: any[];
   toolResults?: any[];
   createdAt: string;
@@ -49,6 +51,7 @@ export const agentService = {
     onToken?: (token: string) => void,
     onToolStart?: (toolName: string) => void,
     onToolEnd?: (toolName: string, result?: any) => void,
+    onReasoning?: (reasoning: string) => void,
   ): Promise<{ conversationId: string; fullResponse: string; traceId: string }> {
     const token = await apiService.ensureValidAccessToken();
     if (!token) {
@@ -67,66 +70,92 @@ export const agentService = {
       throw new Error(`Chat request failed: ${response.status}`);
     }
 
-    const reader = response.body!.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
     let fullResponse = '';
     let resolvedConversationId = conversationId || '';
     let resolvedTraceId = '';
     let currentEvent = ''; // Track current SSE event type
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          currentEvent = line.slice(7).trim();
-        } else if (line.startsWith('data: ')) {
-          const data = JSON.parse(line.slice(6));
-          switch (currentEvent) {
-            case 'token':
-              fullResponse += data;
-              onToken?.(data);
-              break;
-            case 'tool_start':
-              onToolStart?.(data);
-              break;
-            case 'tool_end': {
-              // tool_end data is either:
-              //   (old) string tool name — backward compat
-              //   (new) { tool_name, result: base64-encoded JSON }
-              let toolName: string;
-              let parsedResult: any = undefined;
-              if (typeof data === 'string') {
-                toolName = data;
-              } else {
-                toolName = data.tool_name ?? 'unknown';
-                if (data.result) {
-                  try {
-                    const decoded = atob(data.result);
-                    parsedResult = JSON.parse(decoded);
-                  } catch (_e) {
-                    // If base64 decode or JSON parse fails, skip result
-                  }
+    // ── Shared SSE line handler ──────────────────────────────────────────
+    function processLine(line: string) {
+      if (line.startsWith('event: ')) {
+        currentEvent = line.slice(7).trim();
+      } else if (line.startsWith('data: ')) {
+        const data = JSON.parse(line.slice(6));
+        switch (currentEvent) {
+          case 'token':
+            fullResponse += data;
+            onToken?.(data);
+            break;
+          case 'reasoning':
+            onReasoning?.(data);
+            break;
+          case 'tool_start':
+            onToolStart?.(data);
+            break;
+          case 'tool_end': {
+            // tool_end data is either:
+            //   (old) string tool name — backward compat
+            //   (new) { tool_name, result: base64-encoded JSON }
+            let toolName: string;
+            let parsedResult: any = undefined;
+            if (typeof data === 'string') {
+              toolName = data;
+            } else {
+              toolName = data.tool_name ?? 'unknown';
+              if (data.result) {
+                try {
+                  const decoded = atob(data.result);
+                  parsedResult = JSON.parse(decoded);
+                } catch (_e) {
+                  // If base64 decode or JSON parse fails, skip result
                 }
               }
-              onToolEnd?.(toolName, parsedResult);
-              break;
             }
-            case 'done':
-              resolvedConversationId = data.conversation_id || resolvedConversationId;
-              resolvedTraceId = data.trace_id || '';
-              break;
-            case 'error':
-              throw new Error(data.error);
+            onToolEnd?.(toolName, parsedResult);
+            break;
           }
-          currentEvent = ''; // Reset after consuming
+          case 'done':
+            resolvedConversationId = data.conversation_id || resolvedConversationId;
+            resolvedTraceId = data.trace_id || '';
+            break;
+          case 'error':
+            throw new Error(data.error);
         }
+        currentEvent = ''; // Reset after consuming
+      }
+    }
+
+    // React Native (Hermes) may not expose response.body as a ReadableStream.
+    // Prefer streaming when available, fall back to reading the full body.
+    if (response.body && typeof response.body.getReader === 'function') {
+      // ── Streaming path (browsers, newer Hermes) ──
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          processLine(line);
+          // Yield to event loop so React renders each token's state update
+          // before processing the next line in this chunk.
+          await new Promise((r) => setTimeout(r, 0));
+        }
+      }
+    } else {
+      // ── Fallback: read full body, parse SSE lines (Hermes / React Native) ──
+      const fullText = await response.text();
+      for (const line of fullText.split('\n')) {
+        processLine(line);
+        // Yield to the event loop so React can flush batched state updates
+        // (token content, tool results) between tokens instead of all at once.
+        await new Promise((r) => setTimeout(r, 0));
       }
     }
 
@@ -134,13 +163,45 @@ export const agentService = {
   },
 
   async listConversations(): Promise<ConversationSummary[]> {
-    return apiService.get('/agent/conversations');
+    const res = await apiService.get<{ conversations: ConversationSummary[]; total: number }>(
+      '/agent/conversations',
+    );
+    const conversations = (res.conversations || []).map((conv: any) => ({
+      id: conv.id,
+      title: conv.title,
+      messageCount: conv.message_count ?? 0,
+      createdAt: conv.created_at,
+      updatedAt: conv.updated_at,
+    }));
+    return conversations;
   },
 
   async getConversation(
     conversationId: string,
   ): Promise<{ conversation: ConversationSummary; messages: AgentMessage[] }> {
-    return apiService.get(`/agent/conversations/${conversationId}`);
+    const res = await apiService.get<{ conversation: any; messages: any[] }>(
+      `/agent/conversations/${conversationId}`,
+    );
+    const conversation: ConversationSummary = {
+      id: res.conversation.id,
+      title: res.conversation.title,
+      messageCount: res.conversation.message_count ?? 0,
+      createdAt: res.conversation.created_at,
+      updatedAt: res.conversation.updated_at,
+    };
+    const messages: AgentMessage[] = (res.messages || []).map((msg: any) => ({
+      role: msg.role,
+      content: msg.content,
+      reasoning: msg.reasoning_steps?.thinking,
+      toolResults: (msg.tools_used || [])
+        .filter((t: any) => t.status === 'completed' && t.result != null)
+        .map((t: any) => ({
+          toolName: t.name,
+          result: typeof t.result === 'string' ? { _raw: t.result } : t.result,
+        })),
+      createdAt: msg.created_at,
+    }));
+    return { conversation, messages };
   },
 
   async deleteConversation(conversationId: string): Promise<void> {
@@ -151,10 +212,12 @@ export const agentService = {
     rating: string,
     traceId: string,
     comment?: string,
+    conversationId?: string,
   ): Promise<FeedbackResponse> {
     return apiService.post('/agent/feedback', {
       rating,
-      trace_id: traceId,
+      trace_id: traceId || null,
+      conversation_id: conversationId || null,
       comment: comment || null,
     });
   },

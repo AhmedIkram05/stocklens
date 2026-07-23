@@ -187,7 +187,7 @@ describe('SettingsScreen', () => {
     const { getByText } = await renderAndAwaitSwitches();
 
     expect(getByText('Device Passcode Unlock')).toBeTruthy();
-    expect(getByText('Local Data Storage')).toBeTruthy();
+    expect(getByText('Secure Cloud Storage')).toBeTruthy();
     expect(getByText('Dark Mode')).toBeTruthy();
     expect(getByText('Log Out')).toBeTruthy();
     expect(getByText('Clear All Data')).toBeTruthy();

@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     DRIFT_ALERT_KS_THRESHOLD: float = Field(default=0.3, ge=0)
     DRIFT_ALERT_JS_THRESHOLD: float = Field(default=0.3, ge=0)
     DRIFT_MONITORED_TICKERS: str = ""  # comma-separated, empty = portfolio-only
-    DRIFT_REPORT_S3_BUCKET: str = "stocklens-drift-reports"
+    DRIFT_REPORT_S3_BUCKET: str = "stocklens-drift-reports-dev"
     DRIFT_REPORT_S3_PREFIX: str = "drift_reports/"
 
     # Agent

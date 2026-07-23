@@ -91,6 +91,16 @@ async def lifespan(app: FastAPI):
         else:
             print("LIFESPAN: seed_categories returned 0", file=sys.stderr, flush=True)
 
+        # Load category cache from DB (real UUIDs, not placeholder seed IDs)
+        from src.categories.merchant_map import load_categories
+        from src.database.connection import connection_ctx
+
+        async with connection_ctx() as conn:
+            rows = await conn.fetch("SELECT * FROM spending_categories")
+            if rows:
+                load_categories([dict(r) for r in rows])
+                logger.info("category_cache_loaded_from_db", count=len(rows))
+
         # Load prediction model
         from src.prediction.service import prediction_service
 

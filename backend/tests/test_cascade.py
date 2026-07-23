@@ -7,12 +7,14 @@ All tests are pure function tests that mock the LLM and OCR layer.
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from decimal import Decimal
 
 import pytest
 
 from src.receipts.cascade import (
+    _apply_reconciliation,
     _compute_overall_confidence,
     _detect_discrepancies,
     _merge_results,
@@ -59,7 +61,7 @@ class TestScoreHeuristicConfidence:
         assert "merchant" in confs
         assert "date" in confs
         assert "items" in confs
-        assert confs["total"].confidence == 0.95
+        assert confs["total"].confidence == 0.88
         assert confs["merchant"].confidence == 0.95  # boosted by fuzzy match
         assert confs["date"].confidence == 0.85
         assert confs["items"].confidence > 0.5
@@ -310,6 +312,63 @@ class TestMergeResults:
 # ── _should_escalate ────────────────────────────────────────────────────
 
 
+class TestReconciliation:
+    """Arithmetic cross-check between line items and total."""
+
+    def test_reconciled_items_boost_confidence(self, known_merchants):
+        result = {
+            "total_amount": Decimal("4.85"),
+            "merchant_name": "RANDOM SHOP",  # Not in known_merchants - no fuzzy boost
+            "line_items": [
+                {"description": "Milk", "quantity": 1, "amount": Decimal("1.65")},
+                {"description": "Bread", "quantity": 1, "amount": Decimal("1.20")},
+                {"description": "Eggs", "quantity": 1, "amount": Decimal("2.00")},
+            ],
+            "date": date(2026, 6, 25),
+            "ocr_confidence": 0.87,
+            "ocr_raw_text": "text",
+        }
+        confs = _score_heuristic_confidence(result, "", known_merchants)
+        # Verify base confidence before reconciliation
+        assert confs["total"].confidence == 0.88  # Base total confidence
+        assert confs["items"].confidence == 0.80  # Base: 0.5 + 3*0.1
+        updated, mismatch = _apply_reconciliation(result, confs)
+        assert mismatch is False
+        assert updated["total"].confidence == 0.94  # 0.88 + 0.06
+        assert updated["items"].confidence == 0.90  # 0.80 + 0.10
+
+    def test_mismatch_lowers_total_confidence(self, known_merchants):
+        result = {
+            "total_amount": Decimal("10.00"),
+            "merchant_name": "Shop",
+            "line_items": [
+                {"description": "A", "quantity": 1, "amount": Decimal("4.00")},
+                {"description": "B", "quantity": 1, "amount": Decimal("3.00")},
+            ],
+            "date": date(2026, 1, 1),
+            "ocr_confidence": 0.9,
+            "ocr_raw_text": "text",
+        }
+        confs = _score_heuristic_confidence(result, "", known_merchants)
+        original_total_conf = confs["total"].confidence
+        updated, mismatch = _apply_reconciliation(result, confs)
+        assert mismatch is True
+        assert updated["total"].confidence < original_total_conf
+
+    def test_escalates_on_reconciliation_mismatch(self):
+        confs = {
+            "merchant": FieldConfidence(value="Shop", confidence=0.95, source="regex"),
+            "total": FieldConfidence(value=10.0, confidence=0.88, source="regex"),
+            "date": FieldConfidence(value="2026-01-01", confidence=0.85, source="regex"),
+        }
+        escalate, reasons = _should_escalate(0.89, confs, 0.9, reconciliation_mismatch=True)
+        assert escalate is True
+        assert "reconciliation_mismatch" in reasons
+
+
+# ── _should_escalate ────────────────────────────────────────────────────
+
+
 class TestShouldEscalate:
     """Tests for the LLM escalation decision (confidence gating)."""
 
@@ -381,18 +440,50 @@ class TestCascadeExtract:
         assert result.extraction.total == Decimal("47.99")
 
     @pytest.mark.asyncio
-    async def test_escalates_to_llm_when_low_confidence(self, mocker):
-        """When confidence is below threshold, cascade calls LLM."""
-        mocker.patch("src.receipts.cascade.process_receipt")
+    async def test_vision_success(self, mocker):
+        """When vision LLM succeeds, cascade returns cascade source with vision data."""
         mocker.patch("src.receipts.cascade.process_receipt").return_value = {
-            "total_amount": Decimal("47.99"),
-            "merchant_name": None,  # No merchant → low confidence
+            "total_amount": None,
+            "merchant_name": None,
             "line_items": [],
-            "date": None,  # No date → low confidence
+            "date": None,
             "ocr_confidence": 0.3,
             "ocr_raw_text": "Some garbled text\nTotal £47.99",
         }
 
+        mock_vision = mocker.patch("src.receipts.cascade.extract_with_vision")
+        mock_vision.return_value = LLMExtractionResult(
+            merchant_name="Tesco",
+            total_amount=47.99,
+            date="2026-06-25",
+            confidence={
+                "merchant_name": 0.9,
+                "total_amount": 0.95,
+                "date": 0.85,
+                "line_items": 0.0,
+            },
+        )
+
+        result = await cascade_extract(b"fake_image_bytes")
+
+        assert mock_vision.called
+        assert result.source == "cascade"
+        assert result.extraction.merchant_name == "Tesco"
+        assert result.extraction.total == Decimal("47.99")
+
+    @pytest.mark.asyncio
+    async def test_vision_fallback_to_text_llm(self, mocker):
+        """When vision fails, cascade falls back to text LLM."""
+        mocker.patch("src.receipts.cascade.process_receipt").return_value = {
+            "total_amount": Decimal("47.99"),
+            "merchant_name": None,
+            "line_items": [],
+            "date": None,
+            "ocr_confidence": 0.3,
+            "ocr_raw_text": "Some garbled text\nTotal £47.99",
+        }
+
+        mocker.patch("src.receipts.cascade.extract_with_vision", return_value=None)
         mock_llm = mocker.patch("src.receipts.cascade.extract_with_llm")
         mock_llm.return_value = LLMExtractionResult(
             merchant_name="Tesco",
@@ -413,7 +504,7 @@ class TestCascadeExtract:
 
     @pytest.mark.asyncio
     async def test_degraded_when_llm_fails(self, mocker):
-        """When LLM fails, cascade returns degraded regex result."""
+        """When vision AND text LLM both fail, cascade returns degraded regex result."""
         mocker.patch("src.receipts.cascade.process_receipt").return_value = {
             "total_amount": Decimal("47.99"),
             "merchant_name": None,
@@ -423,8 +514,9 @@ class TestCascadeExtract:
             "ocr_raw_text": "Some garbled text\nTotal £47.99",
         }
 
+        mocker.patch("src.receipts.cascade.extract_with_vision", return_value=None)
         mock_llm = mocker.patch("src.receipts.cascade.extract_with_llm")
-        mock_llm.return_value = None  # LLM failed
+        mock_llm.return_value = None  # both failed
 
         result = await cascade_extract(b"fake_image_bytes")
 
@@ -461,6 +553,7 @@ class TestCascadeExtract:
             "ocr_raw_text": "OLD NAME\n01/01/2026\nTotal £10.00",
         }
 
+        mocker.patch("src.receipts.cascade.extract_with_vision", return_value=None)
         mock_llm = mocker.patch("src.receipts.cascade.extract_with_llm")
         mock_llm.return_value = LLMExtractionResult(
             merchant_name="NEW NAME",
@@ -476,5 +569,41 @@ class TestCascadeExtract:
 
         result = await cascade_extract(b"fake_image_bytes")
 
-        assert result.source in ("cascade", "degraded")
+        assert result.source == "cascade"
         assert mock_llm.called
+
+
+# ── Decimal serialisation (Fix 6) ─────────────────────────────────────
+
+
+class TestDecimalSerialization:
+    """model_dump(mode='json') must produce JSON-serialisable output."""
+
+    def test_model_dump_json_mode_serializable(self):
+        from src.receipts.models import ExtractedItem
+
+        item = ExtractedItem(name="Test", quantity=2, price=Decimal("42.50"))
+        data = item.model_dump(mode="json")
+        # Should not raise
+        blob = json.dumps(data)
+        assert '"price": 42.5' in blob
+
+    def test_model_dump_json_mode_on_items_list_serializable(self):
+        from src.receipts.models import ExtractedItem
+
+        items = [
+            ExtractedItem(name="Milk", quantity=1, price=Decimal("1.65")),
+            ExtractedItem(name="Bread", quantity=2, price=Decimal("1.20")),
+        ]
+        blob = json.dumps([i.model_dump(mode="json") for i in items])
+        assert "Milk" in blob
+        assert "Bread" in blob
+        assert "1.65" in blob
+
+    def test_plain_model_dump_contains_decimals(self):
+        """Without mode='json', Decimal values survive — proving why mode='json' is needed."""
+        from src.receipts.models import ExtractedItem
+
+        item = ExtractedItem(name="Test", quantity=1, price=Decimal("42.50"))
+        data = item.model_dump()  # no mode="json"
+        assert isinstance(data["price"], Decimal)

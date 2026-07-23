@@ -15,28 +15,45 @@ import { spacing, radii, typography } from '../../styles/theme';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function formatCurrency(value: number | null | undefined, suffix = 'GBP'): string {
-  if (value == null) return '—';
-  return `${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${suffix}`;
+function numberValue(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value.replace(/,/g, ''));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
-function formatPct(value: number | null | undefined): string {
-  if (value == null) return '—';
-  const sign = value >= 0 ? '+' : '';
-  return `${sign}${value.toFixed(2)}%`;
+function formatFixed(value: unknown, decimals: number): string {
+  const numeric = numberValue(value);
+  return numeric == null ? '—' : numeric.toFixed(decimals);
 }
 
-function formatNumber(value: number | null | undefined): string {
-  if (value == null) return '—';
-  return value.toLocaleString();
+function formatCurrency(value: unknown, suffix = 'GBP'): string {
+  const numeric = numberValue(value);
+  if (numeric == null) return '—';
+  return `${numeric.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${suffix}`;
 }
 
-function formatLargeNumber(value: number | null | undefined): string {
-  if (value == null) return '—';
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(2)}K`;
-  return value.toLocaleString();
+function formatPct(value: unknown): string {
+  const numeric = numberValue(value);
+  if (numeric == null) return '—';
+  const sign = numeric >= 0 ? '+' : '';
+  return `${sign}${numeric.toFixed(2)}%`;
+}
+
+function formatNumber(value: unknown): string {
+  const numeric = numberValue(value);
+  return numeric == null ? '—' : numeric.toLocaleString();
+}
+
+function formatLargeNumber(value: unknown): string {
+  const numeric = numberValue(value);
+  if (numeric == null) return '—';
+  if (numeric >= 1_000_000_000) return `${(numeric / 1_000_000_000).toFixed(2)}B`;
+  if (numeric >= 1_000_000) return `${(numeric / 1_000_000).toFixed(2)}M`;
+  if (numeric >= 1_000) return `${(numeric / 1_000).toFixed(2)}K`;
+  return numeric.toLocaleString();
 }
 
 // ── Shared sub-components ───────────────────────────────────────────────────
@@ -65,8 +82,9 @@ function KeyValueRow({
 // ── 1. Key-value card (get_portfolio_summary) ───────────────────────────────
 
 function PortfolioSummaryRenderer({ data }: { data: any }) {
-  const pl = data.unrealised_pl_gbp ?? 0;
-  const pct = data.total_cost_basis_gbp ? (pl / data.total_cost_basis_gbp) * 100 : 0;
+  const pl = numberValue(data.unrealised_pl_gbp) ?? 0;
+  const costBasis = numberValue(data.total_cost_basis_gbp);
+  const pct = costBasis ? (pl / costBasis) * 100 : 0;
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>{data.name ?? 'Portfolio Summary'}</Text>
@@ -149,7 +167,7 @@ function SectorExposureRenderer({ data }: { data: any }) {
           <View style={styles.barLabelRow}>
             <Text style={[styles.barLabel, { color: theme.text }]}>{s.sector}</Text>
             <Text style={[styles.barValue, { color: theme.textSecondary }]}>
-              {s.allocation_pct?.toFixed(1)}%
+              {formatFixed(s.allocation_pct, 1)}%
             </Text>
           </View>
           <View style={[styles.barTrack, { backgroundColor: theme.border }]}>
@@ -157,7 +175,7 @@ function SectorExposureRenderer({ data }: { data: any }) {
               style={[
                 styles.barFill,
                 {
-                  width: `${Math.min(s.allocation_pct ?? 0, 100)}%`,
+                  width: `${Math.min(numberValue(s.allocation_pct) ?? 0, 100)}%`,
                   backgroundColor: theme.primary,
                 },
               ]}
@@ -178,10 +196,10 @@ function SectorExposureRenderer({ data }: { data: any }) {
 // ── 4. Metrics card (get_portfolio_performance) ─────────────────────────────
 
 function PortfolioPerformanceRenderer({ data }: { data: any }) {
-  const twr = data.twr as number | undefined;
-  const twrAnn = data.twr_annualised as number | undefined;
-  const gain = data.total_gain_loss as number | undefined;
-  const gainPct = data.total_gain_loss_pct as number | undefined;
+  const twr = numberValue(data.twr);
+  const twrAnn = numberValue(data.twr_annualised);
+  const gain = numberValue(data.total_gain_loss);
+  const gainPct = numberValue(data.total_gain_loss_pct);
   return (
     <View style={styles.metricsGrid}>
       {twr != null && (
@@ -239,7 +257,7 @@ function MetricBox({
 // ── 5. Comparison card (compare_to_benchmark) ───────────────────────────────
 
 function BenchmarkComparisonRenderer({ data }: { data: any }) {
-  const alpha = data.excess_return_alpha as number | undefined;
+  const alpha = numberValue(data.excess_return_alpha);
   return (
     <View style={styles.card}>
       <KeyValueRow label="Portfolio Return" value={formatPct(data.portfolio_return)} />
@@ -253,10 +271,7 @@ function BenchmarkComparisonRenderer({ data }: { data: any }) {
         highlight={alpha != null ? (alpha >= 0 ? 'positive' : 'negative') : undefined}
       />
       <KeyValueRow label="Tracking Error" value={formatPct(data.tracking_error)} />
-      <KeyValueRow
-        label="Info Ratio"
-        value={data.information_ratio != null ? data.information_ratio.toFixed(2) : '—'}
-      />
+      <KeyValueRow label="Info Ratio" value={formatFixed(data.information_ratio, 2)} />
     </View>
   );
 }
@@ -266,32 +281,35 @@ function BenchmarkComparisonRenderer({ data }: { data: any }) {
 function DiversificationScoreRenderer({ data }: { data: any }) {
   const { theme } = useTheme();
   const exposures = data.ticker_exposures ?? [];
-  const score = data.hhi_score;
+  const score = numberValue(data.hhi_score);
   const isWellDiversified = score != null && score < 1000;
   return (
     <View style={styles.card}>
       <View style={styles.scoreRow}>
         <Text style={[styles.scoreValue, { color: isWellDiversified ? '#10b981' : '#FF3B30' }]}>
-          {score != null ? score.toFixed(0) : '—'}
+          {formatFixed(score, 0)}
         </Text>
         <Text style={[styles.scoreLabel, { color: theme.textSecondary }]}>
           {data.concentration_level ?? 'Unknown'} concentration
         </Text>
       </View>
-      <KeyValueRow label="Effective Holdings" value={data.effective_holdings?.toFixed(1) ?? '—'} />
+      <KeyValueRow label="Effective Holdings" value={formatFixed(data.effective_holdings, 1)} />
       {exposures.slice(0, 5).map((e: any) => (
         <View key={e.ticker} style={styles.barRow}>
           <View style={styles.barLabelRow}>
             <Text style={[styles.barLabel, { color: theme.text }]}>{e.ticker}</Text>
             <Text style={[styles.barValue, { color: theme.textSecondary }]}>
-              {e.exposure_pct?.toFixed(1)}%
+              {formatFixed(e.exposure_pct, 1)}%
             </Text>
           </View>
           <View style={[styles.barTrack, { backgroundColor: theme.border }]}>
             <View
               style={[
                 styles.barFill,
-                { width: `${Math.min(e.exposure_pct ?? 0, 100)}%`, backgroundColor: theme.primary },
+                {
+                  width: `${Math.min(numberValue(e.exposure_pct) ?? 0, 100)}%`,
+                  backgroundColor: theme.primary,
+                },
               ]}
             />
           </View>
@@ -339,7 +357,7 @@ function TickerComparisonRenderer({ data }: { data: any }) {
                     : metric === 'market_cap'
                       ? formatLargeNumber(t[metric])
                       : metric === 'pe_ratio'
-                        ? (t[metric]?.toFixed(2) ?? '—')
+                        ? formatFixed(t[metric], 2)
                         : (t[metric] ?? '—')}
               </Text>
             ))}
@@ -388,16 +406,14 @@ function OhlcvRenderer({ data }: { data: any }) {
               {r.date ? String(r.date).slice(0, 10) : '—'}
             </Text>
             <Text style={[styles.tableCellSm, { color: theme.text }]}>
-              {r.open?.toFixed(2) ?? '—'}
+              {formatFixed(r.open, 2)}
             </Text>
             <Text style={[styles.tableCellSm, { color: theme.text }]}>
-              {r.high?.toFixed(2) ?? '—'}
+              {formatFixed(r.high, 2)}
             </Text>
+            <Text style={[styles.tableCellSm, { color: theme.text }]}>{formatFixed(r.low, 2)}</Text>
             <Text style={[styles.tableCellSm, { color: theme.text }]}>
-              {r.low?.toFixed(2) ?? '—'}
-            </Text>
-            <Text style={[styles.tableCellSm, { color: theme.text }]}>
-              {r.close?.toFixed(2) ?? '—'}
+              {formatFixed(r.close, 2)}
             </Text>
             <Text style={[styles.tableCellSm, { color: theme.text }]}>
               {r.volume != null ? formatNumber(r.volume) : '—'}
@@ -412,8 +428,8 @@ function OhlcvRenderer({ data }: { data: any }) {
 // ── 9. Quote card (get_market_quote) ───────────────────────────────────────
 
 function QuoteRenderer({ data }: { data: any }) {
-  const change = data.change as number | undefined;
-  const changePct = data.change_pct as number | undefined;
+  const change = numberValue(data.change);
+  const changePct = numberValue(data.change_pct);
   const isUp = (change ?? 0) >= 0;
   return (
     <View style={styles.card}>
@@ -422,7 +438,8 @@ function QuoteRenderer({ data }: { data: any }) {
         {formatCurrency(data.price)}
       </Text>
       <Text style={[styles.quoteChange, { color: isUp ? '#10b981' : '#FF3B30' }]}>
-        {change != null ? `${isUp ? '+' : ''}${change.toFixed(2)}` : '—'} ({formatPct(changePct)})
+        {change != null ? `${isUp ? '+' : ''}${formatFixed(change, 2)}` : '—'} (
+        {formatPct(changePct)})
       </Text>
       <KeyValueRow label="Prev Close" value={formatCurrency(data.previous_close)} />
       <KeyValueRow label="Volume" value={formatNumber(data.volume)} />
@@ -444,7 +461,7 @@ function TickerInfoRenderer({ data }: { data: any }) {
       <KeyValueRow label="Sector" value={data.sector ?? '—'} />
       <KeyValueRow label="Industry" value={data.industry ?? '—'} />
       <KeyValueRow label="Market Cap" value={formatLargeNumber(data.market_cap)} />
-      <KeyValueRow label="P/E Ratio" value={data.pe_ratio?.toFixed(2) ?? '—'} />
+      <KeyValueRow label="P/E Ratio" value={formatFixed(data.pe_ratio, 2)} />
       <KeyValueRow
         label="Div. Yield"
         value={data.dividend_yield != null ? formatPct(data.dividend_yield * 100) : '—'}
@@ -492,7 +509,7 @@ function NewsRenderer({ data }: { data: any }) {
 function LstmForecastRenderer({ data }: { data: any }) {
   const { theme } = useTheme();
   const pred = data.prediction as string | undefined;
-  const conf = data.confidence as number | undefined;
+  const conf = numberValue(data.confidence);
   const color = pred === 'UP' ? '#10b981' : pred === 'DOWN' ? '#FF3B30' : '#6b7280'; // FLAT → gray
   return (
     <View style={styles.card}>
@@ -502,7 +519,7 @@ function LstmForecastRenderer({ data }: { data: any }) {
         </View>
         {conf != null && (
           <Text style={[styles.confText, { color: theme.text }]}>
-            {`${(conf * 100).toFixed(0)}% confidence`}
+            {`${formatFixed(conf * 100, 0)}% confidence`}
           </Text>
         )}
       </View>
@@ -530,14 +547,17 @@ function SpendingAnalysisRenderer({ data }: { data: any }) {
           <View style={styles.barLabelRow}>
             <Text style={[styles.barLabel, { color: theme.text }]}>{c.name}</Text>
             <Text style={[styles.barValue, { color: theme.textSecondary }]}>
-              {formatCurrency(c.amount_gbp)} ({c.pct_of_total?.toFixed(1)}%)
+              {formatCurrency(c.amount_gbp)} ({formatFixed(c.pct_of_total, 1)}%)
             </Text>
           </View>
           <View style={[styles.barTrack, { backgroundColor: theme.border }]}>
             <View
               style={[
                 styles.barFill,
-                { width: `${Math.min(c.pct_of_total ?? 0, 100)}%`, backgroundColor: theme.primary },
+                {
+                  width: `${Math.min(numberValue(c.pct_of_total) ?? 0, 100)}%`,
+                  backgroundColor: theme.primary,
+                },
               ]}
             />
           </View>
@@ -700,8 +720,20 @@ export function getToolRenderer(toolName: string): RendererFn {
 
 /**
  * Render a tool result using the appropriate renderer.
+ * Falls back to JSON dump for raw/string-only data.
  */
 export function renderToolResult(toolName: string, data: any): React.ReactElement {
+  // If the result is a string (json.loads failed on backend), wrap it
+  if (typeof data === 'string') {
+    return <JsonFallbackRenderer data={{ _raw: data }} />;
+  }
+  // If the result only has _raw or error keys, use JSON fallback
+  if (data && typeof data === 'object') {
+    const keys = Object.keys(data);
+    if (keys.length === 1 && (keys[0] === '_raw' || keys[0] === 'error')) {
+      return <JsonFallbackRenderer data={data} />;
+    }
+  }
   const Renderer = getToolRenderer(toolName);
   return <Renderer data={data} />;
 }

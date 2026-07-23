@@ -4,8 +4,7 @@
  * Single chat message bubble for the Agent Chat UI.
  * - User messages: right-aligned with primary background
  * - Assistant messages: left-aligned with surface background
- * - Shows tool indicators inline below assistant messages
- * - Tool results rendered as tap-to-expand accordion (Phase 1)
+ * - Tool calls rendered below the answer text as a collapsible accordion
  */
 
 import React from 'react';
@@ -19,12 +18,39 @@ interface MessageBubbleProps {
   message: AgentMessage;
 }
 
+/**
+ * Render the small Markdown subset the agent uses in prose without adding a
+ * heavyweight renderer to the mobile bundle.  Text remains selectable and
+ * wraps exactly like a regular React Native Text node.
+ */
+function MarkdownText({ text, style }: { text: string; style: object }) {
+  const parts = text.split(/(\*\*[^*]+\*\*|__[^_]+__)/g);
+  return (
+    <Text style={style}>
+      {parts.map((part, index) => {
+        const isBold =
+          (part.startsWith('**') && part.endsWith('**')) ||
+          (part.startsWith('__') && part.endsWith('__'));
+        return isBold ? (
+          <Text key={index} style={styles.boldText}>
+            {part.slice(2, -2)}
+          </Text>
+        ) : (
+          part
+        );
+      })}
+    </Text>
+  );
+}
+
 export default function MessageBubble({ message }: MessageBubbleProps) {
   const { theme } = useTheme();
   const isUser = message.role === 'user';
+  const hasTools = !isUser && (message.toolResults?.length ?? 0) > 0;
 
   return (
     <View style={[styles.container, isUser ? styles.userContainer : styles.assistantContainer]}>
+      {/* Answer text */}
       <View
         style={[
           styles.bubble,
@@ -33,26 +59,26 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
             : [styles.assistantBubble, { backgroundColor: theme.surface }],
         ]}
       >
-        <Text style={[styles.bubbleText, { color: isUser ? brandColors.white : theme.text }]}>
-          {message.content}
-        </Text>
+        {!isUser && message.reasoning ? (
+          <View style={[styles.reasoning, { borderBottomColor: theme.border }]}>
+            <Text style={[styles.reasoningLabel, { color: theme.textSecondary }]}>Thinking</Text>
+            <MarkdownText
+              text={message.reasoning}
+              style={[styles.reasoningText, { color: theme.textSecondary }]}
+            />
+          </View>
+        ) : null}
+        <MarkdownText
+          text={message.content}
+          style={[styles.bubbleText, { color: isUser ? brandColors.white : theme.text }]}
+        />
       </View>
-      {message.toolCalls && message.toolCalls.length > 0 && (
-        <View style={styles.toolsRow}>
-          {message.toolCalls.map((tool, idx) => (
-            <Text
-              key={idx}
-              style={[styles.toolLabel, { color: theme.textSecondary }]}
-              numberOfLines={1}
-            >
-              🔧 {typeof tool === 'string' ? tool : (tool.name ?? 'tool')}
-            </Text>
-          ))}
+
+      {/* Tool/thinking section — below answer */}
+      {hasTools && (
+        <View style={[styles.toolSection, { backgroundColor: theme.surface }]}>
+          <ToolResultsAccordion results={message.toolResults!} />
         </View>
-      )}
-      {/* Phase 1: tool results as tap-to-expand accordion */}
-      {!isUser && message.toolResults && message.toolResults.length > 0 && (
-        <ToolResultsAccordion results={message.toolResults} />
       )}
     </View>
   );
@@ -84,15 +110,31 @@ const styles = StyleSheet.create({
     ...typography.body,
     lineHeight: 22,
   },
-  toolsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-    paddingHorizontal: spacing.xs,
+  boldText: {
+    fontWeight: '700',
   },
-  toolLabel: {
-    ...typography.caption,
+  reasoning: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginBottom: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  reasoningLabel: {
+    ...typography.captionStrong,
     fontSize: 11,
+    marginBottom: 2,
+  },
+  reasoningText: {
+    ...typography.caption,
+    fontStyle: 'italic',
+    lineHeight: 18,
+  },
+  toolSection: {
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
+    marginBottom: spacing.xs,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#333',
   },
 });

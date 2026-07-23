@@ -544,6 +544,60 @@ describe('DividendInsightsRenderer', () => {
   });
 });
 
+describe('Tool result numeric coercion', () => {
+  it('renders numeric strings from tool output without throwing', () => {
+    expect(() =>
+      renderWithProviders(
+        renderToolResult('get_market_quote', {
+          ticker: 'AAPL',
+          price: '208.12',
+          change: '1.27',
+          change_pct: '0.61',
+          previous_close: '206.85',
+          volume: '1234567',
+        }),
+      ),
+    ).not.toThrow();
+  });
+});
+
+describe('renderToolResult fallback for _raw / error / string data', () => {
+  it('falls back to JSON for string data', () => {
+    // String data is wrapped as { _raw: <string> } and rendered via JsonFallbackRenderer
+    // Output looks like: { "_raw": "{\"price\": 208.12}" }
+    const { getByText } = renderWithProviders(
+      renderToolResult('get_market_quote', '{"price": 208.12}'),
+    );
+    expect(getByText(/_raw/)).toBeTruthy();
+    expect(getByText(/208.12/)).toBeTruthy();
+  });
+
+  it('falls back to JSON for data with only _raw key', () => {
+    const { getByText } = renderWithProviders(
+      renderToolResult('get_portfolio_summary', { _raw: 'serialization error' }),
+    );
+    expect(getByText(/_raw/)).toBeTruthy();
+    expect(getByText(/serialization error/)).toBeTruthy();
+  });
+
+  it('falls back to JSON for data with only error key', () => {
+    const { getByText } = renderWithProviders(
+      renderToolResult('get_market_quote', { error: 'No quote data available' }),
+    );
+    expect(getByText(/error/)).toBeTruthy();
+    expect(getByText(/No quote data/)).toBeTruthy();
+  });
+
+  it('uses specific renderer when data has normal keys alongside error', () => {
+    // Data has error + price — should use QuoteRenderer, not JSON fallback
+    const { getByText } = renderWithProviders(
+      renderToolResult('get_market_quote', { error: 'stale data', price: 100, ticker: 'AAPL' }),
+    );
+    expect(getByText(/AAPL/)).toBeTruthy();
+    expect(getByText(/100\.00/)).toBeTruthy();
+  });
+});
+
 describe('JSON fallback renderer', () => {
   it('pretty-prints JSON for unknown tools', () => {
     const { getByText } = renderWithProviders(

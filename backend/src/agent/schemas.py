@@ -66,5 +66,6 @@ class AgentFeedbackRequest(BaseModel):
     """Request body for POST /agent/feedback (LangSmith feedback)."""
 
     rating: str  # e.g. "positive" / "negative" → used as the feedback_key
-    trace_id: str  # LangSmith trace id to attach feedback to
+    trace_id: str | None = None  # LangSmith trace id (optional, falls back to conversation_id)
+    conversation_id: UUID | None = None  # Conversation-level feedback when no trace_id
     comment: str | None = None

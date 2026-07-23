@@ -13,6 +13,7 @@ import base64
 import json
 import os
 import random
+import re
 from collections.abc import AsyncGenerator
 from typing import Any
 from uuid import UUID
@@ -91,6 +92,19 @@ class AgentService:
         # No checkpointer — custom two-tier persistence handles state
         self.graph = graph.compile()
         logger.info("agent_graph_compiled", tool_count=len(tools))
+
+    # ── Portfolio resolution ─────────────────────────────────────────────
+
+    @staticmethod
+    async def _resolve_portfolio_id(user_id: str) -> str:
+        """Get the user's default portfolio ID (first by creation date)."""
+        async with connection_ctx() as conn:
+            row = await conn.fetchrow(
+                "SELECT id FROM portfolios WHERE user_id = $1::uuid "
+                "ORDER BY created_at DESC LIMIT 1",
+                user_id,
+            )
+        return str(row["id"]) if row else ""
 
     # ── State management ─────────────────────────────────────────────────
 
@@ -173,6 +187,90 @@ class AgentService:
             )
         return str(content)
 
+    @staticmethod
+    def _strip_thinking_tags(text: str) -> str:
+        """Remove Amazon Nova <thinking> reasoning tags from response text.
+
+        Nova models sometimes inline <thinking>...</thinking> reasoning blocks
+        into text content when tools are bound. These are internal reasoning
+        traces, not user-facing output.
+        """
+        # 1) Complete <thinking>...</thinking> pairs (non-greedy, multiline)
+        # 2) Unterminated <thinking> or <thinking to end of string
+        # 3) Stray </thinking> tags
+        pattern = re.compile(
+            r"<thinking>.*?</thinking>\s*"  # complete pair
+            r"|<thinking\b.*"  # unclosed tag — eat to end (catches <thinking> and <thinking)
+            r"|\s*</thinking>",  # stray closing tag
+            re.DOTALL,
+        )
+        return pattern.sub("", text)
+
+    class _ThinkingTagSplitter:
+        """Split streamed ``<thinking>`` blocks from the final answer.
+
+        The Bedrock model emits these blocks as normal text and can split a
+        tag across arbitrary stream chunks.  Holding only a possible tag
+        prefix avoids leaking markup while emitting the reasoning and answer
+        as separate SSE events for the client.
+        """
+
+        _OPEN_TAG = "<thinking"
+        _CLOSE_TAG = "</thinking>"
+
+        def __init__(self):
+            self._buffer = ""
+            self._in_thinking = False
+
+        def process(self, token: str) -> tuple[str, str]:
+            """Return ``(answer_delta, reasoning_delta)`` for *token*."""
+            self._buffer += token
+            answer_parts: list[str] = []
+            reasoning_parts: list[str] = []
+
+            while self._buffer:
+                if self._in_thinking:
+                    close_index = self._buffer.lower().find(self._CLOSE_TAG)
+                    if close_index < 0:
+                        # Keep a possible partial closing tag for the next chunk.
+                        keep = min(len(self._buffer), len(self._CLOSE_TAG) - 1)
+                        emit_until = len(self._buffer) - keep
+                        if emit_until > 0:
+                            reasoning_parts.append(self._buffer[:emit_until])
+                            self._buffer = self._buffer[emit_until:]
+                        break
+                    reasoning_parts.append(self._buffer[:close_index])
+                    self._buffer = self._buffer[close_index + len(self._CLOSE_TAG) :]
+                    self._in_thinking = False
+                    continue
+
+                open_index = self._buffer.lower().find(self._OPEN_TAG)
+                if open_index >= 0:
+                    tag_end = self._buffer.find(">", open_index)
+                    if tag_end < 0:
+                        answer_parts.append(self._buffer[:open_index])
+                        self._buffer = self._buffer[open_index:]
+                        break
+                    answer_parts.append(self._buffer[:open_index])
+                    self._buffer = self._buffer[tag_end + 1 :]
+                    self._in_thinking = True
+                    continue
+
+                # Hold the longest tail that could become "<thinking".
+                lower_buffer = self._buffer.lower()
+                held = 0
+                for length in range(min(len(lower_buffer), len(self._OPEN_TAG) - 1), 0, -1):
+                    if self._OPEN_TAG.startswith(lower_buffer[-length:]):
+                        held = length
+                        break
+                emit_until = len(self._buffer) - held
+                if emit_until:
+                    answer_parts.append(self._buffer[:emit_until])
+                    self._buffer = self._buffer[emit_until:]
+                break
+
+            return "".join(answer_parts), "".join(reasoning_parts)
+
     def _serialize_msg(self, msg) -> dict:
         """Serialize a LangChain BaseMessage for JSON storage."""
         return {"role": msg.type, "content": self._extract_text(msg.content)}
@@ -203,6 +301,7 @@ class AgentService:
         user_message: str,
         final_state: dict,
         tools_used: list | None = None,
+        reasoning: str = "",
     ) -> None:
         """After graph completes: persist to both tiers.
 
@@ -224,7 +323,9 @@ class AgentService:
             # Extract final assistant response
             last_msg = final_state.get("messages", [None])[-1]
             if last_msg:
-                response_text = self._extract_text(getattr(last_msg, "content", str(last_msg)))
+                response_text = self._strip_thinking_tags(
+                    self._extract_text(getattr(last_msg, "content", str(last_msg)))
+                ).strip()
                 await agent_repo.add_message(
                     conn,
                     conversation_id,
@@ -232,6 +333,7 @@ class AgentService:
                     "assistant",
                     response_text,
                     tools_used=tools_used,
+                    reasoning_steps={"thinking": reasoning} if reasoning else None,
                 )
 
             # Update conversation metadata — count both messages just added
@@ -426,13 +528,19 @@ class AgentService:
         # Append current message
         state.append(HumanMessage(content=message))
 
-        # Build graph input
-        graph_input = {"messages": state, "user_id": user_id}
+        # Build graph input — resolve portfolio_id so tools using
+        # InjectedState("portfolio_id") don't crash with KeyError.
+        portfolio_id = await self._resolve_portfolio_id(user_id)
+        graph_input = {"messages": state, "user_id": user_id, "portfolio_id": portfolio_id}
         config = {"configurable": {"thread_id": str(conversation_id)}}
 
         # Track tool calls for persistence
         tools_used: list[dict] = []
         trace_id = ""
+
+        # Split model-provided reasoning from answer text across streaming chunks.
+        thinking_splitter = self._ThinkingTagSplitter()
+        reasoning_parts: list[str] = []
 
         async for event in self.graph.astream_events(
             graph_input,
@@ -450,9 +558,19 @@ class AgentService:
                             if isinstance(b, dict) and b.get("type") == "text" and "text" in b
                         )
                         if text:
-                            yield {"event": "token", "data": text}
+                            answer, reasoning = thinking_splitter.process(text)
+                            if reasoning:
+                                reasoning_parts.append(reasoning)
+                                yield {"event": "reasoning", "data": reasoning}
+                            if answer:
+                                yield {"event": "token", "data": answer}
                     elif isinstance(chunk.content, str):
-                        yield {"event": "token", "data": chunk.content}
+                        answer, reasoning = thinking_splitter.process(chunk.content)
+                        if reasoning:
+                            reasoning_parts.append(reasoning)
+                            yield {"event": "reasoning", "data": reasoning}
+                        if answer:
+                            yield {"event": "token", "data": answer}
             elif kind == "on_tool_start":
                 tools_used.append(
                     {
@@ -463,12 +581,28 @@ class AgentService:
                 yield {"event": "tool_start", "data": event.get("name", "unknown")}
             elif kind == "on_tool_end":
                 output = event.get("data", {}).get("output", "")
+                # The "output" from astream_events v2 is a ToolMessage, not the
+                # raw tool return value.  Extract its text content directly --
+                # the tool already returns json.dumps(result), so the content
+                # IS the JSON string we need.
+                output_value = (
+                    output.content
+                    if hasattr(output, "content") and not isinstance(output, str)
+                    else output
+                )
+                if not output_value:
+                    output_value = str(output)
+
                 # Base64-encode the tool output to avoid SSE formatting issues
                 # with complex nested JSON in the tool result.
                 result_b64: str | None = None
-                if output:
+                if output_value:
                     try:
-                        output_str = output if isinstance(output, str) else json.dumps(output)
+                        output_str = (
+                            output_value
+                            if isinstance(output_value, str)
+                            else json.dumps(output_value, default=str)
+                        )
                         result_b64 = base64.b64encode(output_str.encode("utf-8")).decode("ascii")
                     except (TypeError, ValueError):
                         logger.warning("tool_result_serialization_failed", tool=event.get("name"))
@@ -476,14 +610,18 @@ class AgentService:
                 for t in tools_used:
                     if t.get("name") == event.get("name") and t.get("status") == "started":
                         t["status"] = "completed"
-                        if output:
+                        if output_value:
                             try:
+                                # output_value is already the JSON string from the tool
                                 t["result"] = (
-                                    json.loads(output) if isinstance(output, str) else output
+                                    json.loads(output_value)
+                                    if isinstance(output_value, str)
+                                    else output_value
                                 )
-                                json.dumps(t["result"])  # validate serializable
+                                # Round-trip through json to coerce non-serializable types
+                                t["result"] = json.loads(json.dumps(t["result"]))
                             except (json.JSONDecodeError, TypeError, ValueError):
-                                t["result"] = {"raw": str(output)[:500]}
+                                t["result"] = str(output_value)[:500]
 
                 yield {
                     "event": "tool_end",
@@ -501,6 +639,7 @@ class AgentService:
                     message,
                     final_state,
                     tools_used,
+                    reasoning="".join(reasoning_parts).strip(),
                 )
                 # Fire-and-forget evaluation sampling
                 if random.random() < settings.AGENT_EVAL_SAMPLE_RATE:

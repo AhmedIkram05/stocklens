@@ -172,6 +172,11 @@ async def scan_receipt(
     cascade_result = await cascade_extract(image_bytes)
 
     if not cascade_result.raw_text.strip():
+        logger.warning(
+            "scan_empty_text",
+            source=cascade_result.source,
+            overall_confidence=cascade_result.overall_confidence,
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
@@ -181,6 +186,14 @@ async def scan_receipt(
         )
 
     if cascade_result.extraction.total is None:
+        logger.warning(
+            "scan_missing_total",
+            source=cascade_result.source,
+            overall_confidence=cascade_result.overall_confidence,
+            merchant_name=cascade_result.extraction.merchant_name,
+            items_count=len(cascade_result.extraction.items),
+            raw_text_preview=cascade_result.raw_text[:300],
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
@@ -194,6 +207,13 @@ async def scan_receipt(
     if cascade_result.extraction.merchant_name:
         matched = await resolve_category(cascade_result.extraction.merchant_name)
         category = matched.id if matched else None
+        # ponytail: seed-data fallback uses placeholder IDs ("seed_0"…)
+        # that are not valid UUIDs — discard them to avoid a DB crash.
+        if category:
+            try:
+                UUID(category)
+            except (ValueError, AttributeError):
+                category = None
 
     elapsed = (time.perf_counter() - start_time) * 1000
 

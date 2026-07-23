@@ -57,7 +57,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npm test -- --coverage --coverageThreshold='{"global":{"branches":30,"functions":30,"lines":30,"statements":30}}'
+      - run: npm test -- --coverage --coverageThreshold='{"global":{"branches":75,"functions":80,"lines":90,"statements":80}}'
       - uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -181,15 +181,17 @@ jobs:
           uv run pytest -q \
             -n auto --dist loadfile --durations=10 \
             --cov=src \
-            --cov-report=xml:coverage.xml \
-            --cov-report=lcov:coverage/lcov.info \
+            --cov-report=lcov:${{ github.workspace }}/coverage/lcov.info \
             --cov-report=term-missing \
-            --cov-fail-under=30
+            --cov-fail-under=90
+          # Fix paths: pytest --cov=src generates paths relative to backend/,
+          # but Codecov needs repo-root-relative paths.
+          sed -i 's|^SF:src/|SF:backend/src/|g' ${{ github.workspace }}/coverage/lcov.info
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./backend/coverage/lcov.info,./backend/coverage.xml
+          files: ./coverage/lcov.info
           flags: backend
           fail_ci_if_error: true
 
