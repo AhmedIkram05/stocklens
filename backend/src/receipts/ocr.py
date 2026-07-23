@@ -176,19 +176,20 @@ def extract_text(
         pytesseract.tesseract_cmd = cmd
 
     # ── Run OCR ─────────────────────────────────────────────────────────────
-    # Try several page-segmentation modes and keep the most text.  --psm 6
-    # (uniform block) is the common case; --psm 4 (single column) and --psm 11
-    # (sparse text) recover receipts where 6 yields almost nothing.
+    # Receipts are neither consistently a block nor consistently sparse.
+    # Score a small OCR ensemble by receipt evidence; accepting the first
+    # mode with a few characters is extremely layout-sensitive.
     best = ""
+    best_score = float("-inf")
     for config in ("--oem 3 --psm 6", "--oem 3 --psm 4", "--oem 3 --psm 11"):
         try:
             text = pytesseract.image_to_string(image, config=config)
         except Exception:
             continue
-        if len(text.strip()) > len(best.strip()):
+        score = _score_ocr_candidate(text)
+        if score > best_score:
             best = text
-        if len(best.strip()) > 20:
-            break
+            best_score = score
 
     cleaned = best.strip()
     if not cleaned:
@@ -248,7 +249,8 @@ DATE_PATTERNS: list[re.Pattern] = [
     re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{2})\b"),  # DD/MM/YY
 ]
 
-PRICE_PATTERN: re.Pattern = re.compile(r"(\d+\.\d{2})\s*$")
+# Includes OCR's common spaces and decimal commas.
+PRICE_PATTERN: re.Pattern = re.compile(r"(?P<price>\d[\d\s]*[.,]\s*\d{1,2})\s*$")
 
 MONTH_NAMES: dict[str, int] = {
     "january": 1,
@@ -292,7 +294,10 @@ def _clean_number(raw: str) -> Decimal | None:
     has_dot, has_comma = "." in s, "," in s
     if has_dot and has_comma:
         # European style when the comma is the rightmost separator.
-        s = s.replace(".", "") if s.rfind(",") > s.rfind(".") else s.replace(",", "")
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
     elif has_comma:
         parts = s.split(",")
         # Decimal comma only when not a 3-digit thousands group.
@@ -333,13 +338,35 @@ def parse_total(text: str) -> Decimal | None:
 
 
 # Lines that look like store addresses / contact details rather than a name.
+# Deliberately excludes bare ".com" — Amazon.com / NETFLIX.COM are valid merchants.
 _MERCHANT_NOISE: re.Pattern = re.compile(
     r"(street|road|lane|avenue|ave|st\.|drive|dr\.|court|ct\.|close|way|"
-    r"http|www|\.com|tel:|phone|fax|e-?mail|"
+    r"https?://|www\.|tel:|phone|fax|e-?mail|"
     r"\b\d{3,5}\s*\d{3,5}\b"  # phone-like number cluster
-    r"|[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d?[A-Z]{2})",  # UK-style postcode
+    r"|\b[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}\s*$)",  # UK postcode at EOL
     re.IGNORECASE,
 )
+
+# Summary/shipping rows — not purchasable line items.
+_NON_ITEM_LABEL: re.Pattern = re.compile(
+    r"\b(subtotal|sub\s*total|shipping|postage|delivery\s+fee|delivery|"
+    r"vat|tax|payment|cash|change|tip|gratuity|amount\s+due|balance)\b",
+    re.IGNORECASE,
+)
+
+
+def _line_has_trailing_price(line: str) -> bool:
+    """True when the line ends with a monetary amount (item or total row)."""
+    return PRICE_PATTERN.search(line) is not None
+
+
+def _looks_like_item_line(line: str) -> bool:
+    """Heuristic for product/service rows that should not be merchant names."""
+    if _line_has_trailing_price(line):
+        return True
+    if re.search(r"[£$€]\s*\d", line):
+        return True
+    return bool(re.match(r"^\d+\s*[xX]\s+", line))
 
 
 def parse_merchant(text: str) -> str | None:
@@ -350,8 +377,9 @@ def parse_merchant(text: str) -> str | None:
     for line in raw_lines[:8]:
         if len(line) < 3 or len(line) > 40:
             continue
-        if re.search(r"\d", line):
-            continue  # store numbers, dates, prices — not the name
+        # OCR-corrupted store names (TESC0) may contain digits; priced rows do not.
+        if re.search(r"\d", line) and _looks_like_item_line(line):
+            continue
         if _MERCHANT_NOISE.search(line):
             continue
         if re.match(
@@ -377,6 +405,8 @@ def parse_merchant(text: str) -> str | None:
         # Rescuer: the merchant may be embedded in a greeting line
         # ("WELCOME TO SAINSBURY S") that was filtered from candidates.
         for line in raw_lines[:5]:
+            if _looks_like_item_line(line):
+                continue
             if fuzzy_match_merchant(line)[1] >= 80:
                 return line
     except Exception:
@@ -395,11 +425,12 @@ def parse_line_items(text: str) -> list[dict]:
         if not price_match:
             continue
 
-        price = Decimal(price_match.group(1))
-
-        if total_amount is not None and price >= total_amount:
+        price = _clean_number(price_match.group("price"))
+        if price is None:
             continue
-        if re.search(r"(total|amount\s*due|balance|change|vat|tax\s*$)", line, re.IGNORECASE):
+
+        # Identify summary/shipping rows by label, not arithmetic.
+        if _NON_ITEM_LABEL.search(line) or re.search(r"\btotal\b", line, re.IGNORECASE):
             continue
 
         desc = line[: price_match.start()].strip()
@@ -407,10 +438,17 @@ def parse_line_items(text: str) -> list[dict]:
             continue
 
         quantity = 1
-        qty_match = re.search(r"(?:x\s*)?(\d+)(?:\s*x)?$", desc)
+        # Support both common receipt conventions: "2 x Milk" and
+        # "Milk 2 x". Amount remains the extended line amount.
+        qty_match = re.match(r"^(\d+)\s*[xX]\s*(.+)$", desc)
         if qty_match:
             quantity = int(qty_match.group(1))
-            desc = desc[: qty_match.start()].strip()
+            desc = qty_match.group(2).strip()
+        else:
+            qty_match = re.search(r"(?:\s|^)[xX]?\s*(\d+)\s*[xX]?$", desc)
+            if qty_match:
+                quantity = int(qty_match.group(1))
+                desc = desc[: qty_match.start()].strip()
 
         items.append(
             {
@@ -420,7 +458,49 @@ def parse_line_items(text: str) -> list[dict]:
             }
         )
 
+    # Service receipts often have one description line with no inline price
+    # (e.g. "Monthly Direct Debit" / "Trip to Airport") and only a total row.
+    if not items and total_amount is not None:
+        merchant_name = parse_merchant(text)
+        service_lines: list[str] = []
+        for line in lines:
+            if merchant_name and line.casefold() == merchant_name.casefold():
+                continue
+            if _NON_ITEM_LABEL.search(line) or re.search(r"\btotal\b", line, re.IGNORECASE):
+                continue
+            if _line_has_trailing_price(line):
+                continue
+            if parse_date(line) is not None or re.match(r"^\d{1,2}[/-]\d{1,2}", line):
+                continue
+            if len(line) >= 3 and not _MERCHANT_NOISE.search(line):
+                service_lines.append(line)
+        if len(service_lines) == 1:
+            items.append(
+                {
+                    "description": service_lines[0],
+                    "quantity": 1,
+                    "amount": total_amount,
+                }
+            )
+
     return items
+
+
+def _score_ocr_candidate(text: str) -> float:
+    """Rank OCR variants by receipt structure rather than raw text length."""
+    cleaned = text.strip()
+    if not cleaned:
+        return float("-inf")
+
+    printable = sum(ch.isprintable() for ch in cleaned) / len(cleaned)
+    lines = [line for line in cleaned.splitlines() if line.strip()]
+    score = min(len(cleaned), 400) / 100 + min(len(lines), 20) / 10
+    score += printable * 2
+    score += 4 if parse_total(cleaned) is not None else 0
+    score += 2 if parse_date(cleaned) is not None else 0
+    score += 1 if parse_merchant(cleaned) is not None else 0
+    score += min(len(parse_line_items(cleaned)), 5) * 0.75
+    return score
 
 
 def _normalise_day_month(day: int, month: int) -> tuple[int, int]:
