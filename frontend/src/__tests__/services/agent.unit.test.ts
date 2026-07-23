@@ -284,32 +284,55 @@ describe('agentService.submitFeedback', () => {
 });
 
 describe('agentService REST methods (via apiService mock)', () => {
-  it('listConversations returns conversation summaries', async () => {
-    const convs = [{ id: '1', title: 'Test', messageCount: 3, createdAt: '', updatedAt: '' }];
-    fetchMock.mockResponseOnce(JSON.stringify(convs), { status: 200 });
+  it('listConversations returns conversation summaries with transformed field names', async () => {
+    const backendResponse = {
+      conversations: [
+        {
+          id: '1',
+          title: 'Test',
+          message_count: 3,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-02',
+        },
+      ],
+      total: 1,
+    };
+    fetchMock.mockResponseOnce(JSON.stringify(backendResponse), { status: 200 });
 
     const result = await agentService.listConversations();
     expect(result).toHaveLength(1);
     expect(result[0].title).toBe('Test');
+    expect(result[0].messageCount).toBe(3);
+    expect(result[0].createdAt).toBe('2024-01-01');
+    expect(result[0].updatedAt).toBe('2024-01-02');
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringMatching(/\/agent\/conversations$/),
       expect.objectContaining({ method: 'GET' }),
     );
   });
 
-  it('getConversation returns conversation with messages', async () => {
-    const data = {
-      conversation: { id: '1', title: 'Test', messageCount: 2 },
+  it('getConversation returns conversation with messages and transformed field names', async () => {
+    const backendResponse = {
+      conversation: {
+        id: '1',
+        title: 'Test',
+        message_count: 2,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-02',
+      },
       messages: [
-        { role: 'user', content: 'Hi', createdAt: '' },
-        { role: 'assistant', content: 'Hello', createdAt: '' },
+        { role: 'user', content: 'Hi', created_at: '2024-01-01T10:00:00Z' },
+        { role: 'assistant', content: 'Hello', created_at: '2024-01-01T10:01:00Z' },
       ],
     };
-    fetchMock.mockResponseOnce(JSON.stringify(data), { status: 200 });
+    fetchMock.mockResponseOnce(JSON.stringify(backendResponse), { status: 200 });
 
     const result = await agentService.getConversation('1');
     expect(result.messages).toHaveLength(2);
     expect(result.messages[0].role).toBe('user');
+    expect(result.conversation.messageCount).toBe(2);
+    expect(result.conversation.createdAt).toBe('2024-01-01');
+    expect(result.conversation.updatedAt).toBe('2024-01-02');
   });
 
   it('deleteConversation sends DELETE', async () => {
