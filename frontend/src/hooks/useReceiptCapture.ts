@@ -142,6 +142,17 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
         };
 
         const displayAmount = amount != null ? formatCurrencyGBP(amount) : 'No amount detected';
+        // Save the photo URI back to the receipt so it shows on the home screen
+        if (photoUri) {
+          try {
+            await receiptService.update(result.id, {
+              receipt_image_s3_key: photoUri,
+            });
+          } catch (e) {
+            // non-critical — image still shows on details screen via nav params
+          }
+        }
+
         showConfirmationPrompt(displayAmount, {
           onConfirm: async () => {
             emit('receipts-changed', { id: result.id });
