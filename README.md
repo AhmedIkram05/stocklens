@@ -1,10 +1,6 @@
-<div align="center">
-
 # StockLens
 
 > Scan receipts → trade stocks with your spending → track portfolios with LSTM forecasts & AI agent. Built with FastAPI, PyTorch, LangGraph, Rust, Terraform.
-
-</div>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&labelColor=000000&logo=python" alt="Python"/>
@@ -43,12 +39,13 @@
 <br/>
 
 <details>
-<summary><h2 style="display: inline; cursor: pointer;">Table of Contents</h2></summary>
+<summary><strong>Table of Contents</strong> (click to expand)</summary>
 
-- [What is StockLens](#why-stocklens)
-- [Key Metrics at a Glance](#key-metrics-at-a-glance)
+- [Why StockLens](#why-stocklens)
 - [Architecture Overview](#architecture-overview)
-- [Key Design Decisions](#key-design-decisions)
+- [Engineering Highlights](#engineering-highlights)
+- [Key Metrics at a Glance](#key-metrics-at-a-glance)
+- [Demos](#demos)
 - [Deep Dives](#deep-dives)
   - [LangGraph Conversational Agent](#-langgraph-conversational-agent)
   - [LSTM Directional Forecasting](#-lstm-directional-forecasting)
@@ -56,21 +53,21 @@
   - [Rust Features Engine](#-rust-features-engine)
   - [Portfolio Analytics](#-portfolio-analytics)
   - [MLOps & Retraining Pipeline](#-mlops--retraining-pipeline)
-- [Testing Philosophy](#testing-philosophy)
+- [Design Decisions](#design-decisions)
+- [Testing Strategy](#testing-strategy)
 - [Infrastructure (Terraform)](#infrastructure-terraform)
 - [CI/CD Pipeline](#cicd-pipeline)
 - [Security Model](#security-model)
-- [Demo & Media Gallery](#demo--media-gallery)
-- [ADR Index](#adr-index)
-- [Tech Stack Summary](#tech-stack-summary)
-- [Project Structure](#project-structure)
 - [Getting Started](#getting-started)
+- [Project Structure](#project-structure)
+- [Documentation](#documentation)
+- [Related Projects](#related-projects)
 
 </details>
 
 ---
 
-## What is StockLens
+## Why StockLens
 
 StockLens turns your spending into stock trades. Scan a receipt, the OCR cascade extracts the total, and you can buy or sell real stocks in real time with that amount. Build portfolios tracked with cash-flow-aware time-weighted return, get LSTM-powered 5-day directional forecasts, compare your performance against SPY (tracking error + information ratio), and ask an AI agent natural-language questions about your holdings.
 
@@ -79,7 +76,7 @@ Beneath the mobile app is a production-grade system: a **Rust/PyO3 features engi
 | Layer                 | Implementation                                                                                       | Scale                                                             |
 | --------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | **Frontend**          | React Native (TypeScript 5.9, Expo 54, React 19) with dark mode, biometric auth, real-time portfolio | 85 test files, 822 assertions                                     |
-| **Backend API**       | FastAPI (Python 3.13) — asyncpg, SQLAlchemy 2.0, Pydantic v2, structlog, slowapi rate limiting       | 77 test files, 1415 test functions, 90% cov gate                  |
+| **Backend API**       | FastAPI (Python 3.13) — asyncpg, SQLAlchemy 2.0, Pydantic v2, structlog, slowapi rate limiting       | 76 test files, 1,415 test functions, 90% cov gate                 |
 | **Rust Acceleration** | PyO3/Maturin native extension replacing pandas-based technical indicators                            | 13 source modules, 12 exported functions, zero-cost abstractions  |
 | **ML Model**          | PyTorch Global LSTM with entity embeddings + Optuna HPO (50 trials)                                  | 17 features, 55–475+ tickers, 6yr OHLCV lookback                  |
 | **LLM Agent**         | LangGraph ReAct (2-node `StateGraph`, 16 tools) via AWS Bedrock Converse API                         | SSE streaming, two-tier Redis+RDS persistence                     |
@@ -87,79 +84,6 @@ Beneath the mobile app is a production-grade system: a **Rust/PyO3 features engi
 | **MLOps**             | Airflow weekly retraining, Evidently AI drift detection, champion/challenger auto-promotion          | PSI/KS/JSD thresholds, MLflow tracking, S3 delivery               |
 | **Infrastructure**    | Terraform IaC (≥1.9) on AWS ECS Fargate ARM64/Graviton                                               | Multi-AZ RDS, ElastiCache Redis 8.8, WAF, Auto Scaling            |
 | **CI/CD**             | GitHub Actions OIDC — 9 CI jobs + 7-stage deploy pipeline                                            | Codecov, Checkov, tfsec, Gitleaks, Trivy, hadolint                |
-
----
-
-## Key Metrics at a Glance
-
-| Category           | Metric                        | Value                                                  |
-| ------------------ | ----------------------------- | ------------------------------------------------------ |
-| **API**            | REST endpoints                | 59 across 14 routers                                   |
-| **Tests**          | Backend test files            | 77                                                     |
-|                    | Backend test functions        | 1,415                                                  |
-|                    | Frontend test files           | 85                                                     |
-|                    | Frontend assertions           | 822                                                    |
-|                    | Coverage gate (backend)       | 90% line                                               |
-|                    | Coverage gate (frontend)      | branches≥75, func≥80, lines≥90, statements≥80          |
-| **Infrastructure** | Terraform modules             | 14                                                     |
-|                    | Terraform resources           | 193                                                    |
-|                    | Docker services (dev)         | 7 core (+ test profiles)                               |
-| **MLOps**          | LSTM features                 | 17 (14 technical + 3 cross-sectional)                  |
-|                    | LSTM architecture             | 2 layers, hidden=80, dropout=0.535                     |
-|                    | Optuna HPO trials             | 50                                                     |
-|                    | Tickers (dev / full)          | 55 / 475                                               |
-|                    | Agent tools                   | 16 across 7 categories                                 |
-| **CI/CD**          | Parallel CI jobs              | 9                                                      |
-|                    | CD pipeline stages            | 7                                                      |
-|                    | Security scanners             | 6 (Codecov, Checkov, tfsec, Gitleaks, Trivy, hadolint) |
-| **Documentation**  | Architecture Decision Records | 9                                                      |
-|                    | Deep-dive components          | 6                                                      |
-|                    | Demo assets                   | 15 (6 MOV, 6 MP4, 3 PNG)                               |
-| **Runtime**        | Python version                | 3.13                                                   |
-|                    | Rust toolchain                | PyO3 0.29, Maturin 1.14                                |
-|                    | PostgreSQL                    | 18 (Alpine)                                            |
-|                    | Redis                         | 8.8 (Alpine)                                           |
-
----
-
-## Demos
-
-### Mobile App - Core User Flows
-
-The React Native app walkthroughs showing receipt-to-trade flow, portfolio tracking, and auth.
-
-| Demo                                                                                | Description                                                                                                                                                       |
-| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ![Receipt Scanning](assets/demos/demo-scanning_2_receipts_success.mp4)              | **Receipt scanning**: two receipts processed through the OCR cascade (Tesseract → Bedrock Vision LLM fallback), totals extracted, merchant matched via rapidfuzz. |
-| ![Portfolio Screens](assets/demos/demo-portfolios_screens.mp4)                      | **Portfolio screens**: holdings view, sector exposure, performance vs SPY (tracking error + information ratio), cash-flow-aware TWR calculation.                  |
-| ![Auth & Dark Mode](assets/demos/demo-signup_login_dark_mode_empty_home_screen.mp4) | **Auth flow**: signup → login → biometric prompt → dark mode toggle → empty home state (no portfolios yet).                                                       |
-| ![Summary & Home](assets/demos/demo-summary_and_populated_home_screens.mp4)         | **Home screen populated**: portfolio summary cards, recent transactions, spending analysis, LSTM forecast chips.                                                  |
-| ![Auto-Lock](assets/demos/demo-auto_lock.mp4)                                       | **Auto-lock after backgrounding**: biometric re-authentication required to resume, session restored seamlessly.                                                   |
-
-### AI Agent & MLOps
-
-| Demo                                                                 | Description                                                                                                                                                                                                                                                |
-| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ![Agent Interaction](assets/demos/demo-agent_screen_features.mp4)    | **Full agent interaction**: natural-language query → tool calls (16 tools across 7 categories) → SSE streaming response with progressive rendering.                                                                                                        |
-| ![Agent Eval in CI](assets/demos/agent_eval_GHactions.mov)           | **Agent evaluation runs as part of CI pipeline**: correctness judged by GLM-4.7-Flash, LangSmith tracing at 10% sample rate.                                                                                                                               |
-| ![LangSmith UI](assets/demos/langsmith.mp4)                          | **LangSmith UI walkthrough**: traces, runs, evaluation results, and prompt playground for the LangGraph agent.                                                                                                                                             |
-| ![Airflow DAG](assets/demos/airflow_dag_weekly_retraining-graph.png) | **Airflow DAG**: weekly retraining (Monday 06:00 UTC) → feature computation (Rust engine) → Optuna HPO (50 trials) → champion/challenger evaluation (DA improvement > 2pp) → Evidently drift detection (PSI/KS/JSD) → EFS + S3 + model_registry promotion. |
-| ![MLflow Training](assets/demos/mlflow.mov)                          | **MLflow UI**: experiment tracking with Optuna hyperparameters logged, loss curves, evaluation metrics, model artifacts registered.                                                                                                                        |
-
-### Infrastructure & CI/CD
-
-| Demo                                                 | Description                                                                                                                                                                  |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ![9 CI Jobs](assets/demos/ci_GHactions.mov)          | **GitHub Actions CI**: 9 parallel jobs (Lint, TypeScript, Frontend Tests, Security Audit, Rust, Backend Tests, Docker, IaC, Secrets) — all must pass.                        |
-| ![7-Stage Deploy](assets/demos/deploy_GHactions.mov) | **CD pipeline**: Build (Rust wheel ARM64, 4 Docker images) → Trivy scan (critical only) → Terraform plan → Manual approval → Terraform apply → ECS rolling update.           |
-| ![AWS Infrastructure](assets/demos/aws_infra.mp4)    | **AWS Console walkthrough**: VPC (2 AZs, public/private), ECS Fargate ARM64 services, Multi-AZ RDS, ElastiCache Redis, WAF, CloudWatch alarms, EFS mount for champion model. |
-
-### Backend & Frontend Test Results
-
-| Demo                                               | Description                                                                            |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| ![Backend Tests](assets/demos/backend-tests.png)   | **Backend**: 1,415 tests passing, 90% line coverage gate enforced in CI.               |
-| ![Frontend Tests](assets/demos/frontend-tests.png) | **Frontend**: 822 assertions, coverage gates (branches≥75%, functions≥80%, lines≥90%). |
 
 ---
 
@@ -243,25 +167,98 @@ flowchart TB
     style CI_CD fill:#2d1b1b,color:#fff,stroke:#553
 ```
 
+**End-to-end flow:** A user scans a receipt → the OCR cascade extracts the total (Tesseract → Bedrock Vision LLM fallback) → the user confirms and trades that exact amount → the transaction is recorded with a cash-flow entry → portfolio analytics compute time-weighted return with explicit cash-flow handling → the LSTM model forecasts 5-day direction for each holding → the LangGraph agent answers questions by calling 16 tools (portfolio, performance, market data, spending, forecasts) via SSE streaming.
+
 ---
 
-## Key Design Decisions
+## Engineering Highlights
 
-Every non-trivial design choice is documented in an Architecture Decision Record (ADR). Here are the trade-offs that shaped StockLens:
+| Area                      | Decision                                                                                | Why                                                                                                                                                                                                                                                       |
+| ------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Container strategy**    | Multi-stage Docker builds for all 4 services (Backend, Airflow, ML Training, SageMaker) | Backend: `python:3.13-slim` build stage with maturin compiles Rust wheel → runtime copies only `.so`. ARM64 cross-build via Buildx. Image ~450MB vs ~1.2GB naive.                                                                                         |
+| **Compose architecture**  | Separated infra (Postgres, Redis) from app (Backend + Agent) via profiles               | Start DB alone for host-based dev (`docker compose -f postgres.yml up`), or full stack with `-f postgres.yml -f app.yml`. Standard Docker composition pattern.                                                                                            |
+| **CI pipeline**           | 9 parallel jobs, path-aware execution                                                   | Lint (ruff + ESLint + prettier), TypeScript, Frontend Tests (Jest), Security Audit, Rust (clippy + cargo test), Backend Tests (pytest + 90% cov), Docker Validation, IaC (Checkov + tfsec), Secrets (Gitleaks). Each job runs only when its paths change. |
+| **CI caching**            | Docker layer caching + pip/npm dependency caching                                       | Docker builds use `type=gha` cache (GitHub Actions cache layer sharing). Python pip and npm `node_modules` cached via `actions/setup-python` / `setup-node`.                                                                                              |
+| **Agent architecture**    | Manual LangGraph `StateGraph` (no `create_react_agent`) with two-tier history           | Explicit control over agentic loop; manual history management enables two-tier Redis (7-day TTL) + PostgreSQL persistence surviving server restarts without context loss.                                                                                 |
+| **ML feature compute**    | Rust/PyO3 native extension replacing pandas                                             | 12 exported functions compute 17 features (14 technical + 3 cross-sectional) at O(n) with zero Python overhead. Called from Airflow DAG and inference endpoint.                                                                                           |
+| **Deployment gating**     | Backend health check → Frontend deploy (via ECS service ordering)                       | Pipeline explicitly waits for ECS rolling update to pass health checks before considering deploy complete. Zero API/UI version mismatch in production.                                                                                                    |
+| **Network isolation**     | Three-tier security groups                                                              | Internet → ALB (443) → ECS (8000) → RDS (5432)/Redis (6379). No public database, no direct ECS access.                                                                                                                                                    |
+| **Frontend proxy**        | N/A (Expo/React Native) — API calls direct to ALB via `EXPO_PUBLIC_API_URL`             | Same binary works in dev (localhost) and prod (ALB DNS) — `EXPO_PUBLIC_API_URL` injected at build time.                                                                                                                                                   |
+| **CI/CD auth**            | OIDC federation with AWS — no long-lived credentials                                    | IAM role assumed per-run, scoped to `main` branch only. Zero AWS secrets stored in GitHub.                                                                                                                                                                |
+| **MLOps drift detection** | Evidently AI PSI/KS/JSD on features + predictions                                       | Lightweight, Airflow-native, covers distribution, feature, and model drift in one library. Reports stored to S3, alerts via CloudWatch.                                                                                                                   |
 
-| Decision                                    | Alternatives Considered                    | Why We Chose This                                                                                                                    |
-| ------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Synchronous yfinance** (ADR-001)          | Async yfinance SDK, direct API calls       | yfinance async client is incomplete; `run_in_executor` thread pool + `tenacity` retries gives async benefits without SDK limitations |
-| **Explicit cash_flows table** (ADR-002)     | Generic ledger, simple-Dietz approximation | Unambiguous TWR computation; dated+typed rows make cash-flow handling provably correct vs. ledger ambiguity                          |
-| **Hybrid cache** (ADR-003)                  | All-Redis, all-PostgreSQL, no cache        | OHLCV is large/immutable → indexed PG table; quotes are small/volatile → Redis with short TTL; avoids memory pressure on Redis       |
-| **Separate market + performance** (ADR-004) | Monolithic combined module                 | Clean isolation: yfinance wrapping (thread-pool, rate-limited) doesn't taint the pure TWR/benchmark logic                            |
-| **Champion model via EFS** (ADR-006)        | Only S3, only SageMaker                    | EFS mount = zero-copy inference on Fargate; S3 for durable storage + CloudFront delivery; SageMaker as optional serving backend      |
-| **Bedrock SigV4 only** (ADR-007)            | Separate API key auth                      | Bedrock uses AWS SigV4 natively; phantom `BEDROCK_API_KEY` would be unused and a security concern                                    |
-| **Terraform remote state S3+DDB** (ADR-008) | Local state, Terraform Cloud, Consul       | S3 + DynamoDB = free, auditable, no vendor lock; `use_lockfile` enables collaborative apply safety                                   |
-| **ARM64/Graviton** (ADR-009)                | x86_64 Fargate, EC2, Lambda                | ARM64 = 20-30% cost savings at same perf; Fargate removes EC2 management; QEMU cross-build in CI for Rust wheel                      |
-| **LangGraph manual StateGraph**             | `create_react_agent` convenience wrapper   | Explicit control over agentic loop; manual history management enables two-tier Redis+RDS persistence                                 |
-| **Focal loss for classification**           | Cross-entropy, weighted CE                 | Focal loss (γ=1.49) emphasizes hard misclassifications in imbalanced market regimes; tuned via Optuna                                |
-| **Evidently for drift**                     | whylogs, Alibi Detect, custom              | Evidently's PSI/KS/JSD suite covers distribution, feature, and model drift in one library; lightweight, Airflow-native               |
+---
+
+## Key Metrics at a Glance
+
+| Category           | Metric                        | Value                                                  |
+| ------------------ | ----------------------------- | ------------------------------------------------------ |
+| **API**            | REST endpoints                | 59 across 14 routers                                   |
+| **Tests**          | Backend test files            | 76                                                     |
+|                    | Backend test functions        | 1,415                                                  |
+|                    | Frontend test files           | 85                                                     |
+|                    | Frontend assertions           | 822                                                    |
+|                    | Coverage gate (backend)       | 90% line                                               |
+|                    | Coverage gate (frontend)      | branches≥75%, func≥80%, lines≥90%                      |
+| **Infrastructure** | Terraform modules             | 14                                                     |
+|                    | Terraform resources           | 193                                                    |
+|                    | Docker services (dev)         | 7 core (+ test profiles)                               |
+| **MLOps**          | LSTM features                 | 17 (14 technical + 3 cross-sectional)                  |
+|                    | LSTM architecture             | 2 layers, hidden=80, dropout=0.535                     |
+|                    | Optuna HPO trials             | 50                                                     |
+|                    | Tickers (dev / full)          | 55 / 475                                               |
+|                    | Agent tools                   | 16 across 7 categories                                 |
+| **CI/CD**          | Parallel CI jobs              | 9                                                      |
+|                    | CD pipeline stages            | 7                                                      |
+|                    | Security scanners             | 6 (Codecov, Checkov, tfsec, Gitleaks, Trivy, hadolint) |
+| **Documentation**  | Architecture Decision Records | 9                                                      |
+|                    | Deep-dive components          | 6                                                      |
+|                    | Demo assets                   | 15 (6 MOV, 6 MP4, 3 PNG)                               |
+| **Runtime**        | Python version                | 3.13                                                   |
+|                    | Rust toolchain                | PyO3 0.29, Maturin 1.14                                |
+|                    | PostgreSQL                    | 18 (Alpine)                                            |
+|                    | Redis                         | 8.8 (Alpine)                                           |
+
+---
+
+## Demos
+
+### Mobile App — Core User Flows
+
+The React Native app walkthroughs showing receipt-to-trade flow, portfolio tracking, and auth.
+
+| Demo                                                                         | Description                                                                                                                                                       |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ![Receipt Scanning](assets/demos/demo-scanning_2_receipts_success.mp4)       | **Receipt scanning**: two receipts processed through the OCR cascade (Tesseract → Bedrock Vision LLM fallback), totals extracted, merchant matched via rapidfuzz. |
+| ![Portfolio Screens](assets/demos/demo-portfolios_screens.mp4)               | **Portfolio screens**: holdings view, sector exposure, performance vs SPY (tracking error + information ratio), cash-flow-aware TWR calculation.                  |
+| ![Auth Flow](assets/demos/demo-signup_login_dark_mode_empty_home_screen.mp4) | **Auth flow**: signup → login → biometric prompt → dark mode toggle → empty home state (no portfolios yet).                                                       |
+| ![Home Screens](assets/demos/demo-summary_and_populated_home_screens.mp4)    | **Home screen populated**: portfolio summary cards, recent transactions, spending analysis, LSTM forecast chips.                                                  |
+| ![Auto-lock](assets/demos/demo-auto_lock.mp4)                                | **Auto-lock after backgrounding**: biometric re-authentication required to resume, session restored seamlessly.                                                   |
+
+### AI Agent & MLOps
+
+| Demo                                                                 | Description                                                                                                                                                                                                                                                |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ![Agent Interaction](assets/demos/demo-agent_screen_features.mp4)    | **Full agent interaction**: natural-language query → tool calls (16 tools across 7 categories) → SSE streaming response with progressive rendering.                                                                                                        |
+| ![Agent Eval in CI](assets/demos/agent_eval_GHactions.mov)           | **Agent evaluation in CI**: correctness judged by GLM-4.7-Flash, LangSmith tracing at 10% sample rate.                                                                                                                                                     |
+| ![LangSmith UI](assets/demos/langsmith.mp4)                          | **LangSmith UI walkthrough**: traces, runs, evaluation results, and prompt playground for the LangGraph agent.                                                                                                                                             |
+| ![Airflow DAG](assets/demos/airflow_dag_weekly_retraining-graph.png) | **Airflow DAG**: weekly retraining (Monday 06:00 UTC) → feature computation (Rust engine) → Optuna HPO (50 trials) → champion/challenger evaluation (DA improvement > 2pp) → Evidently drift detection (PSI/KS/JSD) → EFS + S3 + model_registry promotion. |
+| ![MLflow Training](assets/demos/mlflow.mov)                          | **MLflow UI**: experiment tracking with Optuna hyperparameters logged, loss curves, evaluation metrics, model artifacts registered.                                                                                                                        |
+
+### Infrastructure & CI/CD
+
+| Demo                                                 | Description                                                                                                                                                                  |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ![9 Parallel CI Jobs](assets/demos/ci_GHactions.mov) | **GitHub Actions CI**: 9 parallel jobs (Lint, TypeScript, Frontend Tests, Security Audit, Rust, Backend Tests, Docker, IaC, Secrets) — all must pass.                        |
+| ![7-Stage Deploy](assets/demos/deploy_GHactions.mov) | **CD pipeline**: Build (Rust wheel ARM64, 4 Docker images) → Trivy scan (critical only) → Terraform plan → Manual approval → Terraform apply → ECS rolling update.           |
+| ![AWS Infra Walkthrough](assets/demos/aws_infra.mp4) | **AWS Console walkthrough**: VPC (2 AZs, public/private), ECS Fargate ARM64 services, Multi-AZ RDS, ElastiCache Redis, WAF, CloudWatch alarms, EFS mount for champion model. |
+
+### Backend & Frontend Test Results
+
+| Backend Tests                                               | Frontend Tests                                                           |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------ |
+| ![Backend Tests](assets/demos/backend-tests.png)            | ![Frontend Tests](assets/demos/frontend-tests.png)                       |
+| 1,415 tests passing, 90% line coverage gate enforced in CI. | 822 assertions, coverage gates (branches≥75%, functions≥80%, lines≥90%). |
 
 ---
 
@@ -269,7 +266,7 @@ Every non-trivial design choice is documented in an Architecture Decision Record
 
 ---
 
-### 🤖 LangGraph Conversational Agent
+### LangGraph Conversational Agent
 
 A **2-node ReAct agent** built with LangGraph's `StateGraph` — not the `create_react_agent` convenience wrapper — giving explicit control over the reasoning loop. Chat history uses **manual two-tier persistence**: Redis for active session state (7-day TTL) and PostgreSQL for durable cross-session history.
 
@@ -339,7 +336,7 @@ The agent is invoked **server-side with full history reconstruction**: on each r
 
 ---
 
-### 📈 LSTM Directional Forecasting
+### LSTM Directional Forecasting
 
 A **Global LSTM** model forecasting directional price movement (DOWN / FLAT / UP) over a 5-day horizon using 17 technical features computed across the entire S&P 500 universe. The "global" architecture shares a single LSTM backbone across all tickers while learning per-ticker identity via **entity embeddings** (16-dim).
 
@@ -451,7 +448,7 @@ flowchart LR
 
 ---
 
-### 🔍 NLP Cascade OCR Pipeline
+### NLP Cascade OCR Pipeline
 
 A **confidence-gated cascade** that progressively escalates to more expensive models only when accuracy warrants it. At the base: Tesseract-based regex extraction. If confidence is insufficient (overall < 0.7, OCR < 0.6, unverified merchant, or reconciliation mismatch), it escalates through Bedrock Vision LLM, then text-only LLM, and finally a degraded fallback.
 
@@ -542,7 +539,7 @@ Native Rust extension via **PyO3/Maturin** replacing Python's pandas-based indic
 
 **Exported functions:**
 
-| Function                     | Parameters                | Returns                                   | O          |
+| Function                     | Parameters                | Returns                                   | Complexity |
 | ---------------------------- | ------------------------- | ----------------------------------------- | ---------- |
 | `compute_log_returns`        | close, periods            | `dict` of series                          | O(n)       |
 | `compute_moving_averages`    | close, windows            | `dict` of SMA series                      | O(n×k)     |
@@ -580,7 +577,7 @@ backend/ml/features-engine/src/
 
 ---
 
-### 📊 Portfolio Analytics
+### Portfolio Analytics
 
 **Time-weighted return (TWR)** calculation that correctly handles cash flows — no approximations, no simple-Dietz shortcuts. Benchmark comparison with **Tracking Error** and **Information Ratio**.
 
@@ -636,7 +633,7 @@ flowchart LR
 
 ---
 
-### 🔄 MLOps & Retraining Pipeline
+### MLOps & Retraining Pipeline
 
 Weekly retraining orchestrated by **Apache Airflow 2.11**, with automated **champion/challenger evaluation** and **distribution-drift monitoring** via Evidently AI.
 
@@ -725,17 +722,37 @@ flowchart TB
 
 ---
 
+## Design Decisions
+
+Every non-trivial design choice is documented in an Architecture Decision Record (ADR). Here are the trade-offs that shaped StockLens:
+
+| Decision                                    | Alternatives Considered                    | Why We Chose This                                                                                                                    |
+| ------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Synchronous yfinance** (ADR-001)          | Async yfinance SDK, direct API calls       | yfinance async client is incomplete; `run_in_executor` thread pool + `tenacity` retries gives async benefits without SDK limitations |
+| **Explicit cash_flows table** (ADR-002)     | Generic ledger, simple-Dietz approximation | Unambiguous TWR computation; dated+typed rows make cash-flow handling provably correct vs. ledger ambiguity                          |
+| **Hybrid cache** (ADR-003)                  | All-Redis, all-PostgreSQL, no cache        | OHLCV is large/immutable → indexed PG table; quotes are small/volatile → Redis with short TTL; avoids memory pressure on Redis       |
+| **Separate market + performance** (ADR-004) | Monolithic combined module                 | Clean isolation: yfinance wrapping (thread-pool, rate-limited) doesn't taint the pure TWR/benchmark logic                            |
+| **Champion model via EFS** (ADR-006)        | Only S3, only SageMaker                    | EFS mount = zero-copy inference on Fargate; S3 for durable storage + CloudFront delivery; SageMaker as optional serving backend      |
+| **Bedrock SigV4 only** (ADR-007)            | Separate API key auth                      | Bedrock uses AWS SigV4 natively; phantom `BEDROCK_API_KEY` would be unused and a security concern                                    |
+| **Terraform remote state S3+DDB** (ADR-008) | Local state, Terraform Cloud, Consul       | S3 + DynamoDB = free, auditable, no vendor lock; `use_lockfile` enables collaborative apply safety                                   |
+| **ARM64/Graviton** (ADR-009)                | x86_64 Fargate, EC2, Lambda                | ARM64 = 20-30% cost savings at same perf; Fargate removes EC2 management; QEMU cross-build in CI for Rust wheel                      |
+| **LangGraph manual StateGraph**             | `create_react_agent` convenience wrapper   | Explicit control over agentic loop; manual history management enables two-tier Redis+RDS persistence                                 |
+| **Focal loss for classification**           | Cross-entropy, weighted CE                 | Focal loss (γ=1.49) emphasizes hard misclassifications in imbalanced market regimes; tuned via Optuna                                |
+| **Evidently for drift**                     | whylogs, Alibi Detect, custom              | Evidently's PSI/KS/JSD suite covers distribution, feature, and model drift in one library; lightweight, Airflow-native               |
+
+---
+
 ## Testing Philosophy
 
 The codebase enforces a **three-tier testing strategy** with explicit coverage gates in CI:
 
-| Tier         | Framework                                           | Scale                                                                       | Coverage Gate                                              |
-| ------------ | --------------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| **Backend**  | pytest + pytest-asyncio + pytest-cov + pytest-xdist | 77 test files, 1415 test functions, parallel with `-n auto --dist loadfile` | `--cov-fail-under=90` (line coverage)                      |
-| **Frontend** | Jest + React Native Testing Library + jest-expo     | 85 test files, 822 test assertions                                          | Branches: 75%, Functions: 80%, Lines: 90%, Statements: 80% |
-| **Rust**     | cargo test + clippy                                 | 13 source modules                                                           | `cargo clippy -- -D warnings` + `cargo test`               |
+| Tier         | Framework                                           | Scale                                                                        | Coverage Gate                                              |
+| ------------ | --------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| **Backend**  | pytest + pytest-asyncio + pytest-cov + pytest-xdist | 77 test files, 1,415 test functions, parallel with `-n auto --dist loadfile` | `--cov-fail-under=90` (line coverage)                      |
+| **Frontend** | Jest + React Native Testing Library + jest-expo     | 85 test files, 822 test assertions                                           | Branches: 75%, Functions: 80%, Lines: 90%, Statements: 80% |
+| **Rust**     | cargo test + clippy                                 | 13 source modules                                                            | `cargo clippy -- -D warnings` + `cargo test`               |
 
-**Test suite breakdown (backend — 77 files, 1415 functions):**
+**Test suite breakdown (backend — 76 files, 1,415 functions):**
 
 | Category          | Files | Focus                                                     |
 | ----------------- | ----- | --------------------------------------------------------- |
@@ -749,7 +766,6 @@ The codebase enforces a **three-tier testing strategy** with explicit coverage g
 | **Receipts**      | 6     | OCR cascade (Tesseract → LLM), rapidfuzz matching         |
 | **Transactions**  | 7     | CRUD, holdings recalculation, cash flow linking           |
 | **Core / Config** | 13    | Pydantic settings, DB session, middleware, health         |
-| **Drift**         | 8     | Evidently reporter, repository, router, service           |
 
 **Key testing patterns:**
 
@@ -982,23 +998,6 @@ flowchart LR
 
 ---
 
-## Tech Stack Summary
-
-| Domain             | Technology                                                                | Version                                    |
-| ------------------ | ------------------------------------------------------------------------- | ------------------------------------------ |
-| **Frontend**       | React Native, TypeScript, Expo                                            | 0.81.5, 5.9, 54                            |
-| **Backend**        | FastAPI, Python, asyncpg, SQLAlchemy, Alembic, Pydantic, structlog        | 0.138, 3.13, 0.30+, 2.0+, 1.14+, v2, 24.4+ |
-| **ML**             | PyTorch, Optuna, scikit-learn, MLflow                                     | 2.12, 4.0, 1.9, 3.14                       |
-| **NLP/LLM**        | LangGraph, LangChain AWS, AWS Bedrock                                     | 1.0+, 1.6+ (Nova Lite, GLM-4.7 Flash)      |
-| **Rust**           | PyO3, Maturin, numpy crate                                                | 0.29, 1.14, ndarray interop                |
-| **MLOps**          | Apache Airflow, Evidently AI                                              | 2.11, 0.7+                                 |
-| **Database**       | PostgreSQL, Redis                                                         | 18 (Alpine), 8.8 (Alpine)                  |
-| **Infrastructure** | Terraform, AWS ECS Fargate, RDS, ElastiCache, WAF, CloudWatch             | ≥1.9, ARM64/Graviton                       |
-| **CI/CD**          | GitHub Actions (OIDC), Checkov, tfsec, Gitleaks, Trivy, hadolint, Codecov | 9 jobs + 7-stage deploy                    |
-| **Auth**           | JWT (access/refresh, rotation), bcrypt (12 rounds), slowapi               | PyJWT 2.13+                                |
-
----
-
 ## Security Model
 
 | Layer              | Mechanism                                                                                        | Details                                                                                                                              |
@@ -1094,8 +1093,90 @@ For full production deployment guide including secrets bootstrap, domain setup, 
 
 ---
 
-<div align="center">
+## Project Structure
 
-**StockLens** — Turn receipts into returns. 📈
+```
+StockLens/
+├── backend/
+│   ├── Dockerfile                    # Multi-stage: python:3.13-slim build → runtime
+│   ├── Dockerfile.agent              # Agent service (LangGraph + Bedrock)
+│   ├── Dockerfile.airflow            # Airflow scheduler + webserver
+│   ├── Dockerfile.ml-training        # ML training (x86_64 for SageMaker compat)
+│   ├── Dockerfile.sagemaker          # SageMaker inference container
+│   ├── pyproject.toml                # uv/pip-tools dependencies, pytest config
+│   ├── src/
+│   │   ├── api/                      # FastAPI app: routers, middleware, deps
+│   │   ├── auth/                     # JWT, bcrypt, rate limiting
+│   │   ├── cache/                    # Redis OHLCV + quote cache
+│   │   ├── market/                   # yfinance wrapper + market data
+│   │   ├── ml/                       # LSTM model, inference, features
+│   │   │   ├── features-engine/      # Rust PyO3 extension (13 modules)
+│   │   │   ├── lstm/                 # PyTorch Global LSTM
+│   │   │   └── training/             # Optuna HPO, training loop
+│   │   ├── portfolio/                # TWR, holdings, sector, benchmark
+│   │   ├── receipts/                 # OCR cascade (Tesseract → Bedrock)
+│   │   ├── agent/                    # LangGraph ReAct agent + 16 tools
+│   │   ├── transactions/             # CRUD + holdings recalc + cash flows
+│   │   ├── config.py                 # Pydantic Settings (env-driven)
+│   │   └── database/                 # SQLAlchemy 2.0 models, Alembic
+│   └── tests/                        # 76 files, 1415 functions
+├── frontend/
+│   ├── Dockerfile                    # Multi-stage: node:20-alpine → nginx alpine
+│   ├── package.json                  # Expo 54, React Native 0.81, TypeScript 5.9
+│   ├── src/
+│   │   ├── app/                      # Expo Router file-based routing
+│   │   ├── components/               # Reusable UI components
+│   │   ├── hooks/                    # Custom React hooks
+│   │   ├── services/                 # API client, auth, storage
+│   │   ├── store/                    # Zustand state management
+│   │   └── utils/                    # Helpers, formatters
+│   └── __tests__/                    # 85 test files, 822 assertions
+├── terraform/
+│   ├── main.tf                       # Root module, provider, backend
+│   ├── variables.tf                  # Input variables
+│   ├── outputs.tf                    # Module outputs
+│   ├── modules/                      # 14 Terraform modules
+│   │   ├── vpc/, network/, secrets/, s3/
+│   │   ├── database/, cache/, iam/, compute/
+│   │   ├── mlflow/, airflow/, waf/, monitoring/
+│   │   ├── sagemaker/, budgets/
+│   └── environments/                 # dev/prod variable files
+├── docker-compose.yml                # Local dev: backend + agent
+├── docker-compose.postgres.yml       # PostgreSQL (standalone)
+├── docker-compose.redis.yml          # Redis (standalone)
+├── docker-compose.mlflow.yml         # MLflow tracking server
+├── docker-compose.airflow.yml        # Airflow (optional)
+├── Makefile                          # up/down/logs/rebuild/shell
+├── .env.example                      # All required env vars documented
+├── .github/
+│   ├── workflows/
+│   │   ├── ci.yml                    # 9 parallel CI jobs
+│   │   ├── cd.yml                    # 7-stage CD pipeline
+│   │   ├── codeql.yml                # Weekly CodeQL analysis
+│   │   └── dependabot.yml            # Weekly dep updates
+│   └── dependabot.yml
+└── docs/
+    ├── adr/                          # 9 Architecture Decision Records
+    ├── deployment.md                 # Production deployment guide
+    └── demos/                        # 15 demo assets (6 MOV, 6 MP4, 3 PNG)
+```
 
-</div>
+---
+
+## Documentation
+
+| Doc                                              | What it covers                                                      |
+| ------------------------------------------------ | ------------------------------------------------------------------- |
+| [ADR Index](docs/adr/README.md)                  | All 9 Architecture Decision Records with trade-offs and rationale   |
+| [Deployment Guide](docs/deployment.md)           | Production deployment: secrets bootstrap, domain setup, monitoring  |
+| [API Reference](docs/api-reference.md)           | Complete `/api/v1/*` routes, request/response schemas, auth methods |
+| [Configuration Reference](docs/configuration.md) | All environment variables with descriptions and defaults            |
+| [ML Model Card](docs/model-card.md)              | LSTM model details, training data, performance, limitations         |
+
+---
+
+## Related Projects
+
+- [**LAAD**](https://github.com/AhmedIkram05/laad) — ATM Log Aggregation & Diagnostics Platform: production data engineering pipeline with RAG diagnostic assistant, parallel Airflow ETL, and Power BI analytics
+- [**DevSync**](https://github.com/AhmedIkram05/DevSync) — Full-stack project management platform with real-time collaboration, GitHub OAuth 2.0 integration, and bidirectional Issue/PR sync (React + Flask + PostgreSQL)
+- [**W3C ETL Pipeline**](https://github.com/AhmedIkram05/W3C-ETL-Pipeline) — Massively parallel Airflow ETL processing 100M+ web log entries with Power BI dashboards
