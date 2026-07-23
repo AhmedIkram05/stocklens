@@ -163,13 +163,45 @@ export const agentService = {
   },
 
   async listConversations(): Promise<ConversationSummary[]> {
-    return apiService.get('/agent/conversations');
+    const res = await apiService.get<{ conversations: ConversationSummary[]; total: number }>(
+      '/agent/conversations',
+    );
+    const conversations = (res.conversations || []).map((conv: any) => ({
+      id: conv.id,
+      title: conv.title,
+      messageCount: conv.message_count ?? 0,
+      createdAt: conv.created_at,
+      updatedAt: conv.updated_at,
+    }));
+    return conversations;
   },
 
   async getConversation(
     conversationId: string,
   ): Promise<{ conversation: ConversationSummary; messages: AgentMessage[] }> {
-    return apiService.get(`/agent/conversations/${conversationId}`);
+    const res = await apiService.get<{ conversation: any; messages: any[] }>(
+      `/agent/conversations/${conversationId}`,
+    );
+    const conversation: ConversationSummary = {
+      id: res.conversation.id,
+      title: res.conversation.title,
+      messageCount: res.conversation.message_count ?? 0,
+      createdAt: res.conversation.created_at,
+      updatedAt: res.conversation.updated_at,
+    };
+    const messages: AgentMessage[] = (res.messages || []).map((msg: any) => ({
+      role: msg.role,
+      content: msg.content,
+      reasoning: msg.reasoning_steps?.thinking,
+      toolResults: (msg.tools_used || [])
+        .filter((t: any) => t.status === 'completed' && t.result != null)
+        .map((t: any) => ({
+          toolName: t.name,
+          result: typeof t.result === 'string' ? { _raw: t.result } : t.result,
+        })),
+      createdAt: msg.created_at,
+    }));
+    return { conversation, messages };
   },
 
   async deleteConversation(conversationId: string): Promise<void> {
