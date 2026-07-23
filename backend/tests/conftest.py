@@ -115,6 +115,13 @@ async def _test_db() -> AsyncGenerator[None, None]:
     )
     await conn.execute("BEGIN")
 
+    # Reset the in-memory category cache so tests don't leak UUIDs across
+    # test boundaries. Tests that need the cache populated with real DB
+    # UUIDs (e.g. test_db_data_returns_real_uuids) set it up themselves.
+    from src.categories import merchant_map as _merchant_map
+
+    _merchant_map._category_cache = None
+
     # Seed test user and portfolios for FK references
     await conn.execute(
         "INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3) "
