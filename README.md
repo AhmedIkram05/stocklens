@@ -227,38 +227,56 @@ flowchart TB
 
 The React Native app walkthroughs showing receipt-to-trade flow, portfolio tracking, and auth.
 
-| Demo                                                                         | Description                                                                                                                                                       |
-| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ![Receipt Scanning](assets/demos/demo-scanning_2_receipts_success.mp4)       | **Receipt scanning**: two receipts processed through the OCR cascade (Tesseract → Bedrock Vision LLM fallback), totals extracted, merchant matched via rapidfuzz. |
-| ![Portfolio Screens](assets/demos/demo-portfolios_screens.mp4)               | **Portfolio screens**: holdings view, sector exposure, performance vs SPY (tracking error + information ratio), cash-flow-aware TWR calculation.                  |
-| ![Auth Flow](assets/demos/demo-signup_login_dark_mode_empty_home_screen.mp4) | **Auth flow**: signup → login → biometric prompt → dark mode toggle → empty home state (no portfolios yet).                                                       |
-| ![Home Screens](assets/demos/demo-summary_and_populated_home_screens.mp4)    | **Home screen populated**: portfolio summary cards, recent transactions, spending analysis, LSTM forecast chips.                                                  |
-| ![Auto-lock](assets/demos/demo-auto_lock.mp4)                                | **Auto-lock after backgrounding**: biometric re-authentication required to resume, session restored seamlessly.                                                   |
+![Receipt Scanning](assets/demos/demo-scanning_2_receipts_success.mp4)
+_Receipt scanning: two receipts processed through the OCR cascade (Tesseract → Bedrock Vision LLM fallback), totals extracted, merchant matched via rapidfuzz._
+
+![Portfolio Screens](assets/demos/demo-portfolios_screens.mp4)
+_Portfolio screens: holdings view, sector exposure, performance vs SPY (tracking error + information ratio), cash-flow-aware TWR calculation._
+
+![Auth Flow](assets/demos/demo-signup_login_dark_mode_empty_home_screen.mp4)
+_Auth flow: signup → login → biometric prompt → dark mode toggle → empty home state (no portfolios yet)._
+
+![Home Screens](assets/demos/demo-summary_and_populated_home_screens.mp4)
+_Home screen populated: portfolio summary cards, recent transactions, spending analysis, LSTM forecast chips._
+
+![Auto-lock](assets/demos/demo-auto_lock.mp4)
+_Auto-lock after backgrounding: biometric re-authentication required to resume, session restored seamlessly._
 
 ### AI Agent & MLOps
 
-| Demo                                                                 | Description                                                                                                                                                                                                                                                |
-| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ![Agent Interaction](assets/demos/demo-agent_screen_features.mp4)    | **Full agent interaction**: natural-language query → tool calls (16 tools across 7 categories) → SSE streaming response with progressive rendering.                                                                                                        |
-| ![Agent Eval in CI](assets/demos/agent_eval_GHactions.mov)           | **Agent evaluation in CI**: correctness judged by GLM-4.7-Flash, LangSmith tracing at 10% sample rate.                                                                                                                                                     |
-| ![LangSmith UI](assets/demos/langsmith.mp4)                          | **LangSmith UI walkthrough**: traces, runs, evaluation results, and prompt playground for the LangGraph agent.                                                                                                                                             |
-| ![Airflow DAG](assets/demos/airflow_dag_weekly_retraining-graph.png) | **Airflow DAG**: weekly retraining (Monday 06:00 UTC) → feature computation (Rust engine) → Optuna HPO (50 trials) → champion/challenger evaluation (DA improvement > 2pp) → Evidently drift detection (PSI/KS/JSD) → EFS + S3 + model_registry promotion. |
-| ![MLflow Training](assets/demos/mlflow.mov)                          | **MLflow UI**: experiment tracking with Optuna hyperparameters logged, loss curves, evaluation metrics, model artifacts registered.                                                                                                                        |
+![Agent Interaction](assets/demos/demo-agent_screen_features.mp4)
+_Full agent interaction: natural-language query → tool calls (16 tools across 7 categories) → SSE streaming response with progressive rendering._
+
+![Agent Eval in CI](assets/demos/agent_eval_GHactions.mov)
+_Agent evaluation in CI: correctness judged by GLM-4.7-Flash, LangSmith tracing at 10% sample rate._
+
+![LangSmith UI](assets/demos/langsmith.mp4)
+_LangSmith UI walkthrough: traces, runs, evaluation results, and prompt playground for the LangGraph agent._
+
+![Airflow DAG](assets/demos/airflow_dag_weekly_retraining-graph.png)
+_Airflow DAG: weekly retraining (Monday 06:00 UTC) → feature computation (Rust engine) → Optuna HPO (50 trials) → champion/challenger evaluation (DA improvement > 2pp) → Evidently drift detection (PSI/KS/JSD) → EFS + S3 + model_registry promotion._
+
+![MLflow Training](assets/demos/mlflow.mov)
+_MLflow UI: experiment tracking with Optuna hyperparameters logged, loss curves, evaluation metrics, model artifacts registered._
 
 ### Infrastructure & CI/CD
 
-| Demo                                                 | Description                                                                                                                                                                  |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ![9 Parallel CI Jobs](assets/demos/ci_GHactions.mov) | **GitHub Actions CI**: 9 parallel jobs (Lint, TypeScript, Frontend Tests, Security Audit, Rust, Backend Tests, Docker, IaC, Secrets) — all must pass.                        |
-| ![7-Stage Deploy](assets/demos/deploy_GHactions.mov) | **CD pipeline**: Build (Rust wheel ARM64, 4 Docker images) → Trivy scan (critical only) → Terraform plan → Manual approval → Terraform apply → ECS rolling update.           |
-| ![AWS Infra Walkthrough](assets/demos/aws_infra.mp4) | **AWS Console walkthrough**: VPC (2 AZs, public/private), ECS Fargate ARM64 services, Multi-AZ RDS, ElastiCache Redis, WAF, CloudWatch alarms, EFS mount for champion model. |
+![9 Parallel CI Jobs](assets/demos/ci_GHactions.mov)
+_GitHub Actions CI: 9 parallel jobs (Lint, TypeScript, Frontend Tests, Security Audit, Rust, Backend Tests, Docker, IaC, Secrets) — all must pass._
+
+![7-Stage Deploy](assets/demos/deploy_GHactions.mov)
+_CD pipeline: Build (Rust wheel ARM64, 4 Docker images) → Trivy scan (critical only) → Terraform plan → Manual approval → Terraform apply → ECS rolling update._
+
+![AWS Infra Walkthrough](assets/demos/aws_infra.mp4)
+_AWS Console walkthrough: VPC (2 AZs, public/private), ECS Fargate ARM64 services, Multi-AZ RDS, ElastiCache Redis, WAF, CloudWatch alarms, EFS mount for champion model._
 
 ### Backend & Frontend Test Results
 
-| Backend Tests                                               | Frontend Tests                                                           |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------ |
-| ![Backend Tests](assets/demos/backend-tests.png)            | ![Frontend Tests](assets/demos/frontend-tests.png)                       |
-| 1,415 tests passing, 90% line coverage gate enforced in CI. | 822 assertions, coverage gates (branches≥75%, functions≥80%, lines≥90%). |
+![Backend Tests](assets/demos/backend-tests.png)
+_1,415 tests passing, 90% line coverage gate enforced in CI._
+
+![Frontend Tests](assets/demos/frontend-tests.png)
+_822 assertions, coverage gates (branches≥75%, functions≥80%, lines≥90%)._
 
 ---
 
