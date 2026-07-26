@@ -225,48 +225,60 @@ flowchart TB
 
 The React Native app walkthroughs showing receipt-to-trade flow, portfolio tracking, and auth.
 
-<video src="https://github.com/AhmedIkram05/stocklens/releases/download/demo-assets/demo-scanning_2_receipts_success.mp4" controls></video>
-_Receipt scanning: two receipts processed through the OCR cascade (Tesseract → Bedrock Vision LLM fallback), totals extracted, merchant matched via rapidfuzz._
+<p align="center">
+▶ [Receipt Scanning](assets/demos/demo-scanning_2_receipts_success.mp4) — two receipts processed through the OCR cascade (Tesseract → Bedrock Vision LLM fallback), totals extracted, merchant matched via rapidfuzz.
+</p>
 
-<video src="https://github.com/AhmedIkram05/stocklens/releases/download/demo-assets/demo-portfolios_screens.mp4" controls></video>
-_Portfolio screens: holdings view, sector exposure, performance vs SPY (tracking error + information ratio), cash-flow-aware TWR calculation._
+<p align="center">
+▶ [Portfolio Screens](assets/demos/demo-portfolios_screens.mp4) — holdings view, sector exposure, performance vs SPY (tracking error + information ratio), cash-flow-aware TWR calculation.
+</p>
 
-<video src="https://github.com/AhmedIkram05/stocklens/releases/download/demo-assets/demo-signup_login_dark_mode_empty_home_screen.mp4" controls></video>
-_Auth flow: signup → login → biometric prompt → dark mode toggle → empty home state (no portfolios yet)._
+<p align="center">
+▶ [Auth Flow](assets/demos/demo-signup_login_dark_mode_empty_home_screen.mp4) — signup → login → biometric prompt → dark mode toggle → empty home state (no portfolios yet).
+</p>
 
-<video src="https://github.com/AhmedIkram05/stocklens/releases/download/demo-assets/demo-summary_and_populated_home_screens.mp4" controls></video>
-_Home screen populated: portfolio summary cards, recent transactions, spending analysis, LSTM forecast chips._
+<p align="center">
+▶ [Home Screens](assets/demos/demo-summary_and_populated_home_screens.mp4) — portfolio summary cards, recent transactions, spending analysis, LSTM forecast chips.
+</p>
 
-<video src="https://github.com/AhmedIkram05/stocklens/releases/download/demo-assets/demo-auto_lock.mp4" controls></video>
-_Auto-lock after backgrounding: biometric re-authentication required to resume, session restored seamlessly._
+<p align="center">
+▶ [Auto-lock](assets/demos/demo-auto_lock.mp4) — biometric re-authentication required to resume, session restored seamlessly.
+</p>
 
 ### AI Agent & MLOps
 
-<video src="https://github.com/AhmedIkram05/stocklens/releases/download/demo-assets/demo-agent_screen_features.mp4" controls></video>
-_Full agent interaction: natural-language query → tool calls (16 tools across 7 categories) → SSE streaming response with progressive rendering._
+<p align="center">
+▶ [Agent Interaction](assets/demos/demo-agent_screen_features.mp4) — natural-language query → tool calls (16 tools across 7 categories) → SSE streaming response with progressive rendering.
+</p>
 
-<video src="https://github.com/AhmedIkram05/stocklens/releases/download/demo-assets/agent_eval_GHactions.mov" controls></video>
-_Agent evaluation in CI: correctness judged by GLM-4.7-Flash, LangSmith tracing at 10% sample rate._
+<p align="center">
+▶ [Agent Eval in CI](assets/demos/agent_eval_GHactions.mov) — correctness judged by GLM-4.7-Flash, LangSmith tracing at 10% sample rate.
+</p>
 
-<video src="https://github.com/AhmedIkram05/stocklens/releases/download/demo-assets/langsmith.mp4" controls></video>
-_LangSmith UI walkthrough: traces, runs, evaluation results, and prompt playground for the LangGraph agent._
+<p align="center">
+▶ [LangSmith UI](assets/demos/langsmith.mp4) — traces, runs, evaluation results, and prompt playground for the LangGraph agent.
+</p>
 
 ![Airflow DAG](assets/demos/airflow_dag_weekly_retraining-graph.png)
 _Airflow DAG: weekly retraining (Monday 06:00 UTC) → feature computation (Rust engine) → Optuna HPO (50 trials) → champion/challenger evaluation (DA improvement > 2pp) → Evidently drift detection (PSI/KS/JSD) → EFS + S3 + model_registry promotion._
 
-<video src="https://github.com/AhmedIkram05/stocklens/releases/download/demo-assets/mlflow.mov" controls></video>
-_MLflow UI: experiment tracking with Optuna hyperparameters logged, loss curves, evaluation metrics, model artifacts registered._
+<p align="center">
+▶ [MLflow Training](assets/demos/mlflow.mov) — experiment tracking with Optuna hyperparameters logged, loss curves, evaluation metrics, model artifacts registered.
+</p>
 
 ### Infrastructure & CI/CD
 
-<video src="https://github.com/AhmedIkram05/stocklens/releases/download/demo-assets/ci_GHactions.mov" controls></video>
-_GitHub Actions CI: 9 parallel jobs (Lint, TypeScript, Frontend Tests, Security Audit, Rust, Backend Tests, Docker, IaC, Secrets) — all must pass._
+<p align="center">
+▶ [9 Parallel CI Jobs](assets/demos/ci_GHactions.mov) — 9 parallel jobs (Lint, TypeScript, Frontend Tests, Security Audit, Rust, Backend Tests, Docker, IaC, Secrets) — all must pass.
+</p>
 
-<video src="https://github.com/AhmedIkram05/stocklens/releases/download/demo-assets/deploy_GHactions.mov" controls></video>
-_CD pipeline: Build (Rust wheel ARM64, 4 Docker images) → Trivy scan (critical only) → Terraform plan → Manual approval → Terraform apply → ECS rolling update._
+<p align="center">
+▶ [7-Stage Deploy](assets/demos/deploy_GHactions.mov) — Build (Rust wheel ARM64, 4 Docker images) → Trivy scan (critical only) → Terraform plan → Manual approval → Terraform apply → ECS rolling update.
+</p>
 
-<video src="https://github.com/AhmedIkram05/stocklens/releases/download/demo-assets/aws_infra.mp4" controls></video>
-_AWS Console walkthrough: VPC (2 AZs, public/private), ECS Fargate ARM64 services, Multi-AZ RDS, ElastiCache Redis, WAF, CloudWatch alarms, EFS mount for champion model._
+<p align="center">
+▶ [AWS Infra Walkthrough](assets/demos/aws_infra.mp4) — VPC (2 AZs, public/private), ECS Fargate ARM64 services, Multi-AZ RDS, ElastiCache Redis, WAF, CloudWatch alarms, EFS mount for champion model.
+</p>
 
 ### Backend & Frontend Test Results
 
