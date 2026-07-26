@@ -10,7 +10,6 @@
   <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&labelColor=000000&logo=rust" alt="Rust"/>
   <img src="https://img.shields.io/badge/LangGraph-7C3AED?style=for-the-badge&labelColor=000000" alt="LangGraph"/>
   <img src="https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&labelColor=000000&logo=pytorch" alt="PyTorch"/>
-  <br/>
   <img src="https://img.shields.io/badge/AWS-232F3E?style=for-the-badge&labelColor=000000&logo=amazonwebservices" alt="AWS"/>
   <img src="https://img.shields.io/badge/Terraform-844FBA?style=for-the-badge&labelColor=000000&logo=terraform" alt="Terraform"/>
   <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&labelColor=000000&logo=docker" alt="Docker"/>
@@ -18,7 +17,6 @@
   <img src="https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&labelColor=000000&logo=redis" alt="Redis"/>
   <img src="https://img.shields.io/badge/Airflow-017CEE?style=for-the-badge&labelColor=000000&logo=apacheairflow" alt="Airflow"/>
   <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&labelColor=000000&logo=githubactions" alt="GitHub Actions"/>
-  <br/>
   <img src="https://img.shields.io/badge/MLflow-0194E2?style=for-the-badge&labelColor=000000&logo=mlflow" alt="MLflow"/>
   <img src="https://img.shields.io/badge/Optuna-F97316?style=for-the-badge&labelColor=000000" alt="Optuna"/>
   <img src="https://img.shields.io/badge/Expo-54-000020?style=for-the-badge&labelColor=000000&logo=expo" alt="Expo"/>
