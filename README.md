@@ -225,68 +225,56 @@ flowchart TB
 
 The React Native app walkthroughs showing receipt-to-trade flow, portfolio tracking, and auth.
 
-<p align="center">
-▶ [Receipt Scanning](assets/demos/demo-scanning_2_receipts_success.mp4) — two receipts processed through the OCR cascade (Tesseract → Bedrock Vision LLM fallback), totals extracted, merchant matched via rapidfuzz.
-</p>
+[Main Demo](https://github.com/user-attachments/assets/2d626dd7-2a60-479e-9e74-e6bbc3d71da2)
+> **Main Demo** Two receipts processed through the OCR cascade (Tesseract → Bedrock Vision LLM fallback), totals extracted, merchant matched via rapidfuzz.
 
-<p align="center">
-▶ [Portfolio Screens](assets/demos/demo-portfolios_screens.mp4) — holdings view, sector exposure, performance vs SPY (tracking error + information ratio), cash-flow-aware TWR calculation.
-</p>
+[Portfolio Screens](https://github.com/user-attachments/assets/6f8ac564-21be-4965-847d-4dc83065ac54)
+> Holdings view, sector exposure, performance vs SPY (tracking error + information ratio), cash-flow-aware TWR calculation.
 
-<p align="center">
-▶ [Auth Flow](assets/demos/demo-signup_login_dark_mode_empty_home_screen.mp4) — signup → login → biometric prompt → dark mode toggle → empty home state (no portfolios yet).
-</p>
+[Auth Flow](https://github.com/user-attachments/assets/a0408e1d-283f-44b6-aa12-8e3a1089d18c)
+> Signup → login → biometric prompt → dark mode toggle → empty home state (no portfolios yet).
 
-<p align="center">
-▶ [Home Screens](assets/demos/demo-summary_and_populated_home_screens.mp4) — portfolio summary cards, recent transactions, spending analysis, LSTM forecast chips.
-</p>
+[Home Screens](https://github.com/user-attachments/assets/d2f2d4f8-ae43-4b96-8a96-f5733e443ea1)
+> Portfolio summary cards, recent transactions, spending analysis, LSTM forecast chips.
 
-<p align="center">
-▶ [Auto-lock](assets/demos/demo-auto_lock.mp4) — biometric re-authentication required to resume, session restored seamlessly.
-</p>
+[Auto-lock](https://github.com/user-attachments/assets/35854565-dea4-475b-b098-7d00b2e1d351)
+> Biometric re-authentication required to resume, session restored seamlessly.
 
 ### AI Agent & MLOps
 
-<p align="center">
-▶ [Agent Interaction](assets/demos/demo-agent_screen_features.mp4) — natural-language query → tool calls (16 tools across 7 categories) → SSE streaming response with progressive rendering.
-</p>
+[Agent Interaction](https://github.com/user-attachments/assets/09724723-ff82-45ec-8b6e-3e8ce4541fe4)
+> Natural-language query → tool calls (16 tools across 7 categories) → SSE streaming response with progressive rendering.
 
-<p align="center">
-▶ [Agent Eval in CI](assets/demos/agent_eval_GHactions.mov) — correctness judged by GLM-4.7-Flash, LangSmith tracing at 10% sample rate.
-</p>
+[Agent Eval in CI](https://github.com/user-attachments/assets/14377fe7-f273-4f11-bc10-4ae64f05eb38)
+> Correctness judged by GLM-4.7-Flash, LangSmith tracing at 10% sample rate.
 
-<p align="center">
-▶ [LangSmith UI](assets/demos/langsmith.mp4) — traces, runs, evaluation results, and prompt playground for the LangGraph agent.
-</p>
+[LangSmith UI](https://github.com/user-attachments/assets/6a49b8bf-f3a3-43e9-af9e-7f487298319a)
+> Traces, runs, evaluation results, and prompt playground for the LangGraph agent.
 
 ![Airflow DAG](assets/demos/airflow_dag_weekly_retraining-graph.png)
-_Airflow DAG: weekly retraining (Monday 06:00 UTC) → feature computation (Rust engine) → Optuna HPO (50 trials) → champion/challenger evaluation (DA improvement > 2pp) → Evidently drift detection (PSI/KS/JSD) → EFS + S3 + model_registry promotion._
+> Airflow DAG: weekly retraining (Monday 06:00 UTC) → feature computation (Rust engine) → Optuna HPO (50 trials) → champion/challenger evaluation (DA improvement > 2pp) → Evidently drift detection (PSI/KS/JSD) → EFS + S3 + model_registry promotion.
 
-<p align="center">
-▶ [MLflow Training](assets/demos/mlflow.mov) — experiment tracking with Optuna hyperparameters logged, loss curves, evaluation metrics, model artifacts registered.
-</p>
+[MLflow Training](https://github.com/user-attachments/assets/33ef9b7c-4cc1-475b-9021-1c154db9dde5) 
+> Experiment tracking with Optuna hyperparameters logged, loss curves, evaluation metrics, model artifacts registered.
 
 ### Infrastructure & CI/CD
 
-<p align="center">
-▶ [9 Parallel CI Jobs](assets/demos/ci_GHactions.mov) — 9 parallel jobs (Lint, TypeScript, Frontend Tests, Security Audit, Rust, Backend Tests, Docker, IaC, Secrets) — all must pass.
-</p>
+[9 Parallel CI Jobs](https://github.com/user-attachments/assets/cf65c2e3-581f-417f-9a2e-efe143636f1f)
+> 9 parallel jobs (Lint, TypeScript, Frontend Tests, Security Audit, Rust, Backend Tests, Docker, IaC, Secrets) — all must pass.
 
-<p align="center">
-▶ [7-Stage Deploy](assets/demos/deploy_GHactions.mov) — Build (Rust wheel ARM64, 4 Docker images) → Trivy scan (critical only) → Terraform plan → Manual approval → Terraform apply → ECS rolling update.
-</p>
+[7-Stage Deploy](https://github.com/user-attachments/assets/5a6b9026-dc1b-42ff-b63e-de8451d82023)
+> Build (Rust wheel ARM64, 4 Docker images) → Trivy scan (critical only) → Terraform plan → Manual approval → Terraform apply → ECS rolling update.
 
-<p align="center">
-▶ [AWS Infra Walkthrough](assets/demos/aws_infra.mp4) — VPC (2 AZs, public/private), ECS Fargate ARM64 services, Multi-AZ RDS, ElastiCache Redis, WAF, CloudWatch alarms, EFS mount for champion model.
-</p>
+[AWS Infra Walkthrough](https://github.com/user-attachments/assets/e750980b-d7c9-4a75-bee4-59627b0568e2)
+> VPC (2 AZs, public/private), ECS Fargate ARM64 services, Multi-AZ RDS, ElastiCache Redis, WAF, CloudWatch alarms, EFS mount for champion model.
 
 ### Backend & Frontend Test Results
 
 ![Backend Tests](assets/demos/backend-tests.png)
-_1,415 tests passing, 90% line coverage gate enforced in CI._
+> 1,415 tests passing, 90% line coverage gate enforced in CI.
 
 ![Frontend Tests](assets/demos/frontend-tests.png)
-_822 assertions, coverage gates (branches≥75%, functions≥80%, lines≥90%)._
+> 822 assertions, coverage gates (branches≥75%, functions≥80%, lines≥90%).
 
 ---
 
