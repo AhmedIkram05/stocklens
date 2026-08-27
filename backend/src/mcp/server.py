@@ -30,7 +30,15 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from src.config import settings
 from src.mcp.auth import router as oauth_router
 from src.mcp.auth import verify_mcp_token
-from src.mcp.tools_adapter import get_mcp_tools, get_tool_names, invoke_tool
+from src.mcp.tools_adapter import (
+    get_mcp_prompts,
+    get_mcp_resources,
+    get_mcp_tools,
+    get_prompt,
+    get_tool_names,
+    invoke_tool,
+    read_resource,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -55,9 +63,12 @@ async def mcp_health():
         "status": "ok",
         "service": "stocklens-mcp",
         "transport": "streamable-http",
-        "auth": "oauth2.1-pkce",
+        "auth": "oauth2.1-pkce-rs256",
         "tools": len(get_tool_names()),
         "tool_names": get_tool_names(),
+        "resources": len(get_mcp_resources()),
+        "prompts": len(get_mcp_prompts()),
+        "version": "0.1.0",
     }
 
 
@@ -114,11 +125,15 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
                     "id": msg_id,
                     "result": {
                         "protocolVersion": proto,
-                        "capabilities": {"tools": {"listChanged": False}},
+                        "capabilities": {
+                            "tools": {"listChanged": False},
+                            "resources": {"listChanged": False},
+                            "prompts": {"listChanged": False},
+                        },
                         "serverInfo": {
                             "name": getattr(settings, "MCP_SERVER_NAME", "stocklens"),
                             "version": "0.1.0",
-                            "description": "StockLens portfolio & market intelligence — 16 tools via OAuth 2.1",
+                            "description": "StockLens portfolio & market intelligence — 16 tools, 2 resources, 1 prompt via OAuth 2.1 RS256",
                         },
                     },
                 }
@@ -191,6 +206,55 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
                         },
                     }
                 )
+
+        # ── resources/list ──────────────────────────────────────────────
+        elif method == "resources/list":
+            responses.append(
+                {"jsonrpc": "2.0", "id": msg_id, "result": {"resources": get_mcp_resources()}}
+            )
+        # ── resources/read ──────────────────────────────────────────────
+        elif method == "resources/read":
+            uri = params.get("uri")
+            if not uri:
+                responses.append(_error(-32602, "Missing uri", msg_id))
+                continue
+            try:
+                text = await read_resource(uri, user_id=payload.sub)
+                responses.append(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {"contents": [{"uri": uri, "mimeType": "application/json", "text": text}]},
+                    }
+                )
+            except KeyError as e:
+                responses.append(_error(-32602, str(e), msg_id))
+            except Exception as e:
+                logger.exception("mcp_resource_error", uri=uri)
+                responses.append(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {"contents": [{"uri": uri, "mimeType": "text/plain", "text": json.dumps({"error": str(e)})}]},
+                    }
+                )
+        # ── prompts/list ─────────────────────────────────────────────────
+        elif method == "prompts/list":
+            responses.append(
+                {"jsonrpc": "2.0", "id": msg_id, "result": {"prompts": get_mcp_prompts()}}
+            )
+        # ── prompts/get ──────────────────────────────────────────────────
+        elif method == "prompts/get":
+            name = params.get("name")
+            args = params.get("arguments") or {}
+            if not name:
+                responses.append(_error(-32602, "Missing prompt name", msg_id))
+                continue
+            try:
+                result = await get_prompt(name, args, user_id=payload.sub)
+                responses.append({"jsonrpc": "2.0", "id": msg_id, "result": result})
+            except KeyError as e:
+                responses.append(_error(-32602, str(e), msg_id))
 
         # ── ping ────────────────────────────────────────────────────────
         elif method == "ping":
