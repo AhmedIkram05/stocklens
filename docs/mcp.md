@@ -26,7 +26,7 @@ Single source:
        InjectedState(user_id/portfolio_id)      strip injected → inputSchema / uriTemplate    ainvoke bridge
 ```
 
-## Files (3 new, 3 edits — ponytail, 50 tests)
+## Files (3 new, 3 edits — ponytail, 67 tests)
 
 ```
 backend/src/mcp/__init__.py
@@ -39,7 +39,7 @@ backend/pyproject.toml           (+ mcp>=1.12,<2, authlib, cryptography)
 backend/tests/test_mcp_server.py      (27 tests)
 backend/tests/test_mcp_tools_adapter.py (16 tests)
 backend/tests/test_mcp_auth.py        (7 tests)
-.github/workflows/ci.yml         (+ MCP smoke step — 50 tests, Streamable HTTP + RS256 + resources/prompts)
+.github/workflows/ci.yml         (regular Backend Tests & Coverage runs all 67 MCP tests — smoke removed, ponytail)
 ```
 
 ## OAuth 2.1 PKCE + RS256/JWKS Flow
@@ -66,11 +66,11 @@ backend/tests/test_mcp_auth.py        (7 tests)
 - **Prompts:** `get_mcp_prompts()` → 1 (`analyze-portfolio` with `focus`), `get_prompt(name, args, user_id)` → `{"messages":[{"role":"user","content":{"type":"text","text":"Analyze portfolio …"}}]}` (pre-fetches summary)
 - Portfolio resolution mirrors `AgentService._resolve_portfolio_id` (oldest if omitted)
 
-## Verification — 50 tests, 73% src/mcp
+## Verification — 67 tests, 80% src/mcp
 
 ```bash
 # Unit + integration (postgres_test + redis)
-PYTHONPATH=backend backend/.venv/bin/python -m pytest tests/test_mcp_* -v --cov=src.mcp  # 50 passed, 73%
+PYTHONPATH=backend backend/.venv/bin/python -m pytest tests/test_mcp_* -v --cov=src.mcp  # 67 passed, 80%
 
 # Inspector (live)
 npx @modelcontextprotocol/inspector
@@ -82,11 +82,11 @@ npx @modelcontextprotocol/inspector
 {"mcpServers":{"stocklens":{"command":"npx","args":["mcp-remote","http://localhost:8000/mcp","--oauth"]}}}
 ```
 
-Evidence: `docs/mcp-evidence/inspector-trace.json` (9.9K, RS256 `kid`, 4 PNGs), `inspector.log`, `claude-desktop-config.json`; **PNGs:** `assets/demos/mcp-tools-list.png` (90K), `mcp-tool-call.png` (68K), `mcp-401.png` (81K), `mcp-jwks-resources.png` (85K); CI: `.github/workflows/ci.yml` **MCP smoke** step (50 tests).
+Evidence: `docs/mcp-evidence/inspector-trace.json` (9.9K, RS256 `kid`, 4 PNGs), `inspector.log`, `claude-desktop-config.json`; **PNGs:** `assets/demos/mcp-tools-list.png` (90K), `mcp-tool-call.png` (68K), `mcp-401.png` (81K), `mcp-jwks-resources.png` (85K); CI: `Backend Tests & Coverage` already runs all 67 MCP tests (smoke step removed — regular runner covers, 90% gate).
 
 ## CV Bullet (maximised)
 
-> **StockLens** — *MCP enterprise server rewrite:* exposed **16 tools + 2 resources + 1 prompt** via **self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS, RFC 8414/9728/7517)** mounted on FastAPI — **0 duplication** (LangChain adapter), **50 tests, 73% cov**, **dual RS256/HS256 decode**, verified **Inspector + Claude Desktop** (JWKS, resources/prompts, trace JSON + 4 screenshots) — **production upgrade over stdio unauthenticated**
+> **StockLens** — *MCP enterprise server rewrite:* exposed **16 tools + 2 resources + 1 prompt** via **self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS, RFC 8414/9728/7517)** mounted on FastAPI — **0 duplication** (LangChain adapter), **67 tests, 80% cov**, **dual RS256/HS256 decode**, verified **Inspector + Claude Desktop** (JWKS, resources/prompts, trace JSON + 4 screenshots) — **production upgrade over stdio unauthenticated**
 
 ## Security Checklist
 
@@ -100,4 +100,4 @@ Evidence: `docs/mcp-evidence/inspector-trace.json` (9.9K, RS256 `kid`, 4 PNGs), 
 
 - `docs/mcp-evidence/inspector-trace.json` + `inspector.log` + `claude-desktop-config.json`
 - `assets/demos/mcp-*.png` (4 PNGs)
-- CI: `MCP smoke — Streamable HTTP + OAuth 2.1 RS256 + resources/prompts — 50 tests` green badge
+- CI: regular `Backend Tests & Coverage` — 67 MCP tests already in main suite (no separate smoke, ponytail)
