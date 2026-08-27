@@ -100,6 +100,16 @@ class Settings(BaseSettings):
     LLM_CACHE_TTL: int = 86400  # 24 hours
     ENRICH_STATUS_TTL: int = 3600  # 1 hour
 
+    # MCP — Model Context Protocol (Streamable HTTP + OAuth 2.1 PKCE)
+    # Enterprise upgrade over LAAD's unauthenticated stdio server.
+    # ponytail: HS256 reuses JWT infra; RS256+JWKS is the next rung.
+    MCP_ENABLED: bool = True
+    MCP_SERVER_NAME: str = "stocklens"
+    MCP_RATE_LIMIT: str = "60/minute"
+    OAUTH_ISSUER: str = ""  # empty → derived from request.base_url
+    OAUTH_CODE_TTL_SECONDS: int = Field(default=600, gt=0)
+    OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, gt=0)  # mirrors JWT
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
     @model_validator(mode="after")

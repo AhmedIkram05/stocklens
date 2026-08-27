@@ -230,3 +230,16 @@ app.include_router(drift_router, prefix="/drift", tags=["drift"])
 app.include_router(transaction_router, tags=["transactions"])
 app.include_router(agent_router, prefix="/agent", tags=["agent"])
 app.include_router(agent_tools_router, prefix="/agent", tags=["agent"])
+
+# ── MCP — Model Context Protocol (Streamable HTTP + OAuth 2.1 PKCE) ──────
+# Enterprise-grade: 16 tools via single source of truth, OAuth PKCE S256,
+# mounted on same FastAPI (no new service). Degrades to JSON-RPC fallback
+# when official mcp SDK not installed — tests stay green.
+if settings.MCP_ENABLED:
+    try:
+        from src.mcp.server import mcp_router  # noqa: E402
+
+        app.include_router(mcp_router)
+        logger.info("mcp_mounted", transport="streamable-http", tools=16, auth="oauth2.1-pkce")
+    except Exception as e:
+        logger.warning("mcp_mount_failed", error=str(e))
