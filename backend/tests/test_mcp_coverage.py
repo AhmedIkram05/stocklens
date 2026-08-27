@@ -99,7 +99,9 @@ async def test_oauth_authorize_missing_challenge(client: AsyncClient):
 async def test_oauth_authorize_plain_pkce(client: AsyncClient):
     # Register user first
     email = f"mcp-plain-{secrets.token_hex(4)}@stocklens.dev"
-    await client.post("/auth/register", json={"email": email, "password": "TestPass123!", "full_name": "Plain"})
+    await client.post(
+        "/auth/register", json={"email": email, "password": "TestPass123!", "full_name": "Plain"}
+    )
     verifier = "plain-verifier-123"
     # plain == verifier == challenge
     r = await client.post(
@@ -125,8 +127,9 @@ async def test_oauth_authorize_plain_pkce(client: AsyncClient):
     async def _fake_consume(c):
         return _mem.pop(c, None)
 
-    with patch("src.mcp.auth._store_code", side_effect=_fake_store), patch(
-        "src.mcp.auth._consume_code", side_effect=_fake_consume
+    with (
+        patch("src.mcp.auth._store_code", side_effect=_fake_store),
+        patch("src.mcp.auth._consume_code", side_effect=_fake_consume),
     ):
         # Need to redo authorize with patched store to have code in _mem
         r2 = await client.post(
@@ -165,13 +168,18 @@ async def test_oauth_token_redirect_mismatch(client: AsyncClient):
         return _mem.pop(c, None)
 
     email = f"mcp-mismatch-{secrets.token_hex(4)}@stocklens.dev"
-    await client.post("/auth/register", json={"email": email, "password": "TestPass123!", "full_name": "Mismatch"})
+    await client.post(
+        "/auth/register", json={"email": email, "password": "TestPass123!", "full_name": "Mismatch"}
+    )
 
     verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
-    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+    challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+    )
 
-    with patch("src.mcp.auth._store_code", side_effect=_fake_store), patch(
-        "src.mcp.auth._consume_code", side_effect=_fake_consume
+    with (
+        patch("src.mcp.auth._store_code", side_effect=_fake_store),
+        patch("src.mcp.auth._consume_code", side_effect=_fake_consume),
     ):
         r1 = await client.post(
             "/oauth/authorize",
@@ -216,12 +224,16 @@ async def test_oauth_revoke_no_token(client: AsyncClient):
     assert r2.json()["revoked"] is False
 
     # refresh hint path
-    r3 = await client.post("/oauth/revoke", json={"token": "not.a.jwt", "token_type_hint": "refresh_token"})
+    r3 = await client.post(
+        "/oauth/revoke", json={"token": "not.a.jwt", "token_type_hint": "refresh_token"}
+    )
     assert r3.json()["revoked"] is False
 
 
 @pytest.mark.asyncio
-async def test_verify_mcp_token_user_not_found_or_inactive(client: AsyncClient, auth_headers: dict[str, str]):
+async def test_verify_mcp_token_user_not_found_or_inactive(
+    client: AsyncClient, auth_headers: dict[str, str]
+):
     # Use valid token but mock DB to return None / inactive
     auth_headers["Authorization"].split()[1]
 
@@ -231,7 +243,9 @@ async def test_verify_mcp_token_user_not_found_or_inactive(client: AsyncClient, 
         mock_conn.fetchrow = AsyncMock(return_value=None)
         mock_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
         mock_ctx.return_value.__aexit__ = AsyncMock(return_value=None)
-        r = await client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, headers=auth_headers)
+        r = await client.post(
+            "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, headers=auth_headers
+        )
         # Should be 401 user not found
         assert r.status_code == 401
 
@@ -240,7 +254,9 @@ async def test_verify_mcp_token_user_not_found_or_inactive(client: AsyncClient, 
         mock_conn2.fetchrow = AsyncMock(return_value={"id": "x", "is_active": False})
         mock_ctx2.return_value.__aenter__ = AsyncMock(return_value=mock_conn2)
         mock_ctx2.return_value.__aexit__ = AsyncMock(return_value=None)
-        r2 = await client.post("/mcp", json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, headers=auth_headers)
+        r2 = await client.post(
+            "/mcp", json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, headers=auth_headers
+        )
         assert r2.status_code == 403
 
 
@@ -251,7 +267,12 @@ async def test_mcp_batch_mixed_ok_error(client: AsyncClient, auth_headers: dict[
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
         {"jsonrpc": "2.0", "id": 3, "method": "does/not_exist"},
         {"jsonrpc": "2.0", "method": "notifications/initialized"},  # no response
-        {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "get_market_quote", "arguments": {"ticker": "AAPL"}}},
+        {
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {"name": "get_market_quote", "arguments": {"ticker": "AAPL"}},
+        },
     ]
     with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock) as mock:
         mock.return_value = json.dumps({"price": 1})
@@ -285,7 +306,12 @@ async def test_mcp_tools_call_exception_path(client: AsyncClient, auth_headers: 
         mock.side_effect = KeyError("Unknown tool: nope")
         r = await client.post(
             "/mcp",
-            json={"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "nope", "arguments": {}}},
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "nope", "arguments": {}},
+            },
             headers=auth_headers,
         )
         # Our server maps KeyError to -32602 inside tools/call path, but direct side_effect
@@ -298,8 +324,12 @@ def test_strip_injected_empty_and_no_required():
     from src.mcp.tools_adapter import _strip_injected
 
     assert _strip_injected({}) == {}
-    assert _strip_injected({"properties": {"a": {"type": "string"}}})["properties"] == {"a": {"type": "string"}}
-    out = _strip_injected({"type": "object", "properties": {"ticker": {"type": "string"}}, "required": ["ticker"]})
+    assert _strip_injected({"properties": {"a": {"type": "string"}}})["properties"] == {
+        "a": {"type": "string"}
+    }
+    out = _strip_injected(
+        {"type": "object", "properties": {"ticker": {"type": "string"}}, "required": ["ticker"]}
+    )
     assert out["required"] == ["ticker"]
 
 
@@ -315,7 +345,11 @@ def test_get_mcp_tools_fallback_via_get_input_schema():
     schema_mock = MagicMock()
     schema_mock.model_json_schema.return_value = {
         "type": "object",
-        "properties": {"user_id": {"type": "string"}, "portfolio_id": {"type": "string"}, "ticker": {"type": "string"}},
+        "properties": {
+            "user_id": {"type": "string"},
+            "portfolio_id": {"type": "string"},
+            "ticker": {"type": "string"},
+        },
         "required": ["ticker", "user_id"],
     }
     mock_tool.get_input_schema = MagicMock(return_value=schema_mock)

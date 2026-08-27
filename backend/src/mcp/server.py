@@ -131,9 +131,7 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
                             "prompts": {"listChanged": False},
                         },
                         "serverInfo": {
-                            "name": getattr(
-                                settings, "MCP_SERVER_NAME", "stocklens"
-                            ),
+                            "name": getattr(settings, "MCP_SERVER_NAME", "stocklens"),
                             "version": "0.1.0",
                             "description": (
                                 "StockLens portfolio & market intelligence — "

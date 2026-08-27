@@ -20,7 +20,9 @@ def test_code_challenge_s256_rfc7636():
     verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
     # Correct challenge per RFC
     challenge = _code_challenge_s256(verifier)
-    assert challenge == base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+    assert challenge == base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode()).digest()
+    ).decode().rstrip("=")
 
 
 def test_verify_pkce_s256():

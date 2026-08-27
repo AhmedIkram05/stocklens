@@ -130,8 +130,7 @@ def get_mcp_resources() -> list[dict[str, Any]]:
             "uri": "portfolio://summary",
             "name": "Portfolio Summary",
             "description": (
-                "Portfolio summary (value, cash, cost) — "
-                "resource view of get_portfolio_summary"
+                "Portfolio summary (value, cash, cost) — resource view of get_portfolio_summary"
             ),
             "mimeType": "application/json",
         },

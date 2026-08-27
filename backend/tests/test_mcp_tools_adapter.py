@@ -86,9 +86,16 @@ async def test_invoke_tool_portfolio_injection():
     mock_tool.args_schema = schema_mock
     mock_tool.ainvoke = AsyncMock(return_value=json.dumps({"ok": True}))
 
-    with patch("src.mcp.tools_adapter._load_tools", return_value={"get_portfolio_summary": mock_tool}), patch(
-        "src.mcp.tools_adapter.resolve_portfolio_id", new_callable=AsyncMock, return_value="portfolio-999"
-    ) as mock_resolve:
+    with (
+        patch(
+            "src.mcp.tools_adapter._load_tools", return_value={"get_portfolio_summary": mock_tool}
+        ),
+        patch(
+            "src.mcp.tools_adapter.resolve_portfolio_id",
+            new_callable=AsyncMock,
+            return_value="portfolio-999",
+        ) as mock_resolve,
+    ):
         await invoke_tool("get_portfolio_summary", {}, user_id="u1")
         assert mock_resolve.called
         kwargs = mock_tool.ainvoke.call_args[0][0]
@@ -162,8 +169,10 @@ async def test_resolve_portfolio_explicit():
     pid = await resolve_portfolio_id("user-1", explicit="explicit-pid")
     assert pid == "explicit-pid"
 
+
 def test_get_mcp_resources():
     from src.mcp.tools_adapter import get_mcp_resources
+
     resources = get_mcp_resources()
     assert len(resources) == 2
     uris = {r["uri"] for r in resources}
@@ -176,6 +185,7 @@ async def test_read_resource_holdings():
     from unittest.mock import AsyncMock, patch
 
     from src.mcp.tools_adapter import read_resource
+
     with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock) as mock:
         mock.return_value = '{"holdings": []}'
         text = await read_resource("portfolio://holdings", user_id="u1")
@@ -188,12 +198,14 @@ async def test_read_resource_unknown():
     import pytest
 
     from src.mcp.tools_adapter import read_resource
+
     with pytest.raises(KeyError):
         await read_resource("unknown://x", user_id="u1")
 
 
 def test_get_mcp_prompts():
     from src.mcp.tools_adapter import get_mcp_prompts
+
     prompts = get_mcp_prompts()
     assert len(prompts) == 1
     assert prompts[0]["name"] == "analyze-portfolio"
@@ -205,7 +217,19 @@ async def test_get_prompt():
     from unittest.mock import AsyncMock, patch
 
     from src.mcp.tools_adapter import get_prompt
-    with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock, return_value='{"summary": "ok"}'), patch("src.mcp.tools_adapter.resolve_portfolio_id", new_callable=AsyncMock, return_value="pid-123"):
+
+    with (
+        patch(
+            "src.mcp.tools_adapter.invoke_tool",
+            new_callable=AsyncMock,
+            return_value='{"summary": "ok"}',
+        ),
+        patch(
+            "src.mcp.tools_adapter.resolve_portfolio_id",
+            new_callable=AsyncMock,
+            return_value="pid-123",
+        ),
+    ):
         result = await get_prompt("analyze-portfolio", {"focus": "risk"}, user_id="u1")
         assert "messages" in result
         assert "pid-123" in result["messages"][0]["content"]["text"]
@@ -217,5 +241,6 @@ async def test_get_prompt_unknown():
     import pytest
 
     from src.mcp.tools_adapter import get_prompt
+
     with pytest.raises(KeyError):
         await get_prompt("unknown", {}, user_id="u1")

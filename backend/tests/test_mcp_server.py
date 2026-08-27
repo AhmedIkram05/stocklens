@@ -51,7 +51,9 @@ async def test_well_known_protected_resource(client: AsyncClient):
 
 
 async def test_oauth_register(client: AsyncClient):
-    r = await client.post("/oauth/register", json={"redirect_uris": ["http://localhost:6274/callback"]})
+    r = await client.post(
+        "/oauth/register", json={"redirect_uris": ["http://localhost:6274/callback"]}
+    )
     assert r.status_code == 200
     assert r.json()["client_id"] == "stocklens-mcp-public"
 
@@ -88,7 +90,10 @@ async def test_mcp_initialize_and_tools_list(client: AsyncClient, auth_headers: 
             "jsonrpc": "2.0",
             "id": 1,
             "method": "initialize",
-            "params": {"protocolVersion": "2025-06-18", "clientInfo": {"name": "test", "version": "1.0"}},
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "clientInfo": {"name": "test", "version": "1.0"},
+            },
         },
         headers=auth_headers,
     )
@@ -173,8 +178,9 @@ async def test_oauth_pkce_authorization_code_flow(client: AsyncClient):
     async def _fake_consume(code: str):
         return _mem.pop(code, None)
 
-    with patch("src.mcp.auth._store_code", side_effect=_fake_store), patch(
-        "src.mcp.auth._consume_code", side_effect=_fake_consume
+    with (
+        patch("src.mcp.auth._store_code", side_effect=_fake_store),
+        patch("src.mcp.auth._consume_code", side_effect=_fake_consume),
     ):
         # Register user via auth flow to have credentials
         email = f"mcp-oauth-{secrets.token_hex(4)}@stocklens.dev"
@@ -186,7 +192,11 @@ async def test_oauth_pkce_authorization_code_flow(client: AsyncClient):
 
         # PKCE: generate verifier + challenge S256
         verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
-        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+        challenge = (
+            base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+            .decode()
+            .rstrip("=")
+        )
 
         # 1. Authorize — POST with credentials + PKCE
         r1 = await client.post(
@@ -273,7 +283,9 @@ async def test_mcp_ping(client: AsyncClient, auth_headers: dict[str, str]):
 
 
 @pytest.mark.usefixtures("_seed_categories")
-async def test_mcp_notifications_initialized_no_response(client: AsyncClient, auth_headers: dict[str, str]):
+async def test_mcp_notifications_initialized_no_response(
+    client: AsyncClient, auth_headers: dict[str, str]
+):
     r = await client.post(
         "/mcp",
         json={"jsonrpc": "2.0", "method": "notifications/initialized"},
@@ -398,6 +410,7 @@ async def test_oauth_revoke(client: AsyncClient):
     )
     assert r2.status_code == 401
 
+
 # ── JWKS + Resources/Prompts (enterprise completeness) ────────────────
 
 
@@ -438,7 +451,12 @@ async def test_mcp_resources_read_holdings(client, auth_headers):
         mock.return_value = json.dumps({"holdings": [{"ticker": "AAPL", "shares": 10}]})
         r = await client.post(
             "/mcp",
-            json={"jsonrpc": "2.0", "id": 21, "method": "resources/read", "params": {"uri": "portfolio://holdings"}},
+            json={
+                "jsonrpc": "2.0",
+                "id": 21,
+                "method": "resources/read",
+                "params": {"uri": "portfolio://holdings"},
+            },
             headers=auth_headers,
         )
     assert r.status_code == 200
@@ -451,7 +469,12 @@ async def test_mcp_resources_read_holdings(client, auth_headers):
 async def test_mcp_resources_read_unknown(client, auth_headers):
     r = await client.post(
         "/mcp",
-        json={"jsonrpc": "2.0", "id": 22, "method": "resources/read", "params": {"uri": "unknown://x"}},
+        json={
+            "jsonrpc": "2.0",
+            "id": 22,
+            "method": "resources/read",
+            "params": {"uri": "unknown://x"},
+        },
         headers=auth_headers,
     )
     assert r.status_code == 200
@@ -475,7 +498,12 @@ async def test_mcp_prompts_list(client, auth_headers):
 async def test_mcp_prompts_get(client, auth_headers):
     r = await client.post(
         "/mcp",
-        json={"jsonrpc": "2.0", "id": 31, "method": "prompts/get", "params": {"name": "analyze-portfolio", "arguments": {"focus": "risk"}}},
+        json={
+            "jsonrpc": "2.0",
+            "id": 31,
+            "method": "prompts/get",
+            "params": {"name": "analyze-portfolio", "arguments": {"focus": "risk"}},
+        },
         headers=auth_headers,
     )
     assert r.status_code == 200
