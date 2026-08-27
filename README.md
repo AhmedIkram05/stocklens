@@ -78,7 +78,7 @@ Beneath the mobile app is a production-grade system: a **Rust/PyO3 features engi
 | --------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | **Frontend**          | React Native (TypeScript 5.9, Expo 54, React 19) with dark mode, biometric auth, real-time portfolio | 85 test files, 822 assertions                                     |
 | **Backend API**       | FastAPI (Python 3.13) — asyncpg, SQLAlchemy 2.0, Pydantic v2, structlog, slowapi rate limiting       | 79 test files, 1,452 test functions, 90% cov gate                 |
-| **MCP Server**        | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI       | 16 tools + 2 resources + 1 prompt (single source), 50 tests, RFC 8414/9728/7517 |
+| **MCP Server**        | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI       | 16 tools + 2 resources + 1 prompt (single source), 67 tests, RFC 8414/9728/7517 |
 | **Rust Acceleration** | PyO3/Maturin native extension replacing pandas-based technical indicators                            | 13 source modules, 12 exported functions, zero-cost abstractions  |
 | **ML Model**          | PyTorch Global LSTM with entity embeddings + Optuna HPO (50 trials)                                  | 17 features, 55–475+ tickers, 6yr OHLCV lookback                  |
 | **LLM Agent**         | LangGraph ReAct (2-node `StateGraph`, 16 tools) via AWS Bedrock Converse API                         | SSE streaming, two-tier Redis+RDS persistence                     |
@@ -191,7 +191,7 @@ flowchart TB
 | **Network isolation**     | Three-tier security groups                                                              | Internet → ALB (443) → ECS (8000) → RDS (5432)/Redis (6379). No public database, no direct ECS access.                                                                                                                                                    |
 | **Frontend proxy**        | N/A (Expo/React Native) — API calls direct to ALB via `EXPO_PUBLIC_API_URL`             | Same binary works in dev (localhost) and prod (ALB DNS) — `EXPO_PUBLIC_API_URL` injected at build time.                                                                                                                                                   |
 | **CI/CD auth**            | OIDC federation with AWS — no long-lived credentials                                    | IAM role assumed per-run, scoped to `main` branch only. Zero AWS secrets stored in GitHub.                                                                                                                                                                |
-| **MCP server**          | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE S256) mounted on FastAPI | Single source of truth: 16 tools via adapter, RFC 8414/9728 discovery, `WWW-Authenticate` with `resource_metadata`, 37 MCP tests |
+| **MCP server**          | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI | Single source: 16 tools + 2 resources + 1 prompt, RFC 8414/9728 discovery, `WWW-Authenticate` with `resource_metadata`, 67 tests |
 | **MLOps drift detection** | Evidently AI PSI/KS/JSD on features + predictions                                       | Lightweight, Airflow-native, covers distribution, feature, and model drift in one library. Reports stored to S3, alerts via CloudWatch.                                                                                                                   |
 
 ---
@@ -201,8 +201,8 @@ flowchart TB
 | Category           | Metric                        | Value                                                  |
 | ------------------ | ----------------------------- | ------------------------------------------------------ |
 | **API**            | REST endpoints                | 71 across 15 routers (59 REST + 12 MCP/OAuth/JWKS)     |
-| **Tests**          | Backend test files            | 80 (+4 MCP)                                            |
-|                    | Backend test functions        | 1,465 (+50 MCP)                                        |
+| **Tests**          | Backend test files            | 81 (+5 MCP)                                            |
+|                    | Backend test functions        | 1,482 (+50 MCP)                                        |
 |                    | Frontend test files           | 85                                                     |
 |                    | Frontend assertions           | 822                                                    |
 |                    | Coverage gate (backend)       | 90% line                                               |
@@ -215,7 +215,7 @@ flowchart TB
 |                    | Optuna HPO trials             | 50                                                     |
 |                    | Tickers (dev / full)          | 55 / 475                                               |
 |                    | Agent tools                   | 16 across 7 categories (also exposed via MCP)          |
-|                    | MCP server                    | 16 tools + 2 resources + 1 prompt, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS, 50 tests |
+|                    | MCP server                    | 16 tools + 2 resources + 1 prompt, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS, 67 tests |
 | **CI/CD**          | Parallel CI jobs              | 9                                                      |
 |                    | CD pipeline stages            | 7                                                      |
 |                    | Security scanners             | 6 (Codecov, Checkov, tfsec, Gitleaks, Trivy, hadolint) |
@@ -316,7 +316,7 @@ The React Native app walkthroughs showing receipt-to-trade flow, portfolio track
 
 ![MCP tools/call — get_market_quote](assets/demos/mcp-tool-call.png)
 
-> `tools/call get_market_quote {ticker:"AAPL"}` → `225.84 USD` via `tools_adapter.invoke_tool` → `tool.ainvoke`. Verified in 37 MCP tests.
+> `tools/call get_market_quote {ticker:"AAPL"}` → `225.84 USD` via `tools_adapter.invoke_tool` → `tool.ainvoke`. Verified in 67 MCP tests.
 
 **MCP — OAuth gating (401 with resource_metadata)**
 
@@ -330,7 +330,7 @@ The React Native app walkthroughs showing receipt-to-trade flow, portfolio track
 
 > `GET /.well-known/jwks.json` → `{"kty":"RSA","kid":"stocklens-mcp-1","alg":"RS256"}` (kid rotation ready), `resources/list` → 2 (`portfolio://holdings`, `portfolio://summary`), `prompts/list` → `analyze-portfolio`. Full spec beyond tools — token `alg RS256` with `kid` verified via JWKS, HS256 fallback kept (dual decode).
 
-**Trace & config:** `docs/mcp-evidence/inspector-trace.json`, `docs/mcp-evidence/inspector.log`, `docs/mcp-evidence/claude-desktop-config.json`, `docs/mcp.md`
+**Trace & config:** `docs/mcp-evidence/inspector-trace.json` (9.9K, RS256 `kid`), `docs/mcp-evidence/inspector.log`, `docs/mcp-evidence/claude-desktop-config.json`, `docs/mcp.md`
 
 **Claude Desktop config**
 
@@ -417,7 +417,7 @@ flowchart LR
 **OAuth 2.1 PKCE flow (S256):**
 
 | Step | Endpoint | Params | Storage | Notes |
-|------|----------|--------|---------|-------|
+| ------ | ---------- | -------- | --------- | ------- |
 | 1 | `POST /oauth/authorize` | `email, password, client_id, redirect_uri, code_challenge, state` | `Redis oauth:code:{code}` 600s, single-use | Authenticates via `verify_password` + `users` table |
 | 2 | `POST /oauth/token` `authorization_code` | `code, code_verifier, redirect_uri, client_id` | `SHA256(verifier)==challenge` check, `delete code` | Issues `HS256 JWT` via `create_access_token/create_refresh_token`, persists `refresh_tokens.token_hash`, reused verifier prevents code injection |
 | 3 | `POST /oauth/token` `refresh_token` | `refresh_token` | `is_token_blacklisted` + `revoked` check, blacklist old JTI, revoke-all on stolen token | Mirrors `src/auth/router.py` rotation logic |
@@ -426,7 +426,7 @@ flowchart LR
 **Tool adapter contract:**
 
 | Component | Detail |
-|-----------|--------|
+| ----------- | -------- |
 | Source | `src/agent/tools.py::_AGENT_TOOLS` 16 `StructuredTool` (`InjectedState("user_id"/"portfolio_id")`) |
 | Schema | `tool.args_schema.model_json_schema()` → `_strip_injected()` removes `user_id`/`portfolio_id` from `properties`/`required` |
 | Invoke | `invoke_tool(name, args, user_id, portfolio_id?)` → `resolve_portfolio_id()` (explicit or oldest portfolio) → `tool.ainvoke({…args, user_id, portfolio_id})` → JSON string → MCP `content: [{type:"text", text}]` |
@@ -1268,7 +1268,7 @@ cargo test && cargo clippy -- -D warnings
 # MCP is mounted on the same FastAPI — no separate service
 # 1. Start the stack (includes MCP at /mcp)
 docker compose up -d postgres postgres_test redis  # or: docker compose up -d
-PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_mcp_* -v  # 50 MCP tests
+PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_mcp_* -v  # 67 MCP tests
 
 # 2. Live Inspector (proves Streamable HTTP + OAuth discovery)
 npx @modelcontextprotocol/inspector
@@ -1332,7 +1332,7 @@ StockLens/
 │   │   ├── transactions/             # CRUD + holdings recalc + cash flows
 │   │   ├── config.py                 # Pydantic Settings (env-driven, MCP_ENABLED)
 │   │   └── database/                 # SQLAlchemy 2.0 models, Alembic
-│   └── tests/                        # 80 files, 1,465 functions (+4 MCP, 50 tests)
+│   └── tests/                        # 81 files, 1,482 functions (+5 MCP, 67 tests)
 ├── frontend/
 │   ├── Dockerfile                    # Multi-stage: node:20-alpine → nginx alpine
 │   ├── package.json                  # Expo 54, React Native 0.81, TypeScript 5.9
