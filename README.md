@@ -78,7 +78,7 @@ Beneath the mobile app is a production-grade system: a **Rust/PyO3 features engi
 | --------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | **Frontend**          | React Native (TypeScript 5.9, Expo 54, React 19) with dark mode, biometric auth, real-time portfolio | 85 test files, 822 assertions                                     |
 | **Backend API**       | FastAPI (Python 3.13) — asyncpg, SQLAlchemy 2.0, Pydantic v2, structlog, slowapi rate limiting       | 79 test files, 1,452 test functions, 90% cov gate                 |
-| **MCP Server**        | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE S256) mounted on FastAPI             | 16 tools (single source), 37 MCP tests, RFC 8414/9728 discovery |
+| **MCP Server**        | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI       | 16 tools + 2 resources + 1 prompt (single source), 50 tests, RFC 8414/9728/7517 |
 | **Rust Acceleration** | PyO3/Maturin native extension replacing pandas-based technical indicators                            | 13 source modules, 12 exported functions, zero-cost abstractions  |
 | **ML Model**          | PyTorch Global LSTM with entity embeddings + Optuna HPO (50 trials)                                  | 17 features, 55–475+ tickers, 6yr OHLCV lookback                  |
 | **LLM Agent**         | LangGraph ReAct (2-node `StateGraph`, 16 tools) via AWS Bedrock Converse API                         | SSE streaming, two-tier Redis+RDS persistence                     |
@@ -200,9 +200,9 @@ flowchart TB
 
 | Category           | Metric                        | Value                                                  |
 | ------------------ | ----------------------------- | ------------------------------------------------------ |
-| **API**            | REST endpoints                | 69 across 15 routers (59 REST + 10 MCP/OAuth)          |
-| **Tests**          | Backend test files            | 79 (+3 MCP)                                            |
-|                    | Backend test functions        | 1,452 (+37 MCP)                                        |
+| **API**            | REST endpoints                | 71 across 15 routers (59 REST + 12 MCP/OAuth/JWKS)     |
+| **Tests**          | Backend test files            | 80 (+4 MCP)                                            |
+|                    | Backend test functions        | 1,465 (+50 MCP)                                        |
 |                    | Frontend test files           | 85                                                     |
 |                    | Frontend assertions           | 822                                                    |
 |                    | Coverage gate (backend)       | 90% line                                               |
@@ -215,13 +215,13 @@ flowchart TB
 |                    | Optuna HPO trials             | 50                                                     |
 |                    | Tickers (dev / full)          | 55 / 475                                               |
 |                    | Agent tools                   | 16 across 7 categories (also exposed via MCP)          |
-|                    | MCP server                    | 16 tools, Streamable HTTP, OAuth 2.1 PKCE, 37 tests    |
+|                    | MCP server                    | 16 tools + 2 resources + 1 prompt, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS, 50 tests |
 | **CI/CD**          | Parallel CI jobs              | 9                                                      |
 |                    | CD pipeline stages            | 7                                                      |
 |                    | Security scanners             | 6 (Codecov, Checkov, tfsec, Gitleaks, Trivy, hadolint) |
 | **Documentation**  | Architecture Decision Records | 9                                                      |
 |                    | Deep-dive components          | 7 (+MCP)                                               |
-|                    | Demo assets                   | 18 (6 MOV, 6 MP4, 6 PNG)                               |
+|                    | Demo assets                   | 19 (6 MOV, 6 MP4, 7 PNG)                               |
 | **Runtime**        | Python version                | 3.13                                                   |
 |                    | Rust toolchain                | PyO3 0.29, Maturin 1.14                                |
 |                    | PostgreSQL                    | 18 (Alpine)                                            |
@@ -324,7 +324,13 @@ The React Native app walkthroughs showing receipt-to-trade flow, portfolio track
 
 > Without token: `401 WWW-Authenticate: Bearer … resource_metadata="…/.well-known/oauth-protected-resource"` (RFC 9728). Discovery endpoints `/.well-known/oauth-authorization-server` + `/.well-known/oauth-protected-resource` (RFC 8414) enable Inspector/Claude auto-discovery + PKCE S256.
 
-**Trace & config:** `docs/mcp-evidence/inspector-trace.json`, `docs/mcp-evidence/claude-desktop-config.json`, `docs/mcp.md`
+**MCP — JWKS + Resources + Prompts (RS256)**
+
+![MCP JWKS + Resources + Prompts](assets/demos/mcp-jwks-resources.png)
+
+> `GET /.well-known/jwks.json` → `{"kty":"RSA","kid":"stocklens-mcp-1","alg":"RS256"}` (kid rotation ready), `resources/list` → 2 (`portfolio://holdings`, `portfolio://summary`), `prompts/list` → `analyze-portfolio`. Full spec beyond tools — token `alg RS256` with `kid` verified via JWKS, HS256 fallback kept (dual decode).
+
+**Trace & config:** `docs/mcp-evidence/inspector-trace.json`, `docs/mcp-evidence/inspector.log`, `docs/mcp-evidence/claude-desktop-config.json`, `docs/mcp.md`
 
 **Claude Desktop config**
 
@@ -1262,7 +1268,7 @@ cargo test && cargo clippy -- -D warnings
 # MCP is mounted on the same FastAPI — no separate service
 # 1. Start the stack (includes MCP at /mcp)
 docker compose up -d postgres postgres_test redis  # or: docker compose up -d
-PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_mcp_* -v  # 37 MCP tests
+PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_mcp_* -v  # 50 MCP tests
 
 # 2. Live Inspector (proves Streamable HTTP + OAuth discovery)
 npx @modelcontextprotocol/inspector
@@ -1326,7 +1332,7 @@ StockLens/
 │   │   ├── transactions/             # CRUD + holdings recalc + cash flows
 │   │   ├── config.py                 # Pydantic Settings (env-driven, MCP_ENABLED)
 │   │   └── database/                 # SQLAlchemy 2.0 models, Alembic
-│   └── tests/                        # 79 files, 1,452 functions (+3 MCP, 37 tests)
+│   └── tests/                        # 80 files, 1,465 functions (+4 MCP, 50 tests)
 ├── frontend/
 │   ├── Dockerfile                    # Multi-stage: node:20-alpine → nginx alpine
 │   ├── package.json                  # Expo 54, React Native 0.81, TypeScript 5.9
