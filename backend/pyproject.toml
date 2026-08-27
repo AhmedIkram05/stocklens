@@ -39,6 +39,10 @@ dependencies = [
     "psutil>=6.0.0",
     "psycopg2-binary>=2.9",
     "maturin>=1.14.1",
+    # MCP — Model Context Protocol (official SDK v1) + OAuth PKCE helpers
+    # ponytail: pinned <2 — v2 renames FastMCP→MCPServer; upgrade path in server.py fallback
+    "mcp>=1.12.3,<2",
+    "authlib>=1.3.0",
 ]
 
 [project.optional-dependencies]
