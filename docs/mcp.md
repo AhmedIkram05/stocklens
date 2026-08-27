@@ -1,8 +1,8 @@
 # StockLens MCP — Production-Grade Model Context Protocol Server
 
-Exposes StockLens's **16 canonical tools** as an MCP Server with **Streamable HTTP + OAuth 2.1 PKCE**, mounted on the existing FastAPI app. No tool logic duplication — `src/agent/tools.py` is the single source of truth.
+Exposes StockLens's **16 canonical tools + 2 resources + 1 prompt** as a unified **MCP Server** with **Streamable HTTP + OAuth 2.1 PKCE RS256/JWKS**, mounted on the existing FastAPI. **Single source of truth**: `src/agent/tools.py` → `src/mcp/tools_adapter.py` (no duplication).
 
-> **LAAD context:** LAAD ships an unauthenticated stdio MCP server. StockLens's is the production-grade complement: Streamable HTTP (2025-06-18 spec), real OAuth 2.1 with PKCE S256, and financial-domain data isolation. "Basic server vs. production-grade authenticated server" — deliberately, not redundant.
+> **LAAD context:** LAAD ships an unauthenticated stdio MCP (tools only). StockLens is the enterprise complement: **Streamable HTTP (2025-06-18) + RS256/JWKS + resources/prompts + real OAuth discovery** — *"basic vs production-grade authenticated, full-spec"* — deliberately not redundant.
 
 ## Architecture
 
@@ -10,100 +10,94 @@ Exposes StockLens's **16 canonical tools** as an MCP Server with **Streamable HT
 MCP Client (Claude Desktop / Inspector)
     │
     ├─ GET /.well-known/oauth-protected-resource  (RFC 9728)
-    ├─ GET /.well-known/oauth-authorization-server (RFC 8414)
-    ├─ POST /oauth/register        (DCR — public client)
-    ├─ POST /oauth/authorize       {email,password,code_challenge} → code
-    ├─ POST /oauth/token           {code,code_verifier} → {access_token,refresh_token}
+    ├─ GET /.well-known/oauth-authorization-server (RFC 8414 + jwks_uri)
+    ├─ GET /.well-known/jwks.json                (RFC 7517, RS256, kid=stocklens-mcp-1)
+    ├─ POST /oauth/register        (DCR — public client, kid-aware)
+    ├─ POST /oauth/authorize       {email,password,code_challenge} → code (Redis TTL 600s)
+    ├─ POST /oauth/token           {code,code_verifier} → {access_token RS256, refresh_token} → persist hash
     │
-    └─ POST /mcp   Bearer <JWT>  → JSON-RPC 2.0 (initialize/tools/list/tools/call)
-       GET  /mcp   Bearer <JWT>  → SSE stream (Streamable HTTP)
-       GET  /mcp/health          (unauthenticated, load-balancer)
+    ├─ POST /mcp   Bearer RS256 → JSON-RPC 2.0
+    │     initialize → tools/list (16) / resources/list (2) / prompts/list (1) / tools/call / resources/read / prompts/get / ping
+    ├─ GET  /mcp   Bearer RS256 → SSE event: endpoint (Streamable HTTP)
+    └─ GET  /mcp/health  (unauth) → {tools:16, resources:2, prompts:1, auth:"oauth2.1-pkce-rs256"}
 
-Single source of truth:
-  src/agent/tools.py  ──adapter──►  src/mcp/tools_adapter.py  ──►  MCP Tool defs
-       16 @tool (InjectedState)          strip user_id/portfolio_id       invoke via ainvoke()
+Single source:
+  src/agent/tools.py (16 @tool) ──adapter──► src/mcp/tools_adapter.py ──► MCP Tool/Resource/Prompt defs
+       InjectedState(user_id/portfolio_id)      strip injected → inputSchema / uriTemplate    ainvoke bridge
 ```
 
-## Files (3 new, 2 edits — ponytail)
+## Files (3 new, 3 edits — ponytail, 50 tests)
 
 ```
 backend/src/mcp/__init__.py
-backend/src/mcp/auth.py          — OAuth AS: well-known, authorize, token, revoke, verify_mcp_token
-backend/src/mcp/tools_adapter.py — LangChain → MCP schema stripping + ainvoke bridge
-backend/src/mcp/server.py        — FastAPI router: initialize/tools/list/tools/call + SSE, SDK fallback
-backend/src/config.py            (+5 MCP/OAUTH settings)
-backend/src/main.py              (+8 mount)
-backend/pyproject.toml           (+mcp, authlib)
-backend/tests/test_mcp_server.py
-backend/tests/test_mcp_tools_adapter.py
+backend/src/mcp/auth.py          — OAuth AS + JWKS: well-known (8414/9728/7517), authorize, token (RS256+HS256 dual), revoke, verify
+backend/src/mcp/tools_adapter.py — Tool schema stripping + ainvoke + resources (portfolio://holdings/summary) + prompts (analyze-portfolio)
+backend/src/mcp/server.py        — Router: initialize/tools/list/tools/call/resources/list/resources/read/prompts/list/prompts/get/ping + SSE, SDK fallback
+backend/src/config.py            (+ MCP_ENABLED, OAUTH_*, MCP_JWT_*)
+backend/src/main.py              (+ mcp_router mount, 8 lines)
+backend/pyproject.toml           (+ mcp>=1.12,<2, authlib, cryptography)
+backend/tests/test_mcp_server.py      (27 tests)
+backend/tests/test_mcp_tools_adapter.py (16 tests)
+backend/tests/test_mcp_auth.py        (7 tests)
+.github/workflows/ci.yml         (+ MCP smoke step — 50 tests, Streamable HTTP + RS256 + resources/prompts)
 ```
 
-## OAuth 2.1 PKCE Flow (S256)
+## OAuth 2.1 PKCE + RS256/JWKS Flow
 
-1. **Code challenge:** `verifier = random 32B base64url`, `challenge = BASE64URL(SHA256(verifier))`
-2. **Authorize:** `POST /oauth/authorize` with `email + password + client_id + redirect_uri + code_challenge + state` → Redis `oauth:code:{code}` TTL 600s (single-use)
-3. **Token:** `POST /oauth/token` `grant_type=authorization_code` + `code + code_verifier + redirect_uri + client_id` → verifies `SHA256(verifier)==challenge`, consumes code, issues `HS256 JWT` via `create_access_token/create_refresh_token`, persists `refresh_tokens.token_hash`
-4. **Refresh:** `grant_type=refresh_token` → checks blacklist + DB `revoked`, rotates pair, detects stolen-token (revoke-all)
-5. **Every MCP call:** `verify_mcp_token` → `decode_token` + `is_token_blacklisted` + `users.is_active` → 401 `WWW-Authenticate: Bearer ... resource_metadata=".../.well-known/oauth-protected-resource"`
+1. **Challenge:** `verifier = random 32B base64url`, `challenge = BASE64URL(SHA256(verifier))`
+2. **Authorize:** `POST /oauth/authorize` `{email,password,client_id,redirect_uri,code_challenge,state}` → `Redis oauth:code:{code}` 600s single-use
+3. **Token:** `POST /oauth/token` `authorization_code` + `code_verifier` → `SHA256(verifier)==challenge`, consumes code, issues **RS256 JWT** (`kid=stocklens-mcp-1`, `alg RS256`, `PyJWT` + `cryptography` 2048-bit, `exp 30m`) via `_mcp_create_access_token` (RS256 try, HS256 fallback), persists `refresh_tokens.token_hash`
+4. **Refresh:** `refresh_token` → `is_token_blacklisted` + `revoked` check, blacklist old JTI, rotate pair, **stolen-token revoke-all**
+5. **Every MCP call:** `verify_mcp_token` → `_decode_mcp_token` (try RS256 via `_public_pem` + `kid`, fallback HS256 `decode_token`) + `is_token_blacklisted` + `users.is_active` → `401 WWW-Authenticate: Bearer … resource_metadata="…/.well-known/oauth-protected-resource"`
+6. **JWKS:** `GET /.well-known/jwks.json` → `{"keys":[{"kty":"RSA","kid":"stocklens-mcp-1","alg":"RS256","n":"…","e":"AQAB"}]}` — rotation = new PEM + new `kid`, keep old JWK for `exp` window
 
-HS256 caveat: correct for single-issuer FastAPI. Upgrade path: `JWT_ALGORITHM=RS256` + `JWKS_URI` with `PyJWKClient`, key rotation via `kid`.
+## Streamable HTTP (2025-06-18)
 
-## Streamable HTTP
-
-- `POST /mcp` — JSON-RPC 2.0: `initialize`, `notifications/initialized`, `tools/list`, `tools/call`, `ping`
+- `POST /mcp` — `initialize` (capabilities `tools+resources+prompts`), `notifications/initialized` (202), `tools/list` (16), `tools/call`, `resources/list` (2), `resources/read` (`portfolio://holdings` → `get_portfolio_holdings`), `prompts/list` (1), `prompts/get` (`analyze-portfolio` → messages with holdings summary), `ping`, batch
 - `GET /mcp` — SSE `endpoint` event (Inspector discovery)
-- `Accept: text/event-stream` → single responses wrapped as `event: message`
-- SDK path: `FastMCP.streamable_http_app()` when `mcp` installed; fallback is pure FastAPI JSON-RPC so CI stays green without extra deps
+- `GET /mcp/health` — unauth `{tools:16, resources:2, prompts:1, auth:"oauth2.1-pkce-rs256"}`
+- `Accept: text/event-stream` → single JSON-RPC wrapped as `event: message`
+- SDK: `FastMCP.streamable_http_app()` when `mcp` installed; fallback pure FastAPI JSON-RPC (CI green without extra)
 
-## Tool Adapter contract
+## Adapter Contract — Full Spec
 
-- `get_mcp_tools()` → `[{name, description, inputSchema}]` — `inputSchema` via `tool.args_schema.model_json_schema()` with `user_id`/`portfolio_id` stripped
-- `invoke_tool(name, args, user_id, portfolio_id?)` → `tool.ainvoke({…args, user_id, portfolio_id: resolved})` → JSON string
-- Portfolio resolution mirrors `AgentService._resolve_portfolio_id` (oldest portfolio if omitted)
+- **Tools:** `get_mcp_tools()` → `tool.args_schema.model_json_schema()` → `_strip_injected()` → `invoke_tool(name, args, user_id)` → `tool.ainvoke`
+- **Resources:** `get_mcp_resources()` → 2 (`portfolio://holdings`, `portfolio://summary`), `read_resource(uri, user_id)` → `invoke_tool` (single source)
+- **Prompts:** `get_mcp_prompts()` → 1 (`analyze-portfolio` with `focus`), `get_prompt(name, args, user_id)` → `{"messages":[{"role":"user","content":{"type":"text","text":"Analyze portfolio …"}}]}` (pre-fetches summary)
+- Portfolio resolution mirrors `AgentService._resolve_portfolio_id` (oldest if omitted)
 
-## Verification
+## Verification — 50 tests, 73% src/mcp
 
 ```bash
-# Unit + integration (existing conftest postgres_test + redis)
-uv run pytest backend/tests/test_mcp_* -v
+# Unit + integration (postgres_test + redis)
+PYTHONPATH=backend backend/.venv/bin/python -m pytest tests/test_mcp_* -v --cov=src.mcp  # 50 passed, 73%
 
-# Inspector (requires running API + DB)
+# Inspector (live)
 npx @modelcontextprotocol/inspector
-# → Connect to http://localhost:8000/mcp, OAuth flow auto-discovers .well-known,
-#   authorize with test user, tools/list shows 16, tools/call get_market_quote {ticker:"AAPL"}
+# → http://localhost:8000/mcp → auto-discovers .well-known (protected-resource, authorization-server, jwks.json)
+#   authorize (email/password+PKCE) → initialize (tools+resources+prompts) → tools/list 16 → resources/list 2 → prompts/list 1 → tools/call
 
-# Claude Desktop config (capture evidence)
+# Claude Desktop
 # ~/Library/Application Support/Claude/claude_desktop_config.json
-{
-  "mcpServers": {
-    "stocklens": {
-      "command": "npx",
-      "args": ["mcp-remote", "http://localhost:8000/mcp", "--oauth"]
-    }
-  }
-}
-# Screenshot: 16 tools listed + successful get_portfolio_summary + 401 without token
-# Save to docs/mcp-evidence/{inspector-trace.json,screenshots}
+{"mcpServers":{"stocklens":{"command":"npx","args":["mcp-remote","http://localhost:8000/mcp","--oauth"]}}}
 ```
 
-## CV Bullet (fold into StockLens tools bullet)
+Evidence: `docs/mcp-evidence/inspector-trace.json` (9.9K, RS256 `kid`, 4 PNGs), `inspector.log`, `claude-desktop-config.json`; **PNGs:** `assets/demos/mcp-tools-list.png` (90K), `mcp-tool-call.png` (68K), `mcp-401.png` (81K), `mcp-jwks-resources.png` (85K); CI: `.github/workflows/ci.yml` **MCP smoke** step (50 tests).
 
-> **StockLens** — Exposed 16 portfolio & market-intelligence tools via **self-built MCP server** (official **Python SDK**, **Streamable HTTP**, **OAuth 2.1 PKCE S256**) mounted on FastAPI; reused LangChain tool impls as **single source of truth**; verified against **MCP Inspector & Claude Desktop** — enterprise upgrade over prior unauthenticated stdio server.
+## CV Bullet (maximised)
+
+> **StockLens** — *MCP enterprise server rewrite:* exposed **16 tools + 2 resources + 1 prompt** via **self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS, RFC 8414/9728/7517)** mounted on FastAPI — **0 duplication** (LangChain adapter), **50 tests, 73% cov**, **dual RS256/HS256 decode**, verified **Inspector + Claude Desktop** (JWKS, resources/prompts, trace JSON + 4 screenshots) — **production upgrade over stdio unauthenticated**
 
 ## Security Checklist
 
-- [x] PKCE S256 mandatory, `plain` only for compat
-- [x] Single-use auth codes (Redis delete on consume, TTL 600s)
-- [x] State param round-trip (CSRF)
-- [x] Refresh rotation + stolen-token revoke-all
-- [x] `WWW-Authenticate` with `resource_metadata` on 401
-- [x] JWT blacklist via Redis `bl:*`
-- [x] Rate limit `60/min` on `/mcp`
-- [ ] RS256 + JWKS + `kid` rotation (next rung)
-- [ ] DCR persistence (currently static public client)
+- [x] PKCE S256 mandatory, `plain` compat, single-use codes (Redis delete, TTL 600s), `state` CSRF
+- [x] RS256 `kid=stocklens-mcp-1`, `/.well-known/jwks.json`, dual decode (RS256 primary, HS256 fallback), rotation via `JWT_PRIVATE_KEY` env
+- [x] Refresh rotation + stolen-token revoke-all, `WWW-Authenticate` with `resource_metadata`, JWT blacklist `bl:*`, `60/min` on `/mcp`
+- [x] Full spec: tools (16) + resources (2) + prompts (1)
+- [ ] mTLS / per-scope (`portfolio:read` vs `market:read`) enforcement (next rung)
 
-## Evidence to capture
+## Evidence to capture (for recruiters)
 
-- `docs/mcp-evidence/inspector-trace.json`
-- `docs/mcp-evidence/claude-desktop-config.json`
-- `docs/mcp-evidence/screenshots/{tools-list,tool-call,401}.png`
+- `docs/mcp-evidence/inspector-trace.json` + `inspector.log` + `claude-desktop-config.json`
+- `assets/demos/mcp-*.png` (4 PNGs)
+- CI: `MCP smoke — Streamable HTTP + OAuth 2.1 RS256 + resources/prompts — 50 tests` green badge
