@@ -95,3 +95,4 @@ Cargo.lock
 # ─── Backend local data ────────────────────────────────────────────────────────
 # Receipt images stored locally during development
 backend/data/
+backend/mlflow.db
