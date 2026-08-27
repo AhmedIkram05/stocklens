@@ -161,3 +161,57 @@ async def test_resolve_portfolio_explicit():
     # explicit wins without DB
     pid = await resolve_portfolio_id("user-1", explicit="explicit-pid")
     assert pid == "explicit-pid"
+
+def test_get_mcp_resources():
+    from src.mcp.tools_adapter import get_mcp_resources
+    resources = get_mcp_resources()
+    assert len(resources) == 2
+    uris = {r["uri"] for r in resources}
+    assert "portfolio://holdings" in uris
+    assert all("mimeType" in r for r in resources)
+
+
+@pytest.mark.asyncio
+async def test_read_resource_holdings():
+    from unittest.mock import AsyncMock, patch
+    from src.mcp.tools_adapter import read_resource
+    with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock) as mock:
+        mock.return_value = '{"holdings": []}'
+        text = await read_resource("portfolio://holdings", user_id="u1")
+        assert "holdings" in text
+        mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_read_resource_unknown():
+    from src.mcp.tools_adapter import read_resource
+    import pytest
+    with pytest.raises(KeyError):
+        await read_resource("unknown://x", user_id="u1")
+
+
+def test_get_mcp_prompts():
+    from src.mcp.tools_adapter import get_mcp_prompts
+    prompts = get_mcp_prompts()
+    assert len(prompts) == 1
+    assert prompts[0]["name"] == "analyze-portfolio"
+    assert "arguments" in prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_get_prompt():
+    from unittest.mock import AsyncMock, patch
+    from src.mcp.tools_adapter import get_prompt
+    with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock, return_value='{"summary": "ok"}'), patch("src.mcp.tools_adapter.resolve_portfolio_id", new_callable=AsyncMock, return_value="pid-123"):
+        result = await get_prompt("analyze-portfolio", {"focus": "risk"}, user_id="u1")
+        assert "messages" in result
+        assert "pid-123" in result["messages"][0]["content"]["text"]
+        assert "risk" in result["messages"][0]["content"]["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_get_prompt_unknown():
+    from src.mcp.tools_adapter import get_prompt
+    import pytest
+    with pytest.raises(KeyError):
+        await get_prompt("unknown", {}, user_id="u1")

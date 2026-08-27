@@ -398,3 +398,98 @@ async def test_oauth_revoke(client: AsyncClient):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert r2.status_code == 401
+
+# ── JWKS + Resources/Prompts (enterprise completeness) ────────────────
+
+
+async def test_jwks_endpoint(client):
+    r = await client.get("/.well-known/jwks.json")
+    assert r.status_code == 200
+    data = r.json()
+    assert "keys" in data
+    assert len(data["keys"]) == 1
+    jwk = data["keys"][0]
+    assert jwk["kty"] == "RSA"
+    assert jwk["alg"] == "RS256"
+    assert jwk["kid"] == "stocklens-mcp-1"
+    assert "n" in jwk and "e" in jwk
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_resources_list(client, auth_headers):
+    r = await client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 20, "method": "resources/list"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    resources = r.json()["result"]["resources"]
+    assert len(resources) == 2
+    uris = {res["uri"] for res in resources}
+    assert "portfolio://holdings" in uris
+    assert "portfolio://summary" in uris
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_resources_read_holdings(client, auth_headers):
+    from unittest.mock import AsyncMock, patch
+    import json
+
+    with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock) as mock:
+        mock.return_value = json.dumps({"holdings": [{"ticker": "AAPL", "shares": 10}]})
+        r = await client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "id": 21, "method": "resources/read", "params": {"uri": "portfolio://holdings"}},
+            headers=auth_headers,
+        )
+    assert r.status_code == 200
+    contents = r.json()["result"]["contents"]
+    assert contents[0]["uri"] == "portfolio://holdings"
+    assert "AAPL" in contents[0]["text"]
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_resources_read_unknown(client, auth_headers):
+    r = await client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 22, "method": "resources/read", "params": {"uri": "unknown://x"}},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    assert "error" in r.json()
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_prompts_list(client, auth_headers):
+    r = await client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 30, "method": "prompts/list"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    prompts = r.json()["result"]["prompts"]
+    assert len(prompts) == 1
+    assert prompts[0]["name"] == "analyze-portfolio"
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_prompts_get(client, auth_headers):
+    r = await client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 31, "method": "prompts/get", "params": {"name": "analyze-portfolio", "arguments": {"focus": "risk"}}},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    result = r.json()["result"]
+    assert "messages" in result
+    assert "Analyze portfolio" in result["messages"][0]["content"]["text"]
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_health_includes_resources_prompts_v2(client):
+    r = await client.get("/mcp/health")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["resources"] == 2
+    assert data["prompts"] == 1
+    assert data["auth"] == "oauth2.1-pkce-rs256"
