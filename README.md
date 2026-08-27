@@ -74,18 +74,18 @@ StockLens turns your spending into stock trades. Scan a receipt, the OCR cascade
 
 Beneath the mobile app is a production-grade system: a **Rust/PyO3 features engine** replaces pandas for zero-cost technical indicator computation, a **LangGraph 2-node ReAct agent** with 16 tools communicates via AWS Bedrock Converse, a **confidence-gated OCR cascade** escalates from Tesseract regex to Bedrock Vision LLM only when accuracy demands it, a **self-built MCP server** (official Python SDK, Streamable HTTP, OAuth 2.1 PKCE S256) reuses the 16 canonical tools as a single source of truth and mounts on the same FastAPI, and a weekly **Airflow MLOps pipeline** retrains the LSTM with automated champion/challenger promotion and Evidently drift detection. All deployed via **Terraform on AWS ECS Fargate ARM64/Graviton** with GitHub Actions OIDC CI/CD.
 
-| Layer                 | Implementation                                                                                       | Scale                                                             |
-| --------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| **Frontend**          | React Native (TypeScript 5.9, Expo 54, React 19) with dark mode, biometric auth, real-time portfolio | 85 test files, 822 assertions                                     |
-| **Backend API**       | FastAPI (Python 3.13) — asyncpg, SQLAlchemy 2.0, Pydantic v2, structlog, slowapi rate limiting       | 79 test files, 1,452 test functions, 90% cov gate                 |
-| **MCP Server**        | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI       | 16 tools + 2 resources + 1 prompt (single source), 67 tests, RFC 8414/9728/7517 |
-| **Rust Acceleration** | PyO3/Maturin native extension replacing pandas-based technical indicators                            | 13 source modules, 12 exported functions, zero-cost abstractions  |
-| **ML Model**          | PyTorch Global LSTM with entity embeddings + Optuna HPO (50 trials)                                  | 17 features, 55–475+ tickers, 6yr OHLCV lookback                  |
-| **LLM Agent**         | LangGraph ReAct (2-node `StateGraph`, 16 tools) via AWS Bedrock Converse API                         | SSE streaming, two-tier Redis+RDS persistence                     |
-| **NLP Pipeline**      | OCR cascade: Tesseract regex → heuristic scoring → Bedrock Vision LLM → fallback                     | rapidfuzz merchant matching, discrepancy detection, Redis caching |
-| **MLOps**             | Airflow weekly retraining, Evidently AI drift detection, champion/challenger auto-promotion          | PSI/KS/JSD thresholds, MLflow tracking, S3 delivery               |
-| **Infrastructure**    | Terraform IaC (≥1.9) on AWS ECS Fargate ARM64/Graviton                                               | Multi-AZ RDS, ElastiCache Redis 8.8, WAF, Auto Scaling            |
-| **CI/CD**             | GitHub Actions OIDC — 9 CI jobs + 7-stage deploy pipeline                                            | Codecov, Checkov, tfsec, Gitleaks, Trivy, hadolint                |
+| Layer                 | Implementation                                                                                       | Scale                                                                           |
+| --------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| **Frontend**          | React Native (TypeScript 5.9, Expo 54, React 19) with dark mode, biometric auth, real-time portfolio | 85 test files, 822 assertions                                                   |
+| **Backend API**       | FastAPI (Python 3.13) — asyncpg, SQLAlchemy 2.0, Pydantic v2, structlog, slowapi rate limiting       | 79 test files, 1,452 test functions, 90% cov gate                               |
+| **MCP Server**        | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI      | 16 tools + 2 resources + 1 prompt (single source), 67 tests, RFC 8414/9728/7517 |
+| **Rust Acceleration** | PyO3/Maturin native extension replacing pandas-based technical indicators                            | 13 source modules, 12 exported functions, zero-cost abstractions                |
+| **ML Model**          | PyTorch Global LSTM with entity embeddings + Optuna HPO (50 trials)                                  | 17 features, 55–475+ tickers, 6yr OHLCV lookback                                |
+| **LLM Agent**         | LangGraph ReAct (2-node `StateGraph`, 16 tools) via AWS Bedrock Converse API                         | SSE streaming, two-tier Redis+RDS persistence                                   |
+| **NLP Pipeline**      | OCR cascade: Tesseract regex → heuristic scoring → Bedrock Vision LLM → fallback                     | rapidfuzz merchant matching, discrepancy detection, Redis caching               |
+| **MLOps**             | Airflow weekly retraining, Evidently AI drift detection, champion/challenger auto-promotion          | PSI/KS/JSD thresholds, MLflow tracking, S3 delivery                             |
+| **Infrastructure**    | Terraform IaC (≥1.9) on AWS ECS Fargate ARM64/Graviton                                               | Multi-AZ RDS, ElastiCache Redis 8.8, WAF, Auto Scaling                          |
+| **CI/CD**             | GitHub Actions OIDC — 9 CI jobs + 7-stage deploy pipeline                                            | Codecov, Checkov, tfsec, Gitleaks, Trivy, hadolint                              |
 
 ---
 
@@ -179,53 +179,53 @@ flowchart TB
 
 ## Engineering Highlights
 
-| Area                      | Decision                                                                                | Why                                                                                                                                                                                                                                                       |
-| ------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Container strategy**    | Multi-stage Docker builds for all 4 services (Backend, Airflow, ML Training, SageMaker) | Backend: `python:3.13-slim` build stage with maturin compiles Rust wheel → runtime copies only `.so`. ARM64 cross-build via Buildx. Image ~450MB vs ~1.2GB naive.                                                                                         |
-| **Compose architecture**  | Separated infra (Postgres, Redis) from app (Backend + Agent) via profiles               | Start DB alone for host-based dev (`docker compose -f postgres.yml up`), or full stack with `-f postgres.yml -f app.yml`. Standard Docker composition pattern.                                                                                            |
-| **CI pipeline**           | 9 parallel jobs, path-aware execution                                                   | Lint (ruff + ESLint + prettier), TypeScript, Frontend Tests (Jest), Security Audit, Rust (clippy + cargo test), Backend Tests (pytest + 90% cov), Docker Validation, IaC (Checkov + tfsec), Secrets (Gitleaks). Each job runs only when its paths change. |
-| **CI caching**            | Docker layer caching + pip/npm dependency caching                                       | Docker builds use `type=gha` cache (GitHub Actions cache layer sharing). Python pip and npm `node_modules` cached via `actions/setup-python` / `setup-node`.                                                                                              |
-| **Agent architecture**    | Manual LangGraph `StateGraph` (no `create_react_agent`) with two-tier history           | Explicit control over agentic loop; manual history management enables two-tier Redis (7-day TTL) + PostgreSQL persistence surviving server restarts without context loss.                                                                                 |
-| **ML feature compute**    | Rust/PyO3 native extension replacing pandas                                             | 12 exported functions compute 17 features (14 technical + 3 cross-sectional) at O(n) with zero Python overhead. Called from Airflow DAG and inference endpoint.                                                                                           |
-| **Deployment gating**     | Backend health check → Frontend deploy (via ECS service ordering)                       | Pipeline explicitly waits for ECS rolling update to pass health checks before considering deploy complete. Zero API/UI version mismatch in production.                                                                                                    |
-| **Network isolation**     | Three-tier security groups                                                              | Internet → ALB (443) → ECS (8000) → RDS (5432)/Redis (6379). No public database, no direct ECS access.                                                                                                                                                    |
-| **Frontend proxy**        | N/A (Expo/React Native) — API calls direct to ALB via `EXPO_PUBLIC_API_URL`             | Same binary works in dev (localhost) and prod (ALB DNS) — `EXPO_PUBLIC_API_URL` injected at build time.                                                                                                                                                   |
-| **CI/CD auth**            | OIDC federation with AWS — no long-lived credentials                                    | IAM role assumed per-run, scoped to `main` branch only. Zero AWS secrets stored in GitHub.                                                                                                                                                                |
-| **MCP server**          | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI | Single source: 16 tools + 2 resources + 1 prompt, RFC 8414/9728 discovery, `WWW-Authenticate` with `resource_metadata`, 67 tests |
-| **MLOps drift detection** | Evidently AI PSI/KS/JSD on features + predictions                                       | Lightweight, Airflow-native, covers distribution, feature, and model drift in one library. Reports stored to S3, alerts via CloudWatch.                                                                                                                   |
+| Area                      | Decision                                                                                        | Why                                                                                                                                                                                                                                                       |
+| ------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Container strategy**    | Multi-stage Docker builds for all 4 services (Backend, Airflow, ML Training, SageMaker)         | Backend: `python:3.13-slim` build stage with maturin compiles Rust wheel → runtime copies only `.so`. ARM64 cross-build via Buildx. Image ~450MB vs ~1.2GB naive.                                                                                         |
+| **Compose architecture**  | Separated infra (Postgres, Redis) from app (Backend + Agent) via profiles                       | Start DB alone for host-based dev (`docker compose -f postgres.yml up`), or full stack with `-f postgres.yml -f app.yml`. Standard Docker composition pattern.                                                                                            |
+| **CI pipeline**           | 9 parallel jobs, path-aware execution                                                           | Lint (ruff + ESLint + prettier), TypeScript, Frontend Tests (Jest), Security Audit, Rust (clippy + cargo test), Backend Tests (pytest + 90% cov), Docker Validation, IaC (Checkov + tfsec), Secrets (Gitleaks). Each job runs only when its paths change. |
+| **CI caching**            | Docker layer caching + pip/npm dependency caching                                               | Docker builds use `type=gha` cache (GitHub Actions cache layer sharing). Python pip and npm `node_modules` cached via `actions/setup-python` / `setup-node`.                                                                                              |
+| **Agent architecture**    | Manual LangGraph `StateGraph` (no `create_react_agent`) with two-tier history                   | Explicit control over agentic loop; manual history management enables two-tier Redis (7-day TTL) + PostgreSQL persistence surviving server restarts without context loss.                                                                                 |
+| **ML feature compute**    | Rust/PyO3 native extension replacing pandas                                                     | 12 exported functions compute 17 features (14 technical + 3 cross-sectional) at O(n) with zero Python overhead. Called from Airflow DAG and inference endpoint.                                                                                           |
+| **Deployment gating**     | Backend health check → Frontend deploy (via ECS service ordering)                               | Pipeline explicitly waits for ECS rolling update to pass health checks before considering deploy complete. Zero API/UI version mismatch in production.                                                                                                    |
+| **Network isolation**     | Three-tier security groups                                                                      | Internet → ALB (443) → ECS (8000) → RDS (5432)/Redis (6379). No public database, no direct ECS access.                                                                                                                                                    |
+| **Frontend proxy**        | N/A (Expo/React Native) — API calls direct to ALB via `EXPO_PUBLIC_API_URL`                     | Same binary works in dev (localhost) and prod (ALB DNS) — `EXPO_PUBLIC_API_URL` injected at build time.                                                                                                                                                   |
+| **CI/CD auth**            | OIDC federation with AWS — no long-lived credentials                                            | IAM role assumed per-run, scoped to `main` branch only. Zero AWS secrets stored in GitHub.                                                                                                                                                                |
+| **MCP server**            | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI | Single source: 16 tools + 2 resources + 1 prompt, RFC 8414/9728 discovery, `WWW-Authenticate` with `resource_metadata`, 67 tests                                                                                                                          |
+| **MLOps drift detection** | Evidently AI PSI/KS/JSD on features + predictions                                               | Lightweight, Airflow-native, covers distribution, feature, and model drift in one library. Reports stored to S3, alerts via CloudWatch.                                                                                                                   |
 
 ---
 
 ## Key Metrics at a Glance
 
-| Category           | Metric                        | Value                                                  |
-| ------------------ | ----------------------------- | ------------------------------------------------------ |
-| **API**            | REST endpoints                | 71 across 15 routers (59 REST + 12 MCP/OAuth/JWKS)     |
-| **Tests**          | Backend test files            | 81 (+5 MCP)                                            |
-|                    | Backend test functions        | 1,482 (+50 MCP)                                        |
-|                    | Frontend test files           | 85                                                     |
-|                    | Frontend assertions           | 822                                                    |
-|                    | Coverage gate (backend)       | 90% line                                               |
-|                    | Coverage gate (frontend)      | branches≥75%, func≥80%, lines≥90%                      |
-| **Infrastructure** | Terraform modules             | 14                                                     |
-|                    | Terraform resources           | 193                                                    |
-|                    | Docker services (dev)         | 7 core (+ test profiles)                               |
-| **MLOps**          | LSTM features                 | 17 (14 technical + 3 cross-sectional)                  |
-|                    | LSTM architecture             | 2 layers, hidden=80, dropout=0.535                     |
-|                    | Optuna HPO trials             | 50                                                     |
-|                    | Tickers (dev / full)          | 55 / 475                                               |
-|                    | Agent tools                   | 16 across 7 categories (also exposed via MCP)          |
+| Category           | Metric                        | Value                                                                                   |
+| ------------------ | ----------------------------- | --------------------------------------------------------------------------------------- |
+| **API**            | REST endpoints                | 71 across 15 routers (59 REST + 12 MCP/OAuth/JWKS)                                      |
+| **Tests**          | Backend test files            | 81 (+5 MCP)                                                                             |
+|                    | Backend test functions        | 1,482 (+50 MCP)                                                                         |
+|                    | Frontend test files           | 85                                                                                      |
+|                    | Frontend assertions           | 822                                                                                     |
+|                    | Coverage gate (backend)       | 90% line                                                                                |
+|                    | Coverage gate (frontend)      | branches≥75%, func≥80%, lines≥90%                                                       |
+| **Infrastructure** | Terraform modules             | 14                                                                                      |
+|                    | Terraform resources           | 193                                                                                     |
+|                    | Docker services (dev)         | 7 core (+ test profiles)                                                                |
+| **MLOps**          | LSTM features                 | 17 (14 technical + 3 cross-sectional)                                                   |
+|                    | LSTM architecture             | 2 layers, hidden=80, dropout=0.535                                                      |
+|                    | Optuna HPO trials             | 50                                                                                      |
+|                    | Tickers (dev / full)          | 55 / 475                                                                                |
+|                    | Agent tools                   | 16 across 7 categories (also exposed via MCP)                                           |
 |                    | MCP server                    | 16 tools + 2 resources + 1 prompt, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS, 67 tests |
-| **CI/CD**          | Parallel CI jobs              | 9                                                      |
-|                    | CD pipeline stages            | 7                                                      |
-|                    | Security scanners             | 6 (Codecov, Checkov, tfsec, Gitleaks, Trivy, hadolint) |
-| **Documentation**  | Architecture Decision Records | 9                                                      |
-|                    | Deep-dive components          | 7 (+MCP)                                               |
-|                    | Demo assets                   | 19 (6 MOV, 6 MP4, 7 PNG)                               |
-| **Runtime**        | Python version                | 3.13                                                   |
-|                    | Rust toolchain                | PyO3 0.29, Maturin 1.14                                |
-|                    | PostgreSQL                    | 18 (Alpine)                                            |
-|                    | Redis                         | 8.8 (Alpine)                                           |
+| **CI/CD**          | Parallel CI jobs              | 9                                                                                       |
+|                    | CD pipeline stages            | 7                                                                                       |
+|                    | Security scanners             | 6 (Codecov, Checkov, tfsec, Gitleaks, Trivy, hadolint)                                  |
+| **Documentation**  | Architecture Decision Records | 9                                                                                       |
+|                    | Deep-dive components          | 7 (+MCP)                                                                                |
+|                    | Demo assets                   | 19 (6 MOV, 6 MP4, 7 PNG)                                                                |
+| **Runtime**        | Python version                | 3.13                                                                                    |
+|                    | Rust toolchain                | PyO3 0.29, Maturin 1.14                                                                 |
+|                    | PostgreSQL                    | 18 (Alpine)                                                                             |
+|                    | Redis                         | 8.8 (Alpine)                                                                            |
 
 ---
 
@@ -335,7 +335,14 @@ The React Native app walkthroughs showing receipt-to-trade flow, portfolio track
 **Claude Desktop config**
 
 ```json
-{"mcpServers":{"stocklens":{"command":"npx","args":["mcp-remote","http://localhost:8000/mcp","--oauth"]}}}
+{
+  "mcpServers": {
+    "stocklens": {
+      "command": "npx",
+      "args": ["mcp-remote", "http://localhost:8000/mcp", "--oauth"]
+    }
+  }
+}
 ```
 
 ### Backend & Frontend Test Results
@@ -360,7 +367,7 @@ The React Native app walkthroughs showing receipt-to-trade flow, portfolio track
 
 A **self-built MCP server** exposing StockLens's **16 canonical tools** via the **official Python SDK (`mcp>=1.12`**, Streamable HTTP, **OAuth 2.1 PKCE S256**), **mounted on the existing FastAPI** — no separate service, no tool duplication. Single source of truth: `src/agent/tools.py` → `src/mcp/tools_adapter.py` → MCP `Tool` definitions (injected `user_id`/`portfolio_id` stripped from `inputSchema`, injected server-side from verified JWT).
 
-> **Enterprise differentiator vs. LAAD's unauthenticated stdio server:** This is *production-grade authenticated* — RFC 8414 Authorization Server Metadata, RFC 9728 Protected Resource Metadata, `WWW-Authenticate` with `resource_metadata`, PKCE S256, refresh rotation with stolen-token detection — the ecosystem is moving to enterprise-readiness fast.
+> **Enterprise differentiator vs. LAAD's unauthenticated stdio server:** This is _production-grade authenticated_ — RFC 8414 Authorization Server Metadata, RFC 9728 Protected Resource Metadata, `WWW-Authenticate` with `resource_metadata`, PKCE S256, refresh rotation with stolen-token detection — the ecosystem is moving to enterprise-readiness fast.
 
 **MCP transport & auth architecture:**
 
@@ -416,22 +423,22 @@ flowchart LR
 
 **OAuth 2.1 PKCE flow (S256):**
 
-| Step | Endpoint | Params | Storage | Notes |
-| ------ | ---------- | -------- | --------- | ------- |
-| 1 | `POST /oauth/authorize` | `email, password, client_id, redirect_uri, code_challenge, state` | `Redis oauth:code:{code}` 600s, single-use | Authenticates via `verify_password` + `users` table |
-| 2 | `POST /oauth/token` `authorization_code` | `code, code_verifier, redirect_uri, client_id` | `SHA256(verifier)==challenge` check, `delete code` | Issues `HS256 JWT` via `create_access_token/create_refresh_token`, persists `refresh_tokens.token_hash`, reused verifier prevents code injection |
-| 3 | `POST /oauth/token` `refresh_token` | `refresh_token` | `is_token_blacklisted` + `revoked` check, blacklist old JTI, revoke-all on stolen token | Mirrors `src/auth/router.py` rotation logic |
-| 4 | Every `POST /mcp` | `Authorization: Bearer <JWT>` | `verify_mcp_token`: `decode_token` + `is_token_blacklisted` + `users.is_active`, `401 WWW-Authenticate: Bearer … resource_metadata="…/.well-known/oauth-protected-resource"` | Per MCP Authorization spec 2025-06-18 |
+| Step | Endpoint                                 | Params                                                            | Storage                                                                                                                                                                      | Notes                                                                                                                                            |
+| ---- | ---------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1    | `POST /oauth/authorize`                  | `email, password, client_id, redirect_uri, code_challenge, state` | `Redis oauth:code:{code}` 600s, single-use                                                                                                                                   | Authenticates via `verify_password` + `users` table                                                                                              |
+| 2    | `POST /oauth/token` `authorization_code` | `code, code_verifier, redirect_uri, client_id`                    | `SHA256(verifier)==challenge` check, `delete code`                                                                                                                           | Issues `HS256 JWT` via `create_access_token/create_refresh_token`, persists `refresh_tokens.token_hash`, reused verifier prevents code injection |
+| 3    | `POST /oauth/token` `refresh_token`      | `refresh_token`                                                   | `is_token_blacklisted` + `revoked` check, blacklist old JTI, revoke-all on stolen token                                                                                      | Mirrors `src/auth/router.py` rotation logic                                                                                                      |
+| 4    | Every `POST /mcp`                        | `Authorization: Bearer <JWT>`                                     | `verify_mcp_token`: `decode_token` + `is_token_blacklisted` + `users.is_active`, `401 WWW-Authenticate: Bearer … resource_metadata="…/.well-known/oauth-protected-resource"` | Per MCP Authorization spec 2025-06-18                                                                                                            |
 
 **Tool adapter contract:**
 
-| Component | Detail |
-| ----------- | -------- |
-| Source | `src/agent/tools.py::_AGENT_TOOLS` 16 `StructuredTool` (`InjectedState("user_id"/"portfolio_id")`) |
-| Schema | `tool.args_schema.model_json_schema()` → `_strip_injected()` removes `user_id`/`portfolio_id` from `properties`/`required` |
-| Invoke | `invoke_tool(name, args, user_id, portfolio_id?)` → `resolve_portfolio_id()` (explicit or oldest portfolio) → `tool.ainvoke({…args, user_id, portfolio_id})` → JSON string → MCP `content: [{type:"text", text}]` |
-| Mount | `src/mcp/server.py:mcp_router` (`/.well-known/*`, `/oauth/*`, `/mcp`) included in `src/main.py` when `MCP_ENABLED` |
-| Fallback | `create_mcp_app()` tries `mcp.server.fastmcp.FastMCP` SDK, degrades to FastAPI JSON-RPC so CI stays green without `mcp` extra |
+| Component | Detail                                                                                                                                                                                                            |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Source    | `src/agent/tools.py::_AGENT_TOOLS` 16 `StructuredTool` (`InjectedState("user_id"/"portfolio_id")`)                                                                                                                |
+| Schema    | `tool.args_schema.model_json_schema()` → `_strip_injected()` removes `user_id`/`portfolio_id` from `properties`/`required`                                                                                        |
+| Invoke    | `invoke_tool(name, args, user_id, portfolio_id?)` → `resolve_portfolio_id()` (explicit or oldest portfolio) → `tool.ainvoke({…args, user_id, portfolio_id})` → JSON string → MCP `content: [{type:"text", text}]` |
+| Mount     | `src/mcp/server.py:mcp_router` (`/.well-known/*`, `/oauth/*`, `/mcp`) included in `src/main.py` when `MCP_ENABLED`                                                                                                |
+| Fallback  | `create_mcp_app()` tries `mcp.server.fastmcp.FastMCP` SDK, degrades to FastAPI JSON-RPC so CI stays green without `mcp` extra                                                                                     |
 
 **Verification (37 tests, 100% MCP server pass):**
 
@@ -1184,19 +1191,19 @@ flowchart LR
 
 ## Security Model
 
-| Layer              | Mechanism                                                                                        | Details                                                                                                                              |
-| ------------------ | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Authentication** | JWT access + refresh tokens, bcrypt (12 rounds); **MCP OAuth 2.1 PKCE S256** (RFC 8414/9728)       | Access TTL: 30 min (MCP) / 15 min (REST); Refresh TTL: 7 days; rotation on refresh; `slowapi` rate limiting (login: 20/min, MCP: 60/min); PKCE challenge `BASE64URL(SHA256(verifier))` |
+| Layer              | Mechanism                                                                                        | Details                                                                                                                                                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Authentication** | JWT access + refresh tokens, bcrypt (12 rounds); **MCP OAuth 2.1 PKCE S256** (RFC 8414/9728)     | Access TTL: 30 min (MCP) / 15 min (REST); Refresh TTL: 7 days; rotation on refresh; `slowapi` rate limiting (login: 20/min, MCP: 60/min); PKCE challenge `BASE64URL(SHA256(verifier))`                                                       |
 | **Authorization**  | Role-based (user/admin via JWT `role` claim) + **MCP `verify_mcp_token`** per-call               | Admin-only endpoints guarded by `require_admin` dependency; ownership checks on portfolio/transaction resources; MCP tools enforce `user_id` isolation + `portfolio_id` scoping per call, `WWW-Authenticate` with `resource_metadata` on 401 |
-| **Secrets**        | AWS Secrets Manager + GitHub Actions OIDC                                                        | DB password, JWT secret, Redis auth, LangSmith key — injected at container start; zero static secrets in repo                        |
-| **Network**        | Three-tier VPC: Public (ALB/WAF) → Private (ECS Fargate) → Data (RDS/ElastiCache)                | Security groups: ALB→ECS (8000), ECS→RDS (5432), ECS→Redis (6379), ECS→Bedrock (443 egress); no direct internet from private subnets |
-| **Transport**      | TLS 1.2+ everywhere                                                                              | ALB terminates HTTPS (ACM cert); RDS/ElastiCache enforce TLS; internal ECS-to-ECS via service discovery (no mTLS yet)                |
-| **WAF**            | AWS WAF on ALB                                                                                   | Rate-based rules (2000 req/5min), OWASP Core Rule Set (SQLi, XSS), IP blocklist                                                      |
-| **Container**      | Non-root user, read-only rootfs, distroless-like base                                            | Backend: `python:3.13-slim` → non-root `appuser`; Frontend: nginx alpine; ARM64 Graviton                                             |
-| **Supply Chain**   | `pip-audit` + `npm audit` + `cargo audit` in CI; Trivy critical-only scan; Gitleaks full-history | SBOM via `syft` on release; `pip-tools` lockfile; `uv` for reproducible Python deps                                                  |
-| **Data**           | Encryption at rest + in transit                                                                  | RDS: AES-256; ElastiCache: AES-256 + TLS; S3: SSE-S3; EFS: AES-256; EBS: AES-256                                                     |
-| **Audit**          | CloudTrail data events + application structured logging (structlog)                              | All admin actions, auth events, and agent tool calls logged with request ID; CloudWatch log groups per service                       |
-| **CI/CD**          | OIDC federation (no static AWS keys); Checkov + tfsec IaC scan; CodeQL weekly                    | PRs blocked on any high/critical finding; terraform plan posted as PR comment                                                        |
+| **Secrets**        | AWS Secrets Manager + GitHub Actions OIDC                                                        | DB password, JWT secret, Redis auth, LangSmith key — injected at container start; zero static secrets in repo                                                                                                                                |
+| **Network**        | Three-tier VPC: Public (ALB/WAF) → Private (ECS Fargate) → Data (RDS/ElastiCache)                | Security groups: ALB→ECS (8000), ECS→RDS (5432), ECS→Redis (6379), ECS→Bedrock (443 egress); no direct internet from private subnets                                                                                                         |
+| **Transport**      | TLS 1.2+ everywhere                                                                              | ALB terminates HTTPS (ACM cert); RDS/ElastiCache enforce TLS; internal ECS-to-ECS via service discovery (no mTLS yet)                                                                                                                        |
+| **WAF**            | AWS WAF on ALB                                                                                   | Rate-based rules (2000 req/5min), OWASP Core Rule Set (SQLi, XSS), IP blocklist                                                                                                                                                              |
+| **Container**      | Non-root user, read-only rootfs, distroless-like base                                            | Backend: `python:3.13-slim` → non-root `appuser`; Frontend: nginx alpine; ARM64 Graviton                                                                                                                                                     |
+| **Supply Chain**   | `pip-audit` + `npm audit` + `cargo audit` in CI; Trivy critical-only scan; Gitleaks full-history | SBOM via `syft` on release; `pip-tools` lockfile; `uv` for reproducible Python deps                                                                                                                                                          |
+| **Data**           | Encryption at rest + in transit                                                                  | RDS: AES-256; ElastiCache: AES-256 + TLS; S3: SSE-S3; EFS: AES-256; EBS: AES-256                                                                                                                                                             |
+| **Audit**          | CloudTrail data events + application structured logging (structlog)                              | All admin actions, auth events, and agent tool calls logged with request ID; CloudWatch log groups per service                                                                                                                               |
+| **CI/CD**          | OIDC federation (no static AWS keys); Checkov + tfsec IaC scan; CodeQL weekly                    | PRs blocked on any high/critical finding; terraform plan posted as PR comment                                                                                                                                                                |
 
 ---
 
@@ -1378,15 +1385,15 @@ StockLens/
 
 ## Documentation
 
-| Doc                                              | What it covers                                                      |
-| ------------------------------------------------ | ------------------------------------------------------------------- |
-| [ADR Index](docs/adr/README.md)                  | All 9 Architecture Decision Records with trade-offs and rationale   |
+| Doc                                              | What it covers                                                                                            |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| [ADR Index](docs/adr/README.md)                  | All 9 Architecture Decision Records with trade-offs and rationale                                         |
 | [MCP Guide](docs/mcp.md)                         | Self-built MCP server: Streamable HTTP, OAuth 2.1 PKCE, 16 tools, Inspector & Claude Desktop verification |
-| [MCP Evidence](docs/mcp-evidence/)               | Inspector trace JSON + screenshots (tools/list, tool/call, 401)     |
-| [Deployment Guide](docs/deployment.md)           | Production deployment: secrets bootstrap, domain setup, monitoring  |
-| [API Reference](docs/api-reference.md)           | Complete `/api/v1/*` routes, request/response schemas, auth methods |
-| [Configuration Reference](docs/configuration.md) | All environment variables with descriptions and defaults            |
-| [ML Model Card](docs/model-card.md)              | LSTM model details, training data, performance, limitations         |
+| [MCP Evidence](docs/mcp-evidence/)               | Inspector trace JSON + screenshots (tools/list, tool/call, 401)                                           |
+| [Deployment Guide](docs/deployment.md)           | Production deployment: secrets bootstrap, domain setup, monitoring                                        |
+| [API Reference](docs/api-reference.md)           | Complete `/api/v1/*` routes, request/response schemas, auth methods                                       |
+| [Configuration Reference](docs/configuration.md) | All environment variables with descriptions and defaults                                                  |
+| [ML Model Card](docs/model-card.md)              | LSTM model details, training data, performance, limitations                                               |
 
 ---
 

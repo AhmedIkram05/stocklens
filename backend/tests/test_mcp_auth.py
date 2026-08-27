@@ -37,12 +37,10 @@ def test_verify_pkce_plain():
 
 @pytest.mark.asyncio
 async def test_oauth_issuer_derived_from_request():
-    from fastapi import Request
 
     from src.mcp.auth import _issuer
 
     # Mock request
-    scope = {"type": "http", "headers": [], "scheme": "http", "server": ("testserver", 8000)}
     # easier: use httpx client to get real request via endpoint
     # Instead directly test function with mock
     mock_req = type("R", (), {"base_url": "http://localhost:8000/"})()
@@ -62,7 +60,6 @@ def test_oauth_protected_resource_url():
 @pytest.mark.asyncio
 async def test_store_and_consume_code_in_memory():
     # Test the real helpers with mocked redis
-    import json
 
     store: dict[str, str] = {}
 

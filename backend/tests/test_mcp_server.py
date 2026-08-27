@@ -18,7 +18,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import AsyncClient
 
-
 # ── Health (unauthenticated) ───────────────────────────────────────────
 
 
@@ -432,8 +431,8 @@ async def test_mcp_resources_list(client, auth_headers):
 
 @pytest.mark.usefixtures("_seed_categories")
 async def test_mcp_resources_read_holdings(client, auth_headers):
-    from unittest.mock import AsyncMock, patch
     import json
+    from unittest.mock import AsyncMock, patch
 
     with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock) as mock:
         mock.return_value = json.dumps({"holdings": [{"ticker": "AAPL", "shares": 10}]})

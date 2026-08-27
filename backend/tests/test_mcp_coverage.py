@@ -14,10 +14,9 @@ import json
 import secrets
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import jwt as pyjwt
 import pytest
 from httpx import AsyncClient
-import jwt as pyjwt
-
 
 # ── auth.py: RSA/JWKS & token helpers ──────────────────────────────────
 
@@ -37,7 +36,7 @@ def test_get_rsa_keypair_ephemeral_and_cached():
 
 
 def test_try_rs256_encode_and_jwks():
-    from src.mcp.auth import _try_rs256_encode, _jwks, _public_jwk, _private_pem, _public_pem
+    from src.mcp.auth import _jwks, _private_pem, _public_jwk, _public_pem, _try_rs256_encode
 
     # Should succeed with ephemeral key
     tok = _try_rs256_encode({"sub": "u1", "exp": 9999999999})
@@ -57,7 +56,7 @@ def test_try_rs256_encode_and_jwks():
 
 
 def test_mcp_create_access_token_rs256_header():
-    from src.mcp.auth import _mcp_create_access_token, _decode_mcp_token
+    from src.mcp.auth import _decode_mcp_token, _mcp_create_access_token
 
     tok, jti, exp = _mcp_create_access_token("user-123")
     hdr = pyjwt.get_unverified_header(tok)
@@ -116,7 +115,7 @@ async def test_oauth_authorize_plain_pkce(client: AsyncClient):
         },
     )
     assert r.status_code == 200
-    code = r.json()["code"]
+    r.json()["code"]
     # Token with plain verifier should succeed when patched to avoid redis loop
     _mem: dict[str, dict] = {}
 
@@ -224,7 +223,7 @@ async def test_oauth_revoke_no_token(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_verify_mcp_token_user_not_found_or_inactive(client: AsyncClient, auth_headers: dict[str, str]):
     # Use valid token but mock DB to return None / inactive
-    tok = auth_headers["Authorization"].split()[1]
+    auth_headers["Authorization"].split()[1]
 
     with patch("src.mcp.auth.connection_ctx") as mock_ctx:
         # Not found
@@ -305,7 +304,7 @@ def test_strip_injected_empty_and_no_required():
 
 
 def test_get_mcp_tools_fallback_via_get_input_schema():
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import patch
 
     mock_tool = MagicMock()
     mock_tool.name = "fallback_tool"
@@ -333,6 +332,7 @@ def test_get_mcp_tools_fallback_via_get_input_schema():
 @pytest.mark.asyncio
 async def test_resolve_portfolio_db_error():
     from unittest.mock import patch
+
     from src.mcp.tools_adapter import resolve_portfolio_id
 
     with patch("src.database.connection.connection_ctx", side_effect=Exception("db down")):
@@ -342,7 +342,8 @@ async def test_resolve_portfolio_db_error():
 
 @pytest.mark.asyncio
 async def test_invoke_tool_non_string_result():
-    from unittest.mock import AsyncMock, MagicMock, patch
+    from unittest.mock import AsyncMock, patch
+
     from src.mcp.tools_adapter import invoke_tool
 
     mock_tool = MagicMock()

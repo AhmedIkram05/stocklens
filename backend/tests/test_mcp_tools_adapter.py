@@ -89,7 +89,7 @@ async def test_invoke_tool_portfolio_injection():
     with patch("src.mcp.tools_adapter._load_tools", return_value={"get_portfolio_summary": mock_tool}), patch(
         "src.mcp.tools_adapter.resolve_portfolio_id", new_callable=AsyncMock, return_value="portfolio-999"
     ) as mock_resolve:
-        result = await invoke_tool("get_portfolio_summary", {}, user_id="u1")
+        await invoke_tool("get_portfolio_summary", {}, user_id="u1")
         assert mock_resolve.called
         kwargs = mock_tool.ainvoke.call_args[0][0]
         assert kwargs["portfolio_id"] == "portfolio-999"
@@ -174,6 +174,7 @@ def test_get_mcp_resources():
 @pytest.mark.asyncio
 async def test_read_resource_holdings():
     from unittest.mock import AsyncMock, patch
+
     from src.mcp.tools_adapter import read_resource
     with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock) as mock:
         mock.return_value = '{"holdings": []}'
@@ -184,8 +185,9 @@ async def test_read_resource_holdings():
 
 @pytest.mark.asyncio
 async def test_read_resource_unknown():
-    from src.mcp.tools_adapter import read_resource
     import pytest
+
+    from src.mcp.tools_adapter import read_resource
     with pytest.raises(KeyError):
         await read_resource("unknown://x", user_id="u1")
 
@@ -201,6 +203,7 @@ def test_get_mcp_prompts():
 @pytest.mark.asyncio
 async def test_get_prompt():
     from unittest.mock import AsyncMock, patch
+
     from src.mcp.tools_adapter import get_prompt
     with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock, return_value='{"summary": "ok"}'), patch("src.mcp.tools_adapter.resolve_portfolio_id", new_callable=AsyncMock, return_value="pid-123"):
         result = await get_prompt("analyze-portfolio", {"focus": "risk"}, user_id="u1")
@@ -211,7 +214,8 @@ async def test_get_prompt():
 
 @pytest.mark.asyncio
 async def test_get_prompt_unknown():
-    from src.mcp.tools_adapter import get_prompt
     import pytest
+
+    from src.mcp.tools_adapter import get_prompt
     with pytest.raises(KeyError):
         await get_prompt("unknown", {}, user_id="u1")
