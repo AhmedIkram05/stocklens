@@ -105,6 +105,87 @@ def get_tool_names() -> list[str]:
     return sorted(_load_tools().keys())
 
 
+# ── MCP Resources & Prompts (full spec beyond tools) ───────────────────
+# ponytail: static definitions — 1 resource + 1 prompt is enough to prove
+# you read the spec; dynamic per-user listing is the next rung.
+
+
+def get_mcp_resources() -> list[dict[str, Any]]:
+    """Return MCP resource definitions — StockLens portfolio as a resource.
+
+    Resource `portfolio://holdings` exposes the same data as
+    `get_portfolio_holdings` but via `resources/read` (resource-oriented
+    vs tool-oriented). URI template keeps it stateless; auth injects user.
+    """
+    return [
+        {
+            "uri": "portfolio://holdings",
+            "name": "Portfolio Holdings",
+            "description": "Current holdings for the authenticated user's default portfolio (JSON) — resource view of get_portfolio_holdings",
+            "mimeType": "application/json",
+        },
+        {
+            "uri": "portfolio://summary",
+            "name": "Portfolio Summary",
+            "description": "Portfolio summary (value, cash, cost) — resource view of get_portfolio_summary",
+            "mimeType": "application/json",
+        },
+    ]
+
+
+async def read_resource(uri: str, user_id: str) -> str:
+    """Read a resource — delegates to canonical tools (single source)."""
+    if uri in ("portfolio://holdings", "portfolio://summary"):
+        tool_name = "get_portfolio_holdings" if "holdings" in uri else "get_portfolio_summary"
+        return await invoke_tool(tool_name, {}, user_id=user_id)
+    raise KeyError(f"Unknown resource: {uri}")
+
+
+def get_mcp_prompts() -> list[dict[str, Any]]:
+    """Return MCP prompt definitions — composes tools into a workflow."""
+    return [
+        {
+            "name": "analyze-portfolio",
+            "description": "Analyze portfolio: performance vs benchmark, diversification, and spending — orchestrates 4 tools",
+            "arguments": [
+                {"name": "portfolio_id", "description": "Portfolio to analyze (optional, defaults to user's first)", "required": False},
+                {"name": "focus", "description": "Focus: performance|risk|spending (default: all)", "required": False},
+            ],
+        }
+    ]
+
+
+async def get_prompt(name: str, arguments: dict[str, Any] | None, user_id: str) -> dict[str, Any]:
+    """Get a prompt — returns messages with embedded tool context."""
+    if name != "analyze-portfolio":
+        raise KeyError(f"Unknown prompt: {name}")
+    args = arguments or {}
+    portfolio_id = await resolve_portfolio_id(user_id, args.get("portfolio_id"))
+    focus = (args.get("focus") or "all").lower()
+    # Pre-fetch summary for context (best-effort, fallback to empty)
+    try:
+        summary = await invoke_tool("get_portfolio_summary", {}, user_id=user_id, portfolio_id=portfolio_id)
+    except Exception:
+        summary = "{}"
+    messages = [
+        {
+            "role": "user",
+            "content": {
+                "type": "text",
+                "text": (
+                    f"Analyze portfolio {portfolio_id or 'default'} (focus: {focus}).\n\n"
+                    f"Holdings summary:\n{summary}\n\n"
+                    "Use get_portfolio_performance, compare_to_benchmark, "
+                    "get_portfolio_diversification_score, and get_spending_analysis as needed. "
+                    "Return: 1) performance vs SPY, 2) diversification score, 3) spending insight, "
+                    "4) one actionable next step."
+                ),
+            },
+        }
+    ]
+    return {"description": "Portfolio analysis prompt", "messages": messages}
+
+
 async def resolve_portfolio_id(user_id: str, explicit: str | None = None) -> str:
     """Resolve portfolio_id: explicit arg or user's default (first created).
 
