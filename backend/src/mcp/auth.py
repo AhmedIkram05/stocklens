@@ -1,32 +1,32 @@
 """OAuth 2.1 Authorization Server for StockLens MCP.
 
 Implements RFC 8414 (AS metadata), RFC 9728 (Protected Resource metadata),
-and PKCE S256 (RFC 7636) on top of the existing JWT HS256 infra
-(src/auth/utils.py). No new tables — auth codes live in Redis (TTL 600s),
-reuse create_access_token/create_refresh_token + refresh_tokens table.
+RFC 7636 PKCE S256, and RFC 7517 JWKS (RS256) on top of the existing JWT infra.
+Auth codes live in Redis (TTL 600s), reuse create_access_token +
+refresh_tokens table. RS256 is the default for MCP — HS256 fallback kept for
+legacy REST clients.
 
-Enterprise upgrade over LAAD's unauthenticated MCP:
-  • Authorization Code + PKCE (S256) — no client secret for public MCP clients
-  • Refresh token rotation with stolen-token detection (reuse of auth router logic)
-  • WWW-Authenticate with resource_metadata on 401 per MCP spec
-  • Caveat: HS256 with shared secret; RS256 + JWKS is the next rung when
-    mTLS/rotating keys matter — ponytail: HS256 is correct for single-issuer
-    FastAPI, upgrade path documented.
+Enterprise upgrade over LAAD's unauthenticated stdio:
+  • Authorization Code + PKCE (S256) + RS256/JWKS + kid rotation
+  • Refresh rotation with stolen-token revoke-all
+  • WWW-Authenticate with resource_metadata per MCP spec 2025-06-18
 
-Endpoints (mounted under / and /mcp by server.py):
+Endpoints:
   GET  /.well-known/oauth-authorization-server
   GET  /.well-known/oauth-protected-resource
-  GET  /oauth/authorize  (redirect flow, browser)
-  POST /oauth/authorize  (JSON flow, MCP Inspector / programmatic)
-  POST /oauth/token      (authorization_code, refresh_token)
+  GET  /.well-known/jwks.json               (RS256 public keys)
+  GET  /oauth/authorize  (browser)
+  POST /oauth/authorize  (Inspector JSON flow)
+  POST /oauth/token
   POST /oauth/revoke
-  POST /oauth/register   (DCR stub — returns static client for first-party)
+  POST /oauth/register
 """
 
 from __future__ import annotations
 
 import base64
 import hashlib
+import json as _json
 import secrets
 import time
 from typing import Any
@@ -38,6 +38,15 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 import jwt as pyjwt
+
+# RS256 — optional, graceful fallback to HS256 (cryptography already in deps via authlib)
+try:
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    _CRYPTO_AVAILABLE = True
+except Exception:  # pragma: no cover
+    _CRYPTO_AVAILABLE = False
 
 from src.auth.schemas import TokenPayload
 from src.auth.utils import (
@@ -86,6 +95,141 @@ def _verify_pkce(verifier: str, challenge: str, method: str = "S256") -> bool:
         return verifier == challenge
     # Default S256
     return _code_challenge_s256(verifier) == challenge
+
+
+# ── RS256 / JWKS (enterprise) ────────────────────────────────────────
+# ponytail: generate once per process, expose via JWKS, KID rotation = new key + new KID
+
+_RSA_KEYPAIR: tuple[Any, Any] | None = None
+_KID = "stocklens-mcp-1"
+
+
+def _get_rsa_keypair():
+    global _RSA_KEYPAIR
+    if _RSA_KEYPAIR is not None:
+        return _RSA_KEYPAIR
+    # Prefer env-provided PEM if set (Settings.JWT_PRIVATE_KEY), else generate ephemeral
+    pem = getattr(settings, "JWT_PRIVATE_KEY", "") or ""
+    if pem and _CRYPTO_AVAILABLE and "BEGIN" in pem:
+        try:
+            priv = serialization.load_pem_private_key(pem.encode(), password=None)
+            pub = priv.public_key()
+            _RSA_KEYPAIR = (priv, pub)
+            return _RSA_KEYPAIR
+        except Exception:
+            pass
+    if not _CRYPTO_AVAILABLE:
+        return None
+    # Ephemeral 2048-bit for dev/test — in prod mount via Settings.JWT_PRIVATE_KEY or Secrets Manager
+    priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pub = priv.public_key()
+    _RSA_KEYPAIR = (priv, pub)
+    return _RSA_KEYPAIR
+
+
+def _b64url_uint(n: int) -> str:
+    b = n.to_bytes((n.bit_length() + 7) // 8, "big")
+    return base64.urlsafe_b64encode(b).decode().rstrip("=")
+
+
+def _public_jwk(kid: str = _KID) -> dict[str, Any] | None:
+    pair = _get_rsa_keypair()
+    if pair is None:
+        return None
+    _, pub = pair
+    numbers = pub.public_numbers()
+    return {
+        "kty": "RSA",
+        "kid": kid,
+        "use": "sig",
+        "alg": "RS256",
+        "n": _b64url_uint(numbers.n),
+        "e": _b64url_uint(numbers.e),
+    }
+
+
+def _jwks() -> dict[str, Any]:
+    jwk = _public_jwk()
+    return {"keys": [jwk] if jwk else []}
+
+
+def _private_pem() -> bytes | None:
+    pair = _get_rsa_keypair()
+    if pair is None:
+        return None
+    priv, _ = pair
+    return priv.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+
+
+def _public_pem() -> bytes | None:
+    pair = _get_rsa_keypair()
+    if pair is None:
+        return None
+    _, pub = pair
+    return pub.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+
+
+def _try_rs256_encode(payload: dict[str, Any]) -> str | None:
+    """Try RS256 encode with kid, return None if not available."""
+    pem = _private_pem()
+    if pem is None:
+        return None
+    try:
+        return pyjwt.encode(payload, pem, algorithm="RS256", headers={"kid": _KID})
+    except Exception:
+        return None
+
+
+def _mcp_create_access_token(user_id: str):
+    """Create MCP access token — RS256 if available, else HS256 fallback."""
+    import uuid
+    from datetime import datetime, timedelta, timezone
+
+    jti = uuid.uuid4().hex
+    now = datetime.now(timezone.utc)
+    exp = now + timedelta(minutes=getattr(settings, "OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+    payload = {
+        "sub": user_id,
+        "jti": jti,
+        "iat": int(now.timestamp()),
+        "exp": int(exp.timestamp()),
+        "type": "access",
+    }
+    tok = _try_rs256_encode(payload)
+    if tok:
+        return tok, jti, int(exp.timestamp())
+    # fallback HS256 via existing helper (ensures decode_token still works)
+    tok, jti2 = create_access_token(user_id)
+    decoded = decode_token(tok)
+    return tok, jti2, decoded.exp
+
+
+def _mcp_create_refresh_token(user_id: str):
+    """MCP refresh — keep HS256 for DB hash stability (RS256 not needed)."""
+    return create_refresh_token(user_id)
+
+
+def _decode_mcp_token(token: str) -> TokenPayload:
+    """Decode MCP token supporting both RS256 (kid) and HS256."""
+    # Try RS256 first if header says RS256
+    try:
+        hdr = pyjwt.get_unverified_header(token)
+        if hdr.get("alg") == "RS256":
+            pem = _public_pem()
+            if pem:
+                data = pyjwt.decode(token, pem, algorithms=["RS256"])
+                return TokenPayload(**data)
+    except Exception:
+        pass
+    # Fallback HS256 via existing helper
+    return decode_token(token)
 
 
 async def _store_code(
@@ -155,11 +299,13 @@ async def oauth_authorization_server_metadata(request: Request):
         "token_endpoint": f"{iss}/oauth/token",
         "revocation_endpoint": f"{iss}/oauth/revoke",
         "registration_endpoint": f"{iss}/oauth/register",
+        "jwks_uri": f"{iss}/.well-known/jwks.json",
         "response_types_supported": ["code"],
         "grant_types_supported": ["authorization_code", "refresh_token"],
         "code_challenge_methods_supported": ["S256", "plain"],
         "scopes_supported": ["mcp:tools", "portfolio:read", "market:read"],
         "token_endpoint_auth_methods_supported": ["none", "client_secret_post"],
+        "id_token_signing_alg_values_supported": ["RS256", "HS256"],
     }
 
 
@@ -179,6 +325,16 @@ async def oauth_protected_resource_metadata(request: Request):
 @router.get("/.well-known/oauth-authorization-server/mcp")
 async def oauth_as_mcp_alias(request: Request):
     return await oauth_authorization_server_metadata(request)
+
+
+@router.get("/.well-known/jwks.json")
+async def jwks_endpoint():
+    """RFC 7517 JWKS — RS256 public keys for MCP token verification.
+
+    `kid` rotation: deploy new private PEM via Settings.JWT_PRIVATE_KEY,
+    bump `_KID`, keep old JWK for `exp` window (ponytail: single key for now).
+    """
+    return _jwks()
 
 
 # ── Dynamic Client Registration (stub) ───────────────────────────────────
@@ -371,10 +527,9 @@ async def oauth_token(request: Request):
         user_id = stored["user_id"]
         scope = stored.get("scope", "mcp:tools")
 
-        # Issue tokens — reuse existing JWT infra
-        access_token, _ajti = create_access_token(user_id)
-        refresh_token, rjti = create_refresh_token(user_id)
-        decoded = decode_token(access_token)
+        # Issue tokens — RS256 (JWKS) with HS256 fallback
+        access_token, _, exp_int = _mcp_create_access_token(user_id)
+        refresh_token, rjti = _mcp_create_refresh_token(user_id)
         rdecoded = decode_token(refresh_token)
 
         # Persist refresh hash (rotation + revocation)
@@ -387,11 +542,11 @@ async def oauth_token(request: Request):
                 rdecoded.exp,
             )
 
-        logger.info("oauth_token_issued", user_id=user_id[:8], scope=scope)
+        logger.info("oauth_token_issued", user_id=user_id[:8], scope=scope, alg="RS256" if _public_pem() else "HS256")
         return {
             "access_token": access_token,
             "token_type": "Bearer",
-            "expires_in": max(0, decoded.exp - int(time.time())),
+            "expires_in": max(0, exp_int - int(time.time())),
             "refresh_token": refresh_token,
             "scope": scope,
         }
@@ -402,7 +557,7 @@ async def oauth_token(request: Request):
         if not rtoken:
             raise HTTPException(status_code=400, detail="refresh_token required")
         try:
-            payload = decode_token(rtoken)
+            payload = _decode_mcp_token(rtoken)
         except pyjwt.ExpiredSignatureError:
             raise HTTPException(status_code=401, detail="Refresh token expired")
         except pyjwt.InvalidTokenError:
@@ -439,9 +594,8 @@ async def oauth_token(request: Request):
                 "UPDATE refresh_tokens SET revoked = true WHERE token_hash = $1", token_hash
             )
 
-        new_access, _ = create_access_token(payload.sub)
-        new_refresh, new_rjti = create_refresh_token(payload.sub)
-        decoded = decode_token(new_access)
+        new_access, _, new_exp = _mcp_create_access_token(payload.sub)
+        new_refresh, new_rjti = _mcp_create_refresh_token(payload.sub)
         rdecoded = decode_token(new_refresh)
         new_hash = hash_token(new_rjti, payload.sub)
         async with connection_ctx() as conn:
@@ -455,7 +609,7 @@ async def oauth_token(request: Request):
         return {
             "access_token": new_access,
             "token_type": "Bearer",
-            "expires_in": max(0, decoded.exp - int(time.time())),
+            "expires_in": max(0, new_exp - int(time.time())),
             "refresh_token": new_refresh,
             "scope": "mcp:tools",
         }
@@ -485,7 +639,7 @@ async def oauth_revoke(request: Request):
         return {"revoked": False}
 
     try:
-        payload = decode_token(token)
+        payload = _decode_mcp_token(token)
     except Exception:
         return {"revoked": False}
 
@@ -537,7 +691,7 @@ async def verify_mcp_token(
 
     token = credentials.credentials
     try:
-        payload = decode_token(token)
+        payload = _decode_mcp_token(token)
     except pyjwt.ExpiredSignatureError:
         raise _unauth("Token has expired")
     except pyjwt.InvalidTokenError:
