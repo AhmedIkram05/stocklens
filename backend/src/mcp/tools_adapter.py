@@ -15,7 +15,6 @@ portfolio_id, the adapter resolves the user's default portfolio
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 
 import structlog
@@ -121,13 +120,19 @@ def get_mcp_resources() -> list[dict[str, Any]]:
         {
             "uri": "portfolio://holdings",
             "name": "Portfolio Holdings",
-            "description": "Current holdings for the authenticated user's default portfolio (JSON) — resource view of get_portfolio_holdings",
+            "description": (
+                "Current holdings for the authenticated user's default "
+                "portfolio (JSON) — resource view of get_portfolio_holdings"
+            ),
             "mimeType": "application/json",
         },
         {
             "uri": "portfolio://summary",
             "name": "Portfolio Summary",
-            "description": "Portfolio summary (value, cash, cost) — resource view of get_portfolio_summary",
+            "description": (
+                "Portfolio summary (value, cash, cost) — "
+                "resource view of get_portfolio_summary"
+            ),
             "mimeType": "application/json",
         },
     ]
@@ -146,10 +151,21 @@ def get_mcp_prompts() -> list[dict[str, Any]]:
     return [
         {
             "name": "analyze-portfolio",
-            "description": "Analyze portfolio: performance vs benchmark, diversification, and spending — orchestrates 4 tools",
+            "description": (
+                "Analyze portfolio: performance vs benchmark, "
+                "diversification, and spending — orchestrates 4 tools"
+            ),
             "arguments": [
-                {"name": "portfolio_id", "description": "Portfolio to analyze (optional, defaults to user's first)", "required": False},
-                {"name": "focus", "description": "Focus: performance|risk|spending (default: all)", "required": False},
+                {
+                    "name": "portfolio_id",
+                    "description": "Portfolio to analyze (optional, defaults to user's first)",
+                    "required": False,
+                },
+                {
+                    "name": "focus",
+                    "description": "Focus: performance|risk|spending (default: all)",
+                    "required": False,
+                },
             ],
         }
     ]
@@ -164,7 +180,9 @@ async def get_prompt(name: str, arguments: dict[str, Any] | None, user_id: str) 
     focus = (args.get("focus") or "all").lower()
     # Pre-fetch summary for context (best-effort, fallback to empty)
     try:
-        summary = await invoke_tool("get_portfolio_summary", {}, user_id=user_id, portfolio_id=portfolio_id)
+        summary = await invoke_tool(
+            "get_portfolio_summary", {}, user_id=user_id, portfolio_id=portfolio_id
+        )
     except Exception:
         summary = "{}"
     messages = [
@@ -237,7 +255,11 @@ async def invoke_tool(
     # Detect by checking if original schema had portfolio_id (before stripping)
     needs_portfolio = False
     try:
-        raw = tool.args_schema.model_json_schema() if hasattr(tool, "args_schema") and tool.args_schema else {}
+        raw = (
+            tool.args_schema.model_json_schema()
+            if hasattr(tool, "args_schema") and tool.args_schema
+            else {}
+        )
         needs_portfolio = "portfolio_id" in (raw.get("properties") or {})
     except Exception:
         # Conservative fallback: if tool name suggests portfolio scope

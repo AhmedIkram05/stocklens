@@ -24,7 +24,7 @@ import uuid
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.config import settings
@@ -131,14 +131,22 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
                             "prompts": {"listChanged": False},
                         },
                         "serverInfo": {
-                            "name": getattr(settings, "MCP_SERVER_NAME", "stocklens"),
+                            "name": getattr(
+                                settings, "MCP_SERVER_NAME", "stocklens"
+                            ),
                             "version": "0.1.0",
-                            "description": "StockLens portfolio & market intelligence — 16 tools, 2 resources, 1 prompt via OAuth 2.1 RS256",
+                            "description": (
+                                "StockLens portfolio & market intelligence — "
+                                "16 tools, 2 resources, 1 prompt via OAuth 2.1 RS256"
+                            ),
                         },
                     },
                 }
             )
-            logger.info("mcp_initialize", client=params.get("clientInfo", {}).get("name", "unknown"))
+            logger.info(
+                "mcp_initialize",
+                client=params.get("clientInfo", {}).get("name", "unknown"),
+            )
 
         # ── notifications/initialized ───────────────────────────────────
         elif method == "notifications/initialized":
@@ -224,7 +232,15 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
                     {
                         "jsonrpc": "2.0",
                         "id": msg_id,
-                        "result": {"contents": [{"uri": uri, "mimeType": "application/json", "text": text}]},
+                        "result": {
+                            "contents": [
+                                {
+                                    "uri": uri,
+                                    "mimeType": "application/json",
+                                    "text": text,
+                                }
+                            ]
+                        },
                     }
                 )
             except KeyError as e:
@@ -235,7 +251,15 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
                     {
                         "jsonrpc": "2.0",
                         "id": msg_id,
-                        "result": {"contents": [{"uri": uri, "mimeType": "text/plain", "text": json.dumps({"error": str(e)})}]},
+                        "result": {
+                            "contents": [
+                                {
+                                    "uri": uri,
+                                    "mimeType": "text/plain",
+                                    "text": json.dumps({"error": str(e)}),
+                                }
+                            ]
+                        },
                     }
                 )
         # ── prompts/list ─────────────────────────────────────────────────
@@ -296,7 +320,6 @@ def create_mcp_app():
     try:
         # Official SDK path — requires `mcp` extra
         from mcp.server.fastmcp import FastMCP  # type: ignore
-        from mcp.server.auth.middleware import AuthMiddleware  # type: ignore
 
         fastmcp = FastMCP(name=getattr(settings, "MCP_SERVER_NAME", "stocklens"))
 

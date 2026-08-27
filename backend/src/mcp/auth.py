@@ -26,18 +26,16 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import json as _json
 import secrets
 import time
 from typing import Any
 
+import jwt as pyjwt
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
-
-import jwt as pyjwt
 
 # RS256 — optional, graceful fallback to HS256 (cryptography already in deps via authlib)
 try:
@@ -120,7 +118,8 @@ def _get_rsa_keypair():
             pass
     if not _CRYPTO_AVAILABLE:
         return None
-    # Ephemeral 2048-bit for dev/test — in prod mount via Settings.JWT_PRIVATE_KEY or Secrets Manager
+    # Ephemeral 2048-bit for dev/test
+    # — in prod mount via Settings.JWT_PRIVATE_KEY or Secrets Manager
     priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     pub = priv.public_key()
     _RSA_KEYPAIR = (priv, pub)
@@ -401,7 +400,9 @@ async def oauth_authorize_get(
     if response_type != "code":
         raise HTTPException(status_code=400, detail="Only response_type=code supported")
     if not client_id or not redirect_uri or not code_challenge:
-        raise HTTPException(status_code=400, detail="Missing client_id, redirect_uri, or code_challenge")
+        raise HTTPException(
+            status_code=400, detail="Missing client_id, redirect_uri, or code_challenge"
+        )
 
     # No session — return login hint as JSON if not handling browser redirect templating
     # For CV: show we handle redirect correctly; implementors would render login page here.
@@ -455,7 +456,9 @@ async def oauth_authorize_post(body: AuthorizeRequest, request: Request):
     logger.info("oauth_code_issued", user_id=str(user["id"])[:8], client_id=body.client_id)
 
     # Spec: redirect with code if redirect_uri is non-loopback; for inspector loopback return JSON
-    if body.redirect_uri.startswith("http://localhost") or body.redirect_uri.startswith("http://127.0.0.1"):
+    if body.redirect_uri.startswith("http://localhost") or body.redirect_uri.startswith(
+        "http://127.0.0.1"
+    ):
         return {"code": code, "state": body.state}
 
     # 302 redirect for browser clients
@@ -516,7 +519,9 @@ async def oauth_token(request: Request):
         # Validate client_id if present
         if client_id and stored.get("client_id") != client_id:
             # ponytail: first-party clients share single ID — log but don't hard-fail
-            logger.warning("oauth_client_id_mismatch", expected=stored.get("client_id"), got=client_id)
+            logger.warning(
+                "oauth_client_id_mismatch", expected=stored.get("client_id"), got=client_id
+            )
 
         # PKCE verify
         challenge = stored.get("code_challenge", "")
@@ -536,13 +541,20 @@ async def oauth_token(request: Request):
         token_hash = hash_token(rjti, user_id)
         async with connection_ctx() as conn:
             await conn.execute(
-                "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1::uuid, $2, to_timestamp($3))",
+                "INSERT INTO refresh_tokens "
+                "(user_id, token_hash, expires_at) "
+                "VALUES ($1::uuid, $2, to_timestamp($3))",
                 user_id,
                 token_hash,
                 rdecoded.exp,
             )
 
-        logger.info("oauth_token_issued", user_id=user_id[:8], scope=scope, alg="RS256" if _public_pem() else "HS256")
+        logger.info(
+            "oauth_token_issued",
+            user_id=user_id[:8],
+            scope=scope,
+            alg="RS256" if _public_pem() else "HS256",
+        )
         return {
             "access_token": access_token,
             "token_type": "Bearer",
@@ -600,7 +612,9 @@ async def oauth_token(request: Request):
         new_hash = hash_token(new_rjti, payload.sub)
         async with connection_ctx() as conn:
             await conn.execute(
-                "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1::uuid, $2, to_timestamp($3))",
+                "INSERT INTO refresh_tokens "
+                "(user_id, token_hash, expires_at) "
+                "VALUES ($1::uuid, $2, to_timestamp($3))",
                 payload.sub,
                 new_hash,
                 rdecoded.exp,
