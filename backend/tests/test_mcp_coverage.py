@@ -103,22 +103,8 @@ async def test_oauth_authorize_plain_pkce(client: AsyncClient):
         "/auth/register", json={"email": email, "password": "TestPass123!", "full_name": "Plain"}
     )
     verifier = "plain-verifier-123"
-    # plain == verifier == challenge
-    r = await client.post(
-        "/oauth/authorize",
-        json={
-            "email": email,
-            "password": "TestPass123!",
-            "client_id": "stocklens-mcp-public",
-            "redirect_uri": "http://localhost:6274/callback",
-            "code_challenge": verifier,
-            "code_challenge_method": "plain",
-            "state": "s1",
-        },
-    )
-    assert r.status_code == 200
-    r.json()["code"]
-    # Token with plain verifier should succeed when patched to avoid redis loop
+    # plain == verifier == challenge — mock redis to avoid
+    # "Future attached to a different loop" under pytest-xdist
     _mem: dict[str, dict] = {}
 
     async def _fake_store(c, d, ttl=600):
@@ -131,7 +117,6 @@ async def test_oauth_authorize_plain_pkce(client: AsyncClient):
         patch("src.mcp.auth._store_code", side_effect=_fake_store),
         patch("src.mcp.auth._consume_code", side_effect=_fake_consume),
     ):
-        # Need to redo authorize with patched store to have code in _mem
         r2 = await client.post(
             "/oauth/authorize",
             json={
@@ -141,8 +126,10 @@ async def test_oauth_authorize_plain_pkce(client: AsyncClient):
                 "redirect_uri": "http://localhost:6274/callback",
                 "code_challenge": verifier,
                 "code_challenge_method": "plain",
+                "state": "s1",
             },
         )
+        assert r2.status_code == 200
         code2 = r2.json()["code"]
         r3 = await client.post(
             "/oauth/token",
