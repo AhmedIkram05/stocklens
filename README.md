@@ -385,7 +385,7 @@ flowchart LR
 
     subgraph OAuth["OAuth 2.1 PKCE"]
         AUTH[POST /oauth/authorize<br/>email+password+code_challenge]
-        CODE[(Redis<br/>oauth:code:{code}<br/>TTL 600s)]
+        CODE[("Redis<br/>oauth:code:{code}<br/>TTL 600s")]
         TOKEN[POST /oauth/token<br/>code+verifier → JWT<br/>refresh_token rotation]
         REVOKE[POST /oauth/revoke]
     end
@@ -795,7 +795,7 @@ flowchart LR
     subgraph Metrics["Performance Metrics"]
         TE[Tracking Error]
         IR[Information Ratio]
-        VOL[Volatility<br/>(annualized)]
+        VOL["Volatility<br/>(annualized)"]
     end
 
     YH --> PG_CACHE
