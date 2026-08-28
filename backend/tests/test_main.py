@@ -38,11 +38,11 @@ class TestRouterMounting:
     """Test that all routers are mounted with correct prefixes and tags."""
 
     def test_included_routers_count(self):
-        """App should have 13 included routers (as _IncludedRouter)."""
+        """App should have 14 included routers (as _IncludedRouter)."""
         included = [r for r in app.routes if type(r).__name__ == "_IncludedRouter"]
-        # 13 routers: auth, receipts, categories, portfolios, holdings, market,
-        # cash_flows, performance, prediction, drift, transactions, agent, agent_tools
-        assert len(included) == 13
+        # 14 routers: auth, receipts, categories, portfolios, holdings, market,
+        # cash_flows, performance, prediction, drift, transactions, agent, agent_tools, mcp
+        assert len(included) == 14
 
     def test_health_endpoint_route_exists(self):
         """The /health endpoint should be directly on the app."""
