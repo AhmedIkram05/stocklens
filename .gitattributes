@@ -1,0 +1,6 @@
+# Linguist: docs / demos are not code, generated locks are not code
+docs/** linguist-documentation=true
+assets/demos/** linguist-documentation=true
+package-lock.json linguist-generated=true
+uv.lock linguist-generated=true
+backend/uv.lock linguist-generated=true
