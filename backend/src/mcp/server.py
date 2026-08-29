@@ -79,6 +79,7 @@ def _discover_result() -> dict:
         "cacheScope": "public",
     }
 
+
 # ── Router ────────────────────────────────────────────────────────────────
 
 mcp_router = APIRouter(tags=["mcp"])
@@ -173,9 +174,7 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
 
         # ── server/discover (2026-07-28) ─────────────────────────────────
         if method == "server/discover":
-            responses.append(
-                {"jsonrpc": "2.0", "id": msg_id, "result": _discover_result()}
-            )
+            responses.append({"jsonrpc": "2.0", "id": msg_id, "result": _discover_result()})
             logger.info("mcp_discover", version=requested)
 
         # ── initialize (2025-06-18 only — rejected on 2026-07-28) ────────

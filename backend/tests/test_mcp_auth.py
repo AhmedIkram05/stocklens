@@ -250,7 +250,11 @@ class _FakeUrlopenResp:
         return self._raw
 
 
-def _fetch_with_mock(raw: bytes | None = None, exc: Exception | None = None, client_id: str = "https://client.example/cimd.json"):
+def _fetch_with_mock(
+    raw: bytes | None = None,
+    exc: Exception | None = None,
+    client_id: str = "https://client.example/cimd.json",
+):
     # Clear module cache so TTL state doesn't leak between tests
     import src.mcp.auth as mcp_auth
 
@@ -270,8 +274,10 @@ def test_fetch_cimd_document_success_and_cached():
     )
     mcp_auth._CIMD_CACHE.clear()
     # client.example has no DNS record — pin getaddrinfo to a public IP for the SSRF check
-    with patch("socket.getaddrinfo", return_value=[(0, 0, 0, "", ("93.184.216.34", 443))]), \
-         patch("urllib.request.urlopen", return_value=payload) as urlopen:
+    with (
+        patch("socket.getaddrinfo", return_value=[(0, 0, 0, "", ("93.184.216.34", 443))]),
+        patch("urllib.request.urlopen", return_value=payload) as urlopen,
+    ):
         doc = mcp_auth._fetch_cimd_document("https://client.example/cimd.json")
         assert doc == {"client_name": "C", "redirect_uris": ["https://c.example/cb"]}
         # second call served from cache — urlopen only used once

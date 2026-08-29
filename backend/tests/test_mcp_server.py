@@ -595,7 +595,11 @@ async def test_mcp_tools_on_2026_version(client: AsyncClient, auth_headers: dict
                 "jsonrpc": "2.0",
                 "id": 3,
                 "method": "tools/call",
-                "params": {"name": "get_market_quote", "arguments": {"symbol": "AAPL"}, **_meta_2026()},
+                "params": {
+                    "name": "get_market_quote",
+                    "arguments": {"symbol": "AAPL"},
+                    **_meta_2026(),
+                },
             },
             headers=auth_headers,
         )
@@ -604,9 +608,7 @@ async def test_mcp_tools_on_2026_version(client: AsyncClient, auth_headers: dict
 
 
 @pytest.mark.usefixtures("_seed_categories")
-async def test_mcp_initialize_rejected_on_2026(
-    client: AsyncClient, auth_headers: dict[str, str]
-):
+async def test_mcp_initialize_rejected_on_2026(client: AsyncClient, auth_headers: dict[str, str]):
     r = await client.post(
         "/mcp",
         json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": _meta_2026()},
@@ -617,9 +619,7 @@ async def test_mcp_initialize_rejected_on_2026(
 
 
 @pytest.mark.usefixtures("_seed_categories")
-async def test_mcp_legacy_initialize_still_green(
-    client: AsyncClient, auth_headers: dict[str, str]
-):
+async def test_mcp_legacy_initialize_still_green(client: AsyncClient, auth_headers: dict[str, str]):
     # No _meta → legacy 2025-06-18 path unchanged
     r = await client.post(
         "/mcp",
@@ -645,17 +645,13 @@ def test_request_version_helper():
     assert _request_version({}) is None  # legacy: no _meta at all
     assert _request_version({"_meta": {}}) is None  # _meta without protocolVersion
     assert (
-        _request_version(
-            {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28"}}
-        )
+        _request_version({"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28"}})
         == "2026-07-28"
     )
 
 
 @pytest.mark.usefixtures("_seed_categories")
-async def test_mcp_batch_mixed_protocol_versions(
-    client: AsyncClient, auth_headers: dict[str, str]
-):
+async def test_mcp_batch_mixed_protocol_versions(client: AsyncClient, auth_headers: dict[str, str]):
     # Version gate is per-message inside a batch: legacy + 2026 fine, unknown rejected
     r = await client.post(
         "/mcp",
