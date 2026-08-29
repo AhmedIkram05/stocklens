@@ -66,16 +66,16 @@ backend/tests/test_mcp_auth.py        (25 tests)
 
 Serves **both** the initialize-based 2025-06-18 protocol and the **stateless 2026-07-28 core** simultaneously — the spec's own designed migration pattern (the −32022 error's `supported` field explicitly lists multiple versions; clients are told to select a mutually supported version and retry; the stdio Backward Compatibility section has dual-mode clients probe `server/discover`, then fall back to the initialize handshake for legacy servers).
 
-| Feature | 2025-06-18 (legacy) | 2026-07-28 (stateless) |
-| --- | --- | --- |
-| Version detection | `initialize` echoes `protocolVersion` param | per-request `params._meta["io.modelcontextprotocol/protocolVersion"]` |
-| Discovery | `initialize` → capabilities | `server/discover` → `{resultType:"complete", supportedVersions:["2026-07-28","2025-06-18"], capabilities, _meta.serverInfo, ttlMs, cacheScope}` |
-| No `_meta` | n/a | treated as legacy client → 2025-06-18 behaviour |
-| Unsupported version | n/a | error **−32022** `{supported:[…], requested:"…"}` |
-| `initialize` on 2026-07-28 | normal | **−32601** (method removed from spec — no handshake) |
-| `notifications/initialized` | silent 202 | silent 202 (notification must never error) |
-| `GET /mcp` SSE `endpoint` | kept (Inspector / Claude Desktop legacy) | kept deliberately for dual-version; 2026-07-28 removes GET streams |
-| Cross-call state | per-connection session | n/a — stateless; every call carries bearer token + explicit args |
+| Feature                     | 2025-06-18 (legacy)                         | 2026-07-28 (stateless)                                                                                                                          |
+| --------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Version detection           | `initialize` echoes `protocolVersion` param | per-request `params._meta["io.modelcontextprotocol/protocolVersion"]`                                                                           |
+| Discovery                   | `initialize` → capabilities                 | `server/discover` → `{resultType:"complete", supportedVersions:["2026-07-28","2025-06-18"], capabilities, _meta.serverInfo, ttlMs, cacheScope}` |
+| No `_meta`                  | n/a                                         | treated as legacy client → 2025-06-18 behaviour                                                                                                 |
+| Unsupported version         | n/a                                         | error **−32022** `{supported:[…], requested:"…"}`                                                                                               |
+| `initialize` on 2026-07-28  | normal                                      | **−32601** (method removed from spec — no handshake)                                                                                            |
+| `notifications/initialized` | silent 202                                  | silent 202 (notification must never error)                                                                                                      |
+| `GET /mcp` SSE `endpoint`   | kept (Inspector / Claude Desktop legacy)    | kept deliberately for dual-version; 2026-07-28 removes GET streams                                                                              |
+| Cross-call state            | per-connection session                      | n/a — stateless; every call carries bearer token + explicit args                                                                                |
 
 > **SDK note:** the official `mcp` SDK (`mcp>=1.12,<2`) implements 2025-06-18 — `create_mcp_app()`'s `streamable_http_app()` remains the SDK-native legacy path with a `ponytail:` comment, to be upgraded when an SDK release lands 2026-07-28. The hand-rolled JSON-RPC router in `server.py` already serves both versions.
 
