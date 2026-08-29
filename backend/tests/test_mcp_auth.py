@@ -210,8 +210,6 @@ def test_cimd_host_blocked_literals():
 
 
 def test_cimd_host_blocked_hostname():
-    import socket
-
     from src.mcp.auth import _cimd_host_blocked
 
     with patch("socket.getaddrinfo", return_value=[(0, 0, 0, "", ("93.184.216.34", 443))]):
