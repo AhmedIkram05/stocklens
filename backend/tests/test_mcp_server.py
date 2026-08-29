@@ -520,3 +520,183 @@ async def test_mcp_health_includes_resources_prompts_v2(client):
     assert data["resources"] == 2
     assert data["prompts"] == 1
     assert data["auth"] == "oauth2.1-pkce-rs256"
+
+
+# ── Stateless 2026-07-28 + dual-version ────────────────────────────────
+
+
+def _meta_2026() -> dict:
+    """Per-request _meta per the 2026-07-28 stateless spec."""
+    return {
+        "_meta": {
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+            "io.modelcontextprotocol/clientInfo": {"name": "test", "version": "1.0"},
+            "io.modelcontextprotocol/clientCapabilities": {},
+        }
+    }
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_discover_2026(client: AsyncClient, auth_headers: dict[str, str]):
+    r = await client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "server/discover", "params": _meta_2026()},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    result = r.json()["result"]
+    assert result["resultType"] == "complete"
+    assert result["supportedVersions"] == ["2026-07-28", "2025-06-18"]
+    assert "tools" in result["capabilities"] and "resources" in result["capabilities"]
+    assert result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "stocklens"
+    assert result["_meta"]["io.modelcontextprotocol/serverInfo"]["version"] == "0.1.0"
+    assert result["ttlMs"] == 3600000
+    assert result["cacheScope"] == "public"
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_unsupported_version_32022(client: AsyncClient, auth_headers: dict[str, str]):
+    r = await client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list",
+            "params": {
+                "_meta": {"io.modelcontextprotocol/protocolVersion": "2020-01-01"},
+            },
+        },
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    error = r.json()["error"]
+    assert error["code"] == -32022
+    assert error["data"]["requested"] == "2020-01-01"
+    assert error["data"]["supported"] == ["2026-07-28", "2025-06-18"]
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_tools_on_2026_version(client: AsyncClient, auth_headers: dict[str, str]):
+    # tools/list under 2026-07-28
+    r = await client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": _meta_2026()},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    assert len(r.json()["result"]["tools"]) == 16
+
+    # tools/call under 2026-07-28
+    with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock) as mock:
+        mock.return_value = json.dumps({"quote": 42})
+        r2 = await client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "get_market_quote", "arguments": {"symbol": "AAPL"}, **_meta_2026()},
+            },
+            headers=auth_headers,
+        )
+        assert r2.status_code == 200
+        assert r2.json()["result"]["isError"] is False
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_initialize_rejected_on_2026(
+    client: AsyncClient, auth_headers: dict[str, str]
+):
+    r = await client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": _meta_2026()},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["error"]["code"] == -32601
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_legacy_initialize_still_green(
+    client: AsyncClient, auth_headers: dict[str, str]
+):
+    # No _meta → legacy 2025-06-18 path unchanged
+    r = await client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "clientInfo": {"name": "legacy", "version": "0.9"},
+            },
+        },
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["result"]["protocolVersion"] == "2025-06-18"
+    assert r.json()["result"]["serverInfo"]["name"] == "stocklens"
+
+
+def test_request_version_helper():
+    from src.mcp.server import _request_version
+
+    assert _request_version({}) is None  # legacy: no _meta at all
+    assert _request_version({"_meta": {}}) is None  # _meta without protocolVersion
+    assert (
+        _request_version(
+            {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28"}}
+        )
+        == "2026-07-28"
+    )
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_batch_mixed_protocol_versions(
+    client: AsyncClient, auth_headers: dict[str, str]
+):
+    # Version gate is per-message inside a batch: legacy + 2026 fine, unknown rejected
+    r = await client.post(
+        "/mcp",
+        json=[
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": "2025-06-18"},
+            },
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": _meta_2026()},
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/list",
+                "params": {
+                    "_meta": {"io.modelcontextprotocol/protocolVersion": "2020-01-01"},
+                },
+            },
+        ],
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    responses = r.json()
+    assert len(responses) == 3
+    assert responses[0]["id"] == 1
+    assert responses[0]["result"]["protocolVersion"] == "2025-06-18"
+    assert responses[1]["id"] == 2
+    assert len(responses[1]["result"]["tools"]) == 16
+    assert responses[2]["id"] == 3
+    assert responses[2]["error"]["code"] == -32022
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_notifications_initialized_2026_silent(
+    client: AsyncClient, auth_headers: dict[str, str]
+):
+    # Notifications never error under either version (2026 has no handshake → still ignored)
+    r = await client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "method": "notifications/initialized", "params": _meta_2026()},
+        headers=auth_headers,
+    )
+    assert r.status_code == 202

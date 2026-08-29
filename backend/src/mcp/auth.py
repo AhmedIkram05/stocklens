@@ -4,12 +4,16 @@ Implements RFC 8414 (AS metadata), RFC 9728 (Protected Resource metadata),
 RFC 7636 PKCE S256, and RFC 7517 JWKS (RS256) on top of the existing JWT infra.
 Auth codes live in Redis (TTL 600s), reuse create_access_token +
 refresh_tokens table. RS256 is the default for MCP — HS256 fallback kept for
-legacy REST clients.
+legacy REST clients. MCP Authorization spec 2026-07-28 add-ons: RFC 9207
+issuer validation (iss in authorization responses) and CIMD
+(draft-ietf-oauth-client-id-metadata-document) client registration.
 
 Enterprise upgrade over LAAD's unauthenticated stdio:
   • Authorization Code + PKCE (S256) + RS256/JWKS + kid rotation
   • Refresh rotation with stolen-token revoke-all
-  • WWW-Authenticate with resource_metadata per MCP spec 2025-06-18
+  • CIMD registration with SSRF guard + redirect_uri enforcement
+  • RFC 9207 iss on authorization responses
+  • WWW-Authenticate with resource_metadata + scope guidance
 
 Endpoints:
   GET  /.well-known/oauth-authorization-server
@@ -24,10 +28,15 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
+import ipaddress
 import secrets
+import socket
 import time
+import urllib.parse
+import urllib.request
 from typing import Any
 
 import jwt as pyjwt
@@ -260,6 +269,81 @@ async def _consume_code(code: str) -> dict[str, Any] | None:
         return None
 
 
+# ── CIMD (OAuth Client ID Metadata Documents, draft-ietf-oauth-client-id-metadata-document) ──
+
+_CIMD_TTL = 300  # seconds
+_CIMD_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+def _is_cimd_client_id(client_id: str) -> bool:
+    """URL-formatted client_id is the CIMD registration signal."""
+    return client_id.startswith("https://")
+
+
+def _cimd_host_blocked(host: str) -> bool:
+    """SSRF guard — refuse to fetch documents from non-public hosts.
+
+    ponytail: resolves for a check, then fetches by name — a DNS-rebind TOCTOU
+    remains. Harden with pinned-IP http.client connect if CIMD ever serves
+    untrusted third-party clients.
+    """
+    if host in {"", "localhost"} or host.endswith(".local"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)  # literal IP
+    except ValueError:
+        try:
+            infos = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+        except OSError:
+            return True  # unresolvable → treat as blocked
+        addrs = {info[4][0] for info in infos}
+    else:
+        addrs = {host}
+
+    for addr in addrs:
+        ip = ipaddress.ip_address(addr)
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_unspecified
+            or ip.is_multicast
+        ):
+            return True
+    return False
+
+
+def _fetch_cimd_document(client_id: str) -> dict[str, Any] | None:
+    """Fetch + validate a CIMD metadata document (sync; call via asyncio.to_thread)."""
+    import json
+
+    now = time.time()
+    cached = _CIMD_CACHE.get(client_id)
+    if cached and now - cached[0] < _CIMD_TTL:
+        return cached[1]
+
+    host = urllib.parse.urlsplit(client_id).hostname or ""
+    if _cimd_host_blocked(host):
+        logger.warning("cimd_ssrf_blocked", client_id=client_id)
+        return None
+    try:
+        req = urllib.request.Request(
+            client_id,
+            headers={"Accept": "application/json", "User-Agent": "stocklens-mcp/0.1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            doc = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        logger.warning("cimd_fetch_failed", client_id=client_id, reason=str(exc))
+        return None
+
+    if not isinstance(doc, dict) or not isinstance(doc.get("redirect_uris"), list):
+        return None
+    _CIMD_CACHE[client_id] = (now, doc)
+    return doc
+
+
 # ── Schemas ───────────────────────────────────────────────────────────────
 
 
@@ -305,6 +389,7 @@ async def oauth_authorization_server_metadata(request: Request):
         "scopes_supported": ["mcp:tools", "portfolio:read", "market:read"],
         "token_endpoint_auth_methods_supported": ["none", "client_secret_post"],
         "id_token_signing_alg_values_supported": ["RS256", "HS256"],
+        "authorization_response_iss_parameter_supported": True,
     }
 
 
@@ -436,6 +521,22 @@ async def oauth_authorize_post(body: AuthorizeRequest, request: Request):
     if not body.code_challenge:
         raise HTTPException(status_code=400, detail="code_challenge required")
 
+    # CIMD: URL-formatted client_id = fetch metadata document, enforce redirect_uri
+    client_name: str | None = None
+    if _is_cimd_client_id(body.client_id):
+        doc = await asyncio.to_thread(_fetch_cimd_document, body.client_id)
+        if doc is None:
+            raise HTTPException(
+                status_code=400, detail="Invalid or unreachable client_id metadata document"
+            )
+        redirect_uris = doc.get("redirect_uris") or []
+        if body.redirect_uri not in redirect_uris:
+            raise HTTPException(
+                status_code=400, detail="redirect_uri not listed in client_id metadata document"
+            )
+        client_name = doc.get("client_name") or "external-client"
+        logger.info("cimd_client_resolved", client_id=body.client_id[:64], client_name=client_name)
+
     user = await _authenticate_user(body.email, body.password)
     if user is None:
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -446,6 +547,7 @@ async def oauth_authorize_post(body: AuthorizeRequest, request: Request):
         {
             "user_id": str(user["id"]),
             "client_id": body.client_id,
+            "client_name": client_name or "StockLens MCP",
             "redirect_uri": body.redirect_uri,
             "code_challenge": body.code_challenge,
             "code_challenge_method": body.code_challenge_method,
@@ -453,17 +555,19 @@ async def oauth_authorize_post(body: AuthorizeRequest, request: Request):
             "created_at": int(time.time()),
         },
     )
-    logger.info("oauth_code_issued", user_id=str(user["id"])[:8], client_id=body.client_id)
+    logger.info("oauth_code_issued", user_id=str(user["id"])[:8], client_id=body.client_id[:64])
 
-    # Spec: redirect with code if redirect_uri is non-loopback; for inspector loopback return JSON
+    # Spec: redirect with code if redirect_uri is non-loopback; for inspector loopback return JSON.
+    # RFC 9207: iss param on authorization responses (strict string comparison, no normalization).
+    iss_param = urllib.parse.quote(_issuer(request), safe="")
     if body.redirect_uri.startswith("http://localhost") or body.redirect_uri.startswith(
         "http://127.0.0.1"
     ):
-        return {"code": code, "state": body.state}
+        return {"code": code, "state": body.state, "iss": _issuer(request)}
 
     # 302 redirect for browser clients
     sep = "&" if "?" in body.redirect_uri else "?"
-    loc = f"{body.redirect_uri}{sep}code={code}"
+    loc = f"{body.redirect_uri}{sep}code={code}&iss={iss_param}"
     if body.state:
         loc += f"&state={body.state}"
     return RedirectResponse(url=loc, status_code=302)
@@ -690,13 +794,13 @@ async def verify_mcp_token(
     iss = _issuer(request)
     resource_meta = f"{iss}/.well-known/oauth-protected-resource"
 
-    def _unauth(detail: str) -> HTTPException:
+    def _unauth(detail: str, scope: str = "mcp:tools") -> HTTPException:
         return HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=detail,
             headers={
                 "WWW-Authenticate": f'Bearer realm="stocklens", error="invalid_token", '
-                f'resource_metadata="{resource_meta}"'
+                f'resource_metadata="{resource_meta}", scope="{scope}"'
             },
         )
 

@@ -42,6 +42,43 @@ from src.mcp.tools_adapter import (
 
 logger = structlog.get_logger(__name__)
 
+# ── Protocol versions (dual-version: 2026-07-28 stateless + 2025-06-18 legacy) ──
+
+SUPPORTED_VERSIONS = ["2026-07-28", "2025-06-18"]
+_LEGACY_VERSION = "2025-06-18"
+_PROTO_META_KEY = "io.modelcontextprotocol/protocolVersion"
+
+
+def _request_version(params: dict) -> str | None:
+    """Resolve requested protocol version from per-request _meta (2026-07-28 spec).
+
+    Returns None when _meta is absent — a legacy pre-discover client, which keeps
+    the 2025-06-18 initialize path as-is.
+    """
+    meta = params.get("_meta") or {}
+    return meta.get(_PROTO_META_KEY)
+
+
+def _discover_result() -> dict:
+    """server/discover result — server identity lives in the result _meta (spec-required)."""
+    return {
+        "resultType": "complete",
+        "supportedVersions": SUPPORTED_VERSIONS,
+        "capabilities": {"tools": {}, "resources": {}},
+        "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+                "name": getattr(settings, "MCP_SERVER_NAME", "stocklens"),
+                "version": "0.1.0",
+            }
+        },
+        "instructions": (
+            "StockLens portfolio & market intelligence — 16 tools, 2 resources, "
+            "1 prompt via OAuth 2.1 RS256"
+        ),
+        "ttlMs": 3600000,
+        "cacheScope": "public",
+    }
+
 # ── Router ────────────────────────────────────────────────────────────────
 
 mcp_router = APIRouter(tags=["mcp"])
@@ -76,8 +113,9 @@ async def mcp_health():
 async def mcp_sse(request: Request, payload=Depends(verify_mcp_token)):
     """SSE stream for MCP clients that open GET /mcp for server-initiated events.
 
-    Minimal impl: emit a single endpoint event per Streamable HTTP spec,
-    then keepalive. Real SDK would push notifications here.
+    Kept deliberately under dual-version: 2026-07-28 removes GET streams, but the
+    2025-06-18 path (and the Inspector) still opens one. Minimal impl: emit a single
+    endpoint event per Streamable HTTP spec, then keepalive.
     """
 
     async def gen():
@@ -90,9 +128,10 @@ async def mcp_sse(request: Request, payload=Depends(verify_mcp_token)):
 
 @mcp_router.post("/mcp")
 async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
-    """MCP JSON-RPC over Streamable HTTP — handles initialize, tools/list, tools/call.
+    """MCP JSON-RPC over Streamable HTTP — stateless 2026-07-28 core with dual-version.
 
-    Spec: https://modelcontextprotocol.io/specification/2025-06-18
+    Spec: https://modelcontextprotocol.io/specification/2026-07-28 (server/discover,
+    no initialize) — 2025-06-18 is served alongside for legacy clients.
     Supports both single JSON-RPC object and batch; returns JSON or SSE stream
     depending on Accept header (ponytail: JSON first, SSE when requested).
     """
@@ -116,9 +155,41 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
             responses.append(_error(-32600, "Invalid Request", msg_id))
             continue
 
-        # ── initialize ──────────────────────────────────────────────────
-        if method == "initialize":
-            proto = params.get("protocolVersion", "2025-06-18")
+        # ── version negotiation (2026-07-28) ─────────────────────────────
+        requested = _request_version(params)
+        if requested is not None and requested not in SUPPORTED_VERSIONS:
+            responses.append(
+                {
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "error": {
+                        "code": -32022,
+                        "message": "Unsupported protocol version",
+                        "data": {"supported": SUPPORTED_VERSIONS, "requested": requested},
+                    },
+                }
+            )
+            continue
+
+        # ── server/discover (2026-07-28) ─────────────────────────────────
+        if method == "server/discover":
+            responses.append(
+                {"jsonrpc": "2.0", "id": msg_id, "result": _discover_result()}
+            )
+            logger.info("mcp_discover", version=requested)
+
+        # ── initialize (2025-06-18 only — rejected on 2026-07-28) ────────
+        elif method == "initialize":
+            if requested == "2026-07-28":
+                responses.append(
+                    _error(
+                        -32601,
+                        "Method not found: initialize (2026-07-28 has no initialize handshake)",
+                        msg_id,
+                    )
+                )
+                continue
+            proto = params.get("protocolVersion", _LEGACY_VERSION)
             responses.append(
                 {
                     "jsonrpc": "2.0",
@@ -337,7 +408,10 @@ def create_mcp_app():
 
             fastmcp.tool(name=name, description=defn["description"])(_make_handler(name))
 
-        # Streamable HTTP ASGI with auth
+        # Streamable HTTP ASGI with auth.
+        # ponytail: SDK-native path is the legacy 2025-06-18 implementation until an
+        # SDK release ships 2026-07-28 (server/discover) — the router above already
+        # serves both versions; upgrade here when the SDK does.
         app = fastmcp.streamable_http_app()  # type: ignore[attr-defined]
         return app
     except Exception as exc:

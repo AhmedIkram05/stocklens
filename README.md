@@ -76,9 +76,9 @@ Beneath the mobile app is a production-grade system: a **Rust/PyO3 features engi
 
 | Layer                 | Implementation                                                                                       | Scale                                                                           |
 | --------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| **Frontend**          | React Native (TypeScript 5.9, Expo 54, React 19) with dark mode, biometric auth, real-time portfolio | 85 test files, 822 assertions                                                   |
+| **Frontend**          | React Native (TypeScript 5.9, Expo 54, React 19) with dark mode, biometric auth, real-time portfolio | 79 test files, 823 tests                                                        |
 | **Backend API**       | FastAPI (Python 3.13) — asyncpg, SQLAlchemy 2.0, Pydantic v2, structlog, slowapi rate limiting       | 79 test files, 1,452 test functions, 90% cov gate                               |
-| **MCP Server**        | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI      | 16 tools + 2 resources + 1 prompt (single source), 67 tests, RFC 8414/9728/7517 |
+| **MCP Server**        | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI      | 16 tools + 2 resources + 1 prompt (single source), 93 tests, RFC 8414/9728/7517/9207, stateless 2026-07-28 (dual-version) + CIMD |
 | **Rust Acceleration** | PyO3/Maturin native extension replacing pandas-based technical indicators                            | 13 source modules, 12 exported functions, zero-cost abstractions                |
 | **ML Model**          | PyTorch Global LSTM with entity embeddings + Optuna HPO (50 trials)                                  | 17 features, 55–475+ tickers, 6yr OHLCV lookback                                |
 | **LLM Agent**         | LangGraph ReAct (2-node `StateGraph`, 16 tools) via AWS Bedrock Converse API                         | SSE streaming, two-tier Redis+RDS persistence                                   |
@@ -191,7 +191,7 @@ flowchart TB
 | **Network isolation**     | Three-tier security groups                                                                      | Internet → ALB (443) → ECS (8000) → RDS (5432)/Redis (6379). No public database, no direct ECS access.                                                                                                                                                    |
 | **Frontend proxy**        | N/A (Expo/React Native) — API calls direct to ALB via `EXPO_PUBLIC_API_URL`                     | Same binary works in dev (localhost) and prod (ALB DNS) — `EXPO_PUBLIC_API_URL` injected at build time.                                                                                                                                                   |
 | **CI/CD auth**            | OIDC federation with AWS — no long-lived credentials                                            | IAM role assumed per-run, scoped to `main` branch only. Zero AWS secrets stored in GitHub.                                                                                                                                                                |
-| **MCP server**            | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI | Single source: 16 tools + 2 resources + 1 prompt, RFC 8414/9728 discovery, `WWW-Authenticate` with `resource_metadata`, 67 tests                                                                                                                          |
+| **MCP server**            | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI | Single source: 16 tools + 2 resources + 1 prompt, RFC 8414/9728 discovery, `WWW-Authenticate` with `resource_metadata` + `scope`, 93 tests, dual-version 2025-06-18 + stateless 2026-07-28, CIMD |
 | **MLOps drift detection** | Evidently AI PSI/KS/JSD on features + predictions                                               | Lightweight, Airflow-native, covers distribution, feature, and model drift in one library. Reports stored to S3, alerts via CloudWatch.                                                                                                                   |
 
 ---
@@ -202,7 +202,7 @@ flowchart TB
 | ------------------ | ----------------------------- | --------------------------------------------------------------------------------------- |
 | **API**            | REST endpoints                | 71 across 15 routers (59 REST + 12 MCP/OAuth/JWKS)                                      |
 | **Tests**          | Backend test files            | 81 (+5 MCP)                                                                             |
-|                    | Backend test functions        | 1,482 (+50 MCP)                                                                         |
+|                    | Backend test functions        | 1,508 (93 MCP)                                                                          |
 |                    | Frontend test files           | 85                                                                                      |
 |                    | Frontend assertions           | 822                                                                                     |
 |                    | Coverage gate (backend)       | 90% line                                                                                |
@@ -215,7 +215,7 @@ flowchart TB
 |                    | Optuna HPO trials             | 50                                                                                      |
 |                    | Tickers (dev / full)          | 55 / 475                                                                                |
 |                    | Agent tools                   | 16 across 7 categories (also exposed via MCP)                                           |
-|                    | MCP server                    | 16 tools + 2 resources + 1 prompt, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS, 67 tests |
+|                    | MCP server                    | 16 tools + 2 resources + 1 prompt, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS, 93 tests |
 | **CI/CD**          | Parallel CI jobs              | 9                                                                                       |
 |                    | CD pipeline stages            | 7                                                                                       |
 |                    | Security scanners             | 6 (Codecov, Checkov, tfsec, Gitleaks, Trivy, hadolint)                                  |
@@ -316,7 +316,7 @@ The React Native app walkthroughs showing receipt-to-trade flow, portfolio track
 
 ![MCP tools/call — get_market_quote](assets/demos/mcp-tool-call.png)
 
-> `tools/call get_market_quote {ticker:"AAPL"}` → `225.84 USD` via `tools_adapter.invoke_tool` → `tool.ainvoke`. Verified in 67 MCP tests.
+> `tools/call get_market_quote {ticker:"AAPL"}` → `225.84 USD` via `tools_adapter.invoke_tool` → `tool.ainvoke`. Verified in 93 MCP tests.
 
 **MCP — OAuth gating (401 with resource_metadata)**
 
@@ -366,6 +366,8 @@ The React Native app walkthroughs showing receipt-to-trade flow, portfolio track
 ### 🔌 MCP Enterprise Server (Streamable HTTP + OAuth 2.1)
 
 A **self-built MCP server** exposing StockLens's **16 canonical tools** via the **official Python SDK (`mcp>=1.12`**, Streamable HTTP, **OAuth 2.1 PKCE S256**), **mounted on the existing FastAPI** — no separate service, no tool duplication. Single source of truth: `src/agent/tools.py` → `src/mcp/tools_adapter.py` → MCP `Tool` definitions (injected `user_id`/`portfolio_id` stripped from `inputSchema`, injected server-side from verified JWT).
+
+> **Modern MCP (2026-07-28):** the server is **dual-version** — it serves the **stateless 2026-07-28 core** (`server/discover` with `supportedVersions`, per-request `_meta`, explicit `-32022` on unsupported versions; no initialize handshake) **alongside** legacy 2025-06-18 initialize clients (Inspector, Claude Desktop). Auth is hardened with **CIMD** client registration (HTTPS-URL `client_id` metadata documents, SSRF-guarded) and **RFC 9207 issuer validation** (`iss` in authorize responses). Details: `docs/mcp.md` → Protocol Support.
 
 > **Enterprise differentiator vs. LAAD's unauthenticated stdio server:** This is _production-grade authenticated_ — RFC 8414 Authorization Server Metadata, RFC 9728 Protected Resource Metadata, `WWW-Authenticate` with `resource_metadata`, PKCE S256, refresh rotation with stolen-token detection — the ecosystem is moving to enterprise-readiness fast.
 
@@ -428,7 +430,7 @@ flowchart LR
 | 1    | `POST /oauth/authorize`                  | `email, password, client_id, redirect_uri, code_challenge, state` | `Redis oauth:code:{code}` 600s, single-use                                                                                                                                   | Authenticates via `verify_password` + `users` table                                                                                              |
 | 2    | `POST /oauth/token` `authorization_code` | `code, code_verifier, redirect_uri, client_id`                    | `SHA256(verifier)==challenge` check, `delete code`                                                                                                                           | Issues `HS256 JWT` via `create_access_token/create_refresh_token`, persists `refresh_tokens.token_hash`, reused verifier prevents code injection |
 | 3    | `POST /oauth/token` `refresh_token`      | `refresh_token`                                                   | `is_token_blacklisted` + `revoked` check, blacklist old JTI, revoke-all on stolen token                                                                                      | Mirrors `src/auth/router.py` rotation logic                                                                                                      |
-| 4    | Every `POST /mcp`                        | `Authorization: Bearer <JWT>`                                     | `verify_mcp_token`: `decode_token` + `is_token_blacklisted` + `users.is_active`, `401 WWW-Authenticate: Bearer … resource_metadata="…/.well-known/oauth-protected-resource"` | Per MCP Authorization spec 2025-06-18                                                                                                            |
+| 4    | Every `POST /mcp`                        | `Authorization: Bearer <JWT>`                                     | `verify_mcp_token`: `decode_token` + `is_token_blacklisted` + `users.is_active`, `401 WWW-Authenticate: Bearer … resource_metadata="…/.well-known/oauth-protected-resource", scope="mcp:tools"` | Legacy 2025-06-18 + stateless 2026-07-28 (`server/discover`, `-32022` on unsupported version) |
 
 **Tool adapter contract:**
 
@@ -440,11 +442,11 @@ flowchart LR
 | Mount     | `src/mcp/server.py:mcp_router` (`/.well-known/*`, `/oauth/*`, `/mcp`) included in `src/main.py` when `MCP_ENABLED`                                                                                                |
 | Fallback  | `create_mcp_app()` tries `mcp.server.fastmcp.FastMCP` SDK, degrades to FastAPI JSON-RPC so CI stays green without `mcp` extra                                                                                     |
 
-**Verification (37 tests, 100% MCP server pass):**
+**Verification (93 tests, 100% MCP server pass):**
 
 ```bash
 # Unit + integration (postgres_test + redis via docker)
-pytest backend/tests/test_mcp_* -v  # 37 passed
+pytest backend/tests/test_mcp_* -v  # 93 passed
 
 # Inspector (live)
 npx @modelcontextprotocol/inspector  # → http://localhost:8000/mcp, OAuth discovery auto, 16 tools listed, get_market_quote {ticker:"AAPL"} → 150.0
@@ -453,7 +455,7 @@ npx @modelcontextprotocol/inspector  # → http://localhost:8000/mcp, OAuth disc
 
 **Evidence:** `docs/mcp.md` + `docs/mcp-evidence/inspector-trace.json` + screenshots `assets/demos/mcp-*.png` (tools/list, tool/call, 401).
 
-**Security checklist:** PKCE S256 mandatory, single-use codes, `state` CSRF, refresh rotation + stolen-token revoke-all, `WWW-Authenticate` with `resource_metadata`, JWT blacklist via Redis `bl:*`, rate `60/min` on `/mcp`. Next rung: `RS256+JWKS+kid` rotation.
+**Security checklist:** PKCE S256 mandatory, single-use codes, `state` CSRF, refresh rotation + stolen-token revoke-all, `WWW-Authenticate` with `resource_metadata` + `scope`, JWT blacklist via Redis `bl:*`, rate `60/min` on `/mcp`, **CIMD** client registration (HTTPS-URL `client_id`, SSRF-guarded), **RFC 9207** issuer validation (`iss` in authorize responses). Next rung: `RS256+JWKS+kid` rotation + mTLS / per-scope enforcement.
 
 ---
 
@@ -1275,7 +1277,7 @@ cargo test && cargo clippy -- -D warnings
 # MCP is mounted on the same FastAPI — no separate service
 # 1. Start the stack (includes MCP at /mcp)
 docker compose up -d postgres postgres_test redis  # or: docker compose up -d
-PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_mcp_* -v  # 67 MCP tests
+PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_mcp_* -v  # 93 MCP tests
 
 # 2. Live Inspector (proves Streamable HTTP + OAuth discovery)
 npx @modelcontextprotocol/inspector
@@ -1339,7 +1341,7 @@ StockLens/
 │   │   ├── transactions/             # CRUD + holdings recalc + cash flows
 │   │   ├── config.py                 # Pydantic Settings (env-driven, MCP_ENABLED)
 │   │   └── database/                 # SQLAlchemy 2.0 models, Alembic
-│   └── tests/                        # 81 files, 1,482 functions (+5 MCP, 67 tests)
+│   └── tests/                        # 81 files, 1,508 functions (93 MCP tests)
 ├── frontend/
 │   ├── Dockerfile                    # Multi-stage: node:20-alpine → nginx alpine
 │   ├── package.json                  # Expo 54, React Native 0.81, TypeScript 5.9
@@ -1350,7 +1352,7 @@ StockLens/
 │   │   ├── services/                 # API client, auth, storage
 │   │   ├── store/                    # Zustand state management
 │   │   └── utils/                    # Helpers, formatters
-│   └── __tests__/                    # 85 test files, 822 assertions
+│   └── __tests__/                    # 79 test files, 823 tests
 ├── terraform/
 │   ├── main.tf                       # Root module, provider, backend
 │   ├── variables.tf                  # Input variables
