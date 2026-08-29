@@ -37,8 +37,8 @@ has OAuth 2.1 PKCE + RS256/JWKS, so this is a natural extension.
   instructs clients to "select a mutually supported version from this list to retry";
   (3) the stdio Backward Compatibility section explicitly describes dual-mode clients that
   probe `server/discover` and "fall back to the initialize handshake" when the server
-fails to answer it. Serving multiple versions is the protocol's designed migration path
-   until the installed client population moves to 2026-07-28.
+  fails to answer it. Serving multiple versions is the protocol's designed migration path
+  until the installed client population moves to 2026-07-28.
 - **`initialize` is rejected on 2026-07-28.** Under the new protocol version the method
   doesn't exist (method-not-found), which is what a conforming 2026-07-28 client expects.
   Legacy clients (pre-discover, no `_meta`) keep working as today.
@@ -83,7 +83,7 @@ fails to answer it. Serving multiple versions is the protocol's designed migrati
     `data: {supported: [...], requested: '...'}`.
   - New message handler for `server/discover` returning the discover result above.
   - On `"2026-07-28"`: reject `initialize` / `notifications/initialized` (method not
-    found); everything else (tools/*, resources/*, prompts/*, ping) proceeds unchanged.
+    found); everything else (tools/_, resources/_, prompts/*, ping) proceeds unchanged.
   - Responses on the new path include server identification `_meta` (spec allows
     identification "in each request or result" — **open item:** confirm the exact
     result-side field placement from the spec before implementing).
@@ -99,7 +99,7 @@ fails to answer it. Serving multiple versions is the protocol's designed migrati
     timeout; cache validated documents in-memory with TTL (e.g. 300s) rather than per
     request.
   - `_unauth` (auth.py ~line 693): `WWW-Authenticate: Bearer resource_metadata="...",
-    scope="portfolio:read"` (resource_metadata already present; add scope guidance).
+scope="portfolio:read"` (resource_metadata already present; add scope guidance).
 - No schema changes. No new dependencies (stdlib `urllib`, `ipaddress`, `functools`
   cover CIMD fetch + cache).
 
