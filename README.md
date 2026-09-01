@@ -38,7 +38,7 @@
 
 <br/>
 
-**StockLens turns your spending into stock trades.** Scan a receipt, the OCR cascade extracts the total, and you can buy or sell real stocks in real time with that amount. Build portfolios tracked with cash-flow-aware time-weighted return, get LSTM-powered 5-day directional forecasts, compare your performance against SPY (tracking error + information ratio), ask a LangGraph agent natural-language questions about your holdings, and **drive all 16 tools through an enterprise-grade MCP server** from Claude Desktop or any MCP client.
+**StockLens turns your spending into an investment workflow.** Scan a receipt, the OCR cascade extracts the total into investable cash, and you can immediately buy or sell real stocks at **live market prices** (FX-adjusted to GBP) - holdings update at weighted-average cost basis, and every order is checked against your receipt-funded balance. Build portfolios tracked with cash-flow-aware TWR, get LSTM-powered 5-day directional forecasts, compare your performance against SPY (tracking error + information ratio), ask a LangGraph agent natural-language questions about your holdings, and **drive all 16 tools through an enterprise-grade MCP server** from Claude Desktop or any MCP client.
 
 Beneath the mobile app is a production-grade system: a **Rust/PyO3 features engine** replaces pandas for zero-cost technical indicator computation, a **confidence-gated OCR cascade** escalates from Tesseract regex to Bedrock Vision only when accuracy demands it, a weekly **Airflow MLOps pipeline** retrains the LSTM with automated champion/challenger promotion and Evidently drift detection, and everything is deployed via **Terraform on AWS ECS Fargate ARM64/Graviton** with GitHub Actions OIDC CI/CD.
 
@@ -52,7 +52,7 @@ flowchart TB
         RN[React Native<br/>TypeScript + Expo]
     end
 
-    subgraph AWS["AWS Cloud — eu-west-2"]
+    subgraph AWS["AWS Cloud - eu-west-2"]
         subgraph Public["Public Subnets"]
             ALB[Application<br/>Load Balancer]
             WAF[AWS WAF<br/>Rate-based + OWASP]
@@ -88,7 +88,7 @@ flowchart TB
         SM[SageMaker<br/>ml.m5.xlarge]
     end
 
-    subgraph CI_CD["CI/CD — GitHub Actions"]
+    subgraph CI_CD["CI/CD - GitHub Actions"]
         GHA[9 CI Jobs<br/>Lint / TS / Tests / Rust /<br/>Docker / IaC / Secrets]
         CD[7-Stage Deploy<br/>Build → Push → Scan →<br/>Plan → Review → Apply]
         TF[Terraform<br/>S3 State + DynamoDB Lock]
@@ -126,14 +126,14 @@ flowchart TB
     style CI_CD fill:#2d1b1b,color:#fff,stroke:#553
 ```
 
-**End-to-end flow:** a user scans a receipt → the OCR cascade extracts the total (Tesseract → Bedrock Vision fallback) → the user confirms and trades that exact amount → the transaction is recorded with a cash-flow entry → portfolio analytics compute time-weighted return with explicit cash-flow handling → the LSTM forecasts 5-day direction for each holding → the LangGraph agent answers questions by calling 16 tools via SSE streaming.
+**End-to-end flow:** a user scans a receipt → the OCR cascade extracts the total (Tesseract → Bedrock Vision fallback) → the receipt funds the portfolio as a cash-flow deposit → they buy or sell real stocks at the live quoted price → the order passes an affordability check against their receipt-funded cash → weighted-average cost basis and transactions update atomically → portfolio analytics compute time-weighted return with explicit cash-flow handling → the LSTM forecasts 5-day direction for each holding → the LangGraph agent answers questions by calling 16 tools via SSE streaming.
 
 ## Every Piece, in One Line
 
 | Layer                 | Implementation                                                                                       | Scale                                                                                                                            |
 | --------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | **Frontend**          | React Native (TypeScript 5.9, Expo 54, React 19) with dark mode, biometric auth, real-time portfolio | 79 test files, 823 tests                                                                                                         |
-| **Backend API**       | FastAPI (Python 3.13) — asyncpg, SQLAlchemy 2.0, Pydantic v2, structlog, slowapi rate limiting       | 69 test files, 1,508 test functions, 90% cov gate                                                                                |
+| **Backend API**       | FastAPI (Python 3.13) - asyncpg, SQLAlchemy 2.0, Pydantic v2, structlog, slowapi rate limiting       | 69 test files, 1,508 test functions, 90% cov gate                                                                                |
 | **MCP Server**        | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI      | 16 tools + 2 resources + 1 prompt (single source), 93 tests, RFC 8414/9728/7517/9207, stateless 2026-07-28 (dual-version) + CIMD |
 | **Rust Acceleration** | PyO3/Maturin native extension replacing pandas-based technical indicators                            | 13 source modules, 12 exported functions, zero-cost abstractions                                                                 |
 | **ML Model**          | PyTorch Global LSTM with entity embeddings + Optuna HPO (50 trials)                                  | 17 features, 55–475+ tickers, 6yr OHLCV lookback                                                                                 |
@@ -141,27 +141,27 @@ flowchart TB
 | **NLP Pipeline**      | OCR cascade: Tesseract regex → heuristic scoring → Bedrock Vision LLM → fallback                     | rapidfuzz merchant matching, discrepancy detection, Redis caching                                                                |
 | **MLOps**             | Airflow weekly retraining, Evidently AI drift detection, champion/challenger auto-promotion          | PSI/KS/JSD thresholds, MLflow tracking, S3 delivery                                                                              |
 | **Infrastructure**    | Terraform IaC (≥1.9) on AWS ECS Fargate ARM64/Graviton                                               | Multi-AZ RDS, ElastiCache Redis 8.8, WAF, Auto Scaling                                                                           |
-| **CI/CD**             | GitHub Actions OIDC — 9 CI jobs + 7-stage deploy pipeline                                            | Codecov, Checkov, tfsec, Gitleaks, Trivy, hadolint                                                                               |
+| **CI/CD**             | GitHub Actions OIDC - 9 CI jobs + 7-stage deploy pipeline                                            | Codecov, Checkov, tfsec, Gitleaks, Trivy, hadolint                                                                               |
 
 ## Why It's Interesting
 
 | What | Why a reviewer should care |
 |---|---|
-| **Self-built MCP server, not a wrapper** | Official Python SDK (≥1.12), Streamable HTTP, OAuth 2.1 PKCE S256, RS256/JWKS with `kid` rotation, RFC 8414/9728 discovery, CIMD dynamic client registration, stateless mode. The 16 tools share one source of truth with the LangGraph agent — no duplication. Verified live: MCP Inspector traces + a working Claude Desktop config. |
+| **Self-built MCP server, not a wrapper** | Official Python SDK (≥1.12), Streamable HTTP, OAuth 2.1 PKCE S256, RS256/JWKS with `kid` rotation, RFC 8414/9728 discovery, CIMD dynamic client registration, stateless mode. The 16 tools share one source of truth with the LangGraph agent - no duplication. Verified live: MCP Inspector traces + a working Claude Desktop config. |
 | **Confidence-gated OCR cascade** | Tesseract regex → heuristic scoring → Bedrock Vision LLM *only when confidence drops below 0.7*; rapidfuzz merchant matching (≥80), Redis 24h cache. The interesting decision is economic: don't spend LLM budget on receipts Tesseract already read correctly. |
-| **Weekly champion/challenger gate** | Airflow (Monday 06:00 UTC): Rust feature engine → Optuna HPO (50 trials) → promote the challenger only if directional accuracy improves > 2 percentage points → Evidently PSI/KS/JSD drift reports to S3. The full retrain loop is automated — not a notebook, not a Lambda cron. |
-| **Graviton economics** | ARM64 ECS Fargate (ADR-009): 20–30% cost savings at equal performance; multi-stage builds bring the backend image to ~450MB vs ~1.2GB naive; QEMU cross-build for the Rust wheel in CI; AWS Budgets cap. |
+| **Weekly champion/challenger gate** | Airflow (Monday 06:00 UTC): Rust feature engine → Optuna HPO (50 trials) → promote the challenger only if directional accuracy improves > 2 percentage points → Evidently PSI/KS/JSD drift reports to S3. The full retrain loop is automated - not a notebook, not a Lambda cron. |
+| **Graviton economics** | ARM64 ECS Fargate (ADR-009): 20–30% cost savings at equal performance; multi-stage builds bring the backend image to ~450MB vs ~1.2GB naive; QEMU cross-build for the Rust wheel in CI; **$100/month AWS Budget hard cap** with anomaly detection. |
 
 ## Key Metrics
 
 | Metric | Value |
 |---|---|
 | REST API | 68 endpoints across 15 routers, plus the mounted MCP/OAuth/JWKS surface |
-| Backend tests | **69 files · 1,508 functions** (93 MCP) — pytest + pytest-asyncio + xdist, 90% line-coverage gate |
-| Frontend tests | **79 files · 823 assertions** — branches≥75%, functions≥80%, lines≥90% |
+| Backend tests | **69 files · 1,508 functions** (93 MCP) - pytest + pytest-asyncio + xdist, 90% line-coverage gate |
+| Frontend tests | **79 files · 823 assertions** - branches≥75%, functions≥80%, lines≥90% |
 | MCP server | 16 tools + 2 resources + 1 prompt · OAuth 2.1 PKCE S256 · RS256/JWKS · 93 tests |
 | ML model | Global LSTM: 2 layers (hidden=80, dropout=0.535), 17 features, 50 Optuna trials |
-| Model performance | Directional accuracy **51.63%** (best) vs 33% majority baseline · Sharpe **0.97** · validation accuracy 55.27% |
+| Model performance | Directional accuracy **51.63%** (best) vs 33% majority baseline · Sharpe **0.97** |
 | Portfolio analytics | Cash-flow-aware TWR; tracking error + information ratio vs SPY |
 | Infrastructure | Terraform: 14 modules / 166 resources · 7 Docker services · ECS Fargate ARM64 on Graviton |
 | CI/CD | 9 parallel CI jobs · 7-stage deploy · Checkov + tfsec + Gitleaks + Trivy + hadolint + weekly CodeQL |
@@ -170,71 +170,58 @@ flowchart TB
 
 ## Demos
 
-### Mobile App — Core User Flows
+### Mobile App - Core User Flows
 
-**Main Demo** — two receipts through the OCR cascade, totals extracted, merchant matched via rapidfuzz:
+**Main Demo** - two receipts through the OCR cascade, totals extracted, merchant matched via rapidfuzz:
 [Main Demo](https://github.com/user-attachments/assets/2d626dd7-2a60-479e-9e74-e6bbc3d71da2)
 
-**Portfolio Screens** — holdings, sector exposure, performance vs SPY, cash-flow-aware TWR:
+**Portfolio Screens** - holdings, sector exposure, performance vs SPY, cash-flow-aware TWR:
 [Portfolio Screens](https://github.com/user-attachments/assets/6f8ac564-21be-4965-847d-4dc83065ac54)
 
-**Auth Flow** — signup → login → biometric prompt → dark mode:
+**Auth Flow** - signup → login → biometric prompt → dark mode:
 [Auth Flow](https://github.com/user-attachments/assets/a0408e1d-283f-44b6-aa12-8e3a1089d18c)
 
-**Home Screens** — portfolio summary cards, recent transactions, spending analysis, LSTM forecast chips:
+**Home Screens** - portfolio summary cards, recent transactions, spending analysis, LSTM forecast chips:
 [Home Screens](https://github.com/user-attachments/assets/d2f2d4f8-ae43-4b96-8a96-f5733e443ea1)
 
-**Auto-lock** — biometric re-authentication to resume:
+**Auto-lock** - biometric re-authentication to resume:
 [Auto-lock](https://github.com/user-attachments/assets/35854565-dea4-475b-b098-7d00b2e1d351)
 
 ### AI Agent & MLOps
 
-**Agent Interaction** — natural-language query → 16 tools → SSE streaming:
+**Agent Interaction** - natural-language query → 16 tools → SSE streaming:
 [Agent Interaction](https://github.com/user-attachments/assets/09724723-ff82-45ec-8b6e-3e8ce4541fe4)
 
-**Agent Eval in CI** — correctness judged by GLM-4.7-Flash, LangSmith tracing at 10% sample rate:
+**Agent Eval in CI** - correctness judged by GLM-4.7-Flash, LangSmith tracing at 10% sample rate:
 [Agent Eval in CI](https://github.com/user-attachments/assets/14377fe7-f273-4f11-bc10-4ae64f05eb38)
 
-**LangSmith UI** — traces, runs, evaluation results:
+**LangSmith UI** - traces, runs, evaluation results:
 [LangSmith UI](https://github.com/user-attachments/assets/6a49b8bf-f3a3-43e9-af9e-7f487298319a)
 
-**Airflow DAG** — weekly retraining → Rust feature engine → Optuna HPO → champion/challenger → Evidently drift:
+**Airflow DAG** - weekly retraining → Rust feature engine → Optuna HPO → champion/challenger → Evidently drift:
 ![Airflow DAG](assets/demos/airflow_dag_weekly_retraining-graph.png)
 
-**MLflow Training** — experiments with hyperparameters, loss curves, registered artifacts:
+**MLflow Training** - experiments with hyperparameters, loss curves, registered artifacts:
 [MLflow Training](https://github.com/user-attachments/assets/33ef9b7c-4cc1-475b-9021-1c154db9dde5)
 
 ### Infrastructure & CI/CD
 
-**9 Parallel CI Jobs** — [9 Parallel CI Jobs](https://github.com/user-attachments/assets/cf65c2e3-581f-417f-9a2e-efe143636f1f)
+**9 Parallel CI Jobs** - [9 Parallel CI Jobs](https://github.com/user-attachments/assets/cf65c2e3-581f-417f-9a2e-efe143636f1f)
 
-**7-Stage Deploy** — [7-Stage Deploy](https://github.com/user-attachments/assets/5a6b9026-dc1b-42ff-b63e-de8451d82023)
+**7-Stage Deploy** - [7-Stage Deploy](https://github.com/user-attachments/assets/5a6b9026-dc1b-42ff-b63e-de8451d82023)
 
-**AWS Infra Walkthrough** — [AWS Infra Walkthrough](https://github.com/user-attachments/assets/e750980b-d7c9-4a75-bee4-59627b0568e2)
+**AWS Infra Walkthrough** - [AWS Infra Walkthrough](https://github.com/user-attachments/assets/e750980b-d7c9-4a75-bee4-59627b0568e2)
 
-### MCP Server — Inspector & Claude Desktop
+### MCP Server - Inspector & Claude Desktop
 
-**MCP carousel** — tools/list (16 canonical tools, JWT-injected context) → tools/call (`AAPL` → 225.84 USD) → OAuth 401 + RFC 9728 `resource_metadata` → JWKS `RS256` (kid: stocklens-mcp-1):
-![MCP Server — 16 tools, live call, OAuth gating, JWKS](assets/demos/mcp.gif)
+**MCP carousel** - tools/list (16 canonical tools, JWT-injected context) → tools/call (`AAPL` → 225.84 USD) → OAuth 401 + RFC 9728 `resource_metadata` → JWKS `RS256` (kid: stocklens-mcp-1):
+![MCP Server - 16 tools, live call, OAuth gating, JWKS](assets/demos/mcp.gif)
 
-**Claude Desktop config**
-
-```json
-{
-  "mcpServers": {
-    "stocklens": {
-      "command": "npx",
-      "args": ["mcp-remote", "http://localhost:8000/mcp", "--oauth"]
-    }
-  }
-}
-```
-
-Trace evidence: `docs/mcp-evidence/inspector.log` and `docs/mcp.md`.
+**Claude Desktop** - `npx mcp-remote http://localhost:8000/mcp --oauth` (full config in Quick Start). Trace evidence: `docs/mcp-evidence/inspector.log` and `docs/mcp.md`.
 
 ### Tests
 
-**Tests** — backend 1,508 passing (90% line gate) → frontend 823 assertions (3 coverage gates):
+**Tests** - backend 1,508 passing (90% line gate) → frontend 823 assertions (3 coverage gates):
 ![Backend + Frontend test suites](assets/demos/tests.gif)
 
 ## Trade-offs That Mattered
@@ -259,7 +246,7 @@ All 9 ADRs with full rationale: [docs/adr/](docs/adr/).
 
 ## Deep Dives
 
-The full technical detail — MCP server internals, LangGraph agent, LSTM, OCR cascade, Rust engine, portfolio analytics, MLOps, testing tiers, infrastructure, CI/CD, security model, and project structure — lives in **[docs/deep-dives.md](docs/deep-dives.md)**.
+The full technical detail - MCP server internals, LangGraph agent, LSTM, OCR cascade, Rust engine, portfolio analytics, MLOps, testing tiers, infrastructure, CI/CD, security model, and project structure - lives in **[docs/deep-dives.md](docs/deep-dives.md)**.
 
 ## Quick Start
 
@@ -291,7 +278,7 @@ cd frontend && npm test -- --watchAll=false --coverage  # 823 assertions, 3 cove
 cd backend/ml/features-engine && cargo test && cargo clippy -- -D warnings
 ```
 
-### MCP — try it yourself (Inspector + Claude Desktop)
+### MCP - try it yourself (Inspector + Claude Desktop)
 
 ```bash
 docker compose up -d                          # MCP is mounted on the same FastAPI at /mcp
@@ -320,10 +307,14 @@ terraform init && terraform plan && terraform apply
 
 ## Documentation
 
-- [Architecture Decision Records](docs/adr/) — all 9 trade-off write-ups
-- [MCP server guide](docs/mcp.md) — Streamable HTTP, OAuth 2.1 PKCE, Inspector & Claude Desktop verification
-- [MCP live evidence](docs/mcp-evidence/) — Inspector traces
-- [Deep dives](docs/deep-dives.md) — everything cut from this README, in full
+- [Architecture Decision Records](docs/adr/) - all 9 trade-off write-ups
+- [MCP server guide](docs/mcp.md) - Streamable HTTP, OAuth 2.1 PKCE, Inspector & Claude Desktop verification
+- [MCP live evidence](docs/mcp-evidence/) - Inspector traces
+- [Deep dives](docs/deep-dives.md) - everything cut from this README, in full
+
+## About This Project
+
+A personal project by **Ahmed Ikram**, designed and built end-to-end - from the OCR cascade and Rust features engine, through the LSTM and MCP layers, to the Terraform estate.
 
 ## Related Projects
 

@@ -1,6 +1,6 @@
-# StockLens — Deep Dives
+# StockLens - Deep Dives
 
-> Extracted from `README.md` so the README can stay a design document. The full technical detail — MCP server internals, LangGraph agent, LSTM, OCR cascade, Rust engine, portfolio analytics, MLOps, testing tiers, infrastructure, CI/CD, security model, and project structure — lives here.
+> Extracted from `README.md` so the README can stay a design document. The full technical detail - MCP server internals, LangGraph agent, LSTM, OCR cascade, Rust engine, portfolio analytics, MLOps, testing tiers, infrastructure, CI/CD, security model, and project structure - lives here.
 
 ## Engineering Highlights
 
@@ -14,8 +14,8 @@
 | **ML feature compute**    | Rust/PyO3 native extension replacing pandas                                                     | 12 exported functions compute 17 features (14 technical + 3 cross-sectional) at O(n) with zero Python overhead. Called from Airflow DAG and inference endpoint.                                                                                           |
 | **Deployment gating**     | Backend health check → Frontend deploy (via ECS service ordering)                               | Pipeline explicitly waits for ECS rolling update to pass health checks before considering deploy complete. Zero API/UI version mismatch in production.                                                                                                    |
 | **Network isolation**     | Three-tier security groups                                                                      | Internet → ALB (443) → ECS (8000) → RDS (5432)/Redis (6379). No public database, no direct ECS access.                                                                                                                                                    |
-| **Frontend proxy**        | N/A (Expo/React Native) — API calls direct to ALB via `EXPO_PUBLIC_API_URL`                     | Same binary works in dev (localhost) and prod (ALB DNS) — `EXPO_PUBLIC_API_URL` injected at build time.                                                                                                                                                   |
-| **CI/CD auth**            | OIDC federation with AWS — no long-lived credentials                                            | IAM role assumed per-run, scoped to `main` branch only. Zero AWS secrets stored in GitHub.                                                                                                                                                                |
+| **Frontend proxy**        | N/A (Expo/React Native) - API calls direct to ALB via `EXPO_PUBLIC_API_URL`                     | Same binary works in dev (localhost) and prod (ALB DNS) - `EXPO_PUBLIC_API_URL` injected at build time.                                                                                                                                                   |
+| **CI/CD auth**            | OIDC federation with AWS - no long-lived credentials                                            | IAM role assumed per-run, scoped to `main` branch only. Zero AWS secrets stored in GitHub.                                                                                                                                                                |
 | **MCP server**            | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI | Single source: 16 tools + 2 resources + 1 prompt, RFC 8414/9728 discovery, `WWW-Authenticate` with `resource_metadata` + `scope`, 93 tests, dual-version 2025-06-18 + stateless 2026-07-28, CIMD                                                          |
 | **MLOps drift detection** | Evidently AI PSI/KS/JSD on features + predictions                                               | Lightweight, Airflow-native, covers distribution, feature, and model drift in one library. Reports stored to S3, alerts via CloudWatch.                                                                                                                   |
 
@@ -24,11 +24,11 @@
 
 ### 🔌 MCP Enterprise Server (Streamable HTTP + OAuth 2.1)
 
-A **self-built MCP server** exposing StockLens's **16 canonical tools** via the **official Python SDK (`mcp>=1.12`**, Streamable HTTP, **OAuth 2.1 PKCE S256**), **mounted on the existing FastAPI** — no separate service, no tool duplication. Single source of truth: `src/agent/tools.py` → `src/mcp/tools_adapter.py` → MCP `Tool` definitions (injected `user_id`/`portfolio_id` stripped from `inputSchema`, injected server-side from verified JWT).
+A **self-built MCP server** exposing StockLens's **16 canonical tools** via the **official Python SDK (`mcp>=1.12`**, Streamable HTTP, **OAuth 2.1 PKCE S256**), **mounted on the existing FastAPI** - no separate service, no tool duplication. Single source of truth: `src/agent/tools.py` → `src/mcp/tools_adapter.py` → MCP `Tool` definitions (injected `user_id`/`portfolio_id` stripped from `inputSchema`, injected server-side from verified JWT).
 
-> **Modern MCP (2026-07-28):** the server is **dual-version** — it serves the **stateless 2026-07-28 core** (`server/discover` with `supportedVersions`, per-request `_meta`, explicit `-32022` on unsupported versions; no initialize handshake) **alongside** legacy 2025-06-18 initialize clients (Inspector, Claude Desktop). Auth is hardened with **CIMD** client registration (HTTPS-URL `client_id` metadata documents, SSRF-guarded) and **RFC 9207 issuer validation** (`iss` in authorize responses). Details: `docs/mcp.md` → Protocol Support.
+> **Modern MCP (2026-07-28):** the server is **dual-version** - it serves the **stateless 2026-07-28 core** (`server/discover` with `supportedVersions`, per-request `_meta`, explicit `-32022` on unsupported versions; no initialize handshake) **alongside** legacy 2025-06-18 initialize clients (Inspector, Claude Desktop). Auth is hardened with **CIMD** client registration (HTTPS-URL `client_id` metadata documents, SSRF-guarded) and **RFC 9207 issuer validation** (`iss` in authorize responses). Details: `docs/mcp.md` → Protocol Support.
 
-> **Enterprise differentiator vs. LAAD's unauthenticated stdio server:** This is _production-grade authenticated_ — RFC 8414 Authorization Server Metadata, RFC 9728 Protected Resource Metadata, `WWW-Authenticate` with `resource_metadata`, PKCE S256, refresh rotation with stolen-token detection — the ecosystem is moving to enterprise-readiness fast.
+> **Enterprise differentiator vs. LAAD's unauthenticated stdio server:** This is _production-grade authenticated_ - RFC 8414 Authorization Server Metadata, RFC 9728 Protected Resource Metadata, `WWW-Authenticate` with `resource_metadata`, PKCE S256, refresh rotation with stolen-token detection - the ecosystem is moving to enterprise-readiness fast.
 
 **MCP transport & auth architecture:**
 
@@ -120,7 +120,7 @@ npx @modelcontextprotocol/inspector  # → http://localhost:8000/mcp, OAuth disc
 
 ### LangGraph Conversational Agent
 
-A **2-node ReAct agent** built with LangGraph's `StateGraph` — not the `create_react_agent` convenience wrapper — giving explicit control over the reasoning loop. Chat history uses **manual two-tier persistence**: Redis for active session state (7-day TTL) and PostgreSQL for durable cross-session history.
+A **2-node ReAct agent** built with LangGraph's `StateGraph` - not the `create_react_agent` convenience wrapper - giving explicit control over the reasoning loop. Chat history uses **manual two-tier persistence**: Redis for active session state (7-day TTL) and PostgreSQL for durable cross-session history.
 
 **Agent architecture:**
 
@@ -133,7 +133,7 @@ flowchart LR
     AGENT -->|ChatBedrockConverse| BEDROCK[AWS Bedrock<br/>Amazon Nova Lite]
     AGENT -->|Tool Calls| TN[ToolNode]
 
-    subgraph Tools["16 Tools — 7 Categories"]
+    subgraph Tools["16 Tools - 7 Categories"]
         P1[get_portfolio_summary]
         P2[get_portfolio_holdings]
         P3[get_sector_exposure]
@@ -164,7 +164,7 @@ flowchart LR
 | Parameter                | Value                                                     | Notes                                                                                             |
 | ------------------------ | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | Framework                | LangGraph `StateGraph` (manual, no checkpointer)          | Explicit control over agentic loop                                                                |
-| LLM                      | ChatBedrockConverse — defaults to `amazon.nova-lite-v1:0` | Configurable via `BEDROCK_MODEL_ID` env var                                                       |
+| LLM                      | ChatBedrockConverse - defaults to `amazon.nova-lite-v1:0` | Configurable via `BEDROCK_MODEL_ID` env var                                                       |
 | Tools registered         | 16 across 7 categories                                    | Portfolio(3) + Performance(2) + Analysis(2) + Market(4) + Forecast(1) + Spending(3) + Insights(1) |
 | Conversation persistence | Two-tier: Redis (7-day TTL) + PostgreSQL                  | Survives server restarts without context loss                                                     |
 | Streaming                | SSE via `astream_events`                                  | Progressive UI rendering                                                                          |
@@ -247,24 +247,24 @@ flowchart LR
 
 | Hyperparameter       | Value           | Optuna Search Space                             | Source                    |
 | -------------------- | --------------- | ----------------------------------------------- | ------------------------- |
-| Sequence length      | 30 trading days | —                                               | Fixed                     |
-| Forecast horizon     | 5 trading days  | —                                               | Fixed                     |
-| Embedding dimension  | 16              | —                                               | HPO best                  |
+| Sequence length      | 30 trading days | -                                               | Fixed                     |
+| Forecast horizon     | 5 trading days  | -                                               | Fixed                     |
+| Embedding dimension  | 16              | -                                               | HPO best                  |
 | Hidden dimension     | **80**          | 32 → 128                                        | Optuna best (Trial 14)    |
-| LSTM layers          | 2               | —                                               | Fixed (unidirectional)    |
+| LSTM layers          | 2               | -                                               | Fixed (unidirectional)    |
 | Dropout              | **0.535**       | 0.1 → 0.7                                       | Optuna best               |
 | Focal loss gamma     | **1.49**        | 0.5 → 4.0                                       | Optuna best               |
 | Learning rate        | **3.14e-4**     | 1e-5 → 1e-3                                     | Optuna best               |
 | Weight decay         | **2.06e-4**     | 1e-5 → 1e-3                                     | Optuna best               |
 | Threshold multiplier | 1.0             | Phase 2 HPO best (test_dir=51.63%)              | HPO best                  |
-| Batch size           | 256             | —                                               | Fixed (MPS GPU efficient) |
+| Batch size           | 256             | -                                               | Fixed (MPS GPU efficient) |
 | Features             | 17              | 14 technical + 3 cross-sectional excess returns | Fixed                     |
 | Classes              | 3               | DOWN / FLAT / UP                                | Fixed                     |
 | Tickers (dev)        | 55+             | S&P 500 subset                                  | Configurable              |
 | Tickers (full)       | 475+            | Full S&P 500                                    | Configurable              |
-| OHLCV lookback       | 6 years         | —                                               | Fixed                     |
+| OHLCV lookback       | 6 years         | -                                               | Fixed                     |
 | Train / Val / Test   | 70 / 15 / 15    | Chronological (no future leakage)               | Fixed                     |
-| Epochs               | 100             | —                                               | Training config           |
+| Epochs               | 100             | -                                               | Training config           |
 
 **Performance metrics (from Optuna trials, config comments):**
 
@@ -272,7 +272,7 @@ flowchart LR
 | ------------------------ | --------------- | ----------- | -------------------- |
 | Directional Accuracy     | 49.78% – 51.63% | 51.63%      | 33% (majority-class) |
 | Simulated Sharpe Ratio   | 0.67 – 0.97     | 0.97        | 0.0 (random)         |
-| Best validation accuracy | 55.27%          | Trial 14/50 | —                    |
+| Best validation accuracy | 55.27%          | Trial 14/50 | -                    |
 
 > **Context:** Predicting 3-class directional movement over a 5-day window in highly stochastic markets. The model's 50-52% accuracy is a **50%+ improvement over the 33% random baseline**. The simulated Sharpe of 0.97 reflects risk-adjusted return in a zero-cost trading simulation.
 
@@ -376,12 +376,12 @@ flowchart TB
 
 | Field    | Base Score    | Boost    | Condition                |
 | -------- | ------------- | -------- | ------------------------ |
-| Total    | 0.88          | —        | Regex match              |
+| Total    | 0.88          | -        | Regex match              |
 | Merchant | 0.90          | **0.95** | rapidfuzz match ≥80      |
-| Date     | 0.85          | —        | Regex match              |
-| Items    | 0.50 + N×0.10 | —        | Per line item recognized |
+| Date     | 0.85          | -        | Regex match              |
+| Items    | 0.50 + N×0.10 | -        | Per line item recognized |
 
-**Escalation triggers** are logged as structured comma-joined reasons for observability — enabling debugging and threshold tuning without reproducing user receipts.
+**Escalation triggers** are logged as structured comma-joined reasons for observability - enabling debugging and threshold tuning without reproducing user receipts.
 
 ---
 
@@ -425,13 +425,13 @@ backend/ml/features-engine/src/
 └── compute_all.rs         # Batched feature computation
 ```
 
-> **Ponytail note:** EMA uses a simple leading-NaN skip rather than a streaming incremental approach — the O(span) seed scan adds negligible overhead at batch sizes of 30–500 rows per ticker and avoids maintaining state across calls.
+> **Ponytail note:** EMA uses a simple leading-NaN skip rather than a streaming incremental approach - the O(span) seed scan adds negligible overhead at batch sizes of 30–500 rows per ticker and avoids maintaining state across calls.
 
 ---
 
 ### Portfolio Analytics
 
-**Time-weighted return (TWR)** calculation that correctly handles cash flows — no approximations, no simple-Dietz shortcuts. Benchmark comparison with **Tracking Error** and **Information Ratio**.
+**Time-weighted return (TWR)** calculation that correctly handles cash flows - no approximations, no simple-Dietz shortcuts. Benchmark comparison with **Tracking Error** and **Information Ratio**.
 
 **Architecture:**
 
@@ -478,10 +478,10 @@ flowchart LR
 
 | Decision                                          | Why                                                                                                                                              |
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Hybrid cache** — PG for OHLCV, Redis for quotes | OHLCV data is large and immutable → indexed PG table with efficient range queries; quotes are small and volatile → Redis with field-specific TTL |
+| **Hybrid cache** - PG for OHLCV, Redis for quotes | OHLCV data is large and immutable → indexed PG table with efficient range queries; quotes are small and volatile → Redis with field-specific TTL |
 | **Separate market + performance modules**         | Clean isolation: yfinance wrapping (rate-limited thread pool) doesn't leak into the pure TWR/benchmark logic                                     |
 | **Synchronous yfinance**                          | yfinance's async client is incomplete; wrapped with `run_in_executor` (8 workers) and `tenacity` retries (ADR-001)                               |
-| **Explicit cash_flows table**                     | Each cash flow is a dated, typed row — eliminates the ambiguity of a generic ledger and makes TWR provably correct (ADR-002)                     |
+| **Explicit cash_flows table**                     | Each cash flow is a dated, typed row - eliminates the ambiguity of a generic ledger and makes TWR provably correct (ADR-002)                     |
 
 ---
 
@@ -521,9 +521,9 @@ flowchart TB
     end
 
     subgraph Storage["Artifact Storage"]
-        S3[(S3 — model.pt<br/>drift reports)]
+        S3[(S3 - model.pt<br/>drift reports)]
         DB[(PG model_registry<br/>champion metadata)]
-        DISK[(EFS — champion<br/>zero-copy inference)]
+        DISK[(EFS - champion<br/>zero-copy inference)]
     end
 
     START --> FETCH
@@ -563,11 +563,11 @@ flowchart TB
 | ----------------------- | --------------------------------------------------------------------------------------------- |
 | **Orchestrator**        | Apache Airflow 2.11 on ECS Fargate ARM64                                                      |
 | **Schedule**            | Weekly, Monday 06:00 UTC (cron)                                                               |
-| **Experiment tracking** | MLflow 3.14 — every training run logged with hyperparameters, loss curves, evaluation metrics |
-| **Model registry**      | PostgreSQL `model_registry` table — tracks champion model ID, S3 URI, performance metrics     |
+| **Experiment tracking** | MLflow 3.14 - every training run logged with hyperparameters, loss curves, evaluation metrics |
+| **Model registry**      | PostgreSQL `model_registry` table - tracks champion model ID, S3 URI, performance metrics     |
 | **Champion promotion**  | `da_improvement > 0.02` (2 percentage points improvement)                                     |
 | **Champion delivery**   | EFS mount (zero-copy) + S3 (durable/CloudFront) + model_registry DB                           |
-| **Drift detection**     | Evidently AI — PSI threshold=0.25, KS threshold=0.3, JSD threshold=0.3                        |
+| **Drift detection**     | Evidently AI - PSI threshold=0.25, KS threshold=0.3, JSD threshold=0.3                        |
 | **Drift reporting**     | Reports stored at `s3://stocklens-drift-reports-dev/drift_reports/`                           |
 | **Serving backends**    | Fargate (EFS mount) or optional SageMaker endpoint (`ml.m5.xlarge`)                           |
 | **Prediction logging**  | 90-day retention in PostgreSQL for offline analysis                                           |
@@ -586,7 +586,7 @@ The codebase enforces a **three-tier testing strategy** with explicit coverage g
 | **Frontend** | Jest + React Native Testing Library + jest-expo     | 79 test files, 823 test assertions                                           | Branches: 75%, Functions: 80%, Lines: 90%, Statements: 80% |
 | **Rust**     | cargo test + clippy                                 | 13 source modules                                                            | `cargo clippy -- -D warnings` + `cargo test`               |
 
-**Test suite breakdown (backend — 69 files, 1,508 functions):**
+**Test suite breakdown (backend - 69 files, 1,508 functions):**
 
 | Category          | Files | Focus                                                     |
 | ----------------- | ----- | --------------------------------------------------------- |
@@ -622,7 +622,7 @@ All AWS infrastructure is defined as Terraform ≥1.9 modules with **S3 remote s
 
 ```mermaid
 flowchart TB
-    subgraph VPC["VPC — eu-west-2"]
+    subgraph VPC["VPC - eu-west-2"]
         direction TB
 
         subgraph AZ1["Availability Zone A"]
@@ -698,19 +698,19 @@ flowchart TB
 | Module         | Resources                                                                       | Configuration                                |
 | -------------- | ------------------------------------------------------------------------------- | -------------------------------------------- |
 | **vpc**        | VPC, public/private subnets (2 AZs), IGW, NAT Gateway                           | 10.0.0.0/16, 2 AZs (eu-west-2a/b)            |
-| **network**    | Security groups — ALB, ECS tasks, RDS, Redis, MLflow, Airflow                   | Least-privilege ingress/egress rules         |
-| **secrets**    | AWS Secrets Manager — DB password, JWT secret, Redis auth, LangSmith key        | Auto-generated if empty                      |
-| **s3**         | S3 buckets — MLflow artifacts, drift reports, champion model                    | KMS encryption, CloudFront origin            |
-| **database**   | RDS PostgreSQL — Multi-AZ, automated backups, Performance Insights              | `db.t4g.micro`, 20 GB → 100 GB autoscaling   |
-| **cache**      | ElastiCache Redis — TLS, AUTH token, encryption at rest                         | `cache.r6g.micro`, single node               |
-| **iam**        | IAM roles — ECS execution, task, SageMaker, EventBridge, OIDC deploy            | Least-privilege, per-resource scope          |
+| **network**    | Security groups - ALB, ECS tasks, RDS, Redis, MLflow, Airflow                   | Least-privilege ingress/egress rules         |
+| **secrets**    | AWS Secrets Manager - DB password, JWT secret, Redis auth, LangSmith key        | Auto-generated if empty                      |
+| **s3**         | S3 buckets - MLflow artifacts, drift reports, champion model                    | KMS encryption, CloudFront origin            |
+| **database**   | RDS PostgreSQL - Multi-AZ, automated backups, Performance Insights              | `db.t4g.micro`, 20 GB → 100 GB autoscaling   |
+| **cache**      | ElastiCache Redis - TLS, AUTH token, encryption at rest                         | `cache.r6g.micro`, single node               |
+| **iam**        | IAM roles - ECS execution, task, SageMaker, EventBridge, OIDC deploy            | Least-privilege, per-resource scope          |
 | **compute**    | ECS Fargate cluster, service, task definition, ALB, target groups, Auto Scaling | ARM64, min=2, max=6, CPU 70%/RPS 100 targets |
 | **mlflow**     | MLflow Fargate service, SQLite backend, shared EFS                              | Sidecar to Airflow                           |
 | **airflow**    | Airflow Fargate service, DB connection, MLflow integration                      | Weekly schedule via EventBridge              |
-| **waf**        | AWS WAF — rate-based rules, SQL injection, XSS blocks                           | 2000 req/s (prod) / 5000 (dev)               |
+| **waf**        | AWS WAF - rate-based rules, SQL injection, XSS blocks                           | 2000 req/s (prod) / 5000 (dev)               |
 | **monitoring** | CloudWatch dashboards, alarms, SNS notifications                                | CPU, memory, RDS connections, Redis          |
 | **sagemaker**  | SageMaker model, endpoint config, endpoint (optional)                           | `ml.m5.xlarge`, 600s timeout                 |
-| **budgets**    | AWS Budgets — monthly limit, SNS alerts                                         | $100/month default                           |
+| **budgets**    | AWS Budgets - monthly limit, SNS alerts                                         | $100/month default                           |
 
 ---
 
@@ -718,13 +718,13 @@ flowchart TB
 
 Two pipelines run on every push to `main`:
 
-**CI pipeline** — 9 parallel jobs, each blocking if it fails:
+**CI pipeline** - 9 parallel jobs, each blocking if it fails:
 
 ```mermaid
 flowchart LR
     PUSH[git push] --> CI
 
-    subgraph CI["CI — 9 Parallel Jobs"]
+    subgraph CI["CI - 9 Parallel Jobs"]
         LINT[Lint & Format<br/>Prettier + ESLint]
         TS[TypeScript<br/>tsc --noEmit]
         FE_TEST[Frontend Tests<br/>Jest + coverage]
@@ -749,7 +749,7 @@ flowchart LR
     SECRET --> PASS
 ```
 
-**CD pipeline** — 7 stages (manual approval before apply):
+**CD pipeline** - 7 stages (manual approval before apply):
 
 ```mermaid
 flowchart LR
@@ -824,7 +824,7 @@ flowchart LR
 | -------------------- | -------------------------------------------------------- |
 | ⚙️ Build Rust wheel  | Docker Buildx ARM64 → `maturin build --release`          |
 | 🐳 Build+Push images | Backend, Airflow, ML Training (`amd64`), SageMaker → ECR |
-| 🔬 Container scan    | Trivy — critical severity only, blocks on findings       |
+| 🔬 Container scan    | Trivy - critical severity only, blocks on findings       |
 | 📋 Terraform plan    | Plan with `-lock=false`, outputs to GH job summary       |
 | ✅ Manual approval   | Production environment gate in GitHub                    |
 | 🚀 Terraform apply   | Applies reviewed plan, ECS service updated               |
@@ -838,7 +838,7 @@ flowchart LR
 | ------------------ | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Authentication** | JWT access + refresh tokens, bcrypt (12 rounds); **MCP OAuth 2.1 PKCE S256** (RFC 8414/9728)     | Access TTL: 30 min (MCP) / 15 min (REST); Refresh TTL: 7 days; rotation on refresh; `slowapi` rate limiting (login: 20/min, MCP: 60/min); PKCE challenge `BASE64URL(SHA256(verifier))`                                                       |
 | **Authorization**  | Role-based (user/admin via JWT `role` claim) + **MCP `verify_mcp_token`** per-call               | Admin-only endpoints guarded by `require_admin` dependency; ownership checks on portfolio/transaction resources; MCP tools enforce `user_id` isolation + `portfolio_id` scoping per call, `WWW-Authenticate` with `resource_metadata` on 401 |
-| **Secrets**        | AWS Secrets Manager + GitHub Actions OIDC                                                        | DB password, JWT secret, Redis auth, LangSmith key — injected at container start; zero static secrets in repo                                                                                                                                |
+| **Secrets**        | AWS Secrets Manager + GitHub Actions OIDC                                                        | DB password, JWT secret, Redis auth, LangSmith key - injected at container start; zero static secrets in repo                                                                                                                                |
 | **Network**        | Three-tier VPC: Public (ALB/WAF) → Private (ECS Fargate) → Data (RDS/ElastiCache)                | Security groups: ALB→ECS (8000), ECS→RDS (5432), ECS→Redis (6379), ECS→Bedrock (443 egress); no direct internet from private subnets                                                                                                         |
 | **Transport**      | TLS 1.2+ everywhere                                                                              | ALB terminates HTTPS (ACM cert); RDS/ElastiCache enforce TLS; internal ECS-to-ECS via service discovery (no mTLS yet)                                                                                                                        |
 | **WAF**            | AWS WAF on ALB                                                                                   | Rate-based rules (2000 req/5min), OWASP Core Rule Set (SQLi, XSS), IP blocklist                                                                                                                                                              |
