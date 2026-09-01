@@ -145,28 +145,28 @@ flowchart TB
 
 ## Why It's Interesting
 
-| What | Why a reviewer should care |
-|---|---|
+| What                                     | Why a reviewer should care                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Self-built MCP server, not a wrapper** | Official Python SDK (≥1.12), Streamable HTTP, OAuth 2.1 PKCE S256, RS256/JWKS with `kid` rotation, RFC 8414/9728 discovery, CIMD dynamic client registration, stateless mode. The 16 tools share one source of truth with the LangGraph agent - no duplication. Verified live: MCP Inspector traces + a working Claude Desktop config. |
-| **Confidence-gated OCR cascade** | Tesseract regex → heuristic scoring → Bedrock Vision LLM *only when confidence drops below 0.7*; rapidfuzz merchant matching (≥80), Redis 24h cache. The interesting decision is economic: don't spend LLM budget on receipts Tesseract already read correctly. |
-| **Weekly champion/challenger gate** | Airflow (Monday 06:00 UTC): Rust feature engine → Optuna HPO (50 trials) → promote the challenger only if directional accuracy improves > 2 percentage points → Evidently PSI/KS/JSD drift reports to S3. The full retrain loop is automated - not a notebook, not a Lambda cron. |
-| **Graviton economics** | ARM64 ECS Fargate (ADR-009): 20–30% cost savings at equal performance; multi-stage builds bring the backend image to ~450MB vs ~1.2GB naive; QEMU cross-build for the Rust wheel in CI; **$100/month AWS Budget hard cap** with anomaly detection. |
+| **Confidence-gated OCR cascade**         | Tesseract regex → heuristic scoring → Bedrock Vision LLM _only when confidence drops below 0.7_; rapidfuzz merchant matching (≥80), Redis 24h cache. The interesting decision is economic: don't spend LLM budget on receipts Tesseract already read correctly.                                                                        |
+| **Weekly champion/challenger gate**      | Airflow (Monday 06:00 UTC): Rust feature engine → Optuna HPO (50 trials) → promote the challenger only if directional accuracy improves > 2 percentage points → Evidently PSI/KS/JSD drift reports to S3. The full retrain loop is automated - not a notebook, not a Lambda cron.                                                      |
+| **Graviton economics**                   | ARM64 ECS Fargate (ADR-009): 20–30% cost savings at equal performance; multi-stage builds bring the backend image to ~450MB vs ~1.2GB naive; QEMU cross-build for the Rust wheel in CI; **$100/month AWS Budget hard cap** with anomaly detection.                                                                                     |
 
 ## Key Metrics
 
-| Metric | Value |
-|---|---|
-| REST API | 68 endpoints across 15 routers, plus the mounted MCP/OAuth/JWKS surface |
-| Backend tests | **69 files · 1,508 functions** (93 MCP) - pytest + pytest-asyncio + xdist, 90% line-coverage gate |
-| Frontend tests | **79 files · 823 assertions** - branches≥75%, functions≥80%, lines≥90% |
-| MCP server | 16 tools + 2 resources + 1 prompt · OAuth 2.1 PKCE S256 · RS256/JWKS · 93 tests |
-| ML model | Global LSTM: 2 layers (hidden=80, dropout=0.535), 17 features, 50 Optuna trials |
-| Model performance | Directional accuracy **51.63%** (best) vs 33% majority baseline · Sharpe **0.97** |
-| Portfolio analytics | Cash-flow-aware TWR; tracking error + information ratio vs SPY |
-| Infrastructure | Terraform: 14 modules / 166 resources · 7 Docker services · ECS Fargate ARM64 on Graviton |
-| CI/CD | 9 parallel CI jobs · 7-stage deploy · Checkov + tfsec + Gitleaks + Trivy + hadolint + weekly CodeQL |
-| Security | OIDC (zero long-lived AWS creds) · WAF + OWASP CRS · three-tier security groups · pip-audit / npm-audit / cargo-audit |
-| Documentation | 9 ADRs · MCP guide + live evidence · 21 demo assets (7 PNG, 2 GIF, 6 MOV, 6 MP4) |
+| Metric              | Value                                                                                                                 |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| REST API            | 68 endpoints across 15 routers, plus the mounted MCP/OAuth/JWKS surface                                               |
+| Backend tests       | **69 files · 1,508 functions** (93 MCP) - pytest + pytest-asyncio + xdist, 90% line-coverage gate                     |
+| Frontend tests      | **79 files · 823 assertions** - branches≥75%, functions≥80%, lines≥90%                                                |
+| MCP server          | 16 tools + 2 resources + 1 prompt · OAuth 2.1 PKCE S256 · RS256/JWKS · 93 tests                                       |
+| ML model            | Global LSTM: 2 layers (hidden=80, dropout=0.535), 17 features, 50 Optuna trials                                       |
+| Model performance   | Directional accuracy **51.63%** (best) vs 33% majority baseline · Sharpe **0.97**                                     |
+| Portfolio analytics | Cash-flow-aware TWR; tracking error + information ratio vs SPY                                                        |
+| Infrastructure      | Terraform: 14 modules / 166 resources · 7 Docker services · ECS Fargate ARM64 on Graviton                             |
+| CI/CD               | 9 parallel CI jobs · 7-stage deploy · Checkov + tfsec + Gitleaks + Trivy + hadolint + weekly CodeQL                   |
+| Security            | OIDC (zero long-lived AWS creds) · WAF + OWASP CRS · three-tier security groups · pip-audit / npm-audit / cargo-audit |
+| Documentation       | 9 ADRs · MCP guide + live evidence · 21 demo assets (7 PNG, 2 GIF, 6 MOV, 6 MP4)                                      |
 
 ## Demos
 
@@ -292,7 +292,14 @@ npx @modelcontextprotocol/inspector
 Claude Desktop (`claude_desktop_config.json`):
 
 ```json
-{"mcpServers":{"stocklens":{"command":"npx","args":["mcp-remote","http://localhost:8000/mcp","--oauth"]}}}
+{
+  "mcpServers": {
+    "stocklens": {
+      "command": "npx",
+      "args": ["mcp-remote", "http://localhost:8000/mcp", "--oauth"]
+    }
+  }
+}
 ```
 
 Evidence after verification: `docs/mcp.md`, `docs/mcp-evidence/inspector.log`, `assets/demos/mcp.gif`.

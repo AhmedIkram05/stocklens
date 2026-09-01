@@ -19,7 +19,6 @@
 | **MCP server**            | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI | Single source: 16 tools + 2 resources + 1 prompt, RFC 8414/9728 discovery, `WWW-Authenticate` with `resource_metadata` + `scope`, 93 tests, dual-version 2025-06-18 + stateless 2026-07-28, CIMD                                                          |
 | **MLOps drift detection** | Evidently AI PSI/KS/JSD on features + predictions                                               | Lightweight, Airflow-native, covers distribution, feature, and model drift in one library. Reports stored to S3, alerts via CloudWatch.                                                                                                                   |
 
-
 ---
 
 ### 🔌 MCP Enterprise Server (Streamable HTTP + OAuth 2.1)
