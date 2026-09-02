@@ -156,7 +156,7 @@ async def spending_analysis(
                 COALESCE(sc.id::text, 'NULL') AS category_key,
                 COALESCE(sc.name, 'Uncategorised') AS category_name,
                 COALESCE(SUM(
-                    CASE WHEN t.transaction_date >= $2::date AND t.transaction_date < $3::date
+                    CASE WHEN t.transaction_date >= $2::date AND t.transaction_date <= $3::date
                          THEN t.total_amount_gbp END
                 ), 0) AS current_month_spend,
                 COALESCE(SUM(
@@ -166,7 +166,7 @@ async def spending_analysis(
             FROM transactions t
             LEFT JOIN spending_categories sc ON t.spending_category_id = sc.id
             WHERE t.portfolio_id = $1::uuid AND t.type = 'BUY'
-              AND t.transaction_date >= $4::date AND t.transaction_date < $3::date
+              AND t.transaction_date >= $4::date AND t.transaction_date <= $3::date
             GROUP BY sc.id, sc.name
             """,
             portfolio_id,
