@@ -3,25 +3,25 @@
 > Scan receipts → trade stocks with your spending → track portfolios with LSTM forecasts, AI agent & MCP tools. Built with FastAPI, PyTorch, LangGraph, Rust, Terraform, MCP.
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&labelColor=000000&logo=python" alt="Python"/>
-  <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&labelColor=000000&logo=fastapi" alt="FastAPI"/>
-  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&labelColor=000000&logo=typescript" alt="TypeScript"/>
-  <img src="https://img.shields.io/badge/React_Native-61DAFB?style=for-the-badge&labelColor=000000&logo=react" alt="React Native"/>
-  <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&labelColor=000000&logo=rust" alt="Rust"/>
-  <img src="https://img.shields.io/badge/LangGraph-7C3AED?style=for-the-badge&labelColor=000000" alt="LangGraph"/>
-  <img src="https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&labelColor=000000&logo=pytorch" alt="PyTorch"/>
-  <img src="https://img.shields.io/badge/MCP-7C3AED?style=for-the-badge&labelColor=000000&logo=modelcontextprotocol" alt="MCP"/>
-  <img src="https://img.shields.io/badge/OAuth_2.1-EB542E?style=for-the-badge&labelColor=000000&logo=auth0" alt="OAuth"/>
-  <img src="https://img.shields.io/badge/AWS-232F3E?style=for-the-badge&labelColor=000000&logo=amazonwebservices" alt="AWS"/>
-  <img src="https://img.shields.io/badge/Terraform-844FBA?style=for-the-badge&labelColor=000000&logo=terraform" alt="Terraform"/>
-  <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&labelColor=000000&logo=docker" alt="Docker"/>
-  <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&labelColor=000000&logo=postgresql" alt="PostgreSQL"/>
-  <img src="https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&labelColor=000000&logo=redis" alt="Redis"/>
-  <img src="https://img.shields.io/badge/Airflow-017CEE?style=for-the-badge&labelColor=000000&logo=apacheairflow" alt="Airflow"/>
-  <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&labelColor=000000&logo=githubactions" alt="GitHub Actions"/>
-  <img src="https://img.shields.io/badge/MLflow-0194E2?style=for-the-badge&labelColor=000000&logo=mlflow" alt="MLflow"/>
-  <img src="https://img.shields.io/badge/Optuna-F97316?style=for-the-badge&labelColor=000000" alt="Optuna"/>
-  <img src="https://img.shields.io/badge/Expo-54-000020?style=for-the-badge&labelColor=000000&logo=expo" alt="Expo"/>
+<a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&labelColor=000000&logo=python"></a>
+<a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&labelColor=000000&logo=fastapi"></a>
+<a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&labelColor=000000&logo=typescript"></a>
+<a href="https://reactnative.dev/"><img src="https://img.shields.io/badge/React_Native-61DAFB?style=for-the-badge&labelColor=000000&logo=react"></a>
+<a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&labelColor=000000&logo=rust"></a>
+<a href="https://www.langchain.com/langgraph"><img src="https://img.shields.io/badge/LangGraph-7C3AED?style=for-the-badge&labelColor=000000"></a>
+<a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&labelColor=000000&logo=pytorch"></a>
+<a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP-7C3AED?style=for-the-badge&labelColor=000000&logo=modelcontextprotocol"></a>
+<a href="https://oauth.net/2/"><img src="https://img.shields.io/badge/OAuth_2.1-EB542E?style=for-the-badge&labelColor=000000&logo=auth0"></a>
+<a href="https://aws.amazon.com/"><img src="https://img.shields.io/badge/AWS-232F3E?style=for-the-badge&labelColor=000000&logo=amazonwebservices"></a>
+<a href="https://www.terraform.io/"><img src="https://img.shields.io/badge/Terraform-844FBA?style=for-the-badge&labelColor=000000&logo=terraform"></a>
+<a href="https://www.docker.com/"><img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&labelColor=000000&logo=docker"></a>
+<a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&labelColor=000000&logo=postgresql"></a>
+<a href="https://redis.io/"><img src="https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&labelColor=000000&logo=redis"></a>
+<a href="https://airflow.apache.org/"><img src="https://img.shields.io/badge/Airflow-017CEE?style=for-the-badge&labelColor=000000&logo=apacheairflow"></a>
+<a href="https://github.com/features/actions"><img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&labelColor=000000&logo=githubactions"></a>
+<a href="https://mlflow.org/"><img src="https://img.shields.io/badge/MLflow-0194E2?style=for-the-badge&labelColor=000000&logo=mlflow"></a>
+<a href="https://optuna.org/"><img src="https://img.shields.io/badge/Optuna-F97316?style=for-the-badge&labelColor=000000"></a>
+<a href="https://expo.dev/"><img src="https://img.shields.io/badge/Expo-000020?style=for-the-badge&labelColor=000000&logo=expo"></a>
 </p>
 
 <p align="center">
@@ -47,83 +47,61 @@ Beneath the mobile app: a **Rust/PyO3 features engine** replaces pandas for zero
 The system runs entirely on AWS with a VPC-isolated topology: public subnets contain the Application Load Balancer (WAF-protected), private subnets host ECS Fargate ARM64 tasks, Multi-AZ RDS PostgreSQL, and ElastiCache Redis. The MLOps layer runs on a separate ECS cluster with Airflow orchestration, MLflow tracking on Fargate, and SageMaker as an optional serving backend.
 
 ```mermaid
-flowchart TB
+flowchart LR
     subgraph Client["Mobile Client"]
-        RN[React Native<br/>TypeScript + Expo]
+        RN["React Native + Expo<br/>scan · trade · chat"]
     end
 
-    subgraph AWS["AWS Cloud - eu-west-2"]
-        subgraph Public["Public Subnets"]
-            ALB[Application<br/>Load Balancer]
-            WAF[AWS WAF<br/>Rate-based + OWASP]
+    subgraph AWS["AWS eu-west-2"]
+        WAF["WAF + ALB<br/>HTTPS · public subnets"]
+
+        subgraph App["ECS Fargate ARM64 · private"]
+            API["FastAPI<br/>portfolios · orders · OCR"]
+            MCP["MCP server<br/>Streamable HTTP · 16 tools"]
+            AGENT["LangGraph agent<br/>ChatBedrockConverse"]
         end
 
-        subgraph Private["Private Subnets"]
-            subgraph ECS_API["ECS Fargate ARM64"]
-                API[FastAPI Backend<br/>uvicorn workers]
-                MCP[MCP Server<br/>Streamable HTTP<br/>OAuth 2.1 PKCE<br/>16 tools]
-            end
-
-            subgraph ECS_AGENT["ECS Fargate ARM64"]
-                AGENT[LangGraph Agent<br/>ChatBedrockConverse]
-            end
-
-            RDS[(RDS PostgreSQL<br/>Multi-AZ<br/>db.t4g.micro)]
-            RC[(ElastiCache Redis<br/>cache.r6g.micro<br/>TLS + AUTH)]
-
-            subgraph ECS_ML["ECS Fargate ARM64"]
-                AF[Airflow<br/>Weekly Retraining]
-                MLF[MLflow<br/>Experiment Tracking]
-            end
+        subgraph Brain["Intelligence"]
+            OCR["OCR cascade<br/>Tesseract → Bedrock Vision"]
+            RUST["Rust/PyO3 features<br/>17 indicators"]
+            LSTM["Global LSTM<br/>5-day forecast"]
         end
 
-        BEDROCK[AWS Bedrock<br/>Nova Lite Converse]
-        S3_BUCKETS[(S3 Buckets<br/>MLflow Artifacts<br/>Drift Reports<br/>Champion Model<br/>CloudFront)]
-        CW[CloudWatch<br/>Logs + Metrics + Alarms]
-
-        subgraph EFS["EFS"]
-            CHAMPION[(Champion<br/>model.pt)]
+        subgraph Data["Data + models"]
+            RDS[("RDS PostgreSQL<br/>Multi-AZ")]
+            REDIS[("ElastiCache Redis")]
+            BEDROCK["Bedrock<br/>Nova Lite Converse"]
+            MKT["Market data<br/>yfinance · FX→GBP"]
         end
 
-        SM[SageMaker<br/>ml.m5.xlarge]
-    end
-
-    subgraph CI_CD["CI/CD - GitHub Actions"]
-        GHA[9 CI Jobs<br/>Lint / TS / Tests / Rust /<br/>Docker / IaC / Secrets]
-        CD[7-Stage Deploy<br/>Build → Push → Scan →<br/>Plan → Review → Apply]
-        TF[Terraform<br/>S3 State + DynamoDB Lock]
+        subgraph MLOPS["MLOps"]
+            AF["Airflow<br/>weekly retrain + drift"]
+            MLF["MLflow"]
+            CHAMPION[("champion<br/>model.pt")]
+            SM["SageMaker<br/>optional serving"]
+        end
     end
 
     RN -->|HTTPS| WAF
-    WAF --> ALB
-    ALB --> API
-    ALB --> MCP
-    API --> RDS
-    API --> RC
-    API --> S3_BUCKETS
-    API -.-> BEDROCK
-    MCP --> RDS
-    MCP --> RC
+    WAF --> API
+    WAF --> MCP
+    API <-->|receipt| OCR
+    API --> RUST --> LSTM
+    LSTM -.->|forecast| API
+    MCP --> API
+    AGENT --> MCP
     AGENT --> BEDROCK
-    API --> CW
-    AGENT --> RC
+    API -.-> BEDROCK
+    API --> RDS
+    API --> REDIS
+    MKT -->|live prices| API
+    MCP --> RDS
     AGENT --> RDS
     AF --> MLF
-    AF --> S3_BUCKETS
     AF --> RDS
-    API --> CHAMPION
+    AF --> CHAMPION
+    API -.-> CHAMPION
     SM --> CHAMPION
-    API -.-> SM
-
-    CI_CD --> ECS_API
-    CI_CD --> ECS_ML
-    CI_CD --> TF
-
-    style Client fill:#2d2d2d,color:#fff,stroke:#555
-    style AWS fill:#1a1a2e,color:#fff,stroke:#334
-    style Public fill:#1a2a1a,color:#fff
-    style Private fill:#1a1a2e,color:#fff
-    style CI_CD fill:#2d1b1b,color:#fff,stroke:#553
 ```
 
 **End-to-end flow:** a user scans a receipt → the OCR cascade extracts the total (Tesseract → Bedrock Vision fallback) → the receipt funds the portfolio as a cash-flow deposit → they buy or sell real stocks at the live quoted price → the order passes an affordability check against their receipt-funded cash → weighted-average cost basis and transactions update atomically → portfolio analytics compute time-weighted return with explicit cash-flow handling → the LSTM forecasts 5-day direction for each holding → the LangGraph agent answers questions by calling 16 tools via SSE streaming.
