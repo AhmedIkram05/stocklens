@@ -1,8 +1,8 @@
-# StockLens MCP — Production-Grade Model Context Protocol Server
+# StockLens MCP - Model Context Protocol Server
 
 Exposes StockLens's **16 canonical tools + 2 resources + 1 prompt** as a unified **MCP Server** with **Streamable HTTP + OAuth 2.1 PKCE RS256/JWKS**, mounted on the existing FastAPI. **Single source of truth**: `src/agent/tools.py` → `src/mcp/tools_adapter.py` (no duplication). **Dual-version** (2025-06-18 + 2026-07-28 stateless) — see [Protocol Support](#protocol-support--dual-version-2025-06-18--2026-07-28).
 
-> **LAAD context:** LAAD ships an unauthenticated stdio MCP (tools only). StockLens is the enterprise complement: **Streamable HTTP (2025-06-18 + 2026-07-28 stateless) + RS256/JWKS + resources/prompts + real OAuth discovery (CIMD + RFC 9207 issuer validation)** — _"basic vs production-grade authenticated, full-spec"_ — deliberately not redundant.
+> **LAAD context:** LAAD ships an unauthenticated stdio MCP (tools only). StockLens is the enterprise complement: **Streamable HTTP (2025-06-18 + 2026-07-28 stateless) + RS256/JWKS + resources/prompts + real OAuth discovery (CIMD + RFC 9207 issuer validation)** — _"basic vs authenticated, full-spec"_ — deliberately not redundant.
 
 ## Architecture
 
@@ -111,7 +111,7 @@ Evidence: `docs/mcp-evidence/inspector-trace.json` (9.9K, RS256 `kid`, 4 PNGs), 
 
 ## CV Bullet (maximised)
 
-> **StockLens** — _MCP enterprise server rewrite:_ exposed **16 tools + 2 resources + 1 prompt** via **self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS, RFC 8414/9728/7517)** mounted on FastAPI — **0 duplication** (LangChain adapter), **93 tests, 80% cov**, **dual-version protocol (stateless 2026-07-28 `server/discover` + legacy 2025-06-18 initialize)**, **CIMD client registration + RFC 9207 issuer validation + 401 scope guidance**, dual RS256/HS256 decode, verified **Inspector + Claude Desktop** (JWKS, resources/prompts, trace JSON + 4 screenshots) — **production upgrade over stdio unauthenticated**
+> **StockLens** — _MCP enterprise server rewrite:_ exposed **16 tools + 2 resources + 1 prompt** via **self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS, RFC 8414/9728/7517)** mounted on FastAPI — **0 duplication** (LangChain adapter), **93 tests, 80% cov**, **dual-version protocol (stateless 2026-07-28 `server/discover` + legacy 2025-06-18 initialize)**, **CIMD client registration + RFC 9207 issuer validation + 401 scope guidance**, dual RS256/HS256 decode, verified **Inspector + Claude Desktop** (JWKS, resources/prompts, trace JSON + 4 screenshots) — **authenticated upgrade over stdio unauthenticated**
 
 ## Security Checklist
 
