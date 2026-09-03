@@ -40,7 +40,7 @@
 
 **StockLens turns your spending into an investment workflow.** Scan a receipt, the OCR cascade extracts the total into investable cash, and you can immediately buy or sell real stocks at **live market prices** (FX-adjusted to GBP) - holdings update at weighted-average cost basis, and every order is checked against your receipt-funded balance. Build portfolios tracked with cash-flow-aware TWR, get LSTM-powered 5-day directional forecasts, compare your performance against SPY (tracking error + information ratio), ask a LangGraph agent natural-language questions about your holdings, and **drive all 16 tools through an enterprise-grade MCP server** from Claude Desktop or any MCP client.
 
-Beneath the mobile app is a production-grade system: a **Rust/PyO3 features engine** replaces pandas for zero-cost technical indicator computation, a **confidence-gated OCR cascade** escalates from Tesseract regex to Bedrock Vision only when accuracy demands it, a weekly **Airflow MLOps pipeline** retrains the LSTM with automated champion/challenger promotion and Evidently drift detection, and everything is deployed via **Terraform on AWS ECS Fargate ARM64/Graviton** with GitHub Actions OIDC CI/CD.
+Beneath the mobile app: a **Rust/PyO3 features engine** replaces pandas for zero-cost technical indicator computation, a **confidence-gated OCR cascade** escalates from Tesseract regex to Bedrock Vision only when accuracy demands it, a weekly **Airflow MLOps pipeline** retrains the LSTM with automated champion/challenger promotion and Evidently drift detection, and everything is deployed via **Terraform on AWS ECS Fargate ARM64/Graviton** with GitHub Actions OIDC CI/CD.
 
 ## How It Fits Together
 
@@ -253,7 +253,7 @@ The full technical detail - MCP server internals, LangGraph agent, LSTM, OCR cas
 ### Prerequisites
 
 - **Docker** + Docker Compose · **Python 3.13** · **Node.js 20+** (frontend)
-- **AWS CLI** + **Terraform ≥1.9** (production only)
+- **AWS CLI** + **Terraform ≥1.9** (AWS deploy only)
 
 ### Local Development
 
@@ -304,7 +304,7 @@ Claude Desktop (`claude_desktop_config.json`):
 
 Evidence after verification: `docs/mcp.md`, `docs/mcp-evidence/inspector.log`, `assets/demos/mcp.gif`.
 
-### Production
+### AWS Deployment
 
 ```bash
 cd terraform

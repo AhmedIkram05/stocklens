@@ -12,7 +12,7 @@
 | **CI caching**            | Docker layer caching + pip/npm dependency caching                                               | Docker builds use `type=gha` cache (GitHub Actions cache layer sharing). Python pip and npm `node_modules` cached via `actions/setup-python` / `setup-node`.                                                                                              |
 | **Agent architecture**    | Manual LangGraph `StateGraph` (no `create_react_agent`) with two-tier history                   | Explicit control over agentic loop; manual history management enables two-tier Redis (7-day TTL) + PostgreSQL persistence surviving server restarts without context loss.                                                                                 |
 | **ML feature compute**    | Rust/PyO3 native extension replacing pandas                                                     | 12 exported functions compute 17 features (14 technical + 3 cross-sectional) at O(n) with zero Python overhead. Called from Airflow DAG and inference endpoint.                                                                                           |
-| **Deployment gating**     | Backend health check → Frontend deploy (via ECS service ordering)                               | Pipeline explicitly waits for ECS rolling update to pass health checks before considering deploy complete. Zero API/UI version mismatch in production.                                                                                                    |
+| **Deployment gating**     | Backend health check → Frontend deploy (via ECS service ordering)                               | Pipeline explicitly waits for ECS rolling update to pass health checks before considering deploy complete. Zero API/UI version mismatch on deploy.                                                                                                        |
 | **Network isolation**     | Three-tier security groups                                                                      | Internet → ALB (443) → ECS (8000) → RDS (5432)/Redis (6379). No public database, no direct ECS access.                                                                                                                                                    |
 | **Frontend proxy**        | N/A (Expo/React Native) - API calls direct to ALB via `EXPO_PUBLIC_API_URL`                     | Same binary works in dev (localhost) and prod (ALB DNS) - `EXPO_PUBLIC_API_URL` injected at build time.                                                                                                                                                   |
 | **CI/CD auth**            | OIDC federation with AWS - no long-lived credentials                                            | IAM role assumed per-run, scoped to `main` branch only. Zero AWS secrets stored in GitHub.                                                                                                                                                                |
@@ -27,7 +27,7 @@ A **self-built MCP server** exposing StockLens's **16 canonical tools** via the 
 
 > **Modern MCP (2026-07-28):** the server is **dual-version** - it serves the **stateless 2026-07-28 core** (`server/discover` with `supportedVersions`, per-request `_meta`, explicit `-32022` on unsupported versions; no initialize handshake) **alongside** legacy 2025-06-18 initialize clients (Inspector, Claude Desktop). Auth is hardened with **CIMD** client registration (HTTPS-URL `client_id` metadata documents, SSRF-guarded) and **RFC 9207 issuer validation** (`iss` in authorize responses). Details: `docs/mcp.md` → Protocol Support.
 
-> **Enterprise differentiator vs. LAAD's unauthenticated stdio server:** This is _production-grade authenticated_ - RFC 8414 Authorization Server Metadata, RFC 9728 Protected Resource Metadata, `WWW-Authenticate` with `resource_metadata`, PKCE S256, refresh rotation with stolen-token detection - the ecosystem is moving to enterprise-readiness fast.
+> **OAuth 2.1 by default:** RFC 8414 Authorization Server Metadata, RFC 9728 Protected Resource Metadata, `WWW-Authenticate` with `resource_metadata`, PKCE S256, refresh rotation with stolen-token detection.
 
 **MCP transport & auth architecture:**
 
@@ -504,7 +504,7 @@ flowchart TB
 
     subgraph Eval["Champion / Challenger"]
         CHAL[Challenger<br/>New weekly candidate]
-        CHAMP[Champion<br/>Current production model]
+        CHAMP[Champion<br/>Current champion model]
         COMPARE{da_improvement<br/>> 0.02?}
         PROMOTE[Promote to champion<br/>disk + S3 + model_registry DB]
         SKIP[Keep existing champion]
@@ -512,7 +512,7 @@ flowchart TB
 
     subgraph Drift["Evidently AI Drift Detection"]
         REF[Reference Distributions<br/>Captured at champion time]
-        CURRENT[Current production data<br/>Features + predictions]
+        CURRENT[Current live data<br/>Features + predictions]
         PSI[PSI > 0.25?]
         KS[KS > 0.3?]
         JS[JSD > 0.3?]
