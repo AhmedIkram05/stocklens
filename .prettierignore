@@ -1,0 +1,9 @@
+# Prettier ignores root .gitignore by default, but NOT nested .gitignore files
+# (backend/.venv/.gitignore, graphify-out/.gitignore). These local-only
+# generated dirs contain thousands of formatted-foreign files that break
+# `prettier --check .` locally while CI (fresh checkout) never sees them.
+# Patterns without a leading slash match at any depth.
+.venv/
+venv/
+backend/.venv/
+graphify-out/
