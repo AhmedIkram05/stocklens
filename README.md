@@ -146,7 +146,7 @@ flowchart LR
 | Infrastructure      | Terraform: 14 modules / 166 resources · 7 Docker services · ECS Fargate ARM64 on Graviton                             |
 | CI/CD               | 9 parallel CI jobs · 7-stage deploy · Checkov + tfsec + Gitleaks + Trivy + hadolint + weekly CodeQL                   |
 | Security            | OIDC (zero long-lived AWS creds) · WAF + OWASP CRS · three-tier security groups · pip-audit / npm-audit / cargo-audit |
-| Documentation       | 9 ADRs · MCP guide + live evidence · 21 demo assets (7 PNG, 2 GIF, 12 MP4)                                      |
+| Documentation       | 9 ADRs · MCP guide + live evidence · 21 demo assets (7 PNG, 2 GIF, 12 MP4)                                            |
 
 ## Demos
 
