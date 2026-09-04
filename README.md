@@ -13,6 +13,8 @@
 <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP-7C3AED?style=for-the-badge&labelColor=000000&logo=modelcontextprotocol"></a>
 <a href="https://oauth.net/2/"><img src="https://img.shields.io/badge/OAuth_2.1-EB542E?style=for-the-badge&labelColor=000000&logo=auth0"></a>
 <a href="https://aws.amazon.com/"><img src="https://img.shields.io/badge/AWS-232F3E?style=for-the-badge&labelColor=000000&logo=amazonwebservices"></a>
+<a href="https://aws.amazon.com/bedrock/"><img src="https://img.shields.io/badge/Bedrock-FF9900?style=for-the-badge&labelColor=000000&logo=amazonwebservices"></a>
+<a href="https://aws.amazon.com/sagemaker/"><img src="https://img.shields.io/badge/SageMaker-232F3E?style=for-the-badge&labelColor=000000&logo=amazonwebservices"></a>
 <a href="https://www.terraform.io/"><img src="https://img.shields.io/badge/Terraform-844FBA?style=for-the-badge&labelColor=000000&logo=terraform"></a>
 <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&labelColor=000000&logo=docker"></a>
 <a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&labelColor=000000&logo=postgresql"></a>
@@ -144,51 +146,54 @@ flowchart LR
 | Infrastructure      | Terraform: 14 modules / 166 resources · 7 Docker services · ECS Fargate ARM64 on Graviton                             |
 | CI/CD               | 9 parallel CI jobs · 7-stage deploy · Checkov + tfsec + Gitleaks + Trivy + hadolint + weekly CodeQL                   |
 | Security            | OIDC (zero long-lived AWS creds) · WAF + OWASP CRS · three-tier security groups · pip-audit / npm-audit / cargo-audit |
-| Documentation       | 9 ADRs · MCP guide + live evidence · 21 demo assets (7 PNG, 2 GIF, 6 MOV, 6 MP4)                                      |
+| Documentation       | 9 ADRs · MCP guide + live evidence · 21 demo assets (7 PNG, 2 GIF, 12 MP4)                                      |
 
 ## Demos
 
 ### Mobile App - Core User Flows
 
 **Main Demo** - two receipts through the OCR cascade, totals extracted, merchant matched via rapidfuzz:
-[Main Demo](https://github.com/user-attachments/assets/2d626dd7-2a60-479e-9e74-e6bbc3d71da2)
+<video src="https://github.com/user-attachments/assets/2d626dd7-2a60-479e-9e74-e6bbc3d71da2" controls preload="metadata" width="300"></video>
 
 **Portfolio Screens** - holdings, sector exposure, performance vs SPY, cash-flow-aware TWR:
-[Portfolio Screens](https://github.com/user-attachments/assets/6f8ac564-21be-4965-847d-4dc83065ac54)
+<video src="https://github.com/user-attachments/assets/6f8ac564-21be-4965-847d-4dc83065ac54" controls preload="metadata" width="300"></video>
 
 **Auth Flow** - signup → login → biometric prompt → dark mode:
-[Auth Flow](https://github.com/user-attachments/assets/a0408e1d-283f-44b6-aa12-8e3a1089d18c)
+<video src="https://github.com/user-attachments/assets/a0408e1d-283f-44b6-aa12-8e3a1089d18c" controls preload="metadata" width="300"></video>
 
 **Home Screens** - portfolio summary cards, recent transactions, spending analysis, LSTM forecast chips:
-[Home Screens](https://github.com/user-attachments/assets/d2f2d4f8-ae43-4b96-8a96-f5733e443ea1)
+<video src="https://github.com/user-attachments/assets/d2f2d4f8-ae43-4b96-8a96-f5733e443ea1" controls preload="metadata" width="300"></video>
 
 **Auto-lock** - biometric re-authentication to resume:
-[Auto-lock](https://github.com/user-attachments/assets/35854565-dea4-475b-b098-7d00b2e1d351)
+<video src="https://github.com/user-attachments/assets/35854565-dea4-475b-b098-7d00b2e1d351" controls preload="metadata" width="300"></video>
 
 ### AI Agent & MLOps
 
 **Agent Interaction** - natural-language query → 16 tools → SSE streaming:
-[Agent Interaction](https://github.com/user-attachments/assets/09724723-ff82-45ec-8b6e-3e8ce4541fe4)
+<video src="https://github.com/user-attachments/assets/09724723-ff82-45ec-8b6e-3e8ce4541fe4" controls preload="metadata" width="300"></video>
 
 **Agent Eval in CI** - correctness judged by GLM-4.7-Flash, LangSmith tracing at 10% sample rate:
-[Agent Eval in CI](https://github.com/user-attachments/assets/14377fe7-f273-4f11-bc10-4ae64f05eb38)
+<video src="assets/demos/agent_eval_GHactions.mp4" controls preload="metadata" width="700"></video>
 
 **LangSmith UI** - traces, runs, evaluation results:
-[LangSmith UI](https://github.com/user-attachments/assets/6a49b8bf-f3a3-43e9-af9e-7f487298319a)
+<video src="https://github.com/user-attachments/assets/6a49b8bf-f3a3-43e9-af9e-7f487298319a" controls preload="metadata" width="700"></video>
 
 **Airflow DAG** - weekly retraining → Rust feature engine → Optuna HPO → champion/challenger → Evidently drift:
 ![Airflow DAG](assets/demos/airflow_dag_weekly_retraining-graph.png)
 
 **MLflow Training** - experiments with hyperparameters, loss curves, registered artifacts:
-[MLflow Training](https://github.com/user-attachments/assets/33ef9b7c-4cc1-475b-9021-1c154db9dde5)
+<video src="assets/demos/mlflow.mp4" controls preload="metadata" width="700"></video>
 
 ### Infrastructure & CI/CD
 
-**9 Parallel CI Jobs** - [9 Parallel CI Jobs](https://github.com/user-attachments/assets/cf65c2e3-581f-417f-9a2e-efe143636f1f)
+**9 Parallel CI Jobs** -
+<video src="assets/demos/ci_GHactions.mp4" controls preload="metadata" width="700"></video>
 
-**7-Stage Deploy** - [7-Stage Deploy](https://github.com/user-attachments/assets/5a6b9026-dc1b-42ff-b63e-de8451d82023)
+**7-Stage Deploy** -
+<video src="assets/demos/deploy_GHactions.mp4" controls preload="metadata" width="700"></video>
 
-**AWS Infra Walkthrough** - [AWS Infra Walkthrough](https://github.com/user-attachments/assets/e750980b-d7c9-4a75-bee4-59627b0568e2)
+**AWS Infra Walkthrough** -
+<video src="https://github.com/user-attachments/assets/e750980b-d7c9-4a75-bee4-59627b0568e2" controls preload="metadata" width="700"></video>
 
 ### MCP Server - Inspector & Claude Desktop
 
