@@ -21,9 +21,10 @@ from fastapi import HTTPException, status
 
 from src.config import settings
 from src.database.connection import connection_ctx
-from src.market.provider import fetch_ohlcv, fetch_quote
+from src.market.provider import fetch_ohlcv
+from src.market.quotes import get_quote
 from src.market.repository import get_earliest_ohlcv_date, get_ohlcv_batch, upsert_ohlcv
-from src.market.router import _refresh_ohlcv_if_stale
+from src.market.router import refresh_ohlcv_if_stale
 from src.performance.calculations import (
     compute_benchmark_comparison,
     compute_portfolio_performance,
@@ -140,7 +141,7 @@ async def fetch_live_quotes(
     Failures are logged and silently skipped — the caller falls back to OHLCV data.
     """
 
-    tasks = [fetch_quote(t) for t in tickers]
+    tasks = [get_quote(t) for t in tickers]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     quotes: dict[str, tuple[Decimal, Decimal]] = {}
@@ -148,7 +149,14 @@ async def fetch_live_quotes(
         if isinstance(result, Exception):
             logger.warning("live_quote_fetch_failed", ticker=ticker, error=str(result))
             continue
-        quotes[ticker] = (result["price"], result["previous_close"])
+        # get_quote may serve a Redis-cached dict where Decimals round-tripped
+        # through JSON as strings — coerce back so the Decimal contract holds.
+        price = result["price"]
+        prev_close = result["previous_close"]
+        quotes[ticker] = (
+            price if isinstance(price, Decimal) else Decimal(str(price)),
+            prev_close if isinstance(prev_close, Decimal) else Decimal(str(prev_close)),
+        )
     return quotes
 
 
@@ -328,10 +336,10 @@ async def get_benchmark_comparison(
     all_tickers = list(set(tickers + [benchmark]))
 
     # Ensure benchmark OHLCV data covers the requested start_date.
-    # _refresh_ohlcv_if_stale only checks recency (1-3 days), not depth.
+    # refresh_ohlcv_if_stale only checks recency (1-3 days), not depth.
     # yfinance defaults to 1 year when start_date=None, so longer periods
     # may need a wider fetch.
-    await _refresh_ohlcv_if_stale(benchmark)
+    await refresh_ohlcv_if_stale(benchmark)
     earliest = await get_earliest_ohlcv_date(benchmark)
     logger.info(
         "coverage_check", benchmark=benchmark, earliest=str(earliest), start_date=str(start_date)
