@@ -1,0 +1,12 @@
+# StockLens GraphQL schema — hand-maintained SDL mirror of backend/src/graphql/schema.py
+#
+# Codegen source (CI-stable, no live introspection). Sync rule: any schema.py
+# change → regenerate via `print(schema.as_str())` + recommit both.
+# Phase 6 drift check: diff this file against live introspection output.
+#
+# Phase 0 placeholder — Phase 3/4 replace this with the full Query +
+# Subscription SDL. Kept valid + minimal so codegen runs green meanwhile.
+
+type Query {
+  _empty: String
+}
