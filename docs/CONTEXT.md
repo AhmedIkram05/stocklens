@@ -5,6 +5,7 @@
 > **All terms defined here are normative** — if implementation docs use different language, this glossary wins.
 >
 > **Phase 6 terms added:** 2026-07-13 (Conversational Finance Agent — LangGraph)
+> **Phase 7 terms added:** ​2026-09-04 (GraphQL Read Facade)
 
 ---
 
@@ -82,6 +83,7 @@ Client → FastAPI → market router → yfinance provider → ohlcv_prices (DB 
 4. **User-scoped data.** Portfolio performance endpoints must verify ownership (same `user_id` JOIN pattern as Phase 1 holdings).
 5. **Decimal precision.** All monetary values use DECIMAL(12,4) in DB, Python `Decimal` in code, serialised as `float` in JSON.
 6. **Pydantic for all schemas.** Request/response models use Pydantic v2 with `ConfigDict(json_encoders={Decimal: float})`.
+7. **GraphQL read facade ownership.** Ownership is verified once, at Portfolio resolution;child nodes (holdings, transactions, cash flows, analytics) scope by `portfolio_id` and inherit that check — same trust pattern as REST. No per-child re-verification.
 
 ---
 
@@ -345,3 +347,12 @@ Graph Definition (compiled at startup):
 | **Insights**    | `get_dividend_insights`                                                      | NEW — yfinance dividend fields                                       |
 
 **Cut from v1:** `get_ticker_screening` (no yfinance screening API), `get_drift_metrics` (MLOps metric, not user-facing), `get_portfolio_history` (merged into performance).
+
+---
+
+## GraphQL Read Facade (Phase 7)
+
+| Term                    | Definition                                                                                                                                                                                                                                                                        | Attributes / Constraints                                                                                                                                                                                                                                                        |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **GraphQL Read Facade** | A read-only GraphQL endpoint (Strawberry) exposing portfolio data — holdings, transactions, cash flows, and performance analytics — as a typed, queryable graph. Resolves over the same shared read layer as REST (asyncpg read functions extracted from router-private helpers). | Mounted on the FastAPI app. Read-only: REST remains the only write/OCR/upload path. JWT auth reused — ownership per Design Constraint #7.                                                                                                                                       |
+| **Streaming Quote**     | A push-based quote stream delivered via a GraphQL subscription. Each tick carries the same fields as a **Quote**, delivered at-most-once per tick. On (re)connect, the last cached value is replayed immediately.                                                                 | Fed by a 60s poller → Redis pub/sub. Backed by the same 1-min Redis quote cache as pull-based quotes. **Near-real-time, not live** — Yahoo data is ~15-min delayed. _Avoid_: calling it "live"; calling it a **Quote** — that term means the pull-based, 1-min-cached snapshot. |

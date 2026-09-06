@@ -29,6 +29,20 @@ module.exports = [
     },
   },
   {
+    // Node.js globals for config files (.js)
+    files: ['**/*.js'],
+    languageOptions: {
+      globals: {
+        require: 'readonly',
+        module: 'writable',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        process: 'readonly',
+        console: 'readonly',
+      },
+    },
+  },
+  {
     // Global rules applied to all files
     rules: {
       // ── Overly strict rules disabled to avoid invasive reformatting ──

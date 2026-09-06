@@ -15,14 +15,12 @@ Tasks:
 from __future__ import annotations
 
 import asyncio
-import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from airflow.models import DAG
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import BranchPythonOperator, PythonOperator
 from airflow.providers.amazon.aws.operators.ecs import EcsRunTaskOperator
-
 
 # ── Default arguments ──────────────────────────────────────────────────────────
 default_args = {
@@ -54,7 +52,7 @@ def _check_new_ohlcv_data(**context) -> str:
             row = await conn.fetchval("SELECT MAX(date) FROM ohlcv_prices")
             if row is None:
                 return "skip_retraining"
-            week_ago = datetime.now() - timedelta(days=7)
+            week_ago = datetime.now(tz=timezone.utc) - timedelta(days=7)
             recent = await conn.fetchval(
                 "SELECT COUNT(*) FROM ohlcv_prices WHERE date >= $1", week_ago,
             )
@@ -91,7 +89,7 @@ def _detect_new_champion(**context) -> str:
             if row and row["trained_at"]:
                 trained_at = row["trained_at"]
                 tz = trained_at.tzinfo
-                now = datetime.now(tz) if tz else datetime.now()
+                now = datetime.now(tz=tz or timezone.utc)
                 if now - trained_at < timedelta(hours=6):
                     return "capture_reference_distributions"
             return "skip_reference_capture"
@@ -106,19 +104,27 @@ def _run_drift_detection(**context) -> None:
     import sys
     sys.path.insert(0, "/app")
 
-    from drift.evidently_reporter import EvidentlyReporter  # type: ignore[import-untyped]
+    from drift.evidently_reporter import (
+        EvidentlyReporter,  # type: ignore[import-untyped]
+    )
     from drift.repository import (  # type: ignore[import-untyped]
         create_drift_metric,
         generate_drift_run_id,
     )
-    from drift.router import _build_current_dataframe, _build_reference_dataframe  # type: ignore[import-untyped]
+    from drift.router import (  # type: ignore[import-untyped]
+        _build_current_dataframe,
+        _build_reference_dataframe,
+    )
     from drift.service import DriftDetector  # type: ignore[import-untyped]
-    from drift.utils import build_s3_key, upload_report_to_s3  # type: ignore[import-untyped]
+    from drift.utils import (  # type: ignore[import-untyped]
+        build_s3_key,
+        upload_report_to_s3,
+    )
     from src.database.connection import connection_ctx  # type: ignore[import-untyped]
 
     async def _run():
         drift_run_id = generate_drift_run_id()
-        current_period = datetime.now().strftime("%Y-%m-%d_%Y-%m-%d")
+        current_period = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d_%Y-%m-%d")
 
         # Get champion model
         async with connection_ctx() as conn:
@@ -138,7 +144,7 @@ def _run_drift_detection(**context) -> None:
             tickers = [r["ticker"] for r in rows] + ["SPY"]
 
         # Fetch prediction logs (last 7 days)
-        lookback = datetime.now() - timedelta(days=7)
+        lookback = datetime.now(tz=timezone.utc) - timedelta(days=7)
         async with connection_ctx() as conn:
             log_rows = await conn.fetch(
                 """SELECT ticker, prediction, features, feature_stats, created_at
@@ -202,14 +208,14 @@ def _cleanup(**context) -> None:
         conn = await asyncpg.connect(dsn)
         try:
             # prediction_log > 90 days
-            cutoff = datetime.now() - timedelta(days=90)
+            cutoff = datetime.now(tz=timezone.utc) - timedelta(days=90)
             result = await conn.execute(
                 "DELETE FROM prediction_log WHERE created_at < $1", cutoff,
             )
             pl_count = int(result.split()[-1])
 
             # drift_metrics > 365 days
-            dm_cutoff = datetime.now() - timedelta(days=365)
+            dm_cutoff = datetime.now(tz=timezone.utc) - timedelta(days=365)
             result = await conn.execute(
                 "DELETE FROM drift_metrics WHERE created_at < $1", dm_cutoff,
             )
@@ -231,7 +237,7 @@ with DAG(
     default_args=default_args,
     description="Weekly retraining + drift detection for StockLens LSTM",
     schedule="0 6 * * 1",  # Every Monday 06:00 UTC
-    start_date=datetime(2026, 7, 6),
+    start_date=datetime(2026, 7, 6, tzinfo=timezone.utc),
     catchup=False,
     max_active_runs=1,
     dagrun_timeout=timedelta(hours=6),
