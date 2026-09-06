@@ -600,6 +600,18 @@ wheels = [
 ]
 
 [[package]]
+name = "cross-web"
+version = "0.7.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4a/a0/bdb8370215987cc5bde497cb8b976b17ab14841566ecef2aab6ae3e6c7b0/cross_web-0.7.0.tar.gz", hash = "sha256:15fbc8b9a824a055db8127fd6e43e0773074f620fdecb6b2b587d3d0a2bdd459", size = 332407, upload-time = "2026-05-19T14:18:48.849Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7a/4a/78b52ec2edcbd9b123638f4e0421fd8699ebe653ebf63ac5f82abd2665bc/cross_web-0.7.0-py3-none-any.whl", hash = "sha256:ddea9be3c68b48eaf16561847a5831a559786949c544b3701432e00a4e8d19d9", size = 25207, upload-time = "2026-05-19T14:18:47.614Z" },
+]
+
+[[package]]
 name = "cryptography"
 version = "48.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3542,6 +3554,7 @@ dependencies = [
     { name = "redis", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "scikit-learn", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "slowapi", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "strawberry-graphql", extra = ["fastapi"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "structlog", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "tenacity", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
@@ -3602,6 +3615,7 @@ requires-dist = [
     { name = "redis", specifier = ">=5.2.0" },
     { name = "scikit-learn", specifier = ">=1.9.0" },
     { name = "slowapi", specifier = ">=0.1.9" },
+    { name = "strawberry-graphql", extras = ["fastapi"], specifier = ">=0.327.0" },
     { name = "structlog", specifier = ">=24.4.0" },
     { name = "tenacity", specifier = ">=9.0.0" },
     { name = "torch", specifier = ">=2.12.0", index = "https://download.pytorch.org/whl/cpu" },
@@ -3609,6 +3623,28 @@ requires-dist = [
     { name = "yfinance", specifier = ">=1.5.1" },
 ]
 provides-extras = ["dev"]
+
+[[package]]
+name = "strawberry-graphql"
+version = "0.327.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cross-web", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "graphql-core", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "packaging", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "python-dateutil", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "typing-extensions", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/48/d5/500f1395489edc1d152701300fd1cca7fa153aee24d16418068acd7d7cf3/strawberry_graphql-0.327.4.tar.gz", hash = "sha256:dc644905ae7db3a7d4ab45923f14b5043b3c1049b86e482b14526f621c06df5c", size = 243622, upload-time = "2026-09-06T16:17:54.785Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b5/8f/5480b2fb096bbef39d3dce0049e4b917b89df2286ea77aff5ab723de1442/strawberry_graphql-0.327.4-py3-none-any.whl", hash = "sha256:3a5e10bd97d978965353ef2d2a1748695876fc3fab041088ce58af71c4d1e462", size = 347594, upload-time = "2026-09-06T16:17:52.849Z" },
+]
+
+[package.optional-dependencies]
+fastapi = [
+    { name = "fastapi", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "python-multipart", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
 
 [[package]]
 name = "structlog"
