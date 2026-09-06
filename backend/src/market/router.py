@@ -8,7 +8,6 @@ Endpoints:
 
 from __future__ import annotations
 
-import json
 from datetime import date, timedelta
 from typing import Any, Optional
 
@@ -17,10 +16,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from src.auth.dependencies import get_current_user
 from src.auth.schemas import UserInDB
-from src.cache.redis import get_redis
 from src.config import settings
 from src.limiter import limiter
-from src.market.provider import fetch_ohlcv, fetch_quote
+from src.market.provider import fetch_ohlcv
+from src.market.quotes import get_quote
 from src.market.repository import (
     get_latest_ohlcv_date,
     get_ohlcv,
@@ -36,10 +35,8 @@ logger = structlog.get_logger()
 
 router = APIRouter()
 
-QUOTE_CACHE_TTL = 30  # seconds — see ADR 003
 
-
-async def _refresh_ohlcv_if_stale(ticker: str) -> bool:
+async def refresh_ohlcv_if_stale(ticker: str) -> bool:
     """Check cache freshness and fetch from yfinance if stale.
 
     Returns True if data was refreshed (or fetched for the first time).
@@ -109,7 +106,7 @@ async def get_ohlcv_endpoint(
     ticker = ticker.upper()
 
     # Attempt to refresh cache if data is stale
-    await _refresh_ohlcv_if_stale(ticker)
+    await refresh_ohlcv_if_stale(ticker)
 
     # Set date defaults after (potential) refresh
     if start_date is None:
@@ -142,26 +139,10 @@ async def get_quote_endpoint(
     Cache is per-ticker (key: ``quote:{ticker}``).
     """
     ticker = ticker.upper()
-    cache_key = f"quote:{ticker}"
 
-    # Try Redis cache (graceful degradation on Redis failure)
-    r = None
+    # Cached fetch (provider failures propagate → 503 below)
     try:
-        r = await get_redis()
-        if r is not None:
-            cached = await r.get(cache_key)
-            if cached is not None:
-                try:
-                    data = json.loads(cached)
-                    return QuoteResponse(**data)
-                except (json.JSONDecodeError, TypeError):
-                    pass  # Corrupted cache — refetch
-    except Exception:
-        logger.warning("redis_cache_read_failed", ticker=ticker)
-
-    # Cache miss: fetch from yfinance
-    try:
-        quote_data = await fetch_quote(ticker)
+        quote_data = await get_quote(ticker)
     except Exception as exc:
         logger.error("yfinance_quote_failed", ticker=ticker, error=str(exc))
         raise HTTPException(
@@ -169,7 +150,7 @@ async def get_quote_endpoint(
             detail=f"Quote temporarily unavailable for {ticker}",
         )
 
-    response = QuoteResponse(
+    return QuoteResponse(
         ticker=quote_data["ticker"],
         price=quote_data["price"],
         change=quote_data["change"],
@@ -180,12 +161,3 @@ async def get_quote_endpoint(
         currency=quote_data.get("currency", "GBP"),
         exchange=quote_data.get("exchange"),
     )
-
-    # Cache in Redis (graceful degradation: skip if Redis unavailable)
-    try:
-        if r is not None:
-            await r.setex(cache_key, QUOTE_CACHE_TTL, response.model_dump_json())
-    except Exception:
-        logger.warning("redis_cache_write_failed", ticker=ticker)
-
-    return response
