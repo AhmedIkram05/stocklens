@@ -21,6 +21,7 @@ from src.auth.schemas import UserInDB
 from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
+from src.portfolios.queries import fetch_portfolio_by_id, fetch_portfolios_from_db
 from src.portfolios.schemas import (
     PortfolioCreate,
     PortfolioListResponse,
@@ -31,27 +32,6 @@ from src.portfolios.schemas import (
 logger = structlog.get_logger()
 
 router = APIRouter()
-
-
-async def _fetch_portfolios_from_db(user_id: str) -> list[dict]:
-    async with connection_ctx() as conn:
-        rows = await conn.fetch(
-            "SELECT id, user_id, name, description, created_at, updated_at "
-            "FROM portfolios WHERE user_id = $1::uuid ORDER BY created_at DESC",
-            user_id,
-        )
-    return [dict(r) for r in rows]
-
-
-async def _fetch_portfolio_by_id(portfolio_id: str, user_id: str) -> dict | None:
-    async with connection_ctx() as conn:
-        row = await conn.fetchrow(
-            "SELECT id, user_id, name, description, created_at, updated_at "
-            "FROM portfolios WHERE id = $1::uuid AND user_id = $2::uuid",
-            portfolio_id,
-            user_id,
-        )
-    return dict(row) if row else None
 
 
 def _row_to_response(row: dict) -> PortfolioResponse:
@@ -71,7 +51,7 @@ async def list_portfolios(
     current_user: UserInDB = Depends(get_current_user),
 ) -> PortfolioListResponse:
     """Return all portfolios belonging to the current user."""
-    rows = await _fetch_portfolios_from_db(current_user.id)
+    rows = await fetch_portfolios_from_db(current_user.id)
     portfolios = [_row_to_response(r) for r in rows]
     return PortfolioListResponse(portfolios=portfolios, total=len(portfolios))
 
@@ -111,7 +91,7 @@ async def get_portfolio(
     current_user: UserInDB = Depends(get_current_user),
 ) -> PortfolioResponse:
     """Return a single portfolio by ID (must belong to current user)."""
-    row = await _fetch_portfolio_by_id(portfolio_id, current_user.id)
+    row = await fetch_portfolio_by_id(portfolio_id, current_user.id)
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
