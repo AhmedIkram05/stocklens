@@ -1,6 +1,6 @@
-# Implementation Plan: GraphQL Read Facade over a Shared Read Layer (ADR 010, Phase  ​​7)
+# Implementation Plan: GraphQL Read Facade over a Shared Read Layer (ADR 010, Phase 7)
 
-Retrofit a read-only GraphQL layer onto the StockLens FastAPI backend: mechanically extract router-private read helpers into per-domain query modules (shared by REST routers and new Strawberry resolvers), implement the promised 1-min Redis quote cache (`get_quote`), expose `Query { portfolios, portfolio(id, marketQuote }` + a `marketQuote(symbol)` WebSocket subscription fed by a 60s poller via Redis pub/sub, convert ONE frontend screen (PortfolioListScreen)from 2 REST calls to 1 GraphQL query via committed-schema codegen, and document the REST=commands / GraphQL=reads split in README. No MCP/agent/write-path changes.
+Retrofit a read-only GraphQL layer onto the StockLens FastAPI backend: mechanically extract router-private read helpers into per-domain query modules (shared by REST routers and new Strawberry resolvers), implement the promised 1-min Redis quote cache (`get_quote`), expose `Query { portfolios, portfolio(id), market_quote }` + a `market_quote(ticker)` WebSocket subscription fed by a 60s poller via Redis pub/sub, convert ONE frontend screen (PortfolioDetailScreen) from 1 REST poll to 1 GraphQL query + live quote stream via committed-schema codegen, and document the REST=commands / GraphQL=reads split in README. No MCP/agent/write-path changes.
 
 
 
@@ -165,7 +165,7 @@ Imports: `json`, `Any`, `structlog`, `from src.cache.redis import get_redis`, `f
   - corrupt-cache: get → `"not-json"` → refetch fresh.
   - provider-error: `fetch_quote` raises → `get_quote` raises (propagates;REST layer maps 503 — covered by existing `test_yfinance_failure_returns_503` after patch-target update).
 - **Update `backend/tests/test_market.py`** quote-endpoint tests — patch targets move (6 sites: `src.market.router.get_redis` → `src.market.quotes.get_redis`;`src.market.router.fetch_quote` → `src.market.quotes.fetch_quote`;lines ~518-519, ~556, ~567-568, ~585-586, ~599-600, ~622-623;and line ~534 TTL assert `30` → `60`). `test_ticker_uppercased` unchanged (get_quote uppercases internally;endpoint keeps its own `.upper()` or drops it — behavior same).
-- **Update `backend/tests/test_performance.py`** ~1344 patch target: `"src.performance.router.fetch_quote"` → `"src.market.quotes.fetch_quote"` (fetch_live_quotes → get_quote → quotes-module fetch_quote;`get_redis` unmocked → real Redis (test env) → miss → fetch;if Redis down,, graceful-degrade path still reaches fetch).
+- **Update `backend/tests/test_performance.py`** ~1344 patch target: `"src.performance.router.fetch_quote"` → `"src.market.quotes.fetch_quote"` (fetch_live_quotes → get_quote → quotes-module fetch_quote;`get_redis` unmocked → real Redis (test env) → miss → fetch;if Redis down, graceful-degrade path still reaches fetch).
 - **Verification:** `docker compose run --rm pytest tests/test_quote_cache.py tests/test_market.py tests/test_performance.py -q`;then `make test`.
 - **Acceptance:** cache hit/miss/expiry(60)/corrupt/redis-down/provider-error covered;REST quote 503 preserved;`get_quote` is the single quote-fetch path for REST + performance (+ poller next phase).
 
@@ -230,14 +230,14 @@ graphql_router = GraphQLRouter(
 
 ###3.5 Tests — new `backend/tests/test_graphql_queries.py`
 - **Authz:** POST `/graphql` JSON `{"query": "{ __typename }" }` with no token → **401** (Mechanism A: Depends raises before execution;;B: middleware wrapper). Invalid/garbage token → 401. Valid `auth_headers` → 200 with data.
-- **Ownership:** seed another user's portfolio (conftest already seeds pid `22222222-...` owned by user-2): `query { portfolio(id: "22222222-2222-2222-2222-222222222222") { id } }` → `data.portfolio == null` (no leak,, no error);`query { portfolios { id } } }` returns only user-1's rows (pid `11111111-...`).
-- **Nesting shape:** with holdings+transactions+cash_flows+performance seeded via existing fixture patterns(see test_performance.py helpers): one query fetching `portfolios { id, name, holdings { ticker, shares }, transactions { id, ticker, type }, cash_flows { amount, source }, performance { total_market_value, twr, total_holdings, free_cash_balance } }` → assert exact field values (snake_case names,, float money,, ISO dates.
+- **Ownership:** seed another user's portfolio (conftest already seeds pid `22222222-...` owned by user-2): `query { portfolio(id: "22222222-2222-2222-2222-222222222222") { id } }` → `data.portfolio == null` (no leak, no error);`query { portfolios { id } } }` returns only user-1's rows (pid `11111111-...`).
+- **Nesting shape:** with holdings+transactions+cash_flows+performance seeded via existing fixture patterns(see test_performance.py helpers): one query fetching `portfolios { id, name, holdings { ticker, shares }, transactions { id, ticker, type }, cash_flows { amount, source }, performance { total_market_value, twr, total_holdings, free_cash_balance } }` → assert exact field values (snake_case names, float money, ISO dates.
 
 - **N+1 batch assertion:** spy on `src.performance.queries.batch_get_holdings` / `batch_get_transactions` / `batch_get_cash_flows` / `get_bulk_portfolio_performance` (patch in the schema module's namespace): run `{ portfolios { id holdings { id } } } }` with 2+ seeded portfolios;assert each batch helper called **exactly once** with all pids (not once-per-portfolio);and `get_bulk_portfolio_performance` called once with all ids. Also assert `performance` subfield on the list query uses the preloaded bulk result (patch `compute_portfolio_performance_response` → assert NOT called when default dates requested).
 - **market_quote:** patch `src.market.quotes.get_quote` → canned quote dict;;assert `data.market_quote.price` etc;assert ticker uppercased (call args;;assert invalid ticker (`"abc def"`/empty) → `errors[0].message` contains `"Invalid ticker"`.
 - **Errors:** `portfolio(id: "00000000-0000-0000-0000-000000000000")` (nonexistent→ null;`benchmark(benchmark: "TSLA"` → `errors[0].message` contains `"Benchmark must be SPY or QQQ"` (400 parity message).
 - **Verification:** `docker compose run --rm pytest tests/test_graphql_queries.py -q`;then `make test`.
-- **Acceptance:** auth 401, ownership isolation,, nesting parity with REST shapes,, dataloader batch asserted(3 batched DB reads + 1 batched compute per list query,, marketQuote cached-path works.
+- **Acceptance:** auth 401, ownership isolation, nesting parity with REST shapes, dataloader batch asserted(3 batched DB reads + 1 batched compute per list query, marketQuote cached-path works.
 
 
 
@@ -296,7 +296,7 @@ Ceiling comments in code: `# ponytail: in-process refcount registry;multi-replic
 async def market_quote(self, info: strawberry.Info, ticker: str) -> AsyncGenerator[Quote, None]:
     ticker = ticker.upper()
     if not re.fullmatch(r"[A-Z0-9.]{1,10}", ticker): raise GraphQLError(f"Invalid ticker: {ticker!r}")
-    """Near-real-time quote stream (~15-min-delayed Yahoo data,, 60s poll) — never "live"."""
+    """Near-real-time quote stream (~15-min-delayed Yahoo data, 60s poll) — never "live"."""
     params = info.context.get("connection_params") or {}
     token = (params.get("authToken") or "").removeprefix("Bearer ").strip()
     _validate_ws_token(token)   # decode_token + type=="access" + is_token_blacklisted → raise GraphQLError("Forbidden" on fail (documented graphql-ws connection_init auth pattern — browser WS can't set headers)
@@ -315,7 +315,7 @@ async def market_quote(self, info: strawberry.Info, ticker: str) -> AsyncGenerat
         unsubscribe_symbol(ticker)
 ```
 - `_validate_ws_token` (module-private in schema.py): reuse `src.auth.utils.decode_token` + `payload.type == "access"` + `await is_token_blacklisted(payload.jti)` (the same primitives as `get_current_user`;no DB user fetch — market data is not user-scoped;document this). Raise `GraphQLError("Forbidden")` on any failure. WS auth happens at `connection_init` only — no mid-stream re-auth;on reconnect, clients must present a fresh access token (RN: `apiService.ensureValidAccessToken()` re-fetches. Add `import re` + `from src.graphql.streaming import subscribe_symbol, unsubscribe_symbol, _fetch_with_timeout` to schema.py.
-- `_to_quote(dict) -> Quote` (float-coerce money,, ISO datetimes..
+- `_to_quote(dict) -> Quote` (float-coerce money, ISO datetimes..
 - `strawberry.Schema(query=Query, subscription=Subscription)` — rewire schema construction in `router.py` import.
 
 
@@ -332,10 +332,10 @@ async def market_quote(self, info: strawberry.Info, ticker: str) -> AsyncGenerat
 
 - **Tick delivery:** patch `get_redis` → fake redis whose `pubsub()` returns a fake with `listen()` async-generating one `{"type": "message", "data": json.dumps(quote)}` → second yield == parsed quote.
 - **Unsubscribe refcount:** `subscribe_symbol("AAPL")` twice,`unsubscribe_symbol` once → still in registry (count 1);second unsubscribe → removed. Assert `_symbol_subscribers`.
-- **Poller tick:** seed registry with 2 symbols;;patch `src.graphql.streaming.get_quote` (side_effects: one raises, one returns);patch `get_redis` → fake `publish` recorder;`await _poller_tick()`;assert: failing symbol skipped (no publish,, successful published once to `quote:stream:{SYM}`;and per-tick cost = 1 get_quote per symbol (parallel gather;slow-symbol case: one `get_quote` sleeps 0.1s with `POLL_FETCH_TIMEOUT_SECONDS` patched to 0.01 → skipped (no publish,, other symbol still published..
+- **Poller tick:** seed registry with 2 symbols;;patch `src.graphql.streaming.get_quote` (side_effects: one raises, one returns);patch `get_redis` → fake `publish` recorder;`await _poller_tick()`;assert: failing symbol skipped (no publish, successful published once to `quote:stream:{SYM}`;and per-tick cost = 1 get_quote per symbol (parallel gather;slow-symbol case: one `get_quote` sleeps 0.1s with `POLL_FETCH_TIMEOUT_SECONDS` patched to 0.01 → skipped (no publish, other symbol still published..
 - **Covered (automated + manual):** full WS transport — frontend `subscriptionClient.test.ts` + `quoteMerge.test.ts` cover the client+merge units;;full transport e2e = REQUIRED Phase 6 manual smoke (`wscat`/agent-browser with `connection_init.authToken`;assert replay + tick + disconnect drains registry;RN demo = PortfolioDetail screen — Phase 5+6). — httpx `ASGITransport` has no WS;;covered manually in Phase 6 (`wscat`/agent-browser with `connection_init.authToken`;assert replay + tick + disconnect drains registry).
 - **Verification:** `docker compose run --rm pytest tests/test_graphql_subscriptions.py -q`;then `make test`.
-- **Acceptance:** replay-before-stream,, auth rejection,, tick delivery,, refcounted unsubscribe stops polling (registry drained at 0,, poller tick honors 60s cadence (loop sleep tested by inspection;`_tick` unit-tested,, single-process ceiling documented.
+- **Acceptance:** replay-before-stream, auth rejection, tick delivery, refcounted unsubscribe stops polling (registry drained at 0, poller tick honors 60s cadence (loop sleep tested by inspection;`_tick` unit-tested, single-process ceiling documented.
 
 
 
@@ -357,12 +357,12 @@ export async function graphqlRequest<TData, TVars = Record<string, unknown>>(
     body: JSON.stringify({ query, variables }),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(res.status,, body?.errors?.[0]?.message ?? body?.detail ?? 'GraphQL request failed');
-  if (body.errors?.length) throw new ApiError(400,, body.errors.map((e) => e.message).join('; '));
+  if (!res.ok) throw new ApiError(res.status, body?.errors?.[0]?.message ?? body?.detail ?? 'GraphQL request failed');
+  if (body.errors?.length) throw new ApiError(400, body.errors.map((e) => e.message).join('; '));
   return body.data as TData;
 }
 ```
-(`API_BASE_URL`/`ApiError` exported from `frontend/src/services/api.ts`;single POST — token pre-freshened,, no retry needed.)
+(`API_BASE_URL`/`ApiError` exported from `frontend/src/services/api.ts`;single POST — token pre-freshened, no retry needed.)
 
 ###5.3 `frontend/src/graphql/portfolioDetail.graphql` + `marketQuote.subscription.graphql` (new documents)
 ```graphql
@@ -420,68 +420,111 @@ subscription MarketQuote($ticker: String!) {
 - **REST stays** the command/write facade + every other screen (hybrid story: read facade + quote stream are tools for this screen, not a migration mandate).
 - Generated types map 1:1 to `PortfolioPerformance` (snake_case preserved — no client churn)..
 
-###5.4.1 `frontend/src/graphql/subscriptionClient.ts` (new,, ~40 lines
+###5.4.1 `frontend/src/graphql/subscriptionClient.ts` (new, ~45 lines, singleton)
 ```ts
 import { createClient, type Client } from 'graphql-ws';
+import { API_BASE_URL } from '../services/api';
+import { apiService } from '../services/api';
 
 const wsUrl = (base: string) => base.replace(/^http/, 'ws') + '/graphql';
-###5.5 Codegen + tests
-- `npm run graphql:codegen` → commits `frontend/src/graphql/generated.ts` (types + `PortfolioDetailQuery` + `MarketQuoteSubscription`). Commit it (CI-stable alongside schema.graphql)..
-- **New tests:** `frontend/src/graphql/client.test.ts` (unchanged: mock fetch + SecureStore;POST URL/body/Bearer;errors→ApiError;non-OK→ApiError(status);+ **`frontend/src/graphql/subscriptionClient.test.ts`** (jest.mock `graphql-ws` — `createClient` returns fake: assert `subscribe` called with the doc + `{ ticker }`;`next` → callback invoked;cleanup → `unsubscribe()` + `client.dispose()`;+ **`frontend/src/graphql/quoteMerge.test.ts`** (pure recompute vs hand-computed: price up/down,, unknown ticker ignored,, null price no-op,, portfolio-level Σs recomputed). Screen-level asserts skipped (no RN component-test infra — pre-existing gap)..
-- **Verification:** `npm run graphql:codegen && npm run typecheck && npm test`.
-- **Acceptance:** PortfolioDetailScreen renders from ONE query + live ticks replace the 30s poll (network tab: 1 POST /graphql on focus + WS frames only — no REST polling while focused;;typecheck clean,, jest green.
 
+let sharedClient: Client | null = null;
+
+export function getSubscriptionClient(): Client {
+  if (!sharedClient) {
+    sharedClient = createClient({
+      url: wsUrl(API_BASE_URL),
+      connectionParams: async () => {
+        const token = await apiService.ensureValidAccessToken();
+        return token ? { authToken: `Bearer ${token}` } : {};
+      },
+      retryAttempts: 5,
+    });
+  }
+  return sharedClient;
+}
+
+export function subscribeMarketQuote(
+  ticker: string,
+  onNext: (quote: MarketQuotePayload) => void,
+  onError?: (err: unknown) => void,
+): () => void {
+  const client = getSubscriptionClient();
+  const unsubscribe = client.subscribe(
+    { query: MARKET_QUOTE_SUBSCRIPTION, variables: { ticker } },
     { next: onNext, error: onError ?? (() => {}), complete: () => {} },
   );
-  return () => { unsubscribe(); client.dispose(); };
+  // NOTE: do NOT dispose the shared client per subscription — graphql-ws multiplexes
+  // N subscriptions over ONE socket. Dispose only on app teardown / logout.
+  return () => { unsubscribe(); };
 }
 ```
-(graphql-ws multiplexes N subscriptions over ONE socket + reconnects natively — fresh token via `connectionParams` re-run on every reconnect;module creates a client per call — acceptable at one-screen scale (ceiling noted)..
+(graphql-ws multiplexes N tickers over ONE shared socket + reconnects natively; fresh token via `connectionParams` on every (re)connect. Singleton avoids the per-call `createClient` socket leak.)
 
-###5.4.2 `frontend/src/graphql/quoteMerge.ts` (new,, pure
+###5.5 Codegen + tests
+- `npm run graphql:codegen` → commits `frontend/src/graphql/generated.ts` (types + `PortfolioDetailQuery` + `MarketQuoteSubscription`). Commit it (CI-stable alongside schema.graphql).
+- **New tests:** `frontend/src/graphql/client.test.ts` (mock fetch + SecureStore; POST URL/body/Bearer; errors→ApiError; non-OK→ApiError(status)) + **`frontend/src/graphql/subscriptionClient.test.ts`** (jest.mock `graphql-ws` — `createClient` returns fake: assert singleton reused across two subscribes, `subscribe` called with the doc + `{ ticker }`; `next` → callback invoked; cleanup → `unsubscribe()` called, `dispose` NOT called per-subscription) + **`frontend/src/graphql/quoteMerge.test.ts`** (pure recompute vs hand-computed: price up/down, unknown ticker ignored, null/0 price no-op, portfolio-level sums + weights recomputed). Screen-level asserts skipped (no RN component-test infra — pre-existing gap).
+- **Verification:** `npm run graphql:codegen && npm run typecheck && npm test`.
+- **Acceptance:** PortfolioDetailScreen renders from ONE query + live ticks replace the 30s poll (network tab: 1 POST /graphql on focus + WS frames only — no REST polling while focused; typecheck clean, jest green.
+
+###5.4.2 `frontend/src/graphql/quoteMerge.ts` (new, pure — per CONTEXT.md formulas)
 ```ts
 export function applyQuoteToPerformance(
-  performance: PortfolioPerformance, quote: { ticker: string; price?: number | null; previous_close?: number | null },
+  performance: PortfolioPerformance,
+  quote: { ticker: string; price?: number | null; previous_close?: number | null },
 ): PortfolioPerformance {
-  if (quote.price == null || quote.price === 0) return performance;   // null/0 price → no-op
+  if (quote.price == null || quote.price === 0) return performance; // null/0 price -> no-op
   const holdings = performance.holdings.map((h) => {
     if (h.ticker !== quote.ticker) return h;
-    const market_value = h.shares * quote.price;
-    const unrealised_pl = market_value − h.shares * h.average_cost_basis;
-    return { ...h, current_price: quote.price, market_value, unrealised_pl, unrealised_pl_pct: h.average_cost_basis ? (unrealised_pl / (h.shares * h.average_cost_basis)) * 100 : null, day_change: h.shares * (quote.price − (quote.previous_close ?? h.current_price ?? 0)), day_change_pct: h.shares * (quote.previous_close ?? h.current_price ?? 0) ? ((quote.price − (quote.previous_close ?? h.current_price ??  ​​0)) / (quote.previous_close ?? h.current_price ?? 0)) * 100 : null };
+    const market_value = h.shares * quote.price!;
+    const cost_basis = h.shares * h.average_cost_basis;
+    const unrealised_pl = market_value - cost_basis;
+    const unrealised_pl_pct = cost_basis ? (unrealised_pl / cost_basis) * 100 : null;
+    // HoldingPerformance has no previous_close — prefer quote.previous_close,
+    // fallback to implied prev from last day_change, else current_price (pct -> null-safe).
+    const prevClose = quote.previous_close
+      ?? (h.day_change != null && h.current_price != null
+        ? h.current_price - h.day_change / Math.max(h.shares, 1)
+        : h.current_price ?? quote.price!);
+    const day_change = h.shares * (quote.price! - prevClose);
+    const day_change_pct = prevClose ? ((quote.price! - prevClose) / prevClose) * 100 : null;
+    return { ...h, current_price: quote.price!, market_value, unrealised_pl, unrealised_pl_pct, day_change, day_change_pct };
+  });
+  // Portfolio-level: recompute ALL sums + weights (cheap, N small).
+  const total_market_value = holdings.reduce((s, h) => s + (h.market_value ?? 0), 0);
+  const total_unrealised_pl = holdings.reduce((s, h) => s + (h.unrealised_pl ?? 0), 0);
+  const total_cost_basis = holdings.reduce((s, h) => s + h.shares * h.average_cost_basis, 0);
+  const total_unrealised_pl_pct = total_cost_basis ? (total_unrealised_pl / total_cost_basis) * 100 : null;
+  const day_change = holdings.reduce((s, h) => s + (h.day_change ?? 0), 0);
+  // Day % = day_change / prev-day portfolio value (not cost basis).
+  const prev_day_value = total_market_value - day_change;
+  const day_change_pct = prev_day_value ? (day_change / prev_day_value) * 100 : null;
+  const weighted = holdings.map((h) => ({
+    ...h,
+    portfolio_weight_pct: total_market_value ? ((h.market_value ?? 0) / total_market_value) * 100 : null,
   }));
-  // portfolio-level: recompute ALL sums (cheap,, N small
-  const total_market_value = holdings.reduce((s,h) => s + (h.market_value ?? 0),, 0);
-  const total_unrealised_pl = holdings.reduce((s,h) => s + (h.unrealised_pl ?? 0),, 0);
-  const total_cost_basis = holdings.reduce((s,h) => s + h.shares * h.average_cost_basis,,0);
-  const total_unrealised_pl_pct = total_cost_basis ? (total_unrealised_pl / total_cost_basis)) * 100 : null;
-  const day_change = holdings.reduce((s,h) => s + (h.day_change ??  ​​0),, 0);
-  const prev_close_sum = holdings.reduce((s,h) => s + h.shares * (h.previous_close ?? h.current_price ??  ​​0),, 0);
-  const day_change_pct = prev_close_sum ? (day_change / prev_close_sum)) * 100 : null;
-  return { ...performance,, total_market_value,, total_unrealised_pl,, total_unrealised_pl_pct,, day_change,, day_change_pct,, holdings };
+  return { ...performance, total_market_value, total_unrealised_pl, total_unrealised_pl_pct, day_change, day_change_pct, holdings: weighted };
 }
 ```
-(per CONTEXT.md formulas;;calculated_at/data_quality stay server-authored;;`ponytail:` comment: derived values = live overlay,, approximate until next full fetch reconciles (REST parity on refresh;;60s cadence bounds divergence)..
+(per CONTEXT.md: Market Value = shares x price; Unrealised = market_value - cost_basis; Day Change = shares x (price - prev_close); Day % = (price - prev_close)/prev_close x 100; Weight = market_value/total x 100. `calculated_at`/`data_quality` stay server-authored. `ponytail:` derived values = live overlay, approximate until next full fetch reconciles; 60s cadence bounds divergence.)
 
-###5.4.3 `useLiveQuotes` hook (in-screen,, ~20 lines
+###5.4.3 `useLiveQuotes` hook (in-screen, ~20 lines — stable ticker-key dep)
 ```ts
+const tickerKey = useMemo(
+  () => (performance?.holdings ?? []).filter((h) => h.shares > 0).map((h) => h.ticker).sort().join('|'),
+  [performance?.holdings],
+);
 useEffect(() => {
-  const tickers = performance?.holdings.filter((h) => h.shares >  ​​0).map((h) => h.ticker) ?? [];
-  const unsubs = tickers.map((t) => subscribeMarketQuote(t,, (quote) => {
-    setPerformance((prev) => prev ? applyQuoteToPerformance(prev,, quote) : prev);
-  }));
+  if (!tickerKey) return;
+  const unsubs = tickerKey.split('|').map((t) =>
+    subscribeMarketQuote(t, (quote) => {
+      setPerformance((prev) => (prev ? applyQuoteToPerformance(prev, quote) : prev));
+    }),
+  );
   return () => unsubs.forEach((u) => u());
-}, [portfolioId,, performance?.holdings.map((h) => h.ticker).join('|')]);
+}, [portfolioId, tickerKey]);
 ```
-(freshness line switches to latest tick `timestamp` (fallback `calculated_at`;;pull-to-refresh still full refetch (server reconcile)..
-
-    └─▶ Phase  5 (frontend codegen+demo)  (schema.graphql from  0;codegen parallelizable with  3-4;live-demo needs Phase 4 backend (WS) for the Phase 6 smoke;backend runtime only for manual testing)
-- `npm run graphql:codegen` → commits `frontend/src/graphql/generated.ts` (types + `PortfolioListPerformanceQuery`). Commit it (CI-stable alongside schema.graphql.
-.
-
-- **New test** `frontend/src/graphql/client.test.ts`: mock global fetch + `SecureStore.getItemAsync`/`apiService.ensureValidAccessToken`;assert POST to `${API_BASE_URL}/graphql` with `{query, variables}` + Bearer header;assert `errors[0].message` → `ApiError`;assert non-OK → `ApiError(status)`.
-- **Verification:** `npm run graphql:codegen && npm run typecheck && npm test`.
-- **Acceptance:** PortfolioListScreen renders from ONE query (network tab/devtools: 1 POST /graphql vs 2-3 REST GETs), typecheck clean,, jest green.
+(Functional `setPerformance` avoids stale closures; dep is the stable sorted ticker string — NOT the `performance` object — so ticks don't resubscribe every render. Freshness line switches to latest tick `timestamp` (fallback `calculated_at`); pull-to-refresh still full refetch (server reconcile).)
 
 
 
@@ -489,8 +532,10 @@ useEffect(() => {
 
 ## Phase 6: Docs + Verification Sweep
 
-###6.1 README section — add "Why GraphQL + REST here?" (per ADR 010 framing
-- One typed read graph for the RN app (schema committed,, codegen types,, introspection available to future authenticated consumers);REST = command facade (writes/OCR/uploads unchanged). Near-real-time caveat verbatim: Yahoo data is ~15-min delayed,, polled every 60s — **never "live"**;CV bullet (pinned):> Retrofitted a read-only GraphQL layer onto a 40+ endpoint FastAPI REST API: schema-first Strawberry design;batch dataloaders eliminating N+1;JWT resolver-level authz;graphql-codegen typed RN client (PortfolioDetail reads one typed query + a live quote stream replacing a 30s blind poll(graphql-ws over RN WebSocket;at N viewers, one shared 60s poller + Redis pub/sub);GraphQL subscriptions streaming near-real-time market quotes over Redis pub/sub (60s poll,, ~15-min-delayed data)— one typed,, introspectable read contract for the app and future consumers. Reference `docs/CONTEXT.md` + `docs/adr/010-graphql-read-facade.md` (already written;no re-plan.
+###6.1 README section — add "Why GraphQL + REST here?" (per ADR 010 framing)
+- One typed read graph for the RN app (schema committed, codegen types, introspection available to future authenticated consumers); REST = command facade (writes/OCR/uploads unchanged). Near-real-time caveat verbatim: Yahoo data is ~15-min delayed, polled every 60s — **never "live"**. CV bullet (pinned):
+  > Retrofitted a read-only GraphQL layer onto a 40+ endpoint FastAPI REST API: schema-first Strawberry design; batch dataloaders eliminating N+1; JWT resolver-level authz; graphql-codegen typed RN client. PortfolioDetail reads one typed query + a quote stream replacing a 30s blind poll (graphql-ws over RN WebSocket; one shared 60s poller + Redis pub/sub feeds N viewers; ~15-min-delayed data framed as near-real-time).
+  Reference `docs/CONTEXT.md` + `docs/adr/010-graphql-read-facade.md` (already written; no re-plan).
 - Add a "Schema sync" note (schema.graphql must be regenerated + committed on any `src/graphql/schema.py` change.
 
 
@@ -508,7 +553,7 @@ useEffect(() => {
 ###6.3 Definition-of-Done checklist (all must pass
 - [ ] `ruff` clean (backend;no dead code introduced).
 - [ ] `make test` green (full backend suite — extraction behavior-neutrality proven by pre-existing suites).
-- [ ] New suites green: test_quote_cache,, test_graphql_queries,, test_graphql_subscriptions..
+- [ ] New suites green: test_quote_cache, test_graphql_queries, test_graphql_subscriptions..
 - [ ] `npm run typecheck` + `npm test` green..
 - [ ] PortfolioDetail renders from ONE GraphQL query + live ticks replace the 30s poll (no `setInterval` remains;WS wrapper + quote-merge units green..
 - [ ] Schema drift diff empty (schema.graphql in sync).
@@ -518,18 +563,18 @@ useEffect(() => {
 
 
 
-## Task Dependency Graph (text
+## Task Dependency Graph (text)
 ```
-Phase  ​0 (dep pin,, schema.graphql,, codegen.yml,, verifications)
-   ├─▶ Phase  ​1 (shared read layer)          (needs strawberry? no — pure move;but suites run via pyproject → install first)
-   │     ├─▶ Phase  ​2 (quote cache)            (edits fetch_live_quotes in queries.py → after 1)
-   │     └─▶ Phase  ​3 (GraphQL schema/resolvers)  (imports queries + get_quote → after 1 + 2)
-   │                └─▶ Phase  ​4 (subscription+poller) (extends schema.py + uses get_quote → after 3 + 2)
-   └─▶ Phase  ​5 (frontend codegen+demo)  (schema.graphql from 0;backend runtime only for manual testing;PARALLELIZABLEwith 3-4 once schema.graphql committed)
-   └─▶ Phase  ​6 (docs+verification sweep)   (last;needs everything)
+Phase 0 (dep pin, schema.graphql, codegen.yml, verifications)
+   ├─▶ Phase 1 (shared read layer)          (needs strawberry? no — pure move; but suites run via pyproject → install first)
+   │     ├─▶ Phase 2 (quote cache)            (edits fetch_live_quotes in queries.py → after 1)
+   │     └─▶ Phase 3 (GraphQL schema/resolvers)  (imports queries + get_quote → after 1 + 2)
+   │                └─▶ Phase 4 (subscription+poller) (extends schema.py + uses get_quote → after 3 + 2)
+   │                           └─▶ Phase 5 (frontend codegen+demo)  (needs schema.graphql for types (parallelizable with 3-4) AND Phase 4 backend for the WS smoke; backend runtime only for manual testing)
+   └─▶ Phase 6 (docs+verification sweep)   (last; needs everything)
 ```
 
-**Parallelization:** Phase 1 alone first (biggest test-safety payoff);then Phase 2 + 3 sequential (same files);Phase 4 after 3;Phase  ​5 can start the moment `schema.graphql` lands (Phase 0/3) — codegen doesn't need a live backend.
+**Parallelization:** Phase 1 alone first (biggest test-safety payoff); then Phase 2 + 3 sequential (same files); Phase 4 after 3; Phase 5 codegen/types can start the moment `schema.graphql` lands (parallel with 3-4) but the live-demo smoke requires Phase 4 WS backend.
 
 
 
@@ -539,34 +584,46 @@ Phase  ​0 (dep pin,, schema.graphql,, codegen.yml,, verifications)
 - **Strawberry version drift**: floor-pin `strawberry-graphql[fastapi]>=0.327.0`;;Phase 0 verifies the extra name and `GraphQLRouter` signature against installed version (pip install output + fastapi.py read..
 - **REST behavior churn from extraction/cache**: extracted bodies moved verbatim (same SQL/exceptions/models;;quote path gains only a cache layer (TTL 30→60 — the glossary-corrected value;test updated explicitly. Full pre-existing suites = regression net..
 - **N+1 on compute (not just DB reads):** `Query.portfolios` reuses `get_bulk_portfolio_performance` (one price_map/one live_quotes/one per-pid compute;unit-tested batch-once assertions. Explicit `startDate`/`endDate` args bypass the batch and compute single-shot (correct-by-construction..
-- **Redis downtime**: `get_quote` + poller degrade gracefully (log + fall through;poll tick skips failed symbols — no crash,, no dead-letter backlog..
+- **Redis downtime**: `get_quote` + poller degrade gracefully (log + fall through;poll tick skips failed symbols — no crash, no dead-letter backlog..
 - **Poll delay vs cache TTL**: both 60s → each tick ≈1 yfinance fetch per symbol per minute (bounded;near-real-time framing honest (15-min-delayed Yahoo data..
 - **Single-process poller**: in-process refcount registry with code ceiling comment (multi-replica → Redis-backed registry (out of scope;single `docker compose` backend today..
 - **schema.graphql drift**: committed file + Phase 6 introspection `diff` check + README sync rule.
 - **Preload over-fetch (accepted):** list query caches children even if unrequested — 3 batched reads + 1 batched compute per list query regardless of selection. Fine at ≤small-N;upgrade (deferred: AST-gated conditional preload or a scheduler-verified hand-rolled dataloader.
 .
 - **Explicit dates on list queries (accepted:** list + explicit `startDate`/`endDate` = N full TWR computes — document in README: deep per-portfolio analytics via `portfolio(id)`. 
-- **CI test pickup:** confirm the repo's existing backend pytest + frontend jest workflows auto-include the new test files (no workflow change expected;if missing,, that's a pre-existing gap,, out of scope..
+- **CI test pickup:** confirm the repo's existing backend pytest + frontend jest workflows auto-include the new test files (no workflow change expected;if missing, that's a pre-existing gap, out of scope..
 - **Frontend client auth**: reuses `apiService.ensureValidAccessToken()` (token refresh dedup + SecureStore unchanged;;no duplicate token logic..
 
 
 
 ## HARD BOUNDARIES
 - **Read-only facade only.** No mutations in GraphQL — no Strawberry `@strawberry.mutation` anywhere;writes/OCR/uploads stay exclusively REST (and are untouched: no edits to `src/receipts/`, `src/agent/`, `src/mcp/`, upload/OCR REST paths..
-- **MCP server / agent untouched.** No MCP tool over GraphQL,, no agent tool changes,, no introspection-for-agent work..
+- **MCP server / agent untouched.** No MCP tool over GraphQL, no agent tool changes, no introspection-for-agent work..
 - **No new ORM.** All DB access via asyncpg through the extracted query modules (`async with connection_ctx() as conn:` house pattern preserved verbatim..
 - **Single-process assumption.** In-process refcount symbol registry + code ceiling comments (Redis-backed registry only if multi-replica is ever introduced..
 - **No per-client backpressure/queues** at this scale (documented ceiling;add per-client queues if client count grows..
-- **No changes to docker-compose services/migrations/schema.** Zero DB migrations;zero new services (poller runs inside the existing backend process,, mounted via lifespan..
+- **No changes to docker-compose services/migrations/schema.** Zero DB migrations;zero new services (poller runs inside the existing backend process, mounted via lifespan..
 - **Frontend consumes the quote subscription on PortfolioDetail only** — graphql-ws over RN WebSocket;the single WS consumer in v1 (backend subscription ships per ADR 010;other screens stay REST).
-- **`get_quote` is the single quote path** for REST quote endpoint,, performance live quotes,, query marketQuote,, and the poller — no parallel yfinance quote paths introduced..
+- **`get_quote` is the single quote path** for REST quote endpoint, performance live quotes, query marketQuote, and the poller — no parallel yfinance quote paths introduced..
+
+---
+
+## Compatibility: what this plan does NOT break
+
+Verified against current consumers (Detail = single `portfolioService.getPerformance(portfolioId)` + 30s silent `setInterval`; List = bulk endpoint; agent/MCP = REST tools):
+
+- **Agent (`backend/src/agent/tools.py`, 16 tools) + MCP server:** untouched. No tool changes, no GraphQL-over-MCP, no prompt changes. Agent keeps calling REST performance/summary/holdings helpers. HARD BOUNDARY enforced by git-diff scope check in §6.3.
+- **PortfolioDetailScreen:** the ONE converted screen. REST `getPerformance` stays available as fallback; PR deletes its `setInterval` only after query + WS stream render parity is proven. Pull-to-refresh still does a full refetch (server reconcile). No other screen touched.
+- **PortfolioListScreen, Summary, Dashboards, Sector/Benchmark/Diversification:** stay on existing REST (`getBulkPerformance`, summary, benchmark comparison). Shared-layer extraction is verbatim (same SQL, same Pydantic models, same 404/400 messages) so their JSON is byte-identical. Quote TTL 30s→60s is the only behavior delta (glossary-normative bug fix) — bounded staleness, no shape change.
+- **Backend REST:** routes keep paths, auth (`Depends(get_current_user)`), rate limits, and response models. `fetch_live_quotes` gains only a cache layer via `get_quote`. Rollback = revert GraphQL mount + keep queries.py (REST works through the shared layer either way).
+- **Frontend (other screens) + API client:** `apiService.ensureValidAccessToken()` reused, no duplicate token logic. `graphqlRequest` is additive. No navigation/prop changes.
 
 ---
 
 ## Success Criteria
 - [ ] `GET /market/quote/{ticker}` + portfolio performance behave byte-identically post-extraction (pre-existing suites green;TTL now 60s per glossary..
-- [ ] `POST /graphql` serves authenticated,, user-scoped reads (401 without token;portfolio(id) → null for foreign ids;children scoped by portfolio_id,, no re-verify;list query = 3 batched DB reads + 1 batched performance compute for N portfolios — proven by batch-once assertions..
+- [ ] `POST /graphql` serves authenticated, user-scoped reads (401 without token;portfolio(id) → null for foreign ids;children scoped by portfolio_id, no re-verify;list query = 3 batched DB reads + 1 batched performance compute for N portfolios — proven by batch-once assertions..
 - [ ] `market_quote(ticker)` subscription: auth via `connection_init.authToken`;immediate last-value replay;60s ticks via Redis pub/sub;refcounted registry drains at 0;near-real-time caveat in code + README..
 - [ ] PortfolioDetailScreen renders from ONE GraphQL query + live ticks replace the 30s blind poll (codegen types from committed schema.graphql;network tab: one POST /graphql + WS frames while focused;no REST polling;typecheck + jest green..
-- [ ] README "Why GraphQL + REST here?" documents the split + caveat;CONTEXT.md + ADR 010 referenced,, not re-planned..
+- [ ] README "Why GraphQL + REST here?" documents the split + caveat;CONTEXT.md + ADR 010 referenced, not re-planned..
 - [ ] Full Definition-of-Done checklist (§6.3) passes;git diff touches only the files enumerated in this plan..
