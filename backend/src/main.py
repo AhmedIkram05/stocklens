@@ -210,6 +210,7 @@ from src.auth.router import router as auth_router  # noqa: E402
 from src.cash_flows.router import router as cash_flows_router  # noqa: E402
 from src.categories.router import router as category_router  # noqa: E402
 from src.drift.router import router as drift_router  # noqa: E402
+from src.graphql.router import graphql_router  # noqa: E402
 from src.holdings.router import router as holdings_router  # noqa: E402
 from src.market.router import router as market_router  # noqa: E402
 from src.performance.router import router as performance_router  # noqa: E402
@@ -230,6 +231,9 @@ app.include_router(drift_router, prefix="/drift", tags=["drift"])
 app.include_router(transaction_router, tags=["transactions"])
 app.include_router(agent_router, prefix="/agent", tags=["agent"])
 app.include_router(agent_tools_router, prefix="/agent", tags=["agent"])
+# prefix required: GraphQLRouter's internal path is "" so a bare
+# include_router raises (Phase 0 finding); prefix serves HTTP + WS at /graphql.
+app.include_router(graphql_router, prefix="/graphql", tags=["graphql"])
 
 # ── MCP — Model Context Protocol (Streamable HTTP + OAuth 2.1 PKCE) ──────
 # Enterprise-grade: 16 tools via single source of truth, OAuth PKCE S256,
