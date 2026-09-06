@@ -1,6 +1,6 @@
 # ADR 010: GraphQL Read Facade over a Shared Read Layer
 
-**Date:**  ​2026-09-04
+**Date:** ​2026-09-04
 **Status:** Accepted
 **Phase:** 7 — GraphQL Read Facade
 
@@ -30,9 +30,9 @@ StockLens's data plumbing (SQL, price-map building, live-quote fetching) lives a
 
 ## Alternatives Considered
 
-| Alternative                                | Reason Rejected                                                                      |
-| ------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Resolvers duplicate router SQL/math         | ~200 lines of drift risk — the exact sin interviewers probe                         |
-| Resolvers call REST endpoints in-process   | Own rate limiter self-DoS + double serialization                                     |
-| SSE quote endpoint                          | Second, untyped contract alongside REST — still needs same poller+pub-sub fan-out |
-| Generic GraphQL MCP tool for the agent      | 16 curated tools beat it — burns agent tokens on query construction                |
+| Alternative                              | Reason Rejected                                                                   |
+| ---------------------------------------- | --------------------------------------------------------------------------------- |
+| Resolvers duplicate router SQL/math      | ~200 lines of drift risk — the exact sin interviewers probe                       |
+| Resolvers call REST endpoints in-process | Own rate limiter self-DoS + double serialization                                  |
+| SSE quote endpoint                       | Second, untyped contract alongside REST — still needs same poller+pub-sub fan-out |
+| Generic GraphQL MCP tool for the agent   | 16 curated tools beat it — burns agent tokens on query construction               |

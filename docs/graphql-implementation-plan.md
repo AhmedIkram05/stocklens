@@ -7,8 +7,8 @@ Retrofit a read-only GraphQL layer onto the StockLens FastAPI backend: mechanica
 1. Shared read layer: verbatim extraction, drop leading underscores, zero REST behavior change.
 2. `get_quote` = Redis GET `quote:{ticker}` → miss → `fetch_quote` → `SETEX 60s`;REST quote path, `fetch_live_quotes`,and poller all route through it.
 3. Strawberry read-only facade at `/graphql`, JWT auth, ownership verified once at portfolio resolution(children scope by `portfolio_id`), dataloaders = existing batch helpers, plus `Query.market_quote`.
-  ​​​4. Subscription `market_quote(ticker)` over WS: single shared 60s poller, in-process refcount symbol registry, last-value replay from the cache key, at-most-once delivery, near-real-time framing.
-.
+   ​​​4. Subscription `market_quote(ticker)` over WS: single shared 60s poller, in-process refcount symbol registry, last-value replay from the cache key, at-most-once delivery, near-real-time framing.
+   .
 4. Consumer: RN app via graphql-codegen from a committed `schema.graphql`;ONE screen converted.
 5. Docs: README section only (CONTEXT.md + ADR 010 exist — reference, don't re-plan.
 
@@ -28,6 +28,7 @@ Retrofit a read-only GraphQL layer onto the StockLens FastAPI backend: mechanica
   ```
 
   Install extra name verified via official docs: `pip install 'strawberry-graphql[fastapi]'` (provides FastAPI + ASGI + websocket support). Rebuild backend image (`docker compose build backend`).
+
 - **Root `package.json`** — add devDependencies (install at repo root, lockfile pins exact): `@graphql-codegen/cli`, `@graphql-codegen/typescript`, `@graphql-codegen/typescript-operations`, `graphql` (peer of codegen). Add scripts:
 
   ```json
@@ -194,7 +195,7 @@ Imports: `json`, `Any`, `structlog`, `from src.cache.redis import get_redis`, `f
 - `Transaction`: `id: ID, ticker: str, type: TransactionType, shares: float, price_per_share: float, total_amount: float, total_amount_gbp: float | None, date: date` (query renames `transaction_date`→`date`).
 - `CashFlow`: `id: ID, portfolio_id: ID`, amount: float`, source: str`, source_id: str | None`, notes: str | None`, created_at: datetime`.
 - `Quote`: `ticker: str, price: float | None`, change: float | None`, change_pct: float | None`, previous_close: float | None`, volume: int | None`, currency: str | None`, exchange: str | None`, timestamp: datetime | None`.
-- `PortfolioPerformance`: `portfolio_id: ID`, portfolio_name: str`, total_market_value: float | None`, total_cost_basis: float`, total_unrealised_pl: float | None`, total_unrealised_pl_pct: float | None`, day_change: float | None`, day_change_pct: float | None`, free_cash_balance: float`, twr: float | None`, twr_annualised: float | None`, twr_start_date: date | None`, twr_end_date: date | None`, twr_methodology: str`, holdings: list[HoldingPerformance]`, total_holdings: int`, data_quality: str`, calculated_at: datetime` (mirror of `PortfolioPerformanceResponse`).
+- `PortfolioPerformance`: `portfolio_id: ID`, portfolio_name: str`, total_market_value: float | None`, total_cost_basis: float`, total_unrealised_pl: float | None`, total_unrealised_pl_pct: float | None`, day_change: float | None`, day_change_pct: float | None`, free_cash_balance: float`, twr: float | None`, twr_annualised: float | None`, twr_start_date: date | None`, twr_end_date: date | None`, twr_methodology: str`, holdings: list[HoldingPerformance]`, total_holdings: int`, data_quality: str`, calculated_at: datetime`(mirror of`PortfolioPerformanceResponse`).
 - `HoldingPerformance`:the 13 fields of `HoldingPerformance` schema (ticker, shares, average_cost_basis, current_price|None, currency, market_value|None, cost_basis, unrealised_pl|None, unrealised_pl_pct|None, day_change|None, day_change_pct|None, portfolio_weight_pct|None — all float.
 
 - `BenchmarkComparison`: mirror of `BenchmarkComparisonResponse` (`portfolio_id: ID, benchmark_ticker: str, portfolio_return: float | None`, benchmark_return: float | None`, excess_return_alpha: float | None`, tracking_error: float | None`, information_ratio: float | None`, period_start: date`, period_end: date`, methodology: str`, daily_returns_count: int`, calculated_at: datetime`, portfolio_cumulative_returns: list[CumulativeReturn]`, benchmark_cumulative_returns: list[CumulativeReturn]`.
@@ -361,15 +362,24 @@ async def market_quote(self, info: strawberry.Info, ticker: str) -> AsyncGenerat
 
 ```ts
 export async function graphqlRequest<TData, TVars = Record<string, unknown>>(
-  query: string, variables?: TVars,
+  query: string,
+  variables?: TVars,
 ): Promise<TData> {
-  const token = await apiService.ensureValidAccessToken();   // reuse JWT refresh+SecureStore plumbing (api.ts
+  const token = await apiService.ensureValidAccessToken(); // reuse JWT refresh+SecureStore plumbing (api.ts
   const res = await fetch(`${API_BASE_URL}/graphql`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ query, variables }),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(res.status, body?.errors?.[0]?.message ?? body?.detail ?? 'GraphQL request failed');
+  if (!res.ok)
+    throw new ApiError(
+      res.status,
+      body?.errors?.[0]?.message ?? body?.detail ?? 'GraphQL request failed',
+    );
   if (body.errors?.length) throw new ApiError(400, body.errors.map((e) => e.message).join('; '));
   return body.data as TData;
 }
@@ -429,7 +439,7 @@ subscription MarketQuote($ticker: String!) {
 
 (Field selection is the point: only the fields PortfolioDetailScreen renders are requested.)
 
-### 5.4 Convert `frontend/src/screens/portfolio/PortfolioDetailScreen.tsx` (demo: 1 REST poll →  1 GraphQL query + 1 typed quote stream)
+### 5.4 Convert `frontend/src/screens/portfolio/PortfolioDetailScreen.tsx` (demo: 1 REST poll → 1 GraphQL query + 1 typed quote stream)
 
 - Replace the single `getPerformance(portfolioId)` call **and the 30s `setInterval` poll** (lines ~110-120) with TWO consumers:
   1. **One typed query** — new `portfolioDetail.graphql` doc (`PortfolioDetail($id: ID!)` — see §5.3): `portfolio(id: $id) { id, name, performance { portfolio_name, total_market_value, total_unrealised_pl, total_unrealised_pl_pct, day_change, day_change_pct, twr, twr_start_date, twr_end_date, free_cash_balance, data_quality, calculated_at, holdings { ticker, shares, average_cost_basis, current_price, market_value, unrealised_pl, unrealised_pl_pct, day_change, day_change_pct, portfolio_weight_pct } } }` — field selection = exactly what the screen renders;replace `portfolioService.getPerformance(portfolioId)` with `graphqlRequest<PortfolioDetailQuery>(PORTFOLIO_DETAIL_QUERY, { id: portfolioId })` → `setPerformance(data.portfolio)` (state shape 1:1 `PortfolioPerformance` — render JSX untouched).
@@ -474,7 +484,9 @@ export function subscribeMarketQuote(
   );
   // NOTE: do NOT dispose the shared client per subscription — graphql-ws multiplexes
   // N subscriptions over ONE socket. Dispose only on app teardown / logout.
-  return () => { unsubscribe(); };
+  return () => {
+    unsubscribe();
+  };
 }
 ```
 
@@ -503,28 +515,49 @@ export function applyQuoteToPerformance(
     const unrealised_pl_pct = cost_basis ? (unrealised_pl / cost_basis) * 100 : null;
     // HoldingPerformance has no previous_close — prefer quote.previous_close,
     // fallback to implied prev from last day_change, else current_price (pct -> null-safe).
-    const prevClose = quote.previous_close
-      ?? (h.day_change != null && h.current_price != null
+    const prevClose =
+      quote.previous_close ??
+      (h.day_change != null && h.current_price != null
         ? h.current_price - h.day_change / Math.max(h.shares, 1)
-        : h.current_price ?? quote.price!);
+        : (h.current_price ?? quote.price!));
     const day_change = h.shares * (quote.price! - prevClose);
     const day_change_pct = prevClose ? ((quote.price! - prevClose) / prevClose) * 100 : null;
-    return { ...h, current_price: quote.price!, market_value, unrealised_pl, unrealised_pl_pct, day_change, day_change_pct };
+    return {
+      ...h,
+      current_price: quote.price!,
+      market_value,
+      unrealised_pl,
+      unrealised_pl_pct,
+      day_change,
+      day_change_pct,
+    };
   });
   // Portfolio-level: recompute ALL sums + weights (cheap, N small).
   const total_market_value = holdings.reduce((s, h) => s + (h.market_value ?? 0), 0);
   const total_unrealised_pl = holdings.reduce((s, h) => s + (h.unrealised_pl ?? 0), 0);
   const total_cost_basis = holdings.reduce((s, h) => s + h.shares * h.average_cost_basis, 0);
-  const total_unrealised_pl_pct = total_cost_basis ? (total_unrealised_pl / total_cost_basis) * 100 : null;
+  const total_unrealised_pl_pct = total_cost_basis
+    ? (total_unrealised_pl / total_cost_basis) * 100
+    : null;
   const day_change = holdings.reduce((s, h) => s + (h.day_change ?? 0), 0);
   // Day % = day_change / prev-day portfolio value (not cost basis).
   const prev_day_value = total_market_value - day_change;
   const day_change_pct = prev_day_value ? (day_change / prev_day_value) * 100 : null;
   const weighted = holdings.map((h) => ({
     ...h,
-    portfolio_weight_pct: total_market_value ? ((h.market_value ?? 0) / total_market_value) * 100 : null,
+    portfolio_weight_pct: total_market_value
+      ? ((h.market_value ?? 0) / total_market_value) * 100
+      : null,
   }));
-  return { ...performance, total_market_value, total_unrealised_pl, total_unrealised_pl_pct, day_change, day_change_pct, holdings: weighted };
+  return {
+    ...performance,
+    total_market_value,
+    total_unrealised_pl,
+    total_unrealised_pl_pct,
+    day_change,
+    day_change_pct,
+    holdings: weighted,
+  };
 }
 ```
 
@@ -534,7 +567,12 @@ export function applyQuoteToPerformance(
 
 ```ts
 const tickerKey = useMemo(
-  () => (performance?.holdings ?? []).filter((h) => h.shares > 0).map((h) => h.ticker).sort().join('|'),
+  () =>
+    (performance?.holdings ?? [])
+      .filter((h) => h.shares > 0)
+      .map((h) => h.ticker)
+      .sort()
+      .join('|'),
   [performance?.holdings],
 );
 useEffect(() => {
@@ -558,7 +596,7 @@ useEffect(() => {
 
 - One typed read graph for the RN app (schema committed, codegen types, introspection available to future authenticated consumers); REST = command facade (writes/OCR/uploads unchanged). Near-real-time caveat verbatim: Yahoo data is ~15-min delayed, polled every 60s — **never "live"**. CV bullet (pinned):
   > Retrofitted a read-only GraphQL layer onto a 40+ endpoint FastAPI REST API: schema-first Strawberry design; batch dataloaders eliminating N+1; JWT resolver-level authz; graphql-codegen typed RN client. PortfolioDetail reads one typed query + a quote stream replacing a 30s blind poll (graphql-ws over RN WebSocket; one shared 60s poller + Redis pub/sub feeds N viewers; ~15-min-delayed data framed as near-real-time).
-  Reference `docs/CONTEXT.md` + `docs/adr/010-graphql-read-facade.md` (already written; no re-plan).
+  > Reference `docs/CONTEXT.md` + `docs/adr/010-graphql-read-facade.md` (already written; no re-plan).
 - Add a "Schema sync" note (schema.graphql must be regenerated + committed on any `src/graphql/schema.py` change.
 
 ### 6.2 Final verification sweep (all commands exact
@@ -608,7 +646,7 @@ Phase 0 (dep pin, schema.graphql, codegen.yml, verifications)
 - **Single-process poller**: in-process refcount registry with code ceiling comment (multi-replica → Redis-backed registry (out of scope;single `docker compose` backend today..
 - **schema.graphql drift**: committed file + Phase 6 introspection `diff` check + README sync rule.
 - **Preload over-fetch (accepted):** list query caches children even if unrequested — 3 batched reads + 1 batched compute per list query regardless of selection. Fine at ≤small-N;upgrade (deferred: AST-gated conditional preload or a scheduler-verified hand-rolled dataloader.
-.
+  .
 - **Explicit dates on list queries (accepted:** list + explicit `startDate`/`endDate` = N full TWR computes — document in README: deep per-portfolio analytics via `portfolio(id)`.
 - **CI test pickup:** confirm the repo's existing backend pytest + frontend jest workflows auto-include the new test files (no workflow change expected;if missing, that's a pre-existing gap, out of scope..
 - **Frontend client auth**: reuses `apiService.ensureValidAccessToken()` (token refresh dedup + SecureStore unchanged;;no duplicate token logic..
