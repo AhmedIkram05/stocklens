@@ -9,15 +9,61 @@ and error parity (400/404 messages surface verbatim).
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from decimal import Decimal
+from functools import wraps
 from unittest.mock import ANY, AsyncMock
+from uuid import uuid4
 
 import httpx
+import pytest_asyncio
 
 # Seeded in conftest — owned by user-1, NOT by the auth_headers user.
 OTHER_PID = "11111111-1111-1111-1111-111111111111"
 MISSING_PID = "00000000-0000-0000-0000-000000000000"
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _serialize_db_access(_test_db):
+    """Serialise DB access within each GraphQL test.
+
+    Strawberry resolves sibling fields concurrently, but conftest's
+    ``_test_db`` shares ONE asyncpg connection per test and asyncpg allows
+    only one in-flight operation per connection (otherwise
+    ``InterfaceError: another operation is in progress``). Guarding each
+    call with a lock makes concurrent resolvers queue instead of racing.
+    Production uses a real pool (no serialization); results are identical.
+    """
+    from src.database import connection as db_conn_mod
+
+    inner_get = db_conn_mod.get_conn
+    lock = asyncio.Lock()
+
+    class _GuardedConnection:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def __getattr__(self, name):
+            attr = getattr(self._conn, name)
+            if name in {"fetch", "fetchrow", "fetchval", "execute", "executemany"}:
+
+                @wraps(attr)
+                async def _guarded(*args, **kwargs):
+                    async with lock:
+                        return await attr(*args, **kwargs)
+
+                return _guarded
+            return attr
+
+    async def _guarded_get_conn():
+        return _GuardedConnection(await inner_get())
+
+    db_conn_mod.get_conn = _guarded_get_conn
+    try:
+        yield
+    finally:
+        db_conn_mod.get_conn = inner_get
 
 
 async def _gql(client: httpx.AsyncClient, query: str, auth_headers: dict[str, str] | None = None):
@@ -33,13 +79,24 @@ async def _create_portfolio(client, auth_headers) -> str:
     return resp.json()["id"]
 
 
-async def _seed_holding(client, auth_headers, portfolio_id: str, ticker: str = "AAPL"):
-    resp = await client.post(
-        f"/portfolios/{portfolio_id}/holdings",
-        json={"ticker": ticker, "shares": 10, "average_cost_basis": 150.0},
-        headers=auth_headers,
-    )
-    assert resp.status_code == 201
+async def _seed_holding(portfolio_id: str, ticker: str = "AAPL") -> None:
+    """Insert a holding via SQL with explicit GBP currency (deterministic).
+
+    Seeding via the REST endpoint resolves currency through the instrument
+    provider (USD for AAPL when the network is up, GBP fallback otherwise).
+    """
+    from src.database.connection import connection_ctx
+
+    async with connection_ctx() as conn:
+        await conn.execute(
+            "INSERT INTO holdings "
+            "(id, portfolio_id, ticker, shares, average_cost_basis, "
+            "average_cost_basis_gbp, currency) "
+            "VALUES ($1, $2, $3, 10, 150.0, 150.0, 'GBP')",
+            str(uuid4()),
+            portfolio_id,
+            ticker,
+        )
 
 
 async def _seed_txn_and_cash_flow(portfolio_id: str) -> None:
@@ -127,7 +184,7 @@ class TestNestingShape:
         """One list query returns children + performance with REST-identical values."""
         _mock_live_quotes(mocker)
         pid = await _create_portfolio(client, auth_headers)
-        await _seed_holding(client, auth_headers, pid)
+        await _seed_holding(pid)
         await _seed_txn_and_cash_flow(pid)
 
         resp = await _gql(
@@ -186,7 +243,7 @@ class TestNestingShape:
         """Root portfolio(id) path resolves children lazily (no preload cache)."""
         _mock_live_quotes(mocker)
         pid = await _create_portfolio(client, auth_headers)
-        await _seed_holding(client, auth_headers, pid)
+        await _seed_holding(pid)
 
         resp = await _gql(
             client,
@@ -216,7 +273,7 @@ class TestBatching:
 
         pid1 = await _create_portfolio(client, auth_headers)
         pid2 = await _create_portfolio(client, auth_headers)
-        await _seed_holding(client, auth_headers, pid1)
+        await _seed_holding(pid1)
         pids = [pid1, pid2]
 
         def _canned_perf(pid: str) -> PortfolioPerformanceResponse:
@@ -334,7 +391,7 @@ class TestErrors:
         resp = await _gql(
             client,
             f'{{ portfolio(id: "{pid}") {{ benchmark(benchmark: "TSLA") '
-            "{ benchmarkTicker } } }}",
+            "{ benchmarkTicker } } }",
             auth_headers,
         )
         assert resp.status_code == 200
