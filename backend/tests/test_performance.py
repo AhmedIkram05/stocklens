@@ -989,11 +989,11 @@ class TestBulkPerformanceSchema:
 class TestBatchHelpers:
     """Tests for batch database helper functions used by the bulk endpoint."""
 
-    async def test_batch_verify_ownership_found(self):
+    async def testbatch_verify_ownership_found(self):
         """All requested portfolios belong to the user."""
-        from src.performance.router import _batch_verify_ownership
+        from src.performance.queries import batch_verify_ownership
 
-        result = await _batch_verify_ownership(
+        result = await batch_verify_ownership(
             [
                 "11111111-1111-1111-1111-111111111111",
                 "22222222-2222-2222-2222-222222222222",
@@ -1004,11 +1004,11 @@ class TestBatchHelpers:
         assert result["11111111-1111-1111-1111-111111111111"] == "Test Portfolio"
         assert result["22222222-2222-2222-2222-222222222222"] == "Other Portfolio"
 
-    async def test_batch_verify_ownership_partial_match(self):
+    async def testbatch_verify_ownership_partial_match(self):
         """Only some IDs belong to the user — partial result."""
-        from src.performance.router import _batch_verify_ownership
+        from src.performance.queries import batch_verify_ownership
 
-        result = await _batch_verify_ownership(
+        result = await batch_verify_ownership(
             [
                 "11111111-1111-1111-1111-111111111111",
                 "00000000-0000-0000-0000-000000000000",
@@ -1018,20 +1018,20 @@ class TestBatchHelpers:
         assert len(result) == 1
         assert "11111111-1111-1111-1111-111111111111" in result
 
-    async def test_batch_verify_ownership_wrong_user(self):
+    async def testbatch_verify_ownership_wrong_user(self):
         """None of the IDs belong to the specified user."""
-        from src.performance.router import _batch_verify_ownership
+        from src.performance.queries import batch_verify_ownership
 
-        result = await _batch_verify_ownership(
+        result = await batch_verify_ownership(
             ["11111111-1111-1111-1111-111111111111"],
             "00000000-0000-0000-0000-000000000002",  # user2
         )
         assert len(result) == 0
 
-    async def test_batch_get_holdings(self):
+    async def testbatch_get_holdings(self):
         """Holdings are returned grouped by portfolio_id."""
         from src.database.connection import connection_ctx
-        from src.performance.router import _batch_get_holdings
+        from src.performance.queries import batch_get_holdings
 
         async with connection_ctx() as conn:
             await conn.execute(
@@ -1046,23 +1046,23 @@ class TestBatchHelpers:
                 150.0,
             )
 
-        result = await _batch_get_holdings(["11111111-1111-1111-1111-111111111111"])
+        result = await batch_get_holdings(["11111111-1111-1111-1111-111111111111"])
         assert "11111111-1111-1111-1111-111111111111" in result
         holdings = result["11111111-1111-1111-1111-111111111111"]
         assert len(holdings) == 1
         assert holdings[0]["ticker"] == "AAPL"
 
-    async def test_batch_get_holdings_empty(self):
+    async def testbatch_get_holdings_empty(self):
         """No holdings for any portfolio → empty dict."""
-        from src.performance.router import _batch_get_holdings
+        from src.performance.queries import batch_get_holdings
 
-        result = await _batch_get_holdings(["11111111-1111-1111-1111-111111111111"])
+        result = await batch_get_holdings(["11111111-1111-1111-1111-111111111111"])
         assert result == {}
 
-    async def test_batch_get_holdings_multiple_portfolios(self):
+    async def testbatch_get_holdings_multiple_portfolios(self):
         """Holdings for different portfolios are separate."""
         from src.database.connection import connection_ctx
-        from src.performance.router import _batch_get_holdings
+        from src.performance.queries import batch_get_holdings
 
         async with connection_ctx() as conn:
             await conn.execute(
@@ -1087,7 +1087,7 @@ class TestBatchHelpers:
                 100.0,
                 100.0,
             )
-        result = await _batch_get_holdings(
+        result = await batch_get_holdings(
             [
                 "11111111-1111-1111-1111-111111111111",
                 "22222222-2222-2222-2222-222222222222",
@@ -1096,10 +1096,10 @@ class TestBatchHelpers:
         assert len(result["11111111-1111-1111-1111-111111111111"]) == 1
         assert len(result["22222222-2222-2222-2222-222222222222"]) == 1
 
-    async def test_batch_get_transactions(self):
+    async def testbatch_get_transactions(self):
         """Transactions are returned grouped by portfolio_id."""
         from src.database.connection import connection_ctx
-        from src.performance.router import _batch_get_transactions
+        from src.performance.queries import batch_get_transactions
 
         async with connection_ctx() as conn:
             await conn.execute(
@@ -1117,24 +1117,24 @@ class TestBatchHelpers:
                 date(2024, 6, 15),
             )
 
-        result = await _batch_get_transactions(["11111111-1111-1111-1111-111111111111"])
+        result = await batch_get_transactions(["11111111-1111-1111-1111-111111111111"])
         assert "11111111-1111-1111-1111-111111111111" in result
         txns = result["11111111-1111-1111-1111-111111111111"]
         assert len(txns) == 1
         assert txns[0]["type"] == "BUY"
         assert "date" in txns[0]  # transaction_date renamed to date
 
-    async def test_batch_get_transactions_empty(self):
+    async def testbatch_get_transactions_empty(self):
         """No transactions → empty dict."""
-        from src.performance.router import _batch_get_transactions
+        from src.performance.queries import batch_get_transactions
 
-        result = await _batch_get_transactions(["11111111-1111-1111-1111-111111111111"])
+        result = await batch_get_transactions(["11111111-1111-1111-1111-111111111111"])
         assert result == {}
 
-    async def test_batch_get_cash_flows(self):
+    async def testbatch_get_cash_flows(self):
         """Cash flows are returned grouped by portfolio_id."""
         from src.database.connection import connection_ctx
-        from src.performance.router import _batch_get_cash_flows
+        from src.performance.queries import batch_get_cash_flows
 
         async with connection_ctx() as conn:
             await conn.execute(
@@ -1145,17 +1145,17 @@ class TestBatchHelpers:
                 "manual",
             )
 
-        result = await _batch_get_cash_flows(["11111111-1111-1111-1111-111111111111"])
+        result = await batch_get_cash_flows(["11111111-1111-1111-1111-111111111111"])
         assert "11111111-1111-1111-1111-111111111111" in result
         cfs = result["11111111-1111-1111-1111-111111111111"]
         assert len(cfs) == 1
         assert cfs[0]["amount"] == 5000
 
-    async def test_batch_get_cash_flows_empty(self):
+    async def testbatch_get_cash_flows_empty(self):
         """No cash flows → empty dict."""
-        from src.performance.router import _batch_get_cash_flows
+        from src.performance.queries import batch_get_cash_flows
 
-        result = await _batch_get_cash_flows(["11111111-1111-1111-1111-111111111111"])
+        result = await batch_get_cash_flows(["11111111-1111-1111-1111-111111111111"])
         assert result == {}
 
 
@@ -1271,12 +1271,12 @@ class TestBulkPerformanceEndpoint:
 
 
 class TestRouterHelpers:
-    """Direct tests for internal router helper functions."""
+    """Direct tests for the read-layer query helpers."""
 
-    async def test_get_transactions_sorted(self):
+    async def testget_transactions_sorted(self):
         """Returns transactions sorted by date ascending."""
         from src.database.connection import connection_ctx
-        from src.performance.router import _get_transactions_sorted
+        from src.performance.queries import get_transactions_sorted
 
         pid = "11111111-1111-1111-1111-111111111111"
         async with connection_ctx() as conn:
@@ -1289,16 +1289,16 @@ class TestRouterHelpers:
                 pid,
             )
 
-        result = await _get_transactions_sorted(pid)
+        result = await get_transactions_sorted(pid)
         assert len(result) >= 1
         assert result[0]["ticker"] == "AAPL"
         assert "date" in result[0]
         assert result[0]["type"] == "BUY"
 
-    async def test_get_cash_flows_sorted(self):
+    async def testget_cash_flows_sorted(self):
         """Returns cash flows sorted by date ascending."""
         from src.database.connection import connection_ctx
-        from src.performance.router import _get_cash_flows_sorted
+        from src.performance.queries import get_cash_flows_sorted
 
         pid = "11111111-1111-1111-1111-111111111111"
         async with connection_ctx() as conn:
@@ -1307,14 +1307,14 @@ class TestRouterHelpers:
                 pid,
             )
 
-        result = await _get_cash_flows_sorted(pid)
+        result = await get_cash_flows_sorted(pid)
         assert len(result) >= 1
         assert result[0]["amount"] == 1000
 
-    async def test_get_free_cash_balance(self):
+    async def testget_free_cash_balance(self):
         """Free cash = deposits - net invested."""
         from src.database.connection import connection_ctx
-        from src.performance.router import _get_free_cash_balance
+        from src.performance.queries import get_free_cash_balance
 
         pid = "11111111-1111-1111-1111-111111111111"
         async with connection_ctx() as conn:
@@ -1330,27 +1330,27 @@ class TestRouterHelpers:
                 pid,
             )
 
-        balance = await _get_free_cash_balance(pid)
+        balance = await get_free_cash_balance(pid)
         # 5000 deposit - 1000 buy = 4000
         assert balance > 0
         assert balance == 4000
 
-    async def test_fetch_live_quotes_skips_failures(self, mocker):
+    async def testfetch_live_quotes_skips_failures(self, mocker):
         """Failed quote fetches are logged and skipped."""
-        from src.performance.router import _fetch_live_quotes
+        from src.performance.queries import fetch_live_quotes
 
         mock_fetch = mocker.AsyncMock()
         mock_fetch.side_effect = [ValueError("API error"), {"price": 200, "previous_close": 198}]
-        mocker.patch("src.performance.router.fetch_quote", mock_fetch)
+        mocker.patch("src.performance.queries.fetch_quote", mock_fetch)
 
-        result = await _fetch_live_quotes(["FAILER", "AAPL"])
+        result = await fetch_live_quotes(["FAILER", "AAPL"])
         assert "FAILER" not in result
         assert "AAPL" in result
         assert result["AAPL"] == (200, 198)
 
 
 class TestComputePortfolioDailyReturns:
-    """Tests for the _compute_portfolio_daily_returns helper."""
+    """Tests for the compute_portfolio_daily_returns helper."""
 
     def _make_price_map(self, tickers, dates_prices: dict):
         """Build {ticker: {date: adj_close}}."""
@@ -1358,9 +1358,9 @@ class TestComputePortfolioDailyReturns:
 
     def test_empty_price_map(self):
         """No price data → empty returns."""
-        from src.performance.router import _compute_portfolio_daily_returns
+        from src.performance.queries import compute_portfolio_daily_returns
 
-        dates, returns = _compute_portfolio_daily_returns(
+        dates, returns = compute_portfolio_daily_returns(
             holdings=[{"ticker": "AAPL", "shares": 10}],
             transactions=[],
             price_map={},
@@ -1372,10 +1372,10 @@ class TestComputePortfolioDailyReturns:
 
     def test_single_trading_day(self):
         """Fewer than 2 trading days → empty returns."""
-        from src.performance.router import _compute_portfolio_daily_returns
+        from src.performance.queries import compute_portfolio_daily_returns
 
         pm = {"AAPL": {date(2024, 6, 1): Decimal("150")}}
-        dates, returns = _compute_portfolio_daily_returns(
+        dates, returns = compute_portfolio_daily_returns(
             holdings=[{"ticker": "AAPL", "shares": 10}],
             transactions=[],
             price_map=pm,
@@ -1386,7 +1386,7 @@ class TestComputePortfolioDailyReturns:
 
     def test_positive_return(self):
         """Holdings held across 2+ days → daily return computed."""
-        from src.performance.router import _compute_portfolio_daily_returns
+        from src.performance.queries import compute_portfolio_daily_returns
 
         pm = {
             "AAPL": {
@@ -1398,7 +1398,7 @@ class TestComputePortfolioDailyReturns:
         txns = [
             {"ticker": "AAPL", "type": "BUY", "shares": Decimal("10"), "date": date(2024, 6, 1)},
         ]
-        dates, returns = _compute_portfolio_daily_returns(
+        dates, returns = compute_portfolio_daily_returns(
             holdings=[{"ticker": "AAPL", "shares": 10}],
             transactions=txns,
             price_map=pm,
@@ -1412,7 +1412,7 @@ class TestComputePortfolioDailyReturns:
 
     def test_with_buy_transaction(self):
         """BUY transaction mid-period increases shares."""
-        from src.performance.router import _compute_portfolio_daily_returns
+        from src.performance.queries import compute_portfolio_daily_returns
 
         pm = {
             "AAPL": {
@@ -1430,7 +1430,7 @@ class TestComputePortfolioDailyReturns:
                 "date": date(2024, 6, 2),
             },
         ]
-        dates, returns = _compute_portfolio_daily_returns(
+        dates, returns = compute_portfolio_daily_returns(
             holdings=[{"ticker": "AAPL", "shares": 15}],
             transactions=txns,
             price_map=pm,
@@ -1450,7 +1450,7 @@ class TestComputePortfolioDailyReturns:
 
     def test_with_sell_transaction_removes_ticker(self):
         """SELL that removes position entirely still handles remaining holdings."""
-        from src.performance.router import _compute_portfolio_daily_returns
+        from src.performance.queries import compute_portfolio_daily_returns
 
         pm = {
             "AAPL": {
@@ -1472,7 +1472,7 @@ class TestComputePortfolioDailyReturns:
                 "date": date(2024, 6, 2),
             },
         ]
-        dates, returns = _compute_portfolio_daily_returns(
+        dates, returns = compute_portfolio_daily_returns(
             holdings=[
                 {"ticker": "AAPL", "shares": 10},
                 {"ticker": "MSFT", "shares": 0},
@@ -1492,13 +1492,13 @@ class TestComputePortfolioDailyReturns:
 
     def test_zero_previous_value(self):
         """Zero previous value → return 0 for that day."""
-        from src.performance.router import _compute_portfolio_daily_returns
+        from src.performance.queries import compute_portfolio_daily_returns
 
         pm = {
             "AAPL": {date(2024, 6, 1): Decimal("100"), date(2024, 6, 2): Decimal("110")},
         }
         # No holdings initially → prev value is 0 on day 1
-        dates, returns = _compute_portfolio_daily_returns(
+        dates, returns = compute_portfolio_daily_returns(
             holdings=[{"ticker": "AAPL", "shares": 0}],
             transactions=[],
             price_map=pm,
@@ -1511,7 +1511,7 @@ class TestComputePortfolioDailyReturns:
 
     def test_fx_rates_applied(self):
         """FX rates convert prices to base currency."""
-        from src.performance.router import _compute_portfolio_daily_returns
+        from src.performance.queries import compute_portfolio_daily_returns
 
         pm = {
             "AAPL": {date(2024, 6, 1): Decimal("100"), date(2024, 6, 2): Decimal("110")},
@@ -1519,7 +1519,7 @@ class TestComputePortfolioDailyReturns:
         txns = [
             {"ticker": "AAPL", "type": "BUY", "shares": Decimal("10"), "date": date(2024, 6, 1)},
         ]
-        dates, returns = _compute_portfolio_daily_returns(
+        dates, returns = compute_portfolio_daily_returns(
             holdings=[{"ticker": "AAPL", "shares": 10}],
             transactions=txns,
             price_map=pm,
@@ -1537,22 +1537,22 @@ class TestBenchmarkExceptionHandler:
     """Tests for the benchmark endpoint's outer exception handler."""
 
     async def test_handler_re_raises_http_exception(self):
-        """Non-existent portfolio → 404 HTTPException from _get_benchmark_comparison_inner."""
+        """Non-existent portfolio → 404 HTTPException from queries.get_benchmark_comparison."""
         from uuid import UUID
 
         from fastapi import HTTPException
 
-        from src.performance.router import _get_benchmark_comparison_inner
+        from src.performance.queries import get_benchmark_comparison
 
         fake_user = MagicMock()
         fake_user.id = "00000000-0000-0000-0000-000000000000"
         with pytest.raises(HTTPException, match="Portfolio not found"):
-            await _get_benchmark_comparison_inner(
+            await get_benchmark_comparison(
                 portfolio_id=UUID("00000000-0000-0000-0000-000000000000"),
                 benchmark="SPY",
                 start_date=None,
                 end_date=None,
-                current_user=fake_user,
+                user_id=fake_user.id,
             )
 
     async def test_handler_logs_and_raises_generic_exception(self):
@@ -1577,7 +1577,7 @@ class TestBenchmarkExceptionHandler:
         fake_user = MagicMock()
         fake_user.id = "00000000-0000-0000-0000-000000000000"
         with patch(
-            "src.performance.router._get_benchmark_comparison_inner",
+            "src.performance.queries.get_benchmark_comparison",
             side_effect=ValueError("Unexpected DB error"),
         ):
             with pytest.raises(ValueError, match="Unexpected DB error"):
