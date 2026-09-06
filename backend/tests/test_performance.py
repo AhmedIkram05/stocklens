@@ -1341,12 +1341,33 @@ class TestRouterHelpers:
 
         mock_fetch = mocker.AsyncMock()
         mock_fetch.side_effect = [ValueError("API error"), {"price": 200, "previous_close": 198}]
-        mocker.patch("src.performance.queries.fetch_quote", mock_fetch)
+        mocker.patch("src.market.quotes.fetch_quote", mock_fetch)
 
         result = await fetch_live_quotes(["FAILER", "AAPL"])
         assert "FAILER" not in result
         assert "AAPL" in result
         assert result["AAPL"] == (200, 198)
+
+    async def testfetch_live_quotes_coerces_cached_string_prices(self, mocker):
+        """Redis-cached quotes round-trip Decimals as strings — still Decimals out."""
+        import json
+        from decimal import Decimal
+        from unittest.mock import AsyncMock, patch
+
+        from src.performance.queries import fetch_live_quotes
+
+        cached_json = json.dumps({"price": "200.50", "previous_close": "198.25"})
+        mock_redis = AsyncMock()
+        mock_redis.get.return_value = cached_json
+
+        with (
+            patch("src.market.quotes.get_redis", return_value=mock_redis),
+            patch("src.market.quotes.fetch_quote") as mock_fetch,
+        ):
+            result = await fetch_live_quotes(["AAPL"])
+
+        mock_fetch.assert_not_called()
+        assert result["AAPL"] == (Decimal("200.50"), Decimal("198.25"))
 
 
 class TestComputePortfolioDailyReturns:
