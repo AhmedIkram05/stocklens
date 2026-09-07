@@ -6,6 +6,7 @@
 <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&labelColor=000000&logo=python"></a>
 <a href="https://docs.python.org/3/library/asyncio.html"><img src="https://img.shields.io/badge/asyncio-3776AB?style=for-the-badge&labelColor=000000&logo=python"></a>
 <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&labelColor=000000&logo=fastapi"></a>
+<a href="https://graphql.org/"><img src="https://img.shields.io/badge/GraphQL-E10098?style=for-the-badge&labelColor=000000&logo=graphql"></a>
 <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&labelColor=000000&logo=typescript"></a>
 <a href="https://reactnative.dev/"><img src="https://img.shields.io/badge/React_Native-61DAFB?style=for-the-badge&labelColor=000000&logo=react"></a>
 <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&labelColor=000000&logo=rust"></a>
@@ -113,8 +114,9 @@ flowchart LR
 
 | Layer                 | Implementation                                                                                       | Scale                                                                                                                            |
 | --------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **Frontend**          | React Native (TypeScript 5.9, Expo 54, React 19) with dark mode, biometric auth, real-time portfolio | 79 test files, 823 tests                                                                                                         |
-| **Backend API**       | FastAPI (Python 3.13) - asyncpg, SQLAlchemy 2.0, Pydantic v2, structlog, slowapi rate limiting       | 69 test files, 1,508 test functions, 90% cov gate                                                                                |
+| **Frontend**          | React Native (TypeScript 5.9, Expo 54, React 19) with dark mode, biometric auth, real-time portfolio | 82 test files, 844 tests                                                                                                         |
+| **Backend API**       | FastAPI (Python 3.13) - asyncpg, SQLAlchemy 2.0, Pydantic v2, structlog, slowapi rate limiting       | 74 test files, 1,550 test functions, 90% cov gate                                                                                |
+| **GraphQL Facade**    | Strawberry read-only `/graphql` + WS subscriptions, codegen-typed RN client                          | Query + Subscription over the shared read layer, 60s poller → Redis pub/sub                                                      |
 | **MCP Server**        | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI      | 16 tools + 2 resources + 1 prompt (single source), 93 tests, RFC 8414/9728/7517/9207, stateless 2026-07-28 (dual-version) + CIMD |
 | **Rust Acceleration** | PyO3/Maturin native extension replacing pandas-based technical indicators                            | 13 source modules, 12 exported functions, zero-cost abstractions                                                                 |
 | **ML Model**          | PyTorch Global LSTM with entity embeddings + Optuna HPO (50 trials)                                  | 17 features, 55–475+ tickers, 6yr OHLCV lookback                                                                                 |
@@ -126,20 +128,28 @@ flowchart LR
 
 ## Why It's Interesting
 
-| What                                     | Why a reviewer should care                                                                                                                                                                                                                                                                                                             |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Self-built MCP server, not a wrapper** | Official Python SDK (≥1.12), Streamable HTTP, OAuth 2.1 PKCE S256, RS256/JWKS with `kid` rotation, RFC 8414/9728 discovery, CIMD dynamic client registration, stateless mode. The 16 tools share one source of truth with the LangGraph agent - no duplication. Verified live: MCP Inspector traces + a working Claude Desktop config. |
-| **Confidence-gated OCR cascade**         | Tesseract regex → heuristic scoring → Bedrock Vision LLM _only when confidence drops below 0.7_; rapidfuzz merchant matching (≥80), Redis 24h cache. The interesting decision is economic: don't spend LLM budget on receipts Tesseract already read correctly.                                                                        |
-| **Weekly champion/challenger gate**      | Airflow (Monday 06:00 UTC): Rust feature engine → Optuna HPO (50 trials) → promote the challenger only if directional accuracy improves > 2 percentage points → Evidently PSI/KS/JSD drift reports to S3. The full retrain loop is automated - not a notebook, not a Lambda cron.                                                      |
-| **Graviton economics**                   | ARM64 ECS Fargate (ADR-009): 20–30% cost savings at equal performance; multi-stage builds bring the backend image to ~450MB vs ~1.2GB naive; QEMU cross-build for the Rust wheel in CI; **$100/month AWS Budget hard cap** with anomaly detection.                                                                                     |
+| What                                          | Why a reviewer should care                                                                                                                                                                                                                                                                                                             |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Self-built MCP server, not a wrapper**      | Official Python SDK (≥1.12), Streamable HTTP, OAuth 2.1 PKCE S256, RS256/JWKS with `kid` rotation, RFC 8414/9728 discovery, CIMD dynamic client registration, stateless mode. The 16 tools share one source of truth with the LangGraph agent - no duplication. Verified live: MCP Inspector traces + a working Claude Desktop config. |
+| **Confidence-gated OCR cascade**              | Tesseract regex → heuristic scoring → Bedrock Vision LLM _only when confidence drops below 0.7_; rapidfuzz merchant matching (≥80), Redis 24h cache. The interesting decision is economic: don't spend LLM budget on receipts Tesseract already read correctly.                                                                        |
+| **Weekly champion/challenger gate**           | Airflow (Monday 06:00 UTC): Rust feature engine → Optuna HPO (50 trials) → promote the challenger only if directional accuracy improves > 2 percentage points → Evidently PSI/KS/JSD drift reports to S3. The full retrain loop is automated - not a notebook, not a Lambda cron.                                                      |
+| **Graviton economics**                        | ARM64 ECS Fargate (ADR-009): 20–30% cost savings at equal performance; multi-stage builds bring the backend image to ~450MB vs ~1.2GB naive; QEMU cross-build for the Rust wheel in CI; **$100/month AWS Budget hard cap** with anomaly detection.                                                                                     |
+| **Read-only GraphQL facade, not a migration** | Strawberry `/graphql` over a shared read layer extracted verbatim from REST routers; batch preloads kill N+1 (asserted once-per-query); a WS subscription with per-message auth replaces a 30s blind poll — REST write/OCR/upload paths untouched.                                                                                     |
+
+## Why GraphQL + REST here?
+
+> Retrofitted a read-only GraphQL layer onto a 40+ endpoint FastAPI REST API: schema-first Strawberry design; batch dataloaders eliminating N+1; JWT resolver-level authz; graphql-codegen typed RN client. PortfolioDetail reads one typed query + a quote stream replacing a 30s blind poll (graphql-ws over RN WebSocket; one shared 60s poller + Redis pub/sub feeds N viewers; ~15-min-delayed data framed as near-real-time).
+
+One typed read graph for the RN app (schema committed at `schema.graphql`, types generated, no live introspection); REST stays the command facade — writes, OCR, uploads, and every other screen are unchanged. Yahoo data is ~15-min delayed and polled every 60s: the stream is **near-real-time, never "live"**. Schema sync rule: any `src/graphql/schema.py` change → regenerate + recommit `schema.graphql` (drift check in [deep dives](docs/deep-dives.md#graphql-read-facade)).
 
 ## Key Metrics
 
 | Metric              | Value                                                                                                                 |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| REST API            | 68 endpoints across 15 routers, plus the mounted MCP/OAuth/JWKS surface                                               |
-| Backend tests       | **69 files · 1,508 functions** (93 MCP) - pytest + pytest-asyncio + xdist, 90% line-coverage gate                     |
-| Frontend tests      | **79 files · 823 assertions** - branches≥75%, functions≥80%, lines≥90%                                                |
+| REST API            | 73 endpoints across 15 routers, plus the mounted MCP/OAuth/JWKS surface                                               |
+| GraphQL facade      | Query (portfolios, portfolio, market_quote) + market_quote subscription · committed schema.graphql + codegen types    |
+| Backend tests       | **74 files · 1,550 functions** (93 MCP, 29 GraphQL) - pytest + pytest-asyncio + xdist, 90% line-coverage gate         |
+| Frontend tests      | **82 files · 844 assertions** - branches≥75%, functions≥80%, lines≥90%                                                |
 | MCP server          | 16 tools + 2 resources + 1 prompt · OAuth 2.1 PKCE S256 · RS256/JWKS · 93 tests                                       |
 | ML model            | Global LSTM: 2 layers (hidden=80, dropout=0.535), 17 features, 50 Optuna trials                                       |
 | Model performance   | Directional accuracy **51.63%** (best) vs 33% majority baseline · Sharpe **0.97**                                     |
@@ -205,26 +215,27 @@ flowchart LR
 
 ### Tests
 
-**Tests** - backend 1,508 passing (90% line gate) → frontend 823 assertions (3 coverage gates):
+**Tests** - backend 1,550 passing (90% line gate) → frontend 844 assertions (3 coverage gates):
 ![Backend + Frontend test suites](assets/demos/tests.gif)
 
 ## Trade-offs That Mattered
 
 Every non-trivial design choice is recorded as an Architecture Decision Record (ADR). The ones that shaped StockLens:
 
-| Decision                                    | Alternatives Considered                    | Why We Chose This                                                                                                                    |
-| ------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Synchronous yfinance** (ADR-001)          | Async yfinance SDK, direct API calls       | yfinance async client is incomplete; `run_in_executor` thread pool + `tenacity` retries gives async benefits without SDK limitations |
-| **Explicit cash_flows table** (ADR-002)     | Generic ledger, simple-Dietz approximation | Unambiguous TWR computation; dated+typed rows make cash-flow handling provably correct vs. ledger ambiguity                          |
-| **Hybrid cache** (ADR-003)                  | All-Redis, all-PostgreSQL, no cache        | OHLCV is large/immutable → indexed PG table; quotes are small/volatile → Redis with short TTL; avoids memory pressure on Redis       |
-| **Separate market + performance** (ADR-004) | Monolithic combined module                 | Clean isolation: yfinance wrapping (thread-pool, rate-limited) doesn't taint the pure TWR/benchmark logic                            |
-| **Champion model via EFS** (ADR-006)        | Only S3, only SageMaker                    | EFS mount = zero-copy inference on Fargate; S3 for durable storage + CloudFront delivery; SageMaker as optional serving backend      |
-| **Bedrock SigV4 only** (ADR-007)            | Separate API key auth                      | Bedrock uses AWS SigV4 natively; phantom `BEDROCK_API_KEY` would be unused and a security concern                                    |
-| **Terraform remote state S3+DDB** (ADR-008) | Local state, Terraform Cloud, Consul       | S3 + DynamoDB = free, auditable, no vendor lock; `use_lockfile` enables collaborative apply safety                                   |
-| **ARM64/Graviton** (ADR-009)                | x86_64 Fargate, EC2, Lambda                | ARM64 = 20-30% cost savings at same perf; Fargate removes EC2 management; QEMU cross-build in CI for Rust wheel                      |
-| **LangGraph manual StateGraph**             | `create_react_agent` convenience wrapper   | Explicit control over agentic loop; manual history management enables two-tier Redis+RDS persistence                                 |
-| **Focal loss for classification**           | Cross-entropy, weighted CE                 | Focal loss (γ=1.49) emphasizes hard misclassifications in imbalanced market regimes; tuned via Optuna                                |
-| **Evidently for drift**                     | whylogs, Alibi Detect, custom              | Evidently's PSI/KS/JSD suite covers distribution, feature, and model drift in one library; lightweight, Airflow-native               |
+| Decision                                    | Alternatives Considered                    | Why We Chose This                                                                                                                                     |
+| ------------------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Synchronous yfinance** (ADR-001)          | Async yfinance SDK, direct API calls       | yfinance async client is incomplete; `run_in_executor` thread pool + `tenacity` retries gives async benefits without SDK limitations                  |
+| **Explicit cash_flows table** (ADR-002)     | Generic ledger, simple-Dietz approximation | Unambiguous TWR computation; dated+typed rows make cash-flow handling provably correct vs. ledger ambiguity                                           |
+| **Hybrid cache** (ADR-003)                  | All-Redis, all-PostgreSQL, no cache        | OHLCV is large/immutable → indexed PG table; quotes are small/volatile → Redis with short TTL; avoids memory pressure on Redis                        |
+| **Separate market + performance** (ADR-004) | Monolithic combined module                 | Clean isolation: yfinance wrapping (thread-pool, rate-limited) doesn't taint the pure TWR/benchmark logic                                             |
+| **Champion model via EFS** (ADR-006)        | Only S3, only SageMaker                    | EFS mount = zero-copy inference on Fargate; S3 for durable storage + CloudFront delivery; SageMaker as optional serving backend                       |
+| **Bedrock SigV4 only** (ADR-007)            | Separate API key auth                      | Bedrock uses AWS SigV4 natively; phantom `BEDROCK_API_KEY` would be unused and a security concern                                                     |
+| **Terraform remote state S3+DDB** (ADR-008) | Local state, Terraform Cloud, Consul       | S3 + DynamoDB = free, auditable, no vendor lock; `use_lockfile` enables collaborative apply safety                                                    |
+| **ARM64/Graviton** (ADR-009)                | x86_64 Fargate, EC2, Lambda                | ARM64 = 20-30% cost savings at same perf; Fargate removes EC2 management; QEMU cross-build in CI for Rust wheel                                       |
+| **LangGraph manual StateGraph**             | `create_react_agent` convenience wrapper   | Explicit control over agentic loop; manual history management enables two-tier Redis+RDS persistence                                                  |
+| **GraphQL read facade** (ADR-010)           | Full migration, per-screen BFF             | Retrofit over a shared read layer: REST behavior byte-identical, one screen proves the pattern; subscriptions reuse the quote cache via Redis pub/sub |
+| **Focal loss for classification**           | Cross-entropy, weighted CE                 | Focal loss (γ=1.49) emphasizes hard misclassifications in imbalanced market regimes; tuned via Optuna                                                 |
+| **Evidently for drift**                     | whylogs, Alibi Detect, custom              | Evidently's PSI/KS/JSD suite covers distribution, feature, and model drift in one library; lightweight, Airflow-native                                |
 
 All 9 ADRs with full rationale: [docs/adr/](docs/adr/).
 
@@ -257,8 +268,8 @@ Backend API: `http://localhost:8000` (docs at `/docs`) · MLflow: `http://localh
 ### Tests
 
 ```bash
-cd backend && uv run pytest -n auto --cov=src          # 1,508 tests, 90% line gate
-cd frontend && npm test -- --watchAll=false --coverage  # 823 assertions, 3 coverage gates
+cd backend && uv run pytest -n auto --cov=src          # 74 files · 1,550 tests, 90% line gate
+cd frontend && npm test -- --watchAll=false --coverage  # 82 files · 844 assertions, 3 coverage gates
 cd backend/ml/features-engine && cargo test && cargo clippy -- -D warnings
 ```
 
