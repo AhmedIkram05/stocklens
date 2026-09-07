@@ -16,7 +16,7 @@ import * as SecureStore from 'expo-secure-store';
 const ACCESS_TOKEN_KEY = 'stocklens_access_token';
 const REFRESH_TOKEN_KEY = 'stocklens_refresh_token';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 
 // ── JWT helpers ───────────────────────────────────────────────────────────────
 
