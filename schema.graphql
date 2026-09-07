@@ -130,6 +130,10 @@ type Quote {
   timestamp: DateTime
 }
 
+type Subscription {
+  marketQuote(ticker: String!): Quote!
+}
+
 type Transaction {
   id: ID!
   ticker: String!

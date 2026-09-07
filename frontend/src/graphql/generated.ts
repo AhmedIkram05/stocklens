@@ -159,6 +159,15 @@ export type Quote = {
   volume?: Maybe<Scalars['Int']['output']>;
 };
 
+export type Subscription = {
+  __typename?: 'Subscription';
+  marketQuote: Quote;
+};
+
+export type SubscriptionMarketQuoteArgs = {
+  ticker: Scalars['String']['input'];
+};
+
 export type Transaction = {
   __typename?: 'Transaction';
   date: Scalars['Date']['output'];
