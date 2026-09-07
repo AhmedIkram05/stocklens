@@ -1,12 +1,147 @@
-# StockLens GraphQL schema — hand-maintained SDL mirror of backend/src/graphql/schema.py
+# StockLens GraphQL schema — SDL mirror of backend/src/graphql/schema.py
 #
 # Codegen source (CI-stable, no live introspection). Sync rule: any schema.py
 # change → regenerate via `print(schema.as_str())` + recommit both.
 # Phase 6 drift check: diff this file against live introspection output.
 #
-# Phase 0 placeholder — Phase 3/4 replace this with the full Query +
-# Subscription SDL. Kept valid + minimal so codegen runs green meanwhile.
+# Phase 3: full Query SDL (query-only; Phase 4 appends Subscription).
+
+type BenchmarkComparison {
+  portfolioId: ID!
+  benchmarkTicker: String!
+  portfolioReturn: Float
+  benchmarkReturn: Float
+  excessReturnAlpha: Float
+  trackingError: Float
+  informationRatio: Float
+  periodStart: Date!
+  periodEnd: Date!
+  methodology: String!
+  dailyReturnsCount: Int!
+  calculatedAt: DateTime!
+  portfolioCumulativeReturns: [CumulativeReturn!]!
+  benchmarkCumulativeReturns: [CumulativeReturn!]!
+}
+
+type CashFlow {
+  id: ID!
+  portfolioId: ID!
+  amount: Float!
+  source: String!
+  sourceId: String
+  notes: String
+  createdAt: DateTime!
+}
+
+type CumulativeReturn {
+  date: Date!
+  value: Float!
+}
+
+"""
+Date (isoformat)
+"""
+scalar Date
+
+"""
+Date with time (isoformat)
+"""
+scalar DateTime
+
+type Holding {
+  id: ID!
+  portfolioId: ID!
+  ticker: String!
+  shares: Float!
+  averageCostBasis: Float!
+  currency: String!
+  fxRateToGbp: Float
+  averageCostBasisGbp: Float
+}
+
+type HoldingPerformance {
+  ticker: String!
+  shares: Float!
+  averageCostBasis: Float!
+  currentPrice: Float
+  currency: String!
+  marketValue: Float
+  costBasis: Float!
+  unrealisedPl: Float
+  unrealisedPlPct: Float
+  dayChange: Float
+  dayChangePct: Float
+  portfolioWeightPct: Float
+}
+
+type Portfolio {
+  id: ID!
+  name: String!
+  description: String
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  holdings: [Holding!]!
+  transactions: [Transaction!]!
+  cashFlows: [CashFlow!]!
+  performance(startDate: Date = null, endDate: Date = null): PortfolioPerformance!
+  benchmark(
+    benchmark: String! = "SPY"
+    startDate: Date = null
+    endDate: Date = null
+  ): BenchmarkComparison!
+}
+
+type PortfolioPerformance {
+  portfolioId: ID!
+  portfolioName: String!
+  totalMarketValue: Float
+  totalCostBasis: Float!
+  totalUnrealisedPl: Float
+  totalUnrealisedPlPct: Float
+  dayChange: Float
+  dayChangePct: Float
+  freeCashBalance: Float!
+  twr: Float
+  twrAnnualised: Float
+  twrStartDate: Date
+  twrEndDate: Date
+  twrMethodology: String!
+  holdings: [HoldingPerformance!]!
+  totalHoldings: Int!
+  dataQuality: String!
+  calculatedAt: DateTime!
+}
 
 type Query {
-  _empty: String
+  portfolios: [Portfolio!]!
+  portfolio(id: ID!): Portfolio
+  marketQuote(ticker: String!): Quote!
+}
+
+type Quote {
+  ticker: String!
+  price: Float
+  change: Float
+  changePct: Float
+  previousClose: Float
+  volume: Int
+  currency: String
+  exchange: String
+  timestamp: DateTime
+}
+
+type Transaction {
+  id: ID!
+  ticker: String!
+  type: TransactionType!
+  shares: Float!
+  pricePerShare: Float!
+  totalAmount: Float!
+  totalAmountGbp: Float
+  date: Date!
+}
+
+enum TransactionType {
+  BUY
+  SELL
 }
