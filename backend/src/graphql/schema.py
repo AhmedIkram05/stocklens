@@ -1,24 +1,37 @@
 """
-GraphQL read facade — Strawberry types + resolvers (query-only; Phase 4 adds subscriptions).
+GraphQL read facade — Strawberry types + resolvers, plus the ``market_quote``
+subscription (60s poller → Redis pub/sub; near-real-time, never "live").
 
 Scalar policy (REST JSON parity): money = float (Decimal coerced),
 ids = strawberry.ID, dates/datetimes = ISO-8601, enums = strawberry.enum.
-All resolvers read ``user_id`` from ``info.context["user_id"]``; ownership is
+All query resolvers read ``user_id`` from ``info.context["user_id"]``; ownership is
 verified once at Portfolio resolution and inherited by child fields.
+WS auth is per-subscription via ``connection_params`` (see ``_validate_ws_token``) —
+the WS handshake carries an anonymous context (browsers/RN can't set headers).
 """
 
 from __future__ import annotations
 
 import enum
+import json
 import re
+from collections.abc import AsyncGenerator
 from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
 import strawberry
+import structlog
 from fastapi import HTTPException
 from graphql.error import GraphQLError
 
+from src.auth.utils import decode_token
+from src.cache.redis import get_redis, is_token_blacklisted
+from src.graphql.streaming import (
+    _fetch_with_timeout,
+    subscribe_symbol,
+    unsubscribe_symbol,
+)
 from src.market import quotes as market_quotes
 from src.performance.queries import (
     batch_get_cash_flows,
@@ -36,6 +49,8 @@ from src.performance.schemas import (
     PortfolioPerformanceResponse,
 )
 from src.portfolios.queries import fetch_portfolio_by_id, fetch_portfolios_from_db
+
+logger = structlog.get_logger(__name__)
 
 
 def _f(value: Any) -> float | None:
@@ -419,7 +434,57 @@ class Query:
         return _to_quote(q)
 
 
-schema = strawberry.Schema(query=Query)
+async def _validate_ws_token(token: str) -> None:
+    """WS auth: same primitives as ``get_current_user`` minus the DB user fetch
+    (market data is not user-scoped). Raises ``GraphQLError("Forbidden")`` on
+    any failure — expired/missing/blacklisted/non-access token."""
+    try:
+        payload = decode_token(token)
+        blacklisted = await is_token_blacklisted(payload.jti)
+    except Exception:
+        raise GraphQLError("Forbidden")
+    if payload.type != "access" or blacklisted:
+        raise GraphQLError("Forbidden")
+
+
+@strawberry.type
+class Subscription:
+    @strawberry.subscription
+    async def market_quote(self, info: strawberry.Info, ticker: str) -> AsyncGenerator[Quote, None]:
+        """Near-real-time quote stream (~15-min-delayed Yahoo data, 60s poll) — never "live"."""
+        ticker = ticker.upper()
+        if not re.fullmatch(r"[A-Z0-9.]{1,10}", ticker):
+            raise GraphQLError(f"Invalid ticker: {ticker!r}")
+        # WS auth at connection_init — browser/RN WS can't set headers.
+        params = info.context.get("connection_params") or {}
+        token = (params.get("authToken") or "").removeprefix("Bearer ").strip()
+        await _validate_ws_token(token)
+
+        subscribe_symbol(ticker)
+        channel = f"quote:stream:{ticker}"
+        pubsub = None
+        try:
+            redis = await get_redis()
+            pubsub = redis.pubsub()
+            # Subscribe FIRST — a tick published between the replay read and
+            # subscribe would otherwise be missed.
+            await pubsub.subscribe(channel)
+            # Last-value replay (fetch-if-miss; cache+setex doubles as the replay store).
+            yield _to_quote(await _fetch_with_timeout(ticker))
+            async for message in pubsub.listen():
+                if message.get("type") == "message":
+                    yield _to_quote(json.loads(message["data"]))
+        finally:
+            try:
+                if pubsub is not None:
+                    await pubsub.unsubscribe(channel)
+                    await pubsub.aclose()
+            except Exception:
+                logger.warning("ws_pubsub_close_failed", symbol=ticker)
+            unsubscribe_symbol(ticker)
+
+
+schema = strawberry.Schema(query=Query, subscription=Subscription)
 
 # Re-exported for tests (patch targets live in this namespace).
 __all__ = [
