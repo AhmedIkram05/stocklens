@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,15 @@ import { StatusBar } from 'expo-status-bar';
 import BackButton from '../../components/BackButton';
 import { brandColors, useTheme } from '../../contexts/ThemeContext';
 import type { PortfolioStackParamList } from '../../navigation/AppNavigator';
-import { portfolioService, PortfolioPerformance } from '../../services/portfolios';
+import type { PortfolioPerformance } from '../../services/portfolios';
+import {
+  graphqlRequest,
+  PORTFOLIO_DETAIL_QUERY,
+  toPortfolioPerformance,
+} from '../../graphql/client';
+import type { PortfolioDetailQuery } from '../../graphql/generated';
+import { subscribeMarketQuote } from '../../graphql/subscriptionClient';
+import { applyQuoteToPerformance } from '../../graphql/quoteMerge';
 import { formatCurrency } from '../../utils/formatters';
 
 type PortfolioDetailRouteProp = RouteProp<PortfolioStackParamList, 'PortfolioDetail'>;
@@ -80,6 +88,7 @@ export default function PortfolioDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastTickAt, setLastTickAt] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
   const fetchPerformance = useCallback(
@@ -93,8 +102,13 @@ export default function PortfolioDetailScreen() {
           }
         }
         if (!silent) setError(null);
-        const data = await portfolioService.getPerformance(portfolioId);
-        if (mountedRef.current) setPerformance(data);
+        const data = await graphqlRequest<PortfolioDetailQuery>(PORTFOLIO_DETAIL_QUERY, {
+          id: portfolioId,
+        });
+        if (mountedRef.current)
+          setPerformance(
+            data.portfolio ? toPortfolioPerformance(data.portfolio.performance) : null,
+          );
       } catch (err: any) {
         if (!silent) setError(err?.message || 'Failed to load portfolio performance');
       } finally {
@@ -107,17 +121,32 @@ export default function PortfolioDetailScreen() {
     [portfolioId],
   );
 
-  // Silent 30s polling for intraday price updates
+  // Live quote stream replaces the blind 30s poll — no setInterval remains.
   useEffect(() => {
-    mountedRef.current = true;
-    const id = setInterval(() => {
-      fetchPerformance(false, true).catch(() => {});
-    }, 30000);
     return () => {
       mountedRef.current = false;
-      clearInterval(id);
     };
-  }, [fetchPerformance]);
+  }, []);
+
+  const tickerKey = useMemo(
+    () =>
+      (performance?.holdings ?? [])
+        .filter((h) => h.shares > 0)
+        .map((h) => h.ticker)
+        .sort()
+        .join('|'),
+    [performance?.holdings],
+  );
+  useEffect(() => {
+    if (!tickerKey) return;
+    const unsubs = tickerKey.split('|').map((t) =>
+      subscribeMarketQuote(t, (quote) => {
+        if (quote.timestamp) setLastTickAt(quote.timestamp);
+        setPerformance((prev) => (prev ? applyQuoteToPerformance(prev, quote) : prev));
+      }),
+    );
+    return () => unsubs.forEach((u) => u());
+  }, [portfolioId, tickerKey]);
 
   useFocusEffect(
     useCallback(() => {
@@ -260,7 +289,7 @@ export default function PortfolioDetailScreen() {
         )}
 
         <Text style={[styles.freshnessText, { color: theme.textSecondary }]}>
-          Prices updated {relativeTime(performance.calculated_at)}
+          Prices updated {relativeTime(lastTickAt ?? performance.calculated_at)}
         </Text>
 
         <View style={styles.sectionHeader}>
