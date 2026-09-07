@@ -1,0 +1,10 @@
+schema: schema.graphql
+documents: frontend/src/graphql/*.graphql
+ignoreNoDocuments: true
+generates:
+  frontend/src/graphql/generated.ts:
+    plugins: [typescript, typescript-operations]
+    config:
+      scalars:
+        Date: string
+        DateTime: string

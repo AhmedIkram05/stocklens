@@ -4,13 +4,20 @@ import { fireEvent, waitFor } from '@testing-library/react-native';
 
 import PortfolioDetailScreen from '@/screens/portfolio/PortfolioDetailScreen';
 import { renderWithProviders } from '../../utils';
-import { portfolioService } from '@/services/portfolios';
+import { graphqlRequest } from '@/graphql/client';
+import { subscribeMarketQuote } from '@/graphql/subscriptionClient';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
-jest.mock('@/services/portfolios', () => ({
-  portfolioService: {
-    getPerformance: jest.fn(),
-  },
+jest.mock('@/graphql/client', () => {
+  const actual = jest.requireActual('@/graphql/client');
+  return {
+    ...actual,
+    graphqlRequest: jest.fn(),
+  };
+});
+
+jest.mock('@/graphql/subscriptionClient', () => ({
+  subscribeMarketQuote: jest.fn(() => jest.fn()),
 }));
 
 jest.mock('@react-navigation/native', () => {
@@ -24,7 +31,8 @@ jest.mock('@react-navigation/native', () => {
   };
 });
 
-const mockedPortfolioService = portfolioService as jest.Mocked<typeof portfolioService>;
+const mockedGraphqlRequest = graphqlRequest as jest.MockedFunction<typeof graphqlRequest>;
+const mockedSubscribe = subscribeMarketQuote as jest.Mock;
 const mockedUseNavigation = useNavigation as jest.MockedFunction<typeof useNavigation>;
 const mockedUseRoute = useRoute as jest.MockedFunction<typeof useRoute>;
 
@@ -82,6 +90,60 @@ const mockPerformance = {
   calculated_at: new Date().toISOString(),
 };
 
+// camelCase GraphQL wire shape mirroring mockPerformance (mapper-tested in client.unit.test.ts).
+const mockGqlPerformance = {
+  portfolioId: '1',
+  portfolioName: 'Test Portfolio',
+  totalMarketValue: 15000,
+  totalUnrealisedPl: 5000,
+  totalUnrealisedPlPct: 50,
+  dayChange: 100,
+  dayChangePct: 0.67,
+  twr: 0.45,
+  twrAnnualised: 0.22,
+  twrStartDate: null,
+  twrEndDate: null,
+  twrMethodology: 'daily_log_returns',
+  freeCashBalance: 1000,
+  dataQuality: 'complete',
+  totalHoldings: 2,
+  calculatedAt: mockPerformance.calculated_at,
+  holdings: [
+    {
+      ticker: 'AAPL',
+      shares: 10,
+      averageCostBasis: 150,
+      currentPrice: 180,
+      currency: 'USD',
+      marketValue: 1800,
+      costBasis: 1500,
+      unrealisedPl: 300,
+      unrealisedPlPct: 20,
+      dayChange: 5,
+      dayChangePct: 2.8,
+      portfolioWeightPct: 12,
+    },
+    {
+      ticker: 'TSLA',
+      shares: 5,
+      averageCostBasis: 700,
+      currentPrice: 750,
+      currency: 'USD',
+      marketValue: 3750,
+      costBasis: 3500,
+      unrealisedPl: 250,
+      unrealisedPlPct: 7.14,
+      dayChange: -10,
+      dayChangePct: -1.3,
+      portfolioWeightPct: 25,
+    },
+  ],
+};
+
+const mockGqlResponse = {
+  portfolio: { id: '1', name: 'Test Portfolio', performance: mockGqlPerformance },
+};
+
 describe('PortfolioDetailScreen', () => {
   let navigateSpy: jest.Mock;
 
@@ -95,7 +157,7 @@ describe('PortfolioDetailScreen', () => {
       key: 'PortfolioDetail',
       name: 'PortfolioDetail' as any,
     } as any);
-    mockedPortfolioService.getPerformance.mockResolvedValue(mockPerformance);
+    mockedGraphqlRequest.mockResolvedValue(mockGqlResponse);
   });
 
   afterEach(() => {
@@ -103,7 +165,7 @@ describe('PortfolioDetailScreen', () => {
   });
 
   it('shows loading state initially', async () => {
-    mockedPortfolioService.getPerformance.mockImplementation(() => new Promise(() => {}));
+    mockedGraphqlRequest.mockImplementation(() => new Promise(() => {}));
 
     const { queryByText } = renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
@@ -152,9 +214,12 @@ describe('PortfolioDetailScreen', () => {
   });
 
   it('shows empty holdings state', async () => {
-    mockedPortfolioService.getPerformance.mockResolvedValue({
-      ...mockPerformance,
-      holdings: [],
+    mockedGraphqlRequest.mockResolvedValue({
+      portfolio: {
+        id: '1',
+        name: 'Test Portfolio',
+        performance: { ...mockGqlPerformance, holdings: [] },
+      },
     });
 
     const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
@@ -167,9 +232,12 @@ describe('PortfolioDetailScreen', () => {
   });
 
   it('shows warning banner for partial data quality', async () => {
-    mockedPortfolioService.getPerformance.mockResolvedValue({
-      ...mockPerformance,
-      data_quality: 'partial',
+    mockedGraphqlRequest.mockResolvedValue({
+      portfolio: {
+        id: '1',
+        name: 'Test Portfolio',
+        performance: { ...mockGqlPerformance, dataQuality: 'partial' },
+      },
     });
 
     const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
@@ -230,7 +298,7 @@ describe('PortfolioDetailScreen', () => {
   });
 
   it('handles error state with retry button', async () => {
-    mockedPortfolioService.getPerformance.mockRejectedValue(new Error('Failed to load'));
+    mockedGraphqlRequest.mockRejectedValue(new Error('Failed to load'));
 
     const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
@@ -243,7 +311,7 @@ describe('PortfolioDetailScreen', () => {
   });
 
   it('retry button re-fetches performance', async () => {
-    mockedPortfolioService.getPerformance.mockRejectedValueOnce(new Error('Failed to load'));
+    mockedGraphqlRequest.mockRejectedValueOnce(new Error('Failed to load'));
 
     const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
@@ -251,11 +319,11 @@ describe('PortfolioDetailScreen', () => {
 
     await waitFor(() => expect(getByText('Failed to load')).toBeTruthy());
 
-    mockedPortfolioService.getPerformance.mockResolvedValueOnce(mockPerformance);
+    mockedGraphqlRequest.mockResolvedValueOnce(mockGqlResponse);
     fireEvent.press(getByText('Retry'));
 
     await waitFor(() => {
-      expect(mockedPortfolioService.getPerformance).toHaveBeenCalledTimes(2);
+      expect(mockedGraphqlRequest).toHaveBeenCalledTimes(2);
       expect(getByText('Test Portfolio')).toBeTruthy();
     });
   });
@@ -269,8 +337,8 @@ describe('PortfolioDetailScreen', () => {
       expect(getByText('Test Portfolio')).toBeTruthy();
     });
 
-    mockedPortfolioService.getPerformance.mockClear();
-    mockedPortfolioService.getPerformance.mockResolvedValue(mockPerformance);
+    mockedGraphqlRequest.mockClear();
+    mockedGraphqlRequest.mockResolvedValue(mockGqlResponse);
 
     // Trigger refresh via RefreshControl
     const refreshControls = UNSAFE_getAllByType(RefreshControl);
@@ -278,7 +346,7 @@ describe('PortfolioDetailScreen', () => {
     fireEvent(refreshControls[0], 'refresh');
 
     await waitFor(() => {
-      expect(mockedPortfolioService.getPerformance).toHaveBeenCalled();
+      expect(mockedGraphqlRequest).toHaveBeenCalled();
     });
   });
 
@@ -287,23 +355,24 @@ describe('PortfolioDetailScreen', () => {
       {
         ticker: 'AAPL',
         shares: 10,
-        average_cost_basis: 150,
-        current_price: null,
-        cost_basis: 1500,
-        market_value: null,
-        unrealised_pl: 300,
-        unrealised_pl_pct: 20,
-        day_change: null,
-        day_change_pct: null,
-        portfolio_weight_pct: 12,
+        averageCostBasis: 150,
+        currentPrice: null,
         currency: 'USD',
-        id: 'h1',
-        portfolio_id: '1',
+        marketValue: null,
+        costBasis: 1500,
+        unrealisedPl: 300,
+        unrealisedPlPct: 20,
+        dayChange: null,
+        dayChangePct: null,
+        portfolioWeightPct: 12,
       },
     ];
-    mockedPortfolioService.getPerformance.mockResolvedValue({
-      ...mockPerformance,
-      holdings: nullHoldings,
+    mockedGraphqlRequest.mockResolvedValue({
+      portfolio: {
+        id: '1',
+        name: 'Test Portfolio',
+        performance: { ...mockGqlPerformance, holdings: nullHoldings },
+      },
     });
 
     const { getByText, getAllByText } = renderWithProviders(<PortfolioDetailScreen />, {
@@ -317,5 +386,49 @@ describe('PortfolioDetailScreen', () => {
     // Null values should show '--' for price and market value
     const dashes = getAllByText('--');
     expect(dashes.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('subscribes to a live quote stream per holding ticker', async () => {
+    const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
+
+    await waitFor(() => expect(getByText('Test Portfolio')).toBeTruthy());
+
+    const tickers = mockedSubscribe.mock.calls.map((c) => (c[0] as string).toUpperCase()).sort();
+    expect(tickers).toEqual(['AAPL', 'TSLA']);
+  });
+
+  it('applies quote ticks to the rendered prices', async () => {
+    const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
+
+    await waitFor(() => expect(getByText('Test Portfolio')).toBeTruthy());
+
+    const aaplCall = mockedSubscribe.mock.calls.find((c) => c[0] === 'AAPL');
+    expect(aaplCall).toBeTruthy();
+    const onNext = aaplCall![1] as (q: unknown) => void;
+
+    // AAPL 10 shares @ 180 → tick @ 190 with prev close 179.
+    const { act } = require('@testing-library/react-native');
+    await act(async () => {
+      onNext({ ticker: 'AAPL', price: 190, previousClose: 179 });
+    });
+
+    await waitFor(() => expect(getByText('£190.00')).toBeTruthy());
+  });
+
+  it('unsubscribes all quote streams on unmount', async () => {
+    const { getByText, unmount } = renderWithProviders(<PortfolioDetailScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
+
+    await waitFor(() => expect(getByText('Test Portfolio')).toBeTruthy());
+
+    const cleanups = mockedSubscribe.mock.results.map((r) => r.value as jest.Mock);
+    expect(cleanups.length).toBeGreaterThanOrEqual(2);
+    unmount();
+    cleanups.forEach((c) => expect(c).toHaveBeenCalled());
   });
 });

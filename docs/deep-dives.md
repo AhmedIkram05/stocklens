@@ -18,6 +18,7 @@
 | **CI/CD auth**            | OIDC federation with AWS - no long-lived credentials                                            | IAM role assumed per-run, scoped to `main` branch only. Zero AWS secrets stored in GitHub.                                                                                                                                                                |
 | **MCP server**            | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI | Single source: 16 tools + 2 resources + 1 prompt, RFC 8414/9728 discovery, `WWW-Authenticate` with `resource_metadata` + `scope`, 93 tests, dual-version 2025-06-18 + stateless 2026-07-28, CIMD                                                          |
 | **MLOps drift detection** | Evidently AI PSI/KS/JSD on features + predictions                                               | Lightweight, Airflow-native, covers distribution, feature, and model drift in one library. Reports stored to S3, alerts via CloudWatch.                                                                                                                   |
+| **GraphQL read facade**   | Strawberry read-only `/graphql` + WS subscriptions over a shared read layer                     | Verbatim-extracted `queries.py` modules keep REST byte-identical; batch preloads kill N+1; codegen-typed RN client; 60s poller → Redis pub/sub. See [GraphQL Read Facade](#graphql-read-facade).                                                          |
 
 ---
 
@@ -443,7 +444,7 @@ flowchart LR
 
     subgraph Cache["Hybrid Cache Strategy"]
         PG_CACHE[PostgreSQL OHLCV<br/>ticker + date range<br/>indexed for bulk reads]
-        REDIS[Redis Quote Cache<br/>TTL: 5 min quotes<br/>60 min historical]
+        REDIS[Redis Quote Cache<br/>TTL: 60s quotes]
     end
 
     subgraph Compute["Portfolio Engine"]
@@ -481,6 +482,88 @@ flowchart LR
 | **Separate market + performance modules**         | Clean isolation: yfinance wrapping (rate-limited thread pool) doesn't leak into the pure TWR/benchmark logic                                     |
 | **Synchronous yfinance**                          | yfinance's async client is incomplete; wrapped with `run_in_executor` (8 workers) and `tenacity` retries (ADR-001)                               |
 | **Explicit cash_flows table**                     | Each cash flow is a dated, typed row - eliminates the ambiguity of a generic ledger and makes TWR provably correct (ADR-002)                     |
+
+---
+
+### GraphQL Read Facade
+
+A **read-only Strawberry GraphQL layer** mounted at `/graphql` — one typed read graph for the RN app over a **shared read layer** extracted verbatim from the REST routers (Phase 7, [ADR-010](adr/010-graphql-read-facade.md)). REST remains the only write/OCR/upload path.
+
+**Request flow:**
+
+```mermaid
+flowchart LR
+    subgraph Client["RN App"]
+        Q[graphqlRequest<br/>1 POST /graphql]
+        WS[graphql-ws<br/>1 shared socket]
+    end
+
+    subgraph GQL["FastAPI /graphql"]
+        RES[Resolvers<br/>ownership once<br/>at Portfolio]
+        SUB[market_quote<br/>subscription]
+        POLL[60s poller<br/>refcount registry]
+    end
+
+    subgraph Shared["Shared read layer"]
+        PQ[portfolios/queries]
+        FQ[performance/queries]
+        GQ[market/quotes<br/>get_quote 60s]
+    end
+
+    DB[(PostgreSQL<br/>asyncpg)]
+    REDIS[(Redis<br/>cache + pub/sub)]
+
+    Q --> RES
+    RES --> PQ & FQ
+    PQ & FQ --> DB
+    RES --> GQ --> REDIS
+    WS --> SUB
+    SUB -->|replay + ticks| REDIS
+    POLL --> GQ
+    POLL -->|publish quote:stream| REDIS
+```
+
+**Shared read layer** (verbatim moves, leading `_` dropped, zero REST behavior change):
+
+| Module                   | Extracted from          | Contents                                                                                                                                                 |
+| ------------------------ | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `portfolios/queries.py`  | `portfolios/router.py`  | `fetch_portfolios_from_db`, `fetch_portfolio_by_id`                                                                                                      |
+| `performance/queries.py` | `performance/router.py` | 11 read helpers + `get_portfolio_performance` / `get_benchmark_comparison` / `get_bulk_portfolio_performance` wrappers                                   |
+| `market/quotes.py`       | `market/router.py`      | `get_quote` — Redis `quote:{T}` → miss → `fetch_quote` → `SETEX 60s` (TTL 30→60 bug fix); Redis failures degrade, provider failures propagate (REST 503) |
+| `graphql/streaming.py`   | new                     | 60s poller + in-process refcount registry; 10s per-symbol fetch cap; per-symbol publish, skip-on-error; idempotent lifespan start/stop                   |
+
+**Resolver contract:**
+
+| Area           | Rule                                                                                                                                                                                                                       |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ownership      | Verified once at Portfolio resolution; children scope by `portfolio_id` (CONTEXT.md constraint #7)                                                                                                                         |
+| N+1            | List query preloads children via 3 batched reads + 1 bulk compute into `info.context`; each batch helper asserted called exactly once per query                                                                            |
+| `market_quote` | Ticker uppercased + regex-validated; provider failure → `Quote temporarily unavailable` (REST-503 parity message)                                                                                                          |
+| WS auth        | HTTP and WS share one `context_getter` branched on connection type; WS carries no headers, so auth is per-subscription via `connection_params.authToken` (decode + blacklist, no DB fetch — market data isn't user-scoped) |
+| Stream         | Last-value replay first (subscribe-before-read, no tick gap), then pub/sub ticks; at-most-once per tick                                                                                                                    |
+| Scalars        | Money `float`, ids `ID`, ISO dates; Strawberry auto-camelCases fields — the RN mapper converts back to the REST snake_case shape                                                                                           |
+
+**Frontend** (`graphql-codegen` from committed root `schema.graphql`, never live introspection): `client.ts` (typed POST + query doc + camelCase→snake_case mapper), `subscriptionClient.ts` (singleton `graphql-ws`, Bearer `connectionParams`), `quoteMerge.ts` (pure CONTEXT.md-formula recompute on each tick). `PortfolioDetailScreen` went from 1 REST call + 30s blind poll to 1 query + live quote stream (`setInterval` deleted).
+
+**As-built deviations from the plan** (honest record):
+
+| Plan said                        | As built (why)                                                                                     |
+| -------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Docs/queries in snake_case       | Schema is camelCase (Strawberry default) — docs written in camelCase + client-side mapper          |
+| `Depends(get_current_user)` ctx  | 500'd every WS handshake (spike-proven) → manual-auth branch on connection type                    |
+| `compute_*_response` split       | Single wrapper per route (resolvers re-verify ownership anyway)                                    |
+| Tests at `src/graphql/*.test.ts` | Repo `__tests__/**/*.unit.test.ts` convention                                                      |
+| Raw byte drift diff              | Committed file is prettier-normalized (header + formatting) — drift check normalizes first (below) |
+
+**Verification (Phase 7 close):** 5 new backend suites (queries 14 / subscriptions 15 / quote-cache 5 / portfolio-queries 5 / performance-queries 7 tests), 24 new frontend tests; full backend 1,567 passed, coverage 93.06% (gate 90%); `ruff`, `tsc`, ESLint, `prettier --check .` clean; codegen green.
+
+```bash
+# Schema drift check (empty = in sync; committed file keeps a header + prettier formatting)
+docker compose exec backend python -c "from src.graphql.schema import schema; print(schema.as_str())" \
+  | npx prettier --parser graphql | diff - <(tail -n +9 schema.graphql) && echo SYNCED
+```
+
+> **Ceilings:** in-process subscriber registry (single replica; multi-replica needs a Redis-backed registry); no WS-handshake rate limiting (slowapi lacks WS support); WS auth at `connection_init` only — clients reconnect with a fresh token; Yahoo data is ~15-min delayed — the stream is **near-real-time, never "live"**.
 
 ---
 
@@ -581,24 +664,25 @@ The codebase enforces a **three-tier testing strategy** with explicit coverage g
 
 | Tier         | Framework                                           | Scale                                                                        | Coverage Gate                                              |
 | ------------ | --------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| **Backend**  | pytest + pytest-asyncio + pytest-cov + pytest-xdist | 69 test files, 1,508 test functions, parallel with `-n auto --dist loadfile` | `--cov-fail-under=90` (line coverage)                      |
-| **Frontend** | Jest + React Native Testing Library + jest-expo     | 79 test files, 823 test assertions                                           | Branches: 75%, Functions: 80%, Lines: 90%, Statements: 80% |
+| **Backend**  | pytest + pytest-asyncio + pytest-cov + pytest-xdist | 74 test files, 1,550 test functions, parallel with `-n auto --dist loadfile` | `--cov-fail-under=90` (line coverage)                      |
+| **Frontend** | Jest + React Native Testing Library + jest-expo     | 82 test files, 844 test assertions                                           | Branches: 75%, Functions: 80%, Lines: 90%, Statements: 80% |
 | **Rust**     | cargo test + clippy                                 | 13 source modules                                                            | `cargo clippy -- -D warnings` + `cargo test`               |
 
-**Test suite breakdown (backend - 69 files, 1,508 functions):**
+**Test suite breakdown (backend - 74 files, 1,550 functions):**
 
-| Category          | Files | Focus                                                     |
-| ----------------- | ----- | --------------------------------------------------------- |
-| **Agent**         | 6     | LangGraph ReAct agent, tool registry, routing, eval       |
-| **Auth**          | 5     | JWT login/register/refresh/logout, bcrypt, rate limiting  |
-| **Cache**         | 4     | Redis OHLCV cache, quote cache, TTL behaviour             |
-| **Cash flows**    | 4     | TWR computation, explicit cash_flows table                |
-| **Market**        | 7     | yfinance wrapper, OHLCV fetch, quote cache, rate limiting |
-| **Portfolios**    | 8     | CRUD, analytics, holdings, sector exposure                |
-| **Prediction**    | 5     | LSTM inference, champion loading, EFS mount               |
-| **Receipts**      | 6     | OCR cascade (Tesseract → LLM), rapidfuzz matching         |
-| **Transactions**  | 7     | CRUD, holdings recalculation, cash flow linking           |
-| **Core / Config** | 13    | Pydantic settings, DB session, middleware, health         |
+| Category          | Files | Focus                                                             |
+| ----------------- | ----- | ----------------------------------------------------------------- |
+| **Agent**         | 6     | LangGraph ReAct agent, tool registry, routing, eval               |
+| **Auth**          | 5     | JWT login/register/refresh/logout, bcrypt, rate limiting          |
+| **Cache**         | 4     | Redis OHLCV cache, quote cache, TTL behaviour                     |
+| **Cash flows**    | 4     | TWR computation, explicit cash_flows table                        |
+| **Market**        | 7     | yfinance wrapper, OHLCV fetch, quote cache, rate limiting         |
+| **Portfolios**    | 8     | CRUD, analytics, holdings, sector exposure                        |
+| **Prediction**    | 5     | LSTM inference, champion loading, EFS mount                       |
+| **Receipts**      | 6     | OCR cascade (Tesseract → LLM), rapidfuzz matching                 |
+| **Transactions**  | 7     | CRUD, holdings recalculation, cash flow linking                   |
+| **GraphQL**       | 5     | Facade queries, WS subscriptions, quote cache, query-module units |
+| **Core / Config** | 13    | Pydantic settings, DB session, middleware, health                 |
 
 **Key testing patterns:**
 
@@ -864,7 +948,7 @@ StockLens/
 │   │   ├── api/                      # FastAPI app: routers, middleware, deps
 │   │   ├── auth/                     # JWT, bcrypt, rate limiting
 │   │   ├── cache/                    # Redis OHLCV + quote cache
-│   │   ├── market/                   # yfinance wrapper + market data
+│   │   ├── market/                   # yfinance wrapper + market data (quotes.py: 60s get_quote)
 │   │   ├── ml/                       # LSTM model, inference, features
 │   │   │   ├── features-engine/      # Rust PyO3 extension (13 modules)
 │   │   │   ├── lstm/                 # PyTorch Global LSTM
@@ -872,6 +956,7 @@ StockLens/
 │   │   ├── portfolio/                # TWR, holdings, sector, benchmark
 │   │   ├── receipts/                 # OCR cascade (Tesseract → Bedrock)
 │   │   ├── agent/                    # LangGraph ReAct agent + 16 tools
+│   │   ├── graphql/                  # Strawberry read facade: schema.py, router.py, streaming.py
 │   │   ├── mcp/                      # Self-built MCP: Streamable HTTP, OAuth 2.1 PKCE, adapter
 │   │   │   ├── server.py             # FastAPI router: initialize/tools/list/tools/call, SSE
 │   │   │   ├── auth.py               # OAuth AS: well-known, authorize, token, revoke, verify
@@ -879,7 +964,7 @@ StockLens/
 │   │   ├── transactions/             # CRUD + holdings recalc + cash flows
 │   │   ├── config.py                 # Pydantic Settings (env-driven, MCP_ENABLED)
 │   │   └── database/                 # SQLAlchemy 2.0 models, Alembic
-│   └── tests/                        # 69 files, 1,508 functions (93 MCP tests)
+│   └── tests/                        # 74 files, 1,550 functions (93 MCP, 29 GraphQL facade + cache)
 ├── frontend/
 │   ├── Dockerfile                    # Multi-stage: node:20-alpine → nginx alpine
 │   ├── package.json                  # Expo 54, React Native 0.81, TypeScript 5.9
@@ -888,9 +973,10 @@ StockLens/
 │   │   ├── components/               # Reusable UI components
 │   │   ├── hooks/                    # Custom React hooks
 │   │   ├── services/                 # API client, auth, storage
+│   │   ├── graphql/                  # Codegen client: .graphql docs, generated.ts, quoteMerge
 │   │   ├── store/                    # Zustand state management
 │   │   └── utils/                    # Helpers, formatters
-│   └── __tests__/                    # 79 test files, 823 tests
+│   └── __tests__/                    # 82 test files, 844 tests
 ├── terraform/
 │   ├── main.tf                       # Root module, provider, backend
 │   ├── variables.tf                  # Input variables
@@ -902,6 +988,8 @@ StockLens/
 │   │   ├── sagemaker/, budgets/
 │   └── environments/                 # dev/prod variable files
 ├── docker-compose.yml                # Local dev: backend + agent
+├── schema.graphql                    # Committed SDL mirror (codegen source; see drift check above)
+├── codegen.yml                       # graphql-codegen config (schema.graphql → generated.ts)
 ├── docker-compose.postgres.yml       # PostgreSQL (standalone)
 ├── docker-compose.redis.yml          # Redis (standalone)
 ├── docker-compose.mlflow.yml         # MLflow tracking server

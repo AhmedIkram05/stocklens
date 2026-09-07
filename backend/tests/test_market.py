@@ -515,8 +515,8 @@ class TestQuoteEndpoint:
         mock_redis.get.return_value = None  # cache miss
 
         with (
-            patch("src.market.router.fetch_quote", return_value=self.QUOTE_DATA),
-            patch("src.market.router.get_redis", return_value=mock_redis),
+            patch("src.market.quotes.fetch_quote", return_value=self.QUOTE_DATA),
+            patch("src.market.quotes.get_redis", return_value=mock_redis),
         ):
             response = await client.get("/market/quote/AAPL", headers=auth_headers)
 
@@ -531,7 +531,7 @@ class TestQuoteEndpoint:
         # Verify Redis setex was called
         mock_redis.setex.assert_called_once()
         args = mock_redis.setex.call_args
-        assert args[0][1] == 30  # TTL
+        assert args[0][1] == 60  # TTL
 
     async def test_redis_cache_hit(self, client: AsyncClient, auth_headers: dict[str, str]):
         """Returns cached quote without calling yfinance."""
@@ -553,7 +553,7 @@ class TestQuoteEndpoint:
         mock_redis = AsyncMock()
         mock_redis.get.return_value = cached_json
 
-        with patch("src.market.router.get_redis", return_value=mock_redis):
+        with patch("src.market.quotes.get_redis", return_value=mock_redis):
             response = await client.get("/market/quote/AAPL", headers=auth_headers)
 
         assert response.status_code == 200
@@ -564,8 +564,8 @@ class TestQuoteEndpoint:
     async def test_redis_unavailable(self, client: AsyncClient, auth_headers: dict[str, str]):
         """Redis down → graceful degradation, fetch from yfinance."""
         with (
-            patch("src.market.router.get_redis", side_effect=ConnectionError("Redis down")),
-            patch("src.market.router.fetch_quote", return_value=self.QUOTE_DATA),
+            patch("src.market.quotes.get_redis", side_effect=ConnectionError("Redis down")),
+            patch("src.market.quotes.fetch_quote", return_value=self.QUOTE_DATA),
         ):
             response = await client.get("/market/quote/AAPL", headers=auth_headers)
 
@@ -582,8 +582,8 @@ class TestQuoteEndpoint:
         mock_redis.get.return_value = None  # cache miss
 
         with (
-            patch("src.market.router.get_redis", return_value=mock_redis),
-            patch("src.market.router.fetch_quote", side_effect=ConnectionError("yfinance down")),
+            patch("src.market.quotes.get_redis", return_value=mock_redis),
+            patch("src.market.quotes.fetch_quote", side_effect=ConnectionError("yfinance down")),
         ):
             response = await client.get("/market/quote/AAPL", headers=auth_headers)
 
@@ -596,8 +596,8 @@ class TestQuoteEndpoint:
         mock_redis.get.return_value = None
 
         with (
-            patch("src.market.router.get_redis", return_value=mock_redis),
-            patch("src.market.router.fetch_quote", return_value=self.QUOTE_DATA),
+            patch("src.market.quotes.get_redis", return_value=mock_redis),
+            patch("src.market.quotes.fetch_quote", return_value=self.QUOTE_DATA),
         ):
             response = await client.get("/market/quote/aapl", headers=auth_headers)
 
@@ -619,8 +619,8 @@ class TestQuoteEndpoint:
         mock_redis.get.return_value = "not-valid-json{{{"
 
         with (
-            patch("src.market.router.get_redis", return_value=mock_redis),
-            patch("src.market.router.fetch_quote", return_value=self.QUOTE_DATA),
+            patch("src.market.quotes.get_redis", return_value=mock_redis),
+            patch("src.market.quotes.fetch_quote", return_value=self.QUOTE_DATA),
         ):
             response = await client.get("/market/quote/AAPL", headers=auth_headers)
 
