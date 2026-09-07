@@ -1,0 +1,38 @@
+query PortfolioDetail($id: ID!) {
+  portfolio(id: $id) {
+    id
+    name
+    performance {
+      portfolioId
+      portfolioName
+      totalMarketValue
+      totalUnrealisedPl
+      totalUnrealisedPlPct
+      dayChange
+      dayChangePct
+      twr
+      twrAnnualised
+      twrStartDate
+      twrEndDate
+      twrMethodology
+      freeCashBalance
+      dataQuality
+      totalHoldings
+      calculatedAt
+      holdings {
+        ticker
+        shares
+        averageCostBasis
+        currentPrice
+        currency
+        marketValue
+        costBasis
+        unrealisedPl
+        unrealisedPlPct
+        dayChange
+        dayChangePct
+        portfolioWeightPct
+      }
+    }
+  }
+}

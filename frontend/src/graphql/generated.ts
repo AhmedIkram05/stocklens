@@ -184,3 +184,67 @@ export enum TransactionType {
   Buy = 'BUY',
   Sell = 'SELL',
 }
+
+export type MarketQuoteSubscriptionVariables = Exact<{
+  ticker: Scalars['String']['input'];
+}>;
+
+export type MarketQuoteSubscription = {
+  __typename?: 'Subscription';
+  marketQuote: {
+    __typename?: 'Quote';
+    ticker: string;
+    price?: number | null;
+    change?: number | null;
+    changePct?: number | null;
+    previousClose?: number | null;
+    timestamp?: string | null;
+  };
+};
+
+export type PortfolioDetailQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+export type PortfolioDetailQuery = {
+  __typename?: 'Query';
+  portfolio?: {
+    __typename?: 'Portfolio';
+    id: string;
+    name: string;
+    performance: {
+      __typename?: 'PortfolioPerformance';
+      portfolioId: string;
+      portfolioName: string;
+      totalMarketValue?: number | null;
+      totalUnrealisedPl?: number | null;
+      totalUnrealisedPlPct?: number | null;
+      dayChange?: number | null;
+      dayChangePct?: number | null;
+      twr?: number | null;
+      twrAnnualised?: number | null;
+      twrStartDate?: string | null;
+      twrEndDate?: string | null;
+      twrMethodology: string;
+      freeCashBalance: number;
+      dataQuality: string;
+      totalHoldings: number;
+      calculatedAt: string;
+      holdings: Array<{
+        __typename?: 'HoldingPerformance';
+        ticker: string;
+        shares: number;
+        averageCostBasis: number;
+        currentPrice?: number | null;
+        currency: string;
+        marketValue?: number | null;
+        costBasis: number;
+        unrealisedPl?: number | null;
+        unrealisedPlPct?: number | null;
+        dayChange?: number | null;
+        dayChangePct?: number | null;
+        portfolioWeightPct?: number | null;
+      }>;
+    };
+  } | null;
+};

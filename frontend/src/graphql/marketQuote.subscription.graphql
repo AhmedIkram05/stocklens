@@ -1,0 +1,10 @@
+subscription MarketQuote($ticker: String!) {
+  marketQuote(ticker: $ticker) {
+    ticker
+    price
+    change
+    changePct
+    previousClose
+    timestamp
+  }
+}
