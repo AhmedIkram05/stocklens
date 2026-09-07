@@ -47,7 +47,7 @@
     "@graphql-codegen/typescript": "^4.1.0",
     "@graphql-codegen/typescript-operations": "^4.2.0",
     "@testing-library/jest-native": "^5.4.3",
-    "@testing-library/react-native": "^13.3.3",
+    "@testing-library/react-native": "^14.0.1",
     "@types/jest": "^29.5.12",
     "@types/react": "~19.1.0",
     "babel-plugin-module-resolver": "^5.0.0",
