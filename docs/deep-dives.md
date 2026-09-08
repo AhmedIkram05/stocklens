@@ -6,12 +6,12 @@
 
 | Area                      | Decision                                                                                        | Why                                                                                                                                                                                                                                                       |
 | ------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Container strategy**    | Multi-stage Docker builds for all 4 services (Backend, Airflow, ML Training, SageMaker)         | Backend: `python:3.13-slim` build stage with maturin compiles Rust wheel → runtime copies only `.so`. ARM64 cross-build via Buildx. Image ~450MB vs ~1.2GB naive.                                                                                         |
+| **Container strategy**    | Multi-stage Docker builds for all 4 services (Backend, Airflow, ML Training, SageMaker)         | Backend: `python:3.13-slim` build stage with maturin compiles Rust wheel → runtime copies only `.so`. ARM64 cross-build via Buildx. Image ~450MB (measured at build time) vs ~1.2GB naive.                                                                                         |
 | **Compose architecture**  | Separated infra (Postgres, Redis) from app (Backend + Agent) via profiles                       | Start DB alone for host-based dev (`docker compose -f postgres.yml up`), or full stack with `-f postgres.yml -f app.yml`. Standard Docker composition pattern.                                                                                            |
 | **CI pipeline**           | 9 parallel jobs, path-aware execution                                                           | Lint (ruff + ESLint + prettier), TypeScript, Frontend Tests (Jest), Security Audit, Rust (clippy + cargo test), Backend Tests (pytest + 90% cov), Docker Validation, IaC (Checkov + tfsec), Secrets (Gitleaks). Each job runs only when its paths change. |
 | **CI caching**            | Docker layer caching + pip/npm dependency caching                                               | Docker builds use `type=gha` cache (GitHub Actions cache layer sharing). Python pip and npm `node_modules` cached via `actions/setup-python` / `setup-node`.                                                                                              |
 | **Agent architecture**    | Manual LangGraph `StateGraph` (no `create_react_agent`) with two-tier history                   | Explicit control over agentic loop; manual history management enables two-tier Redis (7-day TTL) + PostgreSQL persistence surviving server restarts without context loss.                                                                                 |
-| **ML feature compute**    | Rust/PyO3 native extension replacing pandas                                                     | 12 exported functions compute 17 features (14 technical + 3 cross-sectional) at O(n) with zero Python overhead. Called from Airflow DAG and inference endpoint.                                                                                           |
+| **ML feature compute**    | Rust/PyO3 native extension replacing pandas                                                     | 17-feature vector: 13 indicators via the Rust/PyO3 features engine (12 exported functions), 4 derived in Python (vol_pct + 3 excess returns vs SPY), all computed at O(n). Called from Airflow DAG and inference endpoint.                                                                                           |
 | **Deployment gating**     | Backend health check → Frontend deploy (via ECS service ordering)                               | Pipeline explicitly waits for ECS rolling update to pass health checks before considering deploy complete. Zero API/UI version mismatch on deploy.                                                                                                        |
 | **Network isolation**     | Three-tier security groups                                                                      | Internet → ALB (443) → ECS (8000) → RDS (5432)/Redis (6379). No public database, no direct ECS access.                                                                                                                                                    |
 | **Frontend proxy**        | N/A (Expo/React Native) - API calls direct to ALB via `EXPO_PUBLIC_API_URL`                     | Same binary works in dev (localhost) and prod (ALB DNS) - `EXPO_PUBLIC_API_URL` injected at build time.                                                                                                                                                   |
@@ -271,10 +271,10 @@ flowchart LR
 | Metric                   | Range           | Best Trial  | Baseline             |
 | ------------------------ | --------------- | ----------- | -------------------- |
 | Directional Accuracy     | 49.78% – 51.63% | 51.63%      | 33% (majority-class) |
-| Simulated Sharpe Ratio   | 0.67 – 0.97     | 0.97        | 0.0 (random)         |
-| Best validation accuracy | 55.27%          | Trial 14/50 | -                    |
+| Simulated Sharpe Ratio   | 0.67 – 0.75     | 0.75        | 0.0 (random)         |
+| Best validation accuracy | 55.27%          | Trial 14/30 | -                    |
 
-> **Context:** Predicting 3-class directional movement over a 5-day window in highly stochastic markets. The model's 50-52% accuracy is a **50%+ improvement over the 33% random baseline**. The simulated Sharpe of 0.97 reflects risk-adjusted return in a zero-cost trading simulation.
+> **Context:** Predicting 3-class directional movement over a 5-day window in highly stochastic markets. The model's 50-52% accuracy is a **50%+ improvement over the 33% random baseline**. The simulated Sharpe of 0.75 reflects risk-adjusted return in a zero-cost trading simulation.
 
 **17 features in detail:**
 
@@ -404,7 +404,7 @@ Native Rust extension via **PyO3/Maturin** replacing Python's pandas-based indic
 | `compute_obv`                | close, volume             | OBV series                                | O(n)       |
 | `compute_williams_r`         | high, low, close, period  | Williams %R series                        | O(n)       |
 | `compute_roc`                | close, period             | Rate of Change series                     | O(n)       |
-| `compute_all_features`       | close, high, low, volume  | All 17 features in one call               | Batched    |
+| `compute_all_features`       | close, high, low, volume  | All 19 engine indicators (13 V1 selected) in one call               | Batched    |
 
 **Source modules:**
 
@@ -579,7 +579,7 @@ flowchart TB
 
     subgraph Training["Training Pipeline"]
         FETCH[Fetch 6yr OHLCV<br/>yfinance thread pool]
-        COMP[Compute 17 features<br/>Rust features-engine]
+        COMP[Compute 17 features<br/>13 Rust · 4 Python-derived]
         SPLIT[Chronological 70/15/15]
         MLFLOW[MLflow Run<br/>Optuna params logged]
         TRAINPT[PyTorch Training<br/>100 epochs]
@@ -664,11 +664,11 @@ The codebase enforces a **three-tier testing strategy** with explicit coverage g
 
 | Tier         | Framework                                           | Scale                                                                        | Coverage Gate                                              |
 | ------------ | --------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| **Backend**  | pytest + pytest-asyncio + pytest-cov + pytest-xdist | 74 test files, 1,550 test functions, parallel with `-n auto --dist loadfile` | `--cov-fail-under=90` (line coverage)                      |
-| **Frontend** | Jest + React Native Testing Library + jest-expo     | 82 test files, 844 test assertions                                           | Branches: 75%, Functions: 80%, Lines: 90%, Statements: 80% |
+| **Backend**  | pytest + pytest-asyncio + pytest-cov + pytest-xdist | 74 test files, 1,570 test functions, parallel with `-n auto --dist loadfile` | `--cov-fail-under=90` (line coverage)                      |
+| **Frontend** | Jest + React Native Testing Library + jest-expo     | 82 test files, 844+ test assertions                                           | Branches: 75%, Functions: 80%, Lines: 90%, Statements: 80% |
 | **Rust**     | cargo test + clippy                                 | 13 source modules                                                            | `cargo clippy -- -D warnings` + `cargo test`               |
 
-**Test suite breakdown (backend - 74 files, 1,550 functions):**
+**Test suite breakdown (backend - 74 files, 1,570 functions):**
 
 | Category          | Files | Focus                                                             |
 | ----------------- | ----- | ----------------------------------------------------------------- |
@@ -832,7 +832,7 @@ flowchart LR
     SECRET --> PASS
 ```
 
-**CD pipeline** - 7 stages (manual approval before apply):
+**CD pipeline** - 8 jobs across 5 chained stages (manual approval before apply):
 
 ```mermaid
 flowchart LR
@@ -964,7 +964,7 @@ StockLens/
 │   │   ├── transactions/             # CRUD + holdings recalc + cash flows
 │   │   ├── config.py                 # Pydantic Settings (env-driven, MCP_ENABLED)
 │   │   └── database/                 # SQLAlchemy 2.0 models, Alembic
-│   └── tests/                        # 74 files, 1,550 functions (93 MCP, 29 GraphQL facade + cache)
+│   └── tests/                        # 74 files, 1,570 functions (93 MCP, 29 GraphQL facade + cache)
 ├── frontend/
 │   ├── Dockerfile                    # Multi-stage: node:20-alpine → nginx alpine
 │   ├── package.json                  # Expo 54, React Native 0.81, TypeScript 5.9
@@ -976,7 +976,7 @@ StockLens/
 │   │   ├── graphql/                  # Codegen client: .graphql docs, generated.ts, quoteMerge
 │   │   ├── store/                    # Zustand state management
 │   │   └── utils/                    # Helpers, formatters
-│   └── __tests__/                    # 82 test files, 844 tests
+│   └── __tests__/                    # 82 test files, 844+ assertions
 ├── terraform/
 │   ├── main.tf                       # Root module, provider, backend
 │   ├── variables.tf                  # Input variables
@@ -998,7 +998,7 @@ StockLens/
 ├── .github/
 │   ├── workflows/
 │   │   ├── ci.yml                    # 9 parallel CI jobs
-│   │   ├── cd.yml                    # 7-stage CD pipeline
+│   │   ├── cd.yml                    # 8-job, 5-stage CD pipeline
 │   │   ├── codeql.yml                # Weekly CodeQL analysis
 │   │   └── dependabot.yml            # Weekly dep updates
 │   └── dependabot.yml
