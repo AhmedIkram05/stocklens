@@ -15,7 +15,7 @@ Build and push the backend image with `--platform linux/arm64` (and emit a match
 ## Rationale
 
 - The ECS task def pins ARM64; the image arch must match or the task never reaches `RUNNING`.
-- Graviton Fargate is ~20% cheaper than equivalent x86 for comparable vCPU/RAM — the cost brief ($50/mo budget) benefits.
+- Graviton Fargate is ~20% cheaper than equivalent x86 for comparable vCPU/RAM (estimated from x86→ARM64 pricing comparison) — the cost brief ($50/mo budget) benefits.
 - `maturin` produces a platform-specific wheel; building on ARM64 (or cross-compiling with the correct `--platform`) is the only correct path. If the CI runner is x86, `maturin` must build for the `aarch64` target (e.g. `maturin build --target aarch64-unknown-linux-gnu` inside an emulated/`--platform` build).
 
 ## Consequences
