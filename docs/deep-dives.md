@@ -6,12 +6,12 @@
 
 | Area                      | Decision                                                                                        | Why                                                                                                                                                                                                                                                       |
 | ------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Container strategy**    | Multi-stage Docker builds for all 4 services (Backend, Airflow, ML Training, SageMaker)         | Backend: `python:3.13-slim` build stage with maturin compiles Rust wheel → runtime copies only `.so`. ARM64 cross-build via Buildx. Image ~450MB (measured at build time) vs ~1.2GB naive.                                                                                         |
+| **Container strategy**    | Multi-stage Docker builds for all 4 services (Backend, Airflow, ML Training, SageMaker)         | Backend: `python:3.13-slim` build stage with maturin compiles Rust wheel → runtime copies only `.so`. ARM64 cross-build via Buildx. Image ~450MB (measured at build time) vs ~1.2GB naive.                                                                |
 | **Compose architecture**  | Separated infra (Postgres, Redis) from app (Backend + Agent) via profiles                       | Start DB alone for host-based dev (`docker compose -f postgres.yml up`), or full stack with `-f postgres.yml -f app.yml`. Standard Docker composition pattern.                                                                                            |
 | **CI pipeline**           | 9 parallel jobs, path-aware execution                                                           | Lint (ruff + ESLint + prettier), TypeScript, Frontend Tests (Jest), Security Audit, Rust (clippy + cargo test), Backend Tests (pytest + 90% cov), Docker Validation, IaC (Checkov + tfsec), Secrets (Gitleaks). Each job runs only when its paths change. |
 | **CI caching**            | Docker layer caching + pip/npm dependency caching                                               | Docker builds use `type=gha` cache (GitHub Actions cache layer sharing). Python pip and npm `node_modules` cached via `actions/setup-python` / `setup-node`.                                                                                              |
 | **Agent architecture**    | Manual LangGraph `StateGraph` (no `create_react_agent`) with two-tier history                   | Explicit control over agentic loop; manual history management enables two-tier Redis (7-day TTL) + PostgreSQL persistence surviving server restarts without context loss.                                                                                 |
-| **ML feature compute**    | Rust/PyO3 native extension replacing pandas                                                     | 17-feature vector: 13 indicators via the Rust/PyO3 features engine (12 exported functions), 4 derived in Python (vol_pct + 3 excess returns vs SPY), all computed at O(n). Called from Airflow DAG and inference endpoint.                                                                                           |
+| **ML feature compute**    | Rust/PyO3 native extension replacing pandas                                                     | 17-feature vector: 13 indicators via the Rust/PyO3 features engine (12 exported functions), 4 derived in Python (vol_pct + 3 excess returns vs SPY), all computed at O(n). Called from Airflow DAG and inference endpoint.                                |
 | **Deployment gating**     | Backend health check → Frontend deploy (via ECS service ordering)                               | Pipeline explicitly waits for ECS rolling update to pass health checks before considering deploy complete. Zero API/UI version mismatch on deploy.                                                                                                        |
 | **Network isolation**     | Three-tier security groups                                                                      | Internet → ALB (443) → ECS (8000) → RDS (5432)/Redis (6379). No public database, no direct ECS access.                                                                                                                                                    |
 | **Frontend proxy**        | N/A (Expo/React Native) - API calls direct to ALB via `EXPO_PUBLIC_API_URL`                     | Same binary works in dev (localhost) and prod (ALB DNS) - `EXPO_PUBLIC_API_URL` injected at build time.                                                                                                                                                   |
@@ -391,20 +391,20 @@ Native Rust extension via **PyO3/Maturin** replacing Python's pandas-based indic
 
 **Exported functions:**
 
-| Function                     | Parameters                | Returns                                   | Complexity |
-| ---------------------------- | ------------------------- | ----------------------------------------- | ---------- |
-| `compute_log_returns`        | close, periods            | `dict` of series                          | O(n)       |
-| `compute_moving_averages`    | close, windows            | `dict` of SMA series                      | O(n×k)     |
-| `compute_rsi`                | close, period             | RSI series                                | O(n)       |
-| `compute_macd`               | close, fast, slow, signal | `dict`: macd_line, signal_line, histogram | O(n)       |
-| `compute_rolling_volatility` | close, period             | Volatility series                         | O(n)       |
-| `compute_volatility_rank`    | close, period             | Percentile rank series                    | O(n log n) |
-| `compute_bollinger`          | close, period, num_std    | `dict`: upper, middle, lower              | O(n)       |
-| `compute_atr`                | high, low, close, period  | ATR series (Wilder's)                     | O(n)       |
-| `compute_obv`                | close, volume             | OBV series                                | O(n)       |
-| `compute_williams_r`         | high, low, close, period  | Williams %R series                        | O(n)       |
-| `compute_roc`                | close, period             | Rate of Change series                     | O(n)       |
-| `compute_all_features`       | close, high, low, volume  | All 19 engine indicators (13 V1 selected) in one call               | Batched    |
+| Function                     | Parameters                | Returns                                               | Complexity |
+| ---------------------------- | ------------------------- | ----------------------------------------------------- | ---------- |
+| `compute_log_returns`        | close, periods            | `dict` of series                                      | O(n)       |
+| `compute_moving_averages`    | close, windows            | `dict` of SMA series                                  | O(n×k)     |
+| `compute_rsi`                | close, period             | RSI series                                            | O(n)       |
+| `compute_macd`               | close, fast, slow, signal | `dict`: macd_line, signal_line, histogram             | O(n)       |
+| `compute_rolling_volatility` | close, period             | Volatility series                                     | O(n)       |
+| `compute_volatility_rank`    | close, period             | Percentile rank series                                | O(n log n) |
+| `compute_bollinger`          | close, period, num_std    | `dict`: upper, middle, lower                          | O(n)       |
+| `compute_atr`                | high, low, close, period  | ATR series (Wilder's)                                 | O(n)       |
+| `compute_obv`                | close, volume             | OBV series                                            | O(n)       |
+| `compute_williams_r`         | high, low, close, period  | Williams %R series                                    | O(n)       |
+| `compute_roc`                | close, period             | Rate of Change series                                 | O(n)       |
+| `compute_all_features`       | close, high, low, volume  | All 19 engine indicators (13 V1 selected) in one call | Batched    |
 
 **Source modules:**
 
@@ -665,7 +665,7 @@ The codebase enforces a **three-tier testing strategy** with explicit coverage g
 | Tier         | Framework                                           | Scale                                                                        | Coverage Gate                                              |
 | ------------ | --------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | **Backend**  | pytest + pytest-asyncio + pytest-cov + pytest-xdist | 74 test files, 1,570 test functions, parallel with `-n auto --dist loadfile` | `--cov-fail-under=90` (line coverage)                      |
-| **Frontend** | Jest + React Native Testing Library + jest-expo     | 82 test files, 844+ test assertions                                           | Branches: 75%, Functions: 80%, Lines: 90%, Statements: 80% |
+| **Frontend** | Jest + React Native Testing Library + jest-expo     | 82 test files, 844+ test assertions                                          | Branches: 75%, Functions: 80%, Lines: 90%, Statements: 80% |
 | **Rust**     | cargo test + clippy                                 | 13 source modules                                                            | `cargo clippy -- -D warnings` + `cargo test`               |
 
 **Test suite breakdown (backend - 74 files, 1,570 functions):**

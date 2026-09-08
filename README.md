@@ -114,7 +114,7 @@ flowchart LR
 
 | Layer                 | Implementation                                                                                       | Scale                                                                                                                            |
 | --------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **Frontend**          | React Native (TypeScript 5.9, Expo 54, React 19) with dark mode, biometric auth, real-time portfolio | 82 test files, 844+ assertions                                                                                                         |
+| **Frontend**          | React Native (TypeScript 5.9, Expo 54, React 19) with dark mode, biometric auth, real-time portfolio | 82 test files, 844+ assertions                                                                                                   |
 | **Backend API**       | FastAPI (Python 3.13) - asyncpg, SQLAlchemy 2.0, Pydantic v2, structlog, slowapi rate limiting       | 74 test files, 1,570 test functions, 90% cov gate                                                                                |
 | **GraphQL Facade**    | Strawberry read-only `/graphql` + WS subscriptions, codegen-typed RN client                          | Query + Subscription over the shared read layer, 60s poller → Redis pub/sub                                                      |
 | **MCP Server**        | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI      | 16 tools + 2 resources + 1 prompt (single source), 93 tests, RFC 8414/9728/7517/9207, stateless 2026-07-28 (dual-version) + CIMD |
@@ -124,7 +124,7 @@ flowchart LR
 | **NLP Pipeline**      | OCR cascade: Tesseract regex → heuristic scoring → Bedrock Vision LLM → fallback                     | rapidfuzz merchant matching, discrepancy detection, Redis caching                                                                |
 | **MLOps**             | Airflow weekly retraining, Evidently AI drift detection, champion/challenger auto-promotion          | PSI/KS/JSD thresholds, MLflow tracking, S3 delivery                                                                              |
 | **Infrastructure**    | Terraform IaC (≥1.9) on AWS ECS Fargate ARM64/Graviton                                               | Multi-AZ RDS, ElastiCache Redis 8.8, WAF, Auto Scaling                                                                           |
-| **CI/CD**             | GitHub Actions OIDC - 9 CI jobs + 8-job, 5-stage deploy pipeline                                            | Codecov, Checkov, tfsec, Gitleaks, Trivy, hadolint                                                                               |
+| **CI/CD**             | GitHub Actions OIDC - 9 CI jobs + 8-job, 5-stage deploy pipeline                                     | Codecov, Checkov, tfsec, Gitleaks, Trivy, hadolint                                                                               |
 
 ## Why It's Interesting
 
@@ -133,7 +133,7 @@ flowchart LR
 | **Self-built MCP server, not a wrapper**      | Official Python SDK (≥1.12), Streamable HTTP, OAuth 2.1 PKCE S256, RS256/JWKS with `kid` rotation, RFC 8414/9728 discovery, CIMD dynamic client registration, stateless mode. The 16 tools share one source of truth with the LangGraph agent - no duplication. Verified live: MCP Inspector traces + a working Claude Desktop config. |
 | **Confidence-gated OCR cascade**              | Tesseract regex → heuristic scoring → Bedrock Vision LLM _only when confidence drops below 0.7_; rapidfuzz merchant matching (≥80), Redis 24h cache. The interesting decision is economic: don't spend LLM budget on receipts Tesseract already read correctly.                                                                        |
 | **Weekly champion/challenger gate**           | Airflow (Monday 06:00 UTC): Rust feature engine → Optuna HPO (30 trials) → promote the challenger only if directional accuracy improves > 2 percentage points → Evidently PSI/KS/JSD drift reports to S3. The full retrain loop is automated - not a notebook, not a Lambda cron.                                                      |
-| **Graviton economics**                        | ARM64 ECS Fargate (ADR-009): 20–30% cost savings at equal performance (estimated from x86→ARM64 pricing comparison); multi-stage builds bring the backend image to ~450MB (measured at build time) vs ~1.2GB naive; QEMU cross-build for the Rust wheel in CI; **$100/month AWS Budget hard cap** with anomaly detection.                                                                                     |
+| **Graviton economics**                        | ARM64 ECS Fargate (ADR-009): 20–30% cost savings at equal performance (estimated from x86→ARM64 pricing comparison); multi-stage builds bring the backend image to ~450MB (measured at build time) vs ~1.2GB naive; QEMU cross-build for the Rust wheel in CI; **$100/month AWS Budget hard cap** with anomaly detection.              |
 | **Read-only GraphQL facade, not a migration** | Strawberry `/graphql` over a shared read layer extracted verbatim from REST routers; batch preloads kill N+1 (asserted once-per-query); a WS subscription with per-message auth replaces a 30s blind poll — REST write/OCR/upload paths untouched.                                                                                     |
 
 ## Why GraphQL + REST here?
@@ -146,16 +146,16 @@ One typed read graph for the RN app (schema committed at `schema.graphql`, types
 
 | Metric              | Value                                                                                                                 |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| REST API            | 70+ REST endpoints across 15 routers, plus the mounted MCP/OAuth/JWKS surface                                               |
+| REST API            | 70+ REST endpoints across 15 routers, plus the mounted MCP/OAuth/JWKS surface                                         |
 | GraphQL facade      | Query (portfolios, portfolio, market_quote) + market_quote subscription · committed schema.graphql + codegen types    |
 | Backend tests       | **74 files · 1,570 functions** (93 MCP, 29 GraphQL) - pytest + pytest-asyncio + xdist, 90% line-coverage gate         |
-| Frontend tests      | **82 files · 844+ assertions** - branches≥75%, functions≥80%, lines≥90%                                                |
+| Frontend tests      | **82 files · 844+ assertions** - branches≥75%, functions≥80%, lines≥90%                                               |
 | MCP server          | 16 tools + 2 resources + 1 prompt · OAuth 2.1 PKCE S256 · RS256/JWKS · 93 tests                                       |
 | ML model            | Global LSTM: 2 layers (hidden=80, dropout=0.535), 17 features, 30 Optuna trials                                       |
 | Model performance   | Directional accuracy **51.63%** (best) vs 33% majority baseline · Sharpe **0.75**                                     |
 | Portfolio analytics | Cash-flow-aware TWR; tracking error + information ratio vs SPY                                                        |
 | Infrastructure      | Terraform: 14 modules / 164 resources · 7 Docker services · ECS Fargate ARM64 on Graviton                             |
-| CI/CD               | 9 parallel CI jobs · 8-job, 5-stage deploy · Checkov + tfsec + Gitleaks + Trivy + hadolint + weekly CodeQL                   |
+| CI/CD               | 9 parallel CI jobs · 8-job, 5-stage deploy · Checkov + tfsec + Gitleaks + Trivy + hadolint + weekly CodeQL            |
 | Security            | OIDC (zero long-lived AWS creds) · WAF + OWASP CRS · three-tier security groups · pip-audit / npm-audit / cargo-audit |
 | Documentation       | 9 ADRs · MCP guide + live evidence · 21 demo assets (7 PNG, 2 GIF, 12 MP4)                                            |
 
@@ -231,7 +231,7 @@ Every non-trivial design choice is recorded as an Architecture Decision Record (
 | **Champion model via EFS** (ADR-006)        | Only S3, only SageMaker                    | EFS mount = zero-copy inference on Fargate; S3 for durable storage + CloudFront delivery; SageMaker as optional serving backend                       |
 | **Bedrock SigV4 only** (ADR-007)            | Separate API key auth                      | Bedrock uses AWS SigV4 natively; phantom `BEDROCK_API_KEY` would be unused and a security concern                                                     |
 | **Terraform remote state S3+DDB** (ADR-008) | Local state, Terraform Cloud, Consul       | S3 + DynamoDB = free, auditable, no vendor lock; `use_lockfile` enables collaborative apply safety                                                    |
-| **ARM64/Graviton** (ADR-009)                | x86_64 Fargate, EC2, Lambda                | ARM64 = 20-30% cost savings at same perf (estimated from x86→ARM64 pricing); Fargate removes EC2 management; QEMU cross-build in CI for Rust wheel                                       |
+| **ARM64/Graviton** (ADR-009)                | x86_64 Fargate, EC2, Lambda                | ARM64 = 20-30% cost savings at same perf (estimated from x86→ARM64 pricing); Fargate removes EC2 management; QEMU cross-build in CI for Rust wheel    |
 | **LangGraph manual StateGraph**             | `create_react_agent` convenience wrapper   | Explicit control over agentic loop; manual history management enables two-tier Redis+RDS persistence                                                  |
 | **GraphQL read facade** (ADR-010)           | Full migration, per-screen BFF             | Retrofit over a shared read layer: REST behavior byte-identical, one screen proves the pattern; subscriptions reuse the quote cache via Redis pub/sub |
 | **Focal loss for classification**           | Cross-entropy, weighted CE                 | Focal loss (γ=1.49) emphasizes hard misclassifications in imbalanced market regimes; tuned via Optuna                                                 |
