@@ -239,6 +239,7 @@ def test_validate_all_flat_labels() -> None:
 @patch("torch.compile", lambda x, **kw: x)
 def test_train_basic(mock_logger: MagicMock) -> None:
     """Train runs for n_epochs and returns history dict."""
+    torch.manual_seed(42)  # unseeded noise fails to improve ~20% of runs
     model = _make_dummy_model()
     train_loader = _make_dummy_loader(n_samples=64)
     val_loader = _make_dummy_loader(n_samples=16)

@@ -7,6 +7,7 @@ All tests mock external dependencies (asyncpg, mlflow, torch, yfinance).
 from __future__ import annotations
 
 import sys
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
@@ -326,3 +327,114 @@ async def test_run_pipeline_no_data_returns_error() -> None:
 
     assert "error" in result
     assert result["error"] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# Champion gate wiring — every pipeline stage mocked except the gate itself
+# ---------------------------------------------------------------------------
+
+
+@contextmanager
+def _pipeline_up_to_gate(*, champion_da: float | None, test_metrics: dict):
+    """Run run_pipeline with all stages stubbed; yields (mlflow_mgr, recorders)."""
+    mgr = MagicMock()
+    mgr.read_champion_metrics = AsyncMock(
+        return_value=None if champion_da is None else {"directional_accuracy": champion_da}
+    )
+    rec_champion = AsyncMock()
+    rec_challenger = AsyncMock()
+
+    seqs = np.zeros((120, 30, ML_CONFIG.N_FEATURES), dtype=np.float32)
+    labels = np.zeros(120, dtype=np.int64)
+    idxs = np.zeros(120, dtype=np.int64)
+    split = (
+        (seqs[:70], labels[:70], idxs[:70]),
+        (seqs[70:90], labels[70:90], idxs[70:90]),
+        (seqs[90:], labels[90:], idxs[90:]),
+    )
+
+    with (
+        patch("asyncpg.connect", AsyncMock()),
+        patch("ml.pipeline.set_seed"),
+        patch("ml.pipeline.get_device", return_value=torch.device("cpu")),
+        patch(
+            "ml.pipeline.fetch_ohlcv_for_tickers",
+            AsyncMock(side_effect=[{"AAA": np.zeros(10)}, {}]),  # data, then no SPY
+        ),
+        patch("ml.pipeline.build_ticker_vocabulary", return_value=({"AAA": 0}, 1)),
+        patch("ml.pipeline.prepare_global_dataset", return_value=(seqs, labels, idxs)),
+        patch("ml.pipeline.chronological_split", return_value=split),
+        patch(
+            "ml.pipeline.fit_normalize_splits",
+            return_value=(split[0], split[1], split[2], np.zeros(1), np.ones(1)),
+        ),
+        patch(
+            "ml.pipeline._run_lstm_pipeline",
+            AsyncMock(return_value=(test_metrics, "v1", MagicMock(), "run_1")),
+        ),
+        patch("ml.pipeline.MLflowManager", return_value=mgr),
+        patch("ml.pipeline._record_in_db", rec_champion),
+        patch("ml.pipeline._record_challenger_in_db", rec_challenger),
+        patch(
+            "ml.reference_distributions.build_reference_from_training_data",
+            return_value={},
+        ),
+        patch("ml.reference_distributions.store_reference_in_db", AsyncMock()),
+    ):
+        yield mgr, rec_champion, rec_challenger
+
+
+@pytest.mark.asyncio
+async def test_gate_blocks_noisy_improvement() -> None:
+    """+2.5pp on n=200 is noise (p≈0.26): challenger recorded, champion kept."""
+    from ml.pipeline import run_pipeline
+
+    metrics = {
+        "directional_accuracy": 0.525,
+        "n_directional": 200,
+        "n_directional_correct": 105,
+    }
+    with _pipeline_up_to_gate(champion_da=0.50, test_metrics=metrics) as (
+        mgr,
+        rec_champion,
+        rec_challenger,
+    ):
+        result = await run_pipeline()
+
+    assert result["directional_accuracy"] == 0.525
+    logged = mgr.log_metrics.call_args[0][0]
+    assert logged["promotion_p_value"] == pytest.approx(0.26, abs=0.05)
+    assert logged["promotion_n_directional"] == 200.0
+    tags = mgr.set_registered_model_tags.call_args[0][0]
+    assert tags["promotion_reason"] == "not-significant"
+    assert tags["promoted"] == "false"
+    mgr.set_champion_alias.assert_not_called()
+    rec_challenger.assert_awaited_once()
+    rec_champion.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_gate_promotes_significant_gain() -> None:
+    """+5pp on n=2000 is real (p≪0.05): champion alias moves, reason tagged."""
+    from ml.pipeline import run_pipeline
+
+    metrics = {
+        "directional_accuracy": 0.55,
+        "n_directional": 2000,
+        "n_directional_correct": 1100,
+    }
+    with _pipeline_up_to_gate(champion_da=0.50, test_metrics=metrics) as (
+        mgr,
+        rec_champion,
+        rec_challenger,
+    ):
+        result = await run_pipeline()
+
+    assert result["directional_accuracy"] == 0.55
+    assert mgr.log_metrics.call_args[0][0]["promotion_p_value"] < 0.05
+    tags = mgr.set_registered_model_tags.call_args[0][0]
+    assert tags["promotion_reason"] == "significant"
+    assert tags["promoted"] == "true"
+    mgr.set_champion_alias.assert_called_once()
+    rec_champion.assert_awaited_once()
+    rec_challenger.assert_not_called()

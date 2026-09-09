@@ -187,16 +187,16 @@ async def test_read_champion_metrics_none(mock_mlflow) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _promote_decision(champion_da: float | None, challenger_da: float) -> dict:
-    """Replicates the promotion logic from pipeline.py."""
-    da_improvement = challenger_da - champion_da if champion_da is not None else None
-    promote = champion_da is None or (da_improvement is not None and da_improvement > 0.02)
-    return {
-        "promote": promote,
-        "champion_da": champion_da,
-        "challenger_da": challenger_da,
-        "improvement_pp": da_improvement,
-    }
+def _promote_decision(
+    champion_da: float | None,
+    challenger_da: float,
+    n_directional: int | None = None,
+    n_correct: int | None = None,
+) -> dict:
+    """Thin wrapper over the real gate so tests stay in sync with pipeline.py."""
+    from ml.promotion_stats import should_promote
+
+    return should_promote(champion_da, challenger_da, n_directional, n_correct)
 
 
 def test_promote_when_no_champion() -> None:
@@ -223,3 +223,116 @@ def test_no_promote_when_below_threshold() -> None:
     result = _promote_decision(champion_da=0.50, challenger_da=0.519)
     assert result["promote"] is False
     assert result["improvement_pp"] == pytest.approx(0.019)
+
+
+def test_promote_when_significant() -> None:
+    """+5pp on n=2000 directional decisions is significant — promote."""
+    result = _promote_decision(
+        champion_da=0.50, challenger_da=0.55, n_directional=2000, n_correct=1100
+    )
+    assert result["promote"] is True
+    assert result["reason"] == "significant"
+    assert result["p_value"] is not None and result["p_value"] < 0.05
+
+
+def test_no_promote_when_not_significant() -> None:
+    """+2.5pp on n=200 is above threshold but noise — block (the bug fix)."""
+    result = _promote_decision(
+        champion_da=0.50, challenger_da=0.525, n_directional=200, n_correct=105
+    )
+    assert result["promote"] is False
+    assert result["reason"] == "not-significant"
+
+
+def test_no_promote_when_no_directional_samples() -> None:
+    """All-FLAT test set (n=0) carries no signal — never promote over a champion."""
+    from ml.promotion_stats import should_promote
+
+    result = should_promote(0.50, 0.55, n_directional=0, n_correct=0)
+    assert result["promote"] is False
+    assert result["reason"] == "no-directional-samples"
+
+
+def test_binomial_p_value_sanity() -> None:
+    """Sanity: landslide is significant, coin-flip is not."""
+    from ml.promotion_stats import binomial_one_sided_p
+
+    assert binomial_one_sided_p(1100, 2000, 0.50) < 0.05
+    assert binomial_one_sided_p(105, 200, 0.50) > 0.05
+    assert binomial_one_sided_p(0, 0, 0.50) == 1.0
+
+
+# ---------------------------------------------------------------------------
+# should_promote — branches the first pass left untested
+# ---------------------------------------------------------------------------
+
+
+def test_no_champion_returns_unscored_dict() -> None:
+    """No champion: promote with no baseline and no p-value."""
+    result = _promote_decision(champion_da=None, challenger_da=0.50)
+    assert result["promote"] is True
+    assert result["reason"] == "no-champion"
+    assert result["p_value"] is None
+    assert result["improvement_pp"] is None
+
+
+def test_below_threshold_skips_significance_test() -> None:
+    """Below threshold: blocked WITHOUT running the binomial test (p stays None)."""
+    result = _promote_decision(
+        champion_da=0.50, challenger_da=0.519, n_directional=2000, n_correct=1038
+    )
+    assert result["promote"] is False
+    assert result["reason"] == "below-threshold"
+    assert result["p_value"] is None
+
+
+def test_legacy_fallback_without_counts() -> None:
+    """Above threshold but pre-counts row: legacy promote, flagged for backfill."""
+    result = _promote_decision(champion_da=0.50, challenger_da=0.55)
+    assert result["promote"] is True
+    assert result["reason"] == "above-threshold-legacy-no-counts"
+    assert result["p_value"] is None
+
+
+def test_boundary_exactly_2pp_does_not_promote() -> None:
+    """Gate is strict >: improvement == min_pp stays below threshold.
+
+    Uses binary-exact fractions (0.015625 = 2**-6): decimal 0.52 - 0.50 is
+    0.020000000000000004 in floats, so it can't pin an exact boundary.
+    """
+    from ml.promotion_stats import should_promote
+
+    result = should_promote(0.50, 0.515625, min_pp=0.015625)
+    assert result["improvement_pp"] == 0.015625
+    assert result["promote"] is False
+    assert result["reason"] == "below-threshold"
+
+
+def test_custom_min_pp_blocks_large_gain() -> None:
+    """Callers can raise the effect-size bar: +5pp loses against min_pp=10pp."""
+    from ml.promotion_stats import should_promote
+
+    result = should_promote(0.50, 0.55, 2000, 1100, min_pp=0.10)
+    assert result["promote"] is False
+    assert result["reason"] == "below-threshold"
+
+
+def test_loose_alpha_promotes_noise() -> None:
+    """Callers can loosen significance: p≈0.26 passes alpha=0.5."""
+    from ml.promotion_stats import should_promote
+
+    result = should_promote(0.50, 0.525, 200, 105, alpha=0.5)
+    assert result["promote"] is True
+    assert result["reason"] == "significant"
+
+
+def test_binomial_edge_cases() -> None:
+    """Degenerate inputs never crash and return the vacuous answer."""
+    from ml.promotion_stats import binomial_one_sided_p
+
+    assert binomial_one_sided_p(5, -10, 0.50) == 1.0  # degenerate n
+    assert binomial_one_sided_p(3, 100, 0.0) == 0.0  # impossible baseline, k > 0
+    assert binomial_one_sided_p(0, 100, 0.0) == 1.0
+    assert binomial_one_sided_p(90, 100, 1.0) == 1.0  # degenerate p0
+    assert binomial_one_sided_p(0, 100, 0.50) > 0.99  # zero successes ≈ certain
+    assert binomial_one_sided_p(50, 100, 0.50) == pytest.approx(0.5, abs=0.05)

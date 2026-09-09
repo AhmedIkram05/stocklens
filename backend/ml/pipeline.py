@@ -624,9 +624,18 @@ async def run_pipeline() -> dict[str, Any]:
     challenger_da = test_metrics.get("directional_accuracy", 0.0)
     champion_da = champion_metrics.get("directional_accuracy", 0.0) if champion_metrics else None
 
-    da_improvement = (challenger_da - champion_da) if champion_da is not None else None
-    # Only promote if no existing champion, or challenger beats it by >2pp
-    promote = champion_da is None or (da_improvement is not None and da_improvement > 0.02)
+    # Statistically-gated promotion: >2pp effect size AND one-sided
+    # binomial p<0.05 on directional decisions (see ml/promotion_stats.py).
+    from ml.promotion_stats import should_promote
+
+    decision = should_promote(
+        champion_da,
+        challenger_da,
+        n_directional=test_metrics.get("n_directional"),
+        n_correct=test_metrics.get("n_directional_correct"),
+    )
+    da_improvement = decision["improvement_pp"]
+    promote = decision["promote"]
 
     # Run sync MLflow calls in executor to avoid blocking event loop
     loop = asyncio.get_running_loop()
@@ -638,6 +647,10 @@ async def run_pipeline() -> dict[str, Any]:
                 "challenger_improvement_pp": (
                     (da_improvement * 100) if da_improvement is not None else 100.0
                 ),
+                "promotion_p_value": decision["p_value"]
+                if decision["p_value"] is not None
+                else -1.0,
+                "promotion_n_directional": float(test_metrics.get("n_directional") or 0),
             }
         ),
     )
@@ -648,6 +661,10 @@ async def run_pipeline() -> dict[str, Any]:
                 "champion_da": f"{champion_da:.4f}" if champion_da is not None else "none",
                 "challenger_da": f"{challenger_da:.4f}",
                 "promoted": str(promote).lower(),
+                "promotion_reason": decision["reason"],
+                "promotion_p_value": f"{decision['p_value']:.4g}"
+                if decision["p_value"] is not None
+                else "n/a",
             }
         ),
     )
@@ -692,9 +709,10 @@ async def run_pipeline() -> dict[str, Any]:
             await ref_conn.close()
 
         logger.info(
-            "Champion promoted — challenger DA %.2f%% vs champion DA %s",
+            "Champion promoted — challenger DA %.2f%% vs champion DA %s (%s)",
             challenger_da * 100,
             f"{champion_da * 100:.2f}%" if champion_da is not None else "none",
+            decision["reason"],
         )
     else:
         await _record_challenger_in_db(
@@ -705,9 +723,10 @@ async def run_pipeline() -> dict[str, Any]:
             challenger_da=challenger_da,
         )
         logger.info(
-            "Champion unchanged — challenger DA %.2f%% does not beat champion DA %.2f%% by >2pp",
+            "Champion unchanged — challenger DA %.2f%% vs champion DA %.2f%% (%s)",
             challenger_da * 100,
             (champion_da or 0.0) * 100,
+            decision["reason"],
         )
 
     return test_metrics
