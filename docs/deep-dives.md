@@ -641,18 +641,18 @@ flowchart TB
 
 **MLOps configuration:**
 
-| Component               | Detail                                                                                        |
-| ----------------------- | --------------------------------------------------------------------------------------------- |
-| **Orchestrator**        | Apache Airflow 2.11 on ECS Fargate ARM64                                                      |
-| **Schedule**            | Weekly, Monday 06:00 UTC (cron)                                                               |
-| **Experiment tracking** | MLflow 3.14 - every training run logged with hyperparameters, loss curves, evaluation metrics |
-| **Model registry**      | PostgreSQL `model_registry` table - tracks champion model ID, S3 URI, performance metrics     |
+| Component               | Detail                                                                                                                                                                |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Orchestrator**        | Apache Airflow 2.11 on ECS Fargate ARM64                                                                                                                              |
+| **Schedule**            | Weekly, Monday 06:00 UTC (cron)                                                                                                                                       |
+| **Experiment tracking** | MLflow 3.14 - every training run logged with hyperparameters, loss curves, evaluation metrics                                                                         |
+| **Model registry**      | PostgreSQL `model_registry` table - tracks champion model ID, S3 URI, performance metrics                                                                             |
 | **Champion promotion**  | Dual gate in `ml/promotion_stats.py::should_promote`: `da_improvement > 0.02` (effect size) **and** one-sided binomial p<0.05 on directional decisions (significance) |
-| **Champion delivery**   | EFS mount (zero-copy) + S3 (durable/CloudFront) + model_registry DB                           |
-| **Drift detection**     | Evidently AI - PSI threshold=0.25, KS threshold=0.3, JSD threshold=0.3                        |
-| **Drift reporting**     | Reports stored at `s3://stocklens-drift-reports-dev/drift_reports/`                           |
-| **Serving backends**    | Fargate (EFS mount) or optional SageMaker endpoint (`ml.m5.xlarge`)                           |
-| **Prediction logging**  | 90-day retention in PostgreSQL for offline analysis                                           |
+| **Champion delivery**   | EFS mount (zero-copy) + S3 (durable/CloudFront) + model_registry DB                                                                                                   |
+| **Drift detection**     | Evidently AI - PSI threshold=0.25, KS threshold=0.3, JSD threshold=0.3                                                                                                |
+| **Drift reporting**     | Reports stored at `s3://stocklens-drift-reports-dev/drift_reports/`                                                                                                   |
+| **Serving backends**    | Fargate (EFS mount) or optional SageMaker endpoint (`ml.m5.xlarge`)                                                                                                   |
+| **Prediction logging**  | 90-day retention in PostgreSQL for offline analysis                                                                                                                   |
 
 ---
 
