@@ -34,7 +34,8 @@ def evaluate(
 
     Returns:
         Dict with keys: accuracy, per_class_f1, confusion_matrix,
-        directional_accuracy, simulated_sharpe.
+        directional_accuracy, n_directional, n_directional_correct,
+        simulated_sharpe, long_short_sharpe, total_samples.
     """
     model.eval()
     all_preds: list[np.ndarray] = []
@@ -62,9 +63,12 @@ def evaluate(
 
     # Directional accuracy (UP vs DOWN only, ignoring FLAT)
     directional_mask = labels != 1
-    if directional_mask.sum() > 0:
-        directional_acc = float((preds[directional_mask] == labels[directional_mask]).mean())
+    n_directional = int(directional_mask.sum())
+    if n_directional > 0:
+        n_directional_correct = int((preds[directional_mask] == labels[directional_mask]).sum())
+        directional_acc = float(n_directional_correct / n_directional)
     else:
+        n_directional_correct = 0
         directional_acc = 0.0
 
     # Simulated Sharpe (long-only)
@@ -76,6 +80,8 @@ def evaluate(
     return {
         "accuracy": accuracy,
         "directional_accuracy": directional_acc,
+        "n_directional": n_directional,
+        "n_directional_correct": n_directional_correct,
         "per_class_f1": per_class_f1,
         "confusion_matrix": confusion_matrix.tolist(),
         "simulated_sharpe": simulated_sharpe,
