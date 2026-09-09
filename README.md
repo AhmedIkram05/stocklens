@@ -44,7 +44,7 @@
 
 **StockLens turns your spending into an investment workflow.** Scan a receipt, the OCR cascade extracts the total into investable cash, and you can immediately buy or sell real stocks at **live market prices** (FX-adjusted to GBP) - holdings update at weighted-average cost basis, and every order is checked against your receipt-funded balance. Build portfolios tracked with cash-flow-aware TWR, get LSTM-powered 5-day directional forecasts, compare your performance against SPY (tracking error + information ratio), ask a LangGraph agent natural-language questions about your holdings, and **drive all 16 tools through an enterprise-grade MCP server** from Claude Desktop or any MCP client.
 
-Beneath the mobile app: a **Rust/PyO3 features engine** replaces pandas for zero-cost technical indicator computation, a **confidence-gated OCR cascade** escalates from Tesseract regex to Bedrock Vision only when accuracy demands it, a weekly **Airflow MLOps pipeline** retrains the LSTM with automated champion/challenger promotion and Evidently drift detection, and everything is deployed via **Terraform on AWS ECS Fargate ARM64/Graviton** with GitHub Actions OIDC CI/CD.
+Beneath the mobile app: a **Rust/PyO3 features engine** replaces pandas for zero-cost technical indicator computation, a **confidence-gated OCR cascade** escalates from Tesseract regex to Bedrock Vision only when accuracy demands it, a weekly **Airflow MLOps pipeline** retrains the LSTM with statistically-gated champion/challenger promotion and Evidently drift detection, and everything is deployed via **Terraform on AWS ECS Fargate ARM64/Graviton** with GitHub Actions OIDC CI/CD.
 
 ## How It Fits Together
 
@@ -122,7 +122,7 @@ flowchart LR
 | **ML Model**          | PyTorch Global LSTM with entity embeddings + Optuna HPO (30 trials)                                  | 17 features, 55–475+ tickers, 6yr OHLCV lookback                                                                                 |
 | **LLM Agent**         | LangGraph ReAct (2-node `StateGraph`, 16 tools) via AWS Bedrock Converse API                         | SSE streaming, two-tier Redis+RDS persistence                                                                                    |
 | **NLP Pipeline**      | OCR cascade: Tesseract regex → heuristic scoring → Bedrock Vision LLM → fallback                     | rapidfuzz merchant matching, discrepancy detection, Redis caching                                                                |
-| **MLOps**             | Airflow weekly retraining, Evidently AI drift detection, champion/challenger auto-promotion          | PSI/KS/JSD thresholds, MLflow tracking, S3 delivery                                                                              |
+| **MLOps**             | Airflow weekly retraining, Evidently AI drift detection, statistically-gated champion/challenger promotion | >2pp effect size + binomial p<0.05, PSI/KS/JSD thresholds, MLflow tracking, S3 delivery                                     |
 | **Infrastructure**    | Terraform IaC (≥1.9) on AWS ECS Fargate ARM64/Graviton                                               | Multi-AZ RDS, ElastiCache Redis 8.8, WAF, Auto Scaling                                                                           |
 | **CI/CD**             | GitHub Actions OIDC - 9 CI jobs + 8-job, 5-stage deploy pipeline                                     | Codecov, Checkov, tfsec, Gitleaks, Trivy, hadolint                                                                               |
 
@@ -132,7 +132,7 @@ flowchart LR
 | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Self-built MCP server, not a wrapper**      | Official Python SDK (≥1.12), Streamable HTTP, OAuth 2.1 PKCE S256, RS256/JWKS with `kid` rotation, RFC 8414/9728 discovery, CIMD dynamic client registration, stateless mode. The 16 tools share one source of truth with the LangGraph agent - no duplication. Verified live: MCP Inspector traces + a working Claude Desktop config. |
 | **Confidence-gated OCR cascade**              | Tesseract regex → heuristic scoring → Bedrock Vision LLM _only when confidence drops below 0.7_; rapidfuzz merchant matching (≥80), Redis 24h cache. The interesting decision is economic: don't spend LLM budget on receipts Tesseract already read correctly.                                                                        |
-| **Weekly champion/challenger gate**           | Airflow (Monday 06:00 UTC): Rust feature engine → Optuna HPO (30 trials) → promote the challenger only if directional accuracy improves > 2 percentage points → Evidently PSI/KS/JSD drift reports to S3. The full retrain loop is automated - not a notebook, not a Lambda cron.                                                      |
+| **Weekly champion/challenger gate**           | Airflow (Monday 06:00 UTC): Rust feature engine → Optuna HPO (30 trials) → promote the challenger only if directional accuracy improves > 2 percentage points **and** the gain is statistically significant (one-sided binomial p<0.05 on directional decisions, `ml/promotion_stats.py`) → Evidently PSI/KS/JSD drift reports to S3. The full retrain loop is automated - not a notebook, not a Lambda cron. |
 | **Graviton economics**                        | ARM64 ECS Fargate (ADR-009): 20–30% cost savings at equal performance (estimated from x86→ARM64 pricing comparison); multi-stage builds bring the backend image to ~450MB (measured at build time) vs ~1.2GB naive; QEMU cross-build for the Rust wheel in CI; **$100/month AWS Budget hard cap** with anomaly detection.              |
 | **Read-only GraphQL facade, not a migration** | Strawberry `/graphql` over a shared read layer extracted verbatim from REST routers; batch preloads kill N+1 (asserted once-per-query); a WS subscription with per-message auth replaces a 30s blind poll — REST write/OCR/upload paths untouched.                                                                                     |
 
@@ -215,7 +215,7 @@ One typed read graph for the RN app (schema committed at `schema.graphql`, types
 
 ### Tests
 
-**Tests** - backend 1,570 passing (90% line gate) → frontend 844+ assertions (3 coverage gates) - 2,400+ automated checks:
+**Tests** - backend 1,584 passing (90% line gate) → frontend 844+ assertions (3 coverage gates) - 2,400+ automated checks:
 ![Backend + Frontend test suites](assets/demos/tests.gif)
 
 ## Trade-offs That Mattered

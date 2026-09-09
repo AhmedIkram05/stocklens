@@ -588,7 +588,7 @@ flowchart TB
     subgraph Eval["Champion / Challenger"]
         CHAL[Challenger<br/>New weekly candidate]
         CHAMP[Champion<br/>Current champion model]
-        COMPARE{da_improvement<br/>> 0.02?}
+        COMPARE{>2pp +<br/>p < 0.05?}
         PROMOTE[Promote to champion<br/>disk + S3 + model_registry DB]
         SKIP[Keep existing champion]
     end
@@ -647,7 +647,7 @@ flowchart TB
 | **Schedule**            | Weekly, Monday 06:00 UTC (cron)                                                               |
 | **Experiment tracking** | MLflow 3.14 - every training run logged with hyperparameters, loss curves, evaluation metrics |
 | **Model registry**      | PostgreSQL `model_registry` table - tracks champion model ID, S3 URI, performance metrics     |
-| **Champion promotion**  | `da_improvement > 0.02` (2 percentage points improvement)                                     |
+| **Champion promotion**  | Dual gate in `ml/promotion_stats.py::should_promote`: `da_improvement > 0.02` (effect size) **and** one-sided binomial p<0.05 on directional decisions (significance) |
 | **Champion delivery**   | EFS mount (zero-copy) + S3 (durable/CloudFront) + model_registry DB                           |
 | **Drift detection**     | Evidently AI - PSI threshold=0.25, KS threshold=0.3, JSD threshold=0.3                        |
 | **Drift reporting**     | Reports stored at `s3://stocklens-drift-reports-dev/drift_reports/`                           |
