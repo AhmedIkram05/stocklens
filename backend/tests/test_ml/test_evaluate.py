@@ -195,3 +195,48 @@ class TestPlotFunctions:
             [0.9, 0.7, 0.5, 0.4],
         )
         assert path.endswith(".png")
+
+
+class TestDirectionalCounts:
+    """evaluate() must expose the challenger counts the promotion gate needs."""
+
+    @staticmethod
+    def _run_evaluate(labels: np.ndarray) -> dict:
+        import torch
+        from torch.utils.data import DataLoader
+
+        from ml.config import ML_CONFIG
+        from ml.dataset import SequenceDataset
+        from ml.evaluate import evaluate
+        from ml.model import GlobalLSTM
+
+        model = GlobalLSTM(
+            n_features=ML_CONFIG.N_FEATURES,
+            vocab_size=5,
+            embed_dim=4,
+            hidden_dim=16,
+            n_layers=1,
+            dropout=0.0,
+        )
+        n = len(labels)
+        sequences = np.random.randn(n, 30, ML_CONFIG.N_FEATURES).astype(np.float32)
+        ds = SequenceDataset(sequences, labels, np.zeros(n, dtype=np.int64))
+        return evaluate(model, DataLoader(ds, batch_size=8), torch.device("cpu"))
+
+    def test_counts_consistent_with_accuracy(self) -> None:
+        rng = np.random.default_rng(7)
+        metrics = self._run_evaluate(rng.integers(0, 3, size=20))
+
+        n = metrics["n_directional"]
+        k = metrics["n_directional_correct"]
+        assert isinstance(n, int) and isinstance(k, int)
+        assert 0 <= k <= n <= metrics["total_samples"]
+        if n > 0:
+            assert metrics["directional_accuracy"] == pytest.approx(k / n)
+
+    def test_all_flat_gives_zero_directional(self) -> None:
+        metrics = self._run_evaluate(np.ones(20, dtype=np.int64))  # FLAT == 1
+
+        assert metrics["n_directional"] == 0
+        assert metrics["n_directional_correct"] == 0
+        assert metrics["directional_accuracy"] == 0.0
