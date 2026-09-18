@@ -115,7 +115,7 @@ flowchart LR
 | Layer                 | Implementation                                                                                             | Scale                                                                                                                            |
 | --------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | **Frontend**          | React Native (TypeScript 5.9, Expo 54, React 19) with dark mode, biometric auth, real-time portfolio       | 82 test files, 844+ assertions                                                                                                   |
-| **Backend API**       | FastAPI (Python 3.13) - asyncpg, SQLAlchemy 2.0, Pydantic v2, structlog, slowapi rate limiting             | 74 test files, 1,570 test functions, 90% cov gate                                                                                |
+| **Backend API**       | FastAPI (Python 3.13) - asyncpg, SQLAlchemy 2.0, Pydantic v2, structlog, slowapi rate limiting             | 74 test files, 1,573 test functions, 90% cov gate                                                                                |
 | **GraphQL Facade**    | Strawberry read-only `/graphql` + WS subscriptions, codegen-typed RN client                                | Query + Subscription over the shared read layer, 60s poller → Redis pub/sub                                                      |
 | **MCP Server**        | Self-built MCP (Python SDK 1.12, Streamable HTTP, OAuth 2.1 PKCE RS256/JWKS) mounted on FastAPI            | 16 tools + 2 resources + 1 prompt (single source), 93 tests, RFC 8414/9728/7517/9207, stateless 2026-07-28 (dual-version) + CIMD |
 | **Rust Acceleration** | PyO3/Maturin native extension replacing pandas-based technical indicators                                  | 13 source modules, 12 exported functions, zero-cost abstractions                                                                 |
@@ -148,7 +148,7 @@ One typed read graph for the RN app (schema committed at `schema.graphql`, types
 | ------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | REST API            | 70+ REST endpoints across 15 routers, plus the mounted MCP/OAuth/JWKS surface                                         |
 | GraphQL facade      | Query (portfolios, portfolio, market_quote) + market_quote subscription · committed schema.graphql + codegen types    |
-| Backend tests       | **74 files · 1,570 functions** (93 MCP, 29 GraphQL) - pytest + pytest-asyncio + xdist, 90% line-coverage gate         |
+| Backend tests       | **74 files · 1,573 functions** (93 MCP, 29 GraphQL) - pytest + pytest-asyncio + xdist, 90% line-coverage gate         |
 | Frontend tests      | **82 files · 844+ assertions** - branches≥75%, functions≥80%, lines≥90%                                               |
 | MCP server          | 16 tools + 2 resources + 1 prompt · OAuth 2.1 PKCE S256 · RS256/JWKS · 93 tests                                       |
 | ML model            | Global LSTM: 2 layers (hidden=80, dropout=0.535), 17 features, 30 Optuna trials                                       |
@@ -215,7 +215,7 @@ One typed read graph for the RN app (schema committed at `schema.graphql`, types
 
 ### Tests
 
-**Tests** - backend 1,584 passing (90% line gate) → frontend 844+ assertions (3 coverage gates) - 2,400+ automated checks:
+**Tests** - backend 1,573 passing (90% line gate) → frontend 844+ assertions (3 coverage gates) - 2,417 automated checks:
 ![Backend + Frontend test suites](assets/demos/tests.gif)
 
 ## Trade-offs That Mattered
@@ -268,7 +268,7 @@ Backend API: `http://localhost:8000` (docs at `/docs`) · MLflow: `http://localh
 ### Tests
 
 ```bash
-cd backend && uv run pytest -n auto --cov=src          # 74 files · 1,570 tests, 90% line gate
+cd backend && uv run pytest -n auto --cov=src          # 74 files · 1,573 tests, 90% line gate
 cd frontend && npm test -- --watchAll=false --coverage  # 82 files · 844+ assertions, 3 coverage gates
 cd backend/ml/features-engine && cargo test && cargo clippy -- -D warnings
 ```
