@@ -664,11 +664,11 @@ The codebase enforces a **three-tier testing strategy** with explicit coverage g
 
 | Tier         | Framework                                           | Scale                                                                        | Coverage Gate                                              |
 | ------------ | --------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| **Backend**  | pytest + pytest-asyncio + pytest-cov + pytest-xdist | 74 test files, 1,570 test functions, parallel with `-n auto --dist loadfile` | `--cov-fail-under=90` (line coverage)                      |
+| **Backend**  | pytest + pytest-asyncio + pytest-cov + pytest-xdist | 74 test files, 1,573 test functions, parallel with `-n auto --dist loadfile` | `--cov-fail-under=90` (line coverage)                      |
 | **Frontend** | Jest + React Native Testing Library + jest-expo     | 82 test files, 844+ test assertions                                          | Branches: 75%, Functions: 80%, Lines: 90%, Statements: 80% |
 | **Rust**     | cargo test + clippy                                 | 13 source modules                                                            | `cargo clippy -- -D warnings` + `cargo test`               |
 
-**Test suite breakdown (backend - 74 files, 1,570 functions):**
+**Test suite breakdown (backend - 74 files, 1,573 functions):**
 
 | Category          | Files | Focus                                                             |
 | ----------------- | ----- | ----------------------------------------------------------------- |
@@ -964,7 +964,7 @@ StockLens/
 │   │   ├── transactions/             # CRUD + holdings recalc + cash flows
 │   │   ├── config.py                 # Pydantic Settings (env-driven, MCP_ENABLED)
 │   │   └── database/                 # SQLAlchemy 2.0 models, Alembic
-│   └── tests/                        # 74 files, 1,570 functions (93 MCP, 29 GraphQL facade + cache)
+│   └── tests/                        # 74 files, 1,573 functions (93 MCP, 29 GraphQL facade + cache)
 ├── frontend/
 │   ├── Dockerfile                    # Multi-stage: node:20-alpine → nginx alpine
 │   ├── package.json                  # Expo 54, React Native 0.81, TypeScript 5.9
