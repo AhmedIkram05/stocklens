@@ -44,8 +44,8 @@ const alertSpy = jest.spyOn(Alert, 'alert');
 const Constants = require('expo-constants');
 
 // Helper: create a hook instance with basic mocks for navigation and callbacks
-const createHook = () =>
-  renderHook(() =>
+const createHook = async () =>
+  await renderHook(() =>
     useReceiptCapture({
       navigation: { navigate: jest.fn() },
       onResetCamera: jest.fn(),
@@ -71,7 +71,7 @@ describe('useReceiptCapture', () => {
   it('shows confirmation prompt and saves when OCR succeeds', async () => {
     const navigation = { navigate: jest.fn() };
     const onResetCamera = jest.fn();
-    const { result } = renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
+    const { result } = await renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
 
     const draftId = '42';
 
@@ -102,7 +102,7 @@ describe('useReceiptCapture', () => {
 
   it('opens manual entry flow when OCR returns empty text', async () => {
     mockedPerformOcr.mockResolvedValue({ text: '' } as any);
-    const { result } = createHook();
+    const { result } = await createHook();
     const platform = Platform as any;
     const originalOS = platform.OS;
 
@@ -125,7 +125,7 @@ describe('useReceiptCapture', () => {
 
   it('alerts when OCR API key is missing', async () => {
     Constants.manifest.extra = {};
-    const { result } = createHook();
+    const { result } = await createHook();
 
     await act(async () => {
       await result.current.actions.processReceipt({

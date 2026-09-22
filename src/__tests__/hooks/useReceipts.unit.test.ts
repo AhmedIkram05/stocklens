@@ -56,7 +56,7 @@ describe('useReceipts', () => {
     });
     mockedReceiptService.list.mockResolvedValueOnce([receipt1]);
 
-    const { result, unmount } = renderHook(() => useReceipts());
+    const { result, unmount } = await renderHook(() => useReceipts());
 
     // Wait until loading completes
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -107,7 +107,7 @@ describe('useReceipts', () => {
   it('captures fetch errors', async () => {
     mockedReceiptService.list.mockRejectedValueOnce(new Error('boom'));
 
-    const { result } = renderHook(() => useReceipts());
+    const { result } = await renderHook(() => useReceipts());
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
