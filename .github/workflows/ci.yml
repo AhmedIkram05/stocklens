@@ -64,7 +64,7 @@ jobs:
           test_exit=$?
           set -e
           echo "FE_TEST_EXIT=$test_exit" >> "$GITHUB_ENV"
-      - uses: codecov/codecov-action@v6
+      - uses: codecov/codecov-action@v7
         if: always()
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -211,7 +211,7 @@ jobs:
           echo "PYTEST_EXIT=$pytest_exit" >> "$GITHUB_ENV"
       - name: Upload coverage to Codecov
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/lcov.info
