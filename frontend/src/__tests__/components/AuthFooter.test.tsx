@@ -29,7 +29,9 @@ describe('AuthFooter', () => {
 
   it('calls onPress when button is pressed', async () => {
     const onPress = jest.fn();
-    const { getByText } = await renderWithProviders(<AuthFooter actionText="Login" onPress={onPress} />);
+    const { getByText } = await renderWithProviders(
+      <AuthFooter actionText="Login" onPress={onPress} />,
+    );
     await fireEvent.press(getByText('Login'));
     expect(onPress).toHaveBeenCalledTimes(1);
   });

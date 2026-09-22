@@ -14,7 +14,9 @@ describe('StatCard', () => {
   });
 
   it('renders label when provided', async () => {
-    const { getByText } = await renderWithProviders(<StatCard value="$500" label="Monthly Spending" />);
+    const { getByText } = await renderWithProviders(
+      <StatCard value="$500" label="Monthly Spending" />,
+    );
     expect(getByText('Monthly Spending')).toBeTruthy();
   });
 
@@ -75,7 +77,9 @@ describe('StatCard', () => {
   });
 
   it('accepts custom style', async () => {
-    const { getByText } = await renderWithProviders(<StatCard value="$500" style={{ margin: 10 }} />);
+    const { getByText } = await renderWithProviders(
+      <StatCard value="$500" style={{ margin: 10 }} />,
+    );
     expect(getByText('$500')).toBeTruthy();
   });
 });

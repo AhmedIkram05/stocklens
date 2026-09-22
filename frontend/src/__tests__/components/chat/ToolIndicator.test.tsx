@@ -4,7 +4,9 @@ import { renderWithProviders } from '@/__tests__/utils/renderWithProviders';
 
 describe('ToolIndicator', () => {
   it('renders tool name when tool is active', async () => {
-    const { getByText } = await renderWithProviders(<ToolIndicator toolName="get_portfolio_summary" />);
+    const { getByText } = await renderWithProviders(
+      <ToolIndicator toolName="get_portfolio_summary" />,
+    );
     expect(getByText(/get_portfolio_summary/)).toBeTruthy();
   });
 

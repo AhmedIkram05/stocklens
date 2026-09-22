@@ -43,13 +43,17 @@ describe('SettingRow', () => {
 
   it('calls onPress when pressed', async () => {
     const onPress = jest.fn();
-    const { getByText } = await renderWithProviders(<SettingRow title="Account" onPress={onPress} />);
+    const { getByText } = await renderWithProviders(
+      <SettingRow title="Account" onPress={onPress} />,
+    );
     await fireEvent.press(getByText('Account'));
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
   it('uses destructive color when destructive prop is set', async () => {
-    const { getByText } = await renderWithProviders(<SettingRow title="Delete Account" destructive />);
+    const { getByText } = await renderWithProviders(
+      <SettingRow title="Delete Account" destructive />,
+    );
     expect(getByText('Delete Account')).toBeTruthy();
   });
 

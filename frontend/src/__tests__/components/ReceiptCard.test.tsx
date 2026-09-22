@@ -32,7 +32,9 @@ describe('ReceiptCard', () => {
 
   it('shows placeholder when no image', async () => {
     mockUseDecryptedImage.mockReturnValue(undefined);
-    const { queryByTestId } = await renderWithProviders(<ReceiptCard amount="$25.00" label="Coffee" />);
+    const { queryByTestId } = await renderWithProviders(
+      <ReceiptCard amount="$25.00" label="Coffee" />,
+    );
     expect(queryByTestId('receipt-card-placeholder')).toBeTruthy();
     expect(queryByTestId('receipt-card-image')).toBeNull();
   });
@@ -55,7 +57,9 @@ describe('ReceiptCard', () => {
 
   it('does not show time when not provided', async () => {
     mockUseDecryptedImage.mockReturnValue(undefined);
-    const { queryByText } = await renderWithProviders(<ReceiptCard amount="$25.00" label="Coffee" />);
+    const { queryByText } = await renderWithProviders(
+      <ReceiptCard amount="$25.00" label="Coffee" />,
+    );
     expect(queryByText('2 hours ago')).toBeNull();
   });
 
@@ -93,7 +97,9 @@ describe('ReceiptCard', () => {
 
   it('does not show source badge when source is not provided', async () => {
     mockUseDecryptedImage.mockReturnValue(undefined);
-    const { queryByText } = await renderWithProviders(<ReceiptCard amount="$25.00" label="Coffee" />);
+    const { queryByText } = await renderWithProviders(
+      <ReceiptCard amount="$25.00" label="Coffee" />,
+    );
     expect(queryByText('REGEX')).toBeNull();
   });
 

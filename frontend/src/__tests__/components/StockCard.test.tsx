@@ -33,13 +33,17 @@ describe('StockCard', () => {
   });
 
   it('renders badge when badgeText is provided', async () => {
-    const { getByText } = await renderWithProviders(<StockCard {...defaultProps} badgeText="Popular" />);
+    const { getByText } = await renderWithProviders(
+      <StockCard {...defaultProps} badgeText="Popular" />,
+    );
     expect(getByText('Popular')).toBeTruthy();
   });
 
   it('calls onPress when pressed', async () => {
     const onPress = jest.fn();
-    const { getByText } = await renderWithProviders(<StockCard {...defaultProps} onPress={onPress} />);
+    const { getByText } = await renderWithProviders(
+      <StockCard {...defaultProps} onPress={onPress} />,
+    );
     await fireEvent.press(getByText('Apple Inc.'));
     expect(onPress).toHaveBeenCalledTimes(1);
   });
@@ -50,7 +54,9 @@ describe('StockCard', () => {
   });
 
   it('uses custom valueColor', async () => {
-    const { getByText } = await renderWithProviders(<StockCard {...defaultProps} valueColor="#ff0000" />);
+    const { getByText } = await renderWithProviders(
+      <StockCard {...defaultProps} valueColor="#ff0000" />,
+    );
     expect(getByText('+23.5%')).toBeTruthy();
     expect(getByText('+$234.56')).toBeTruthy();
   });
@@ -62,7 +68,9 @@ describe('StockCard', () => {
   });
 
   it('uses custom cardWidth', async () => {
-    const { getByText } = await renderWithProviders(<StockCard {...defaultProps} cardWidth={300} />);
+    const { getByText } = await renderWithProviders(
+      <StockCard {...defaultProps} cardWidth={300} />,
+    );
     expect(getByText('Apple Inc.')).toBeTruthy();
   });
 });

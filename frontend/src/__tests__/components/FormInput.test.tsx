@@ -5,7 +5,9 @@ import FormInput from '@/components/FormInput';
 
 describe('FormInput', () => {
   it('renders with placeholder', async () => {
-    const { getByPlaceholderText } = await renderWithProviders(<FormInput placeholder="Enter email" />);
+    const { getByPlaceholderText } = await renderWithProviders(
+      <FormInput placeholder="Enter email" />,
+    );
     expect(getByPlaceholderText('Enter email')).toBeTruthy();
   });
 

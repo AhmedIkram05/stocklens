@@ -102,17 +102,30 @@ describe('AgentChatScreen comprehensive', () => {
   });
 
   it('shows loading indicator when sending message', async () => {
+    // Hold sendMessage open so isLoading stays true for the assertion
+    let resolveSend!: (v: any) => void;
+    mockSendMessage.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSend = resolve;
+        }),
+    );
+
     const result = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
       providerOverrides: { withNavigation: false },
     });
     const { getByPlaceholderText } = result;
     const input = getByPlaceholderText('Ask about your portfolio...');
     await fireEvent.changeText(input, 'Test message');
-    await fireEvent(input, 'submitEditing');
+    // fireEvent's act waits on in-flight handleSend — don't await the held promise
+    fireEvent(input, 'submitEditing');
 
-    // Should show loading state immediately (input is disabled when loading)
-    expect(input.props.editable).toBe(false);
+    // Input is disabled while loading
+    await waitFor(() => {
+      expect(getByPlaceholderText('Ask about your portfolio...').props.editable).toBe(false);
+    });
 
+    resolveSend({ conversationId: 'test-conv-id', fullResponse: 'Done.', traceId: 't' });
     await waitFor(() => {
       expect(mockSendMessage).toHaveBeenCalled();
     });
@@ -352,18 +365,21 @@ describe('AgentChatScreen comprehensive', () => {
 
   it('calls onClose when close button pressed', async () => {
     const onClose = jest.fn();
-    const { getByLabelText } = await renderWithProviders(<AgentChatScreen visible onClose={onClose} />, {
-      providerOverrides: { withNavigation: false },
-    });
+    const { getByLabelText } = await renderWithProviders(
+      <AgentChatScreen visible onClose={onClose} />,
+      {
+        providerOverrides: { withNavigation: false },
+      },
+    );
     await fireEvent.press(getByLabelText('Close'));
     expect(onClose).toHaveBeenCalled();
   });
 
   it('shows feedback modal on thumbs up and submits comment', async () => {
-    const { getByLabelText, getByText, getByPlaceholderText, findByText } = await renderWithProviders(
-      <AgentChatScreen visible onClose={jest.fn()} />,
-      { providerOverrides: { withNavigation: false } },
-    );
+    const { getByLabelText, getByText, getByPlaceholderText, findByText } =
+      await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
+        providerOverrides: { withNavigation: false },
+      });
 
     const input = getByPlaceholderText('Ask about your portfolio...');
     await fireEvent.changeText(input, 'How is my portfolio?');
@@ -390,10 +406,10 @@ describe('AgentChatScreen comprehensive', () => {
   });
 
   it('shows feedback modal on thumbs down and skips without submitting', async () => {
-    const { getByLabelText, getByText, getByPlaceholderText, queryByText } = await renderWithProviders(
-      <AgentChatScreen visible onClose={jest.fn()} />,
-      { providerOverrides: { withNavigation: false } },
-    );
+    const { getByLabelText, getByText, getByPlaceholderText, queryByText } =
+      await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
+        providerOverrides: { withNavigation: false },
+      });
 
     const input = getByPlaceholderText('Ask about your portfolio...');
     await fireEvent.changeText(input, 'How is my portfolio?');
@@ -497,10 +513,10 @@ describe('AgentChatScreen comprehensive', () => {
       traceId: '', // No traceId
     });
 
-    const { getByLabelText, getByText, getByPlaceholderText, findByText } = await renderWithProviders(
-      <AgentChatScreen visible onClose={jest.fn()} />,
-      { providerOverrides: { withNavigation: false } },
-    );
+    const { getByLabelText, getByText, getByPlaceholderText, findByText } =
+      await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
+        providerOverrides: { withNavigation: false },
+      });
 
     const input = getByPlaceholderText('Ask about your portfolio...');
     await fireEvent.changeText(input, 'Rate me');

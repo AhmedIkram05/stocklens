@@ -78,7 +78,10 @@ const TestProviders = ({
 
 export type RenderWithProvidersOptions = RenderOptions & { providerOverrides?: ProviderOverrides };
 
-export const renderWithProviders = (ui: ReactElement, options?: RenderWithProvidersOptions) => {
+export const renderWithProviders = async (
+  ui: ReactElement,
+  options?: RenderWithProvidersOptions,
+) => {
   const { providerOverrides, ...renderOptions } = options ?? {};
   const Wrapper = ({ children }: { children?: ReactNode }) => (
     <SafeAreaProvider
@@ -91,5 +94,5 @@ export const renderWithProviders = (ui: ReactElement, options?: RenderWithProvid
     </SafeAreaProvider>
   );
 
-  return render(ui, { wrapper: Wrapper, ...renderOptions });
+  return await render(ui, { wrapper: Wrapper, ...renderOptions });
 };

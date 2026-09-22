@@ -1,6 +1,5 @@
 import React from 'react';
-import { RefreshControl } from 'react-native';
-import { fireEvent, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, waitFor } from '@testing-library/react-native';
 
 import PortfolioDetailScreen from '@/screens/portfolio/PortfolioDetailScreen';
 import { renderWithProviders } from '../../utils';

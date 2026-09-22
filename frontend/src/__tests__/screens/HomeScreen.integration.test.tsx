@@ -5,7 +5,6 @@
  */
 
 import React from 'react';
-import { ScrollView } from 'react-native';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import HomeScreen from '@/screens/HomeScreen';
 import { renderWithProviders } from '../utils';
@@ -406,7 +405,11 @@ describe('HomeScreen', () => {
     await waitFor(() => expect(getByText('Total Money Spent')).toBeTruthy());
 
     // Find the main ScrollView and trigger its RefreshControl.onRefresh
-    const scrollView = root?.queryAll((el) => el.props.refreshControl !== undefined || (typeof el.props.onRefresh === 'function' && 'refreshing' in el.props))[0]!;
+    const scrollView = root?.queryAll(
+      (el) =>
+        el.props.refreshControl !== undefined ||
+        (typeof el.props.onRefresh === 'function' && 'refreshing' in el.props),
+    )[0]!;
     scrollView.props.refreshControl.props.onRefresh();
 
     await waitFor(() => {

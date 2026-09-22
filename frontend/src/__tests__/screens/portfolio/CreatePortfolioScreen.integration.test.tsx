@@ -50,9 +50,12 @@ describe('CreatePortfolioScreen', () => {
   });
 
   it('renders form with name, description, deposit fields', async () => {
-    const { getByPlaceholderText, getByText } = await renderWithProviders(<CreatePortfolioScreen />, {
-      providerOverrides: { withNavigation: false },
-    });
+    const { getByPlaceholderText, getByText } = await renderWithProviders(
+      <CreatePortfolioScreen />,
+      {
+        providerOverrides: { withNavigation: false },
+      },
+    );
 
     expect(getByPlaceholderText('My Portfolio')).toBeTruthy();
     expect(getByPlaceholderText("What's this portfolio for?")).toBeTruthy();
@@ -71,9 +74,12 @@ describe('CreatePortfolioScreen', () => {
   });
 
   it('creates portfolio when name is filled and button pressed', async () => {
-    const { getByPlaceholderText, getByText } = await renderWithProviders(<CreatePortfolioScreen />, {
-      providerOverrides: { withNavigation: false },
-    });
+    const { getByPlaceholderText, getByText } = await renderWithProviders(
+      <CreatePortfolioScreen />,
+      {
+        providerOverrides: { withNavigation: false },
+      },
+    );
 
     await fireEvent.changeText(getByPlaceholderText('My Portfolio'), 'Test Portfolio');
     await fireEvent.press(getByText('Create'));
@@ -88,9 +94,12 @@ describe('CreatePortfolioScreen', () => {
   });
 
   it('creates portfolio without deposit', async () => {
-    const { getByPlaceholderText, getByText } = await renderWithProviders(<CreatePortfolioScreen />, {
-      providerOverrides: { withNavigation: false },
-    });
+    const { getByPlaceholderText, getByText } = await renderWithProviders(
+      <CreatePortfolioScreen />,
+      {
+        providerOverrides: { withNavigation: false },
+      },
+    );
 
     await fireEvent.changeText(getByPlaceholderText('My Portfolio'), 'Test Portfolio');
     await fireEvent.press(getByText('Create'));
@@ -103,9 +112,12 @@ describe('CreatePortfolioScreen', () => {
   });
 
   it('creates portfolio with manual deposit', async () => {
-    const { getByPlaceholderText, getByText } = await renderWithProviders(<CreatePortfolioScreen />, {
-      providerOverrides: { withNavigation: false },
-    });
+    const { getByPlaceholderText, getByText } = await renderWithProviders(
+      <CreatePortfolioScreen />,
+      {
+        providerOverrides: { withNavigation: false },
+      },
+    );
 
     await fireEvent.changeText(getByPlaceholderText('My Portfolio'), 'Test Portfolio');
     await fireEvent.changeText(getByPlaceholderText('0.00'), '1000');
@@ -126,9 +138,12 @@ describe('CreatePortfolioScreen', () => {
   });
 
   it('creates portfolio with receipt deposit source toggle', async () => {
-    const { getByPlaceholderText, getByText } = await renderWithProviders(<CreatePortfolioScreen />, {
-      providerOverrides: { withNavigation: false },
-    });
+    const { getByPlaceholderText, getByText } = await renderWithProviders(
+      <CreatePortfolioScreen />,
+      {
+        providerOverrides: { withNavigation: false },
+      },
+    );
 
     await fireEvent.changeText(getByPlaceholderText('My Portfolio'), 'Test Portfolio');
     await fireEvent.changeText(getByPlaceholderText('0.00'), '500');
@@ -147,9 +162,12 @@ describe('CreatePortfolioScreen', () => {
   it('shows error message on API failure', async () => {
     mockedPortfolioService.createPortfolio.mockRejectedValue(new Error('API Error'));
 
-    const { getByPlaceholderText, getByText } = await renderWithProviders(<CreatePortfolioScreen />, {
-      providerOverrides: { withNavigation: false },
-    });
+    const { getByPlaceholderText, getByText } = await renderWithProviders(
+      <CreatePortfolioScreen />,
+      {
+        providerOverrides: { withNavigation: false },
+      },
+    );
 
     await fireEvent.changeText(getByPlaceholderText('My Portfolio'), 'Test Portfolio');
     await fireEvent.press(getByText('Create'));
@@ -170,19 +188,32 @@ describe('CreatePortfolioScreen', () => {
   });
 
   it('inputs are disabled during loading', async () => {
-    mockedPortfolioService.createPortfolio.mockImplementation(() => new Promise(() => {}));
+    // Hold create open so loading stays true for the assertion
+    let resolveCreate!: (v: any) => void;
+    mockedPortfolioService.createPortfolio.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCreate = resolve;
+        }),
+    );
 
-    const { getByPlaceholderText, getByText } = await renderWithProviders(<CreatePortfolioScreen />, {
-      providerOverrides: { withNavigation: false },
-    });
+    const { getByPlaceholderText, getByText } = await renderWithProviders(
+      <CreatePortfolioScreen />,
+      {
+        providerOverrides: { withNavigation: false },
+      },
+    );
 
     const nameInput = getByPlaceholderText('My Portfolio');
     await fireEvent.changeText(nameInput, 'Test Portfolio');
 
-    await fireEvent.press(getByText('Create'));
+    // fireEvent's act waits on in-flight handleCreate — don't await the held promise
+    fireEvent.press(getByText('Create'));
 
     await waitFor(() => {
-      expect(nameInput.props.editable).toBe(false);
+      expect(getByPlaceholderText('My Portfolio').props.editable).toBe(false);
     });
+
+    resolveCreate(mockCreatedPortfolio);
   });
 });

@@ -28,7 +28,9 @@ describe('getToolRenderer', () => {
   it('returns fallback for undefined tool', async () => {
     const renderer = getToolRenderer('undefined_tool');
     expect(renderer).toBeDefined();
-    const { getByText } = await renderWithProviders(renderToolResult('undefined_tool', { test: true }));
+    const { getByText } = await renderWithProviders(
+      renderToolResult('undefined_tool', { test: true }),
+    );
     expect(getByText(/test/)).toBeTruthy();
   });
 });
@@ -145,13 +147,17 @@ describe('SectorExposureRenderer', () => {
   };
 
   it('renders sector names', async () => {
-    const { getByText } = await renderWithProviders(renderToolResult('get_sector_exposure', sampleData));
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_sector_exposure', sampleData),
+    );
     expect(getByText('Technology')).toBeTruthy();
     expect(getByText('Finance')).toBeTruthy();
   });
 
   it('shows allocation percentages', async () => {
-    const { getByText } = await renderWithProviders(renderToolResult('get_sector_exposure', sampleData));
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_sector_exposure', sampleData),
+    );
     expect(getByText(/60\.0%/)).toBeTruthy();
   });
 
@@ -171,7 +177,9 @@ describe('PortfolioPerformanceRenderer', () => {
       total_gain_loss: 2500,
       total_gain_loss_pct: 5.23,
     };
-    const { getByText } = await renderWithProviders(renderToolResult('get_portfolio_performance', data));
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_portfolio_performance', data),
+    );
     expect(getByText(/^TWR$/)).toBeTruthy();
   });
 
@@ -275,7 +283,9 @@ describe('OhlcvRenderer', () => {
   });
 
   it('handles empty OHLCV array', async () => {
-    const { getByText } = await renderWithProviders(renderToolResult('get_market_ohlcv', { ohlcv: [] }));
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_market_ohlcv', { ohlcv: [] }),
+    );
     expect(getByText(/No OHLCV/)).toBeTruthy();
   });
 });
@@ -411,7 +421,9 @@ describe('SpendingAnalysisRenderer', () => {
   };
 
   it('renders categories with bars', async () => {
-    const { getByText } = await renderWithProviders(renderToolResult('get_spending_analysis', data));
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_spending_analysis', data),
+    );
     expect(getByText(/Groceries/)).toBeTruthy();
     expect(getByText(/Transport/)).toBeTruthy();
   });
@@ -448,7 +460,9 @@ describe('RecentTransactionsRenderer', () => {
   };
 
   it('renders transaction rows', async () => {
-    const { getByText } = await renderWithProviders(renderToolResult('get_recent_transactions', data));
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_recent_transactions', data),
+    );
     expect(getByText('AAPL')).toBeTruthy();
     expect(getByText('BUY')).toBeTruthy();
   });
@@ -468,7 +482,9 @@ describe('CashFlowSummaryRenderer', () => {
       deposit_count: 12,
       most_recent_deposit: { amount: 5000, date: '2026-07-20T00:00:00' },
     };
-    const { getByText } = await renderWithProviders(renderToolResult('get_cash_flow_summary', data));
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_cash_flow_summary', data),
+    );
     expect(getByText(/50,000/)).toBeTruthy();
     expect(getByText(/12/)).toBeTruthy();
   });
@@ -484,14 +500,18 @@ describe('CashFlowSummaryRenderer', () => {
       deposit_count: 12,
       most_recent_deposit: { amount: 5000, date: '2026-07-20T00:00:00' },
     };
-    const { getByText } = await renderWithProviders(renderToolResult('get_cash_flow_summary', data));
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_cash_flow_summary', data),
+    );
     expect(getByText(/Last Deposit/)).toBeTruthy();
     expect(getByText(/5,000\.00 GBP on 2026-07-20/)).toBeTruthy();
   });
 
   it('hides last_deposit section when most_recent_deposit is null', async () => {
     const data = { total_deposits_gbp: 0, deposit_count: 0, most_recent_deposit: null };
-    const { queryByText } = await renderWithProviders(renderToolResult('get_cash_flow_summary', data));
+    const { queryByText } = await renderWithProviders(
+      renderToolResult('get_cash_flow_summary', data),
+    );
     expect(queryByText(/Last Deposit/)).toBeNull();
   });
 });
@@ -505,7 +525,9 @@ describe('DividendInsightsRenderer', () => {
       payout_ratio: 0.15,
       ex_dividend_date: '2026-08-10T00:00:00',
     };
-    const { getByText } = await renderWithProviders(renderToolResult('get_dividend_insights', data));
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_dividend_insights', data),
+    );
     expect(getByText(/0\.50%/)).toBeTruthy();
   });
 
@@ -522,7 +544,9 @@ describe('DividendInsightsRenderer', () => {
       last_dividend_date: '2026-07-01',
       last_dividend_value: 0.24,
     };
-    const { getByText } = await renderWithProviders(renderToolResult('get_dividend_insights', data));
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_dividend_insights', data),
+    );
     expect(getByText(/Last Dividend/)).toBeTruthy();
     expect(getByText(/0\.24/)).toBeTruthy();
   });
@@ -533,7 +557,9 @@ describe('DividendInsightsRenderer', () => {
       dividend_yield: 0.005,
       dividend_rate: 0.96,
     };
-    const { queryByText } = await renderWithProviders(renderToolResult('get_dividend_insights', data));
+    const { queryByText } = await renderWithProviders(
+      renderToolResult('get_dividend_insights', data),
+    );
     expect(queryByText(/Last Dividend/)).toBeNull();
   });
 });

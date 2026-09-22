@@ -53,13 +53,17 @@ describe('AgentChatScreen disclaimer', () => {
   });
 
   it('shows the AI disclaimer heading in empty state', async () => {
-    const { getByText } = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />);
+    const { getByText } = await renderWithProviders(
+      <AgentChatScreen visible onClose={jest.fn()} />,
+    );
 
     expect(getByText('AI Assistant Disclaimer')).toBeTruthy();
   });
 
   it('shows the full warning message about AI limitations', async () => {
-    const { getByText } = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />);
+    const { getByText } = await renderWithProviders(
+      <AgentChatScreen visible onClose={jest.fn()} />,
+    );
 
     expect(getByText(/not financial advice/i)).toBeTruthy();
     expect(getByText(/AI can hallucinate/i)).toBeTruthy();
@@ -67,7 +71,9 @@ describe('AgentChatScreen disclaimer', () => {
   });
 
   it('shows the prompt to ask about portfolio in empty state', async () => {
-    const { getByText } = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />);
+    const { getByText } = await renderWithProviders(
+      <AgentChatScreen visible onClose={jest.fn()} />,
+    );
 
     expect(getByText('Ask me anything about your portfolio...')).toBeTruthy();
   });
