@@ -30,7 +30,7 @@ describe('AppNavigator', () => {
       ...overrides,
     });
 
-  it('shows loading indicator when auth is loading', () => {
+  it('shows loading indicator when auth is loading', async () => {
     mockedUseAuth.mockReturnValue({
       loading: true,
       user: null,
@@ -43,11 +43,11 @@ describe('AppNavigator', () => {
       refreshUser: jest.fn(),
     });
 
-    const { getByTestId } = renderNavigator();
+    const { getByTestId } = await renderNavigator();
     expect(getByTestId('activity-indicator')).toBeTruthy();
   });
 
-  it('shows onboarding screen when not authenticated', () => {
+  it('shows onboarding screen when not authenticated', async () => {
     mockedUseAuth.mockReturnValue({
       loading: false,
       user: null,
@@ -60,12 +60,12 @@ describe('AppNavigator', () => {
       refreshUser: jest.fn(),
     });
 
-    const { getByText } = renderNavigator();
+    const { getByText } = await renderNavigator();
     // When not authenticated, we should see the onboarding/splash screen
     expect(() => getByText("Let's Get Started")).not.toThrow();
   });
 
-  it('shows lock screen when authenticated but locked', () => {
+  it('shows lock screen when authenticated but locked', async () => {
     mockedUseAuth.mockReturnValue({
       loading: false,
       user: { uid: 'test-user' } as any,
@@ -78,12 +78,12 @@ describe('AppNavigator', () => {
       refreshUser: jest.fn(),
     });
 
-    const { getByText } = renderNavigator();
+    const { getByText } = await renderNavigator();
     // LockScreen should be visible - it shows "Locked" as the title
     expect(getByText('Locked')).toBeTruthy();
   });
 
-  it('shows main tabs when authenticated and unlocked', () => {
+  it('shows main tabs when authenticated and unlocked', async () => {
     mockedUseAuth.mockReturnValue({
       loading: false,
       user: { uid: 'test-user' } as any,
@@ -97,13 +97,13 @@ describe('AppNavigator', () => {
     });
 
     // Mock the navigation containers to avoid complex nesting
-    const { getByText } = renderNavigator();
+    const { getByText } = await renderNavigator();
     // Should show one of the tab icons or screen titles
     // We'll check for a common element that should be visible
     expect(() => getByText('Dashboard')).not.toThrow();
   });
 
-  it('attempts to unlock with device auth when authenticated and locked on mount', () => {
+  it('attempts to unlock with device auth when authenticated and locked on mount', async () => {
     const unlockWithDeviceAuth = jest.fn();
     mockedUseAuth.mockReturnValue({
       loading: false,
@@ -117,13 +117,13 @@ describe('AppNavigator', () => {
       refreshUser: jest.fn(),
     });
 
-    renderNavigator();
+    await renderNavigator();
 
     // The useEffect should have called unlockWithDeviceAuth
     expect(unlockWithDeviceAuth).toHaveBeenCalled();
   });
 
-  it('does not attempt to unlock when not locked', () => {
+  it('does not attempt to unlock when not locked', async () => {
     const unlockWithDeviceAct = jest.fn();
     mockedUseAuth.mockReturnValue({
       loading: false,
@@ -137,13 +137,13 @@ describe('AppNavigator', () => {
       refreshUser: jest.fn(),
     });
 
-    renderNavigator();
+    await renderNavigator();
 
     // Should not call unlock when not locked
     expect(unlockWithDeviceAct).not.toHaveBeenCalled();
   });
 
-  it('does not attempt to unlock when not authenticated', () => {
+  it('does not attempt to unlock when not authenticated', async () => {
     const unlockWithDeviceAuth = jest.fn();
     mockedUseAuth.mockReturnValue({
       loading: false,
@@ -157,7 +157,7 @@ describe('AppNavigator', () => {
       refreshUser: jest.fn(),
     });
 
-    renderNavigator();
+    await renderNavigator();
 
     // Should not call unlock when no user
     expect(unlockWithDeviceAuth).not.toHaveBeenCalled();
