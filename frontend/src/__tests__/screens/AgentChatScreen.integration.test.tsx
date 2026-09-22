@@ -52,28 +52,28 @@ describe('AgentChatScreen disclaimer', () => {
     );
   });
 
-  it('shows the AI disclaimer heading in empty state', () => {
-    const { getByText } = renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />);
+  it('shows the AI disclaimer heading in empty state', async () => {
+    const { getByText } = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />);
 
     expect(getByText('AI Assistant Disclaimer')).toBeTruthy();
   });
 
-  it('shows the full warning message about AI limitations', () => {
-    const { getByText } = renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />);
+  it('shows the full warning message about AI limitations', async () => {
+    const { getByText } = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />);
 
     expect(getByText(/not financial advice/i)).toBeTruthy();
     expect(getByText(/AI can hallucinate/i)).toBeTruthy();
     expect(getByText(/do your own research/i)).toBeTruthy();
   });
 
-  it('shows the prompt to ask about portfolio in empty state', () => {
-    const { getByText } = renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />);
+  it('shows the prompt to ask about portfolio in empty state', async () => {
+    const { getByText } = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />);
 
     expect(getByText('Ask me anything about your portfolio...')).toBeTruthy();
   });
 
   it('hides the disclaimer after sending a message', async () => {
-    const { getByText, queryByText, getByPlaceholderText } = renderWithProviders(
+    const { getByText, queryByText, getByPlaceholderText } = await renderWithProviders(
       <AgentChatScreen visible onClose={jest.fn()} />,
     );
 
@@ -82,8 +82,8 @@ describe('AgentChatScreen disclaimer', () => {
 
     // Type a message and trigger submit (send action)
     const input = getByPlaceholderText('Ask about your portfolio...');
-    fireEvent.changeText(input, 'How is my portfolio doing?');
-    fireEvent(input, 'submitEditing');
+    await fireEvent.changeText(input, 'How is my portfolio doing?');
+    await fireEvent(input, 'submitEditing');
 
     // Wait for async sendMessage to resolve and state to update
     await waitFor(() => {
@@ -92,14 +92,14 @@ describe('AgentChatScreen disclaimer', () => {
   });
 
   it('renders tool results in message bubble after streaming', async () => {
-    const { getByText, getByPlaceholderText } = renderWithProviders(
+    const { getByText, getByPlaceholderText } = await renderWithProviders(
       <AgentChatScreen visible onClose={jest.fn()} />,
     );
 
     // Send a message
     const input = getByPlaceholderText('Ask about your portfolio...');
-    fireEvent.changeText(input, 'How is my portfolio?');
-    fireEvent(input, 'submitEditing');
+    await fireEvent.changeText(input, 'How is my portfolio?');
+    await fireEvent(input, 'submitEditing');
 
     // Wait for tool result accordion to appear
     await waitFor(() => {
@@ -112,9 +112,7 @@ describe('AgentChatScreen disclaimer', () => {
     expect(getByText(/get_portfolio_summary/)).toBeTruthy();
   });
 
-  it('does not crash when rendered hidden', () => {
-    expect(() =>
-      renderWithProviders(<AgentChatScreen visible={false} onClose={jest.fn()} />),
-    ).not.toThrow();
+  it('does not crash when rendered hidden', async () => {
+    await renderWithProviders(<AgentChatScreen visible={false} onClose={jest.fn()} />);
   });
 });

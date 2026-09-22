@@ -46,7 +46,7 @@ describe('SettingsScreen', () => {
     );
 
   const renderAndAwaitSwitches = async (overrides?: Parameters<typeof renderWithProviders>[1]) => {
-    const utils = renderScreen(overrides);
+    const utils = await renderScreen(overrides);
     await waitFor(() => expect(deviceAuth.isDeviceAuthAvailable).toHaveBeenCalled());
     const switches = utils.getAllByRole('switch');
     return { ...utils, switches };
@@ -69,7 +69,7 @@ describe('SettingsScreen', () => {
     });
 
     const darkModeSwitch = switches[1];
-    fireEvent(darkModeSwitch, 'valueChange', true);
+    await fireEvent(darkModeSwitch, 'valueChange', true);
 
     expect(setMode).toHaveBeenCalledWith('dark');
   });
@@ -78,7 +78,7 @@ describe('SettingsScreen', () => {
     const { switches } = await renderAndAwaitSwitches();
 
     const deviceAuthSwitch = switches[0];
-    fireEvent(deviceAuthSwitch, 'valueChange', true);
+    await fireEvent(deviceAuthSwitch, 'valueChange', true);
 
     await waitFor(() => expect(deviceAuth.authenticateDevice).toHaveBeenCalled());
     expect(deviceAuth.setDeviceEnabled).toHaveBeenCalledWith(true);
@@ -90,14 +90,14 @@ describe('SettingsScreen', () => {
 
   it('confirms sign out before calling AuthContext', async () => {
     const signOutUser = jest.fn().mockResolvedValue(undefined);
-    const { getByText } = renderScreen({
+    const { getByText } = await renderScreen({
       providerOverrides: {
         withNavigation: false,
         authValue: { signOutUser },
       },
     });
 
-    fireEvent.press(getByText('Log Out'));
+    await fireEvent.press(getByText('Log Out'));
 
     const buttons = findAlertButtons('Sign Out');
     expect(buttons).toBeDefined();
@@ -111,14 +111,14 @@ describe('SettingsScreen', () => {
   });
 
   it('deletes all local data when confirmation accepted', async () => {
-    const { getByText } = renderScreen({
+    const { getByText } = await renderScreen({
       providerOverrides: {
         withNavigation: false,
         authValue: { userProfile: { uid: 'user-42' } as any },
       },
     });
 
-    fireEvent.press(getByText('Clear All Data'));
+    await fireEvent.press(getByText('Clear All Data'));
 
     const buttons = findAlertButtons('Clear All Data');
     expect(buttons).toBeDefined();
@@ -147,21 +147,21 @@ describe('SettingsScreen', () => {
     });
 
     const darkModeSwitch = switches[1];
-    fireEvent(darkModeSwitch, 'valueChange', false);
+    await fireEvent(darkModeSwitch, 'valueChange', false);
 
     expect(setMode).toHaveBeenCalledWith('light');
   });
 
   it('cancels sign out when cancel is pressed', async () => {
     const signOutUser = jest.fn().mockResolvedValue(undefined);
-    const { getByText } = renderScreen({
+    const { getByText } = await renderScreen({
       providerOverrides: {
         withNavigation: false,
         authValue: { signOutUser },
       },
     });
 
-    fireEvent.press(getByText('Log Out'));
+    await fireEvent.press(getByText('Log Out'));
 
     const buttons = findAlertButtons('Sign Out');
     expect(buttons).toBeDefined();
@@ -171,8 +171,8 @@ describe('SettingsScreen', () => {
     expect(signOutUser).not.toHaveBeenCalled();
   });
 
-  it('renders user email in profile section', () => {
-    const { getByText } = renderScreen({
+  it('renders user email in profile section', async () => {
+    const { getByText } = await renderScreen({
       providerOverrides: {
         withNavigation: false,
         authValue: { userProfile: { email: 'user@example.com' } as any },
@@ -194,11 +194,13 @@ describe('SettingsScreen', () => {
   });
 
   it('renders RefreshControl with correct tint color', async () => {
-    const { UNSAFE_getByType } = await renderAndAwaitSwitches();
+    const { root } = await renderAndAwaitSwitches();
 
-    const { RefreshControl } = require('react-native');
-    const rc = UNSAFE_getByType(RefreshControl);
-    expect(rc).toBeTruthy();
+    // v14 host tree: RefreshControl props live on RCTScrollView.refreshControl element
+    const sv = root?.queryAll((el) => 'refreshControl' in el.props)[0]!;
+    expect(sv).toBeTruthy();
+    const rc = sv.props.refreshControl;
     expect(rc.props.refreshing).toBe(false);
+    expect(rc.props.tintColor).toBe('#10b981');
   });
 });

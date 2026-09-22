@@ -76,7 +76,7 @@ describe('DiversificationScoreScreen', () => {
       () => new Promise((resolve) => setTimeout(() => resolve(mockData), 50)),
     );
 
-    const { getByText, queryByText } = renderWithProviders(<DiversificationScoreScreen />, {
+    const { getByText, queryByText } = await renderWithProviders(<DiversificationScoreScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -97,7 +97,7 @@ describe('DiversificationScoreScreen', () => {
   it('renders factor breakdown bars', async () => {
     mockedGetDiversificationScore.mockResolvedValue(mockData);
 
-    const { findByText } = renderWithProviders(<DiversificationScoreScreen />, {
+    const { findByText } = await renderWithProviders(<DiversificationScoreScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -111,7 +111,7 @@ describe('DiversificationScoreScreen', () => {
   it('displays recommendations', async () => {
     mockedGetDiversificationScore.mockResolvedValue(mockData);
 
-    const { findByText } = renderWithProviders(<DiversificationScoreScreen />, {
+    const { findByText } = await renderWithProviders(<DiversificationScoreScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -125,7 +125,7 @@ describe('DiversificationScoreScreen', () => {
   it('shows factor info text', async () => {
     mockedGetDiversificationScore.mockResolvedValue(mockData);
 
-    const { findByText } = renderWithProviders(<DiversificationScoreScreen />, {
+    const { findByText } = await renderWithProviders(<DiversificationScoreScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -136,7 +136,7 @@ describe('DiversificationScoreScreen', () => {
   it('shows error state and retries', async () => {
     mockedGetDiversificationScore.mockRejectedValueOnce(new Error('Failed to load'));
 
-    const { findByText, getByText } = renderWithProviders(<DiversificationScoreScreen />, {
+    const { findByText, getByText } = await renderWithProviders(<DiversificationScoreScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -144,7 +144,7 @@ describe('DiversificationScoreScreen', () => {
 
     // Retry succeeds
     mockedGetDiversificationScore.mockResolvedValueOnce(mockData);
-    fireEvent.press(getByText('Retry'));
+    await fireEvent.press(getByText('Retry'));
 
     await waitFor(() => {
       expect(getByText('Diversification Score')).toBeTruthy();
@@ -154,7 +154,7 @@ describe('DiversificationScoreScreen', () => {
   it('shows empty state when no data', async () => {
     mockedGetDiversificationScore.mockResolvedValue(null as any);
 
-    const { findByText } = renderWithProviders(<DiversificationScoreScreen />, {
+    const { findByText } = await renderWithProviders(<DiversificationScoreScreen />, {
       providerOverrides: { withNavigation: false },
     });
 

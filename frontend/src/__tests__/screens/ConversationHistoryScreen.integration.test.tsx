@@ -78,19 +78,19 @@ describe('ConversationHistoryScreen', () => {
     );
 
   it('renders the modal with title', async () => {
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
     await waitFor(() => expect(getByText('History')).toBeTruthy());
   });
 
   it('shows close button and calls onClose when pressed', async () => {
-    const { getByLabelText } = renderScreen();
+    const { getByLabelText } = await renderScreen();
     await waitFor(() => expect(getByLabelText('Close history')).toBeTruthy());
-    fireEvent.press(getByLabelText('Close history'));
+    await fireEvent.press(getByLabelText('Close history'));
     expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
   it('calls onNewChat and onClose when New Chat button pressed', async () => {
-    const { getByLabelText } = renderWithProviders(
+    const { getByLabelText } = await renderWithProviders(
       <ConversationHistoryScreen
         visible
         onClose={mockOnClose}
@@ -100,13 +100,13 @@ describe('ConversationHistoryScreen', () => {
       { providerOverrides: { withNavigation: false } },
     );
     await waitFor(() => expect(getByLabelText('New chat')).toBeTruthy());
-    fireEvent.press(getByLabelText('New chat'));
+    await fireEvent.press(getByLabelText('New chat'));
     expect(mockOnNewChat).toHaveBeenCalledTimes(1);
     expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
   it('loads and displays a list of conversations', async () => {
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
     await waitFor(() => expect(getByText('Portfolio Review')).toBeTruthy());
     expect(getByText('Market Analysis')).toBeTruthy();
     expect(getByText('3 messages')).toBeTruthy();
@@ -114,23 +114,23 @@ describe('ConversationHistoryScreen', () => {
   });
 
   it('shows "New Conversation" when title is null', async () => {
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
     await waitFor(() => expect(getByText('New Conversation')).toBeTruthy());
   });
 
   it('calls onSelectConversation with conversation id when tapped', async () => {
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
     await waitFor(() => expect(getByText('Portfolio Review')).toBeTruthy());
-    fireEvent.press(getByText('Portfolio Review'));
+    await fireEvent.press(getByText('Portfolio Review'));
     expect(mockOnSelectConversation).toHaveBeenCalledWith('conv-1');
   });
 
   it('deletes a conversation on long press', async () => {
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
     await waitFor(() => expect(getByText('Market Analysis')).toBeTruthy());
 
     // Long-press the first conversation item to trigger delete
-    fireEvent(getByText('Portfolio Review'), 'longPress');
+    await fireEvent(getByText('Portfolio Review'), 'longPress');
 
     await waitFor(() => {
       expect(mockedAgentService.deleteConversation).toHaveBeenCalledWith('conv-1');
@@ -141,13 +141,13 @@ describe('ConversationHistoryScreen', () => {
 
   it('shows empty state when no conversations exist', async () => {
     mockedAgentService.listConversations.mockResolvedValue([]);
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
     await waitFor(() => expect(getByText('No conversations yet')).toBeTruthy());
     expect(getByText('Start a chat with the AI assistant to begin.')).toBeTruthy();
   });
 
-  it('does not render when visible is false', () => {
-    const { queryByText } = renderScreen(false);
+  it('does not render when visible is false', async () => {
+    const { queryByText } = await renderScreen(false);
     expect(queryByText('History')).toBeNull();
   });
 });

@@ -72,17 +72,17 @@ describe('SignUpScreen', () => {
     mockedPrompt.mockResolvedValue(true as any);
   });
 
-  it('shows validation alert when email format is invalid', () => {
-    const { getByPlaceholderText, getByText } = renderWithProviders(<SignUpScreen />, {
+  it('shows validation alert when email format is invalid', async () => {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<SignUpScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
-    fireEvent.changeText(getByPlaceholderText('First Name'), 'Jane');
-    fireEvent.changeText(getByPlaceholderText('Email'), 'invalid-email');
-    fireEvent.changeText(getByPlaceholderText('Password'), 'secret1');
-    fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'secret1');
+    await fireEvent.changeText(getByPlaceholderText('First Name'), 'Jane');
+    await fireEvent.changeText(getByPlaceholderText('Email'), 'invalid-email');
+    await fireEvent.changeText(getByPlaceholderText('Password'), 'secret1');
+    await fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'secret1');
 
-    fireEvent.press(getByText('Create Account'));
+    await fireEvent.press(getByText('Create Account'));
 
     expect(alertSpy).toHaveBeenCalledWith('Error', 'Please enter a valid email address');
     expect(mockedSignUp).not.toHaveBeenCalled();
@@ -90,19 +90,19 @@ describe('SignUpScreen', () => {
 
   it('creates account, starts grace period, and prompts device auth enrollment', async () => {
     const startLockGrace = jest.fn();
-    const { getByPlaceholderText, getByText } = renderWithProviders(<SignUpScreen />, {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<SignUpScreen />, {
       providerOverrides: {
         withNavigation: false,
         authValue: { startLockGrace },
       },
     });
 
-    fireEvent.changeText(getByPlaceholderText('First Name'), 'Jane');
-    fireEvent.changeText(getByPlaceholderText('Email'), 'jane@example.com');
-    fireEvent.changeText(getByPlaceholderText('Password'), 'secret1');
-    fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'secret1');
+    await fireEvent.changeText(getByPlaceholderText('First Name'), 'Jane');
+    await fireEvent.changeText(getByPlaceholderText('Email'), 'jane@example.com');
+    await fireEvent.changeText(getByPlaceholderText('Password'), 'secret1');
+    await fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'secret1');
 
-    fireEvent.press(getByText('Create Account'));
+    await fireEvent.press(getByText('Create Account'));
 
     await waitFor(() => {
       expect(mockedSignUp).toHaveBeenCalledWith({
@@ -116,57 +116,57 @@ describe('SignUpScreen', () => {
     expect(mockedPrompt).toHaveBeenCalledWith('jane@example.com', 'secret1');
   });
 
-  it('navigates back to login from footer CTA', () => {
-    const { getByText } = renderWithProviders(<SignUpScreen />, {
+  it('navigates back to login from footer CTA', async () => {
+    const { getByText } = await renderWithProviders(<SignUpScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
-    fireEvent.press(getByText('Login'));
+    await fireEvent.press(getByText('Login'));
 
     expect(navigateSpy).toHaveBeenCalledWith('Login');
   });
 
-  it('shows alert when first name is empty', () => {
-    const { getByPlaceholderText, getByText } = renderWithProviders(<SignUpScreen />, {
+  it('shows alert when first name is empty', async () => {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<SignUpScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
-    fireEvent.changeText(getByPlaceholderText('Email'), 'test@example.com');
-    fireEvent.changeText(getByPlaceholderText('Password'), 'secret1');
-    fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'secret1');
+    await fireEvent.changeText(getByPlaceholderText('Email'), 'test@example.com');
+    await fireEvent.changeText(getByPlaceholderText('Password'), 'secret1');
+    await fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'secret1');
 
-    fireEvent.press(getByText('Create Account'));
+    await fireEvent.press(getByText('Create Account'));
 
     expect(alertSpy).toHaveBeenCalledWith('Error', 'Please fill in all fields correctly');
     expect(mockedSignUp).not.toHaveBeenCalled();
   });
 
-  it('shows alert when password is empty', () => {
-    const { getByPlaceholderText, getByText } = renderWithProviders(<SignUpScreen />, {
+  it('shows alert when password is empty', async () => {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<SignUpScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
-    fireEvent.changeText(getByPlaceholderText('First Name'), 'Jane');
-    fireEvent.changeText(getByPlaceholderText('Email'), 'test@example.com');
-    fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'secret1');
+    await fireEvent.changeText(getByPlaceholderText('First Name'), 'Jane');
+    await fireEvent.changeText(getByPlaceholderText('Email'), 'test@example.com');
+    await fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'secret1');
 
-    fireEvent.press(getByText('Create Account'));
+    await fireEvent.press(getByText('Create Account'));
 
     expect(alertSpy).toHaveBeenCalledWith('Error', 'Please fill in all fields correctly');
     expect(mockedSignUp).not.toHaveBeenCalled();
   });
 
-  it('shows alert when passwords do not match', () => {
-    const { getByPlaceholderText, getByText } = renderWithProviders(<SignUpScreen />, {
+  it('shows alert when passwords do not match', async () => {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<SignUpScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
-    fireEvent.changeText(getByPlaceholderText('First Name'), 'Jane');
-    fireEvent.changeText(getByPlaceholderText('Email'), 'test@example.com');
-    fireEvent.changeText(getByPlaceholderText('Password'), 'secret1');
-    fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'different');
+    await fireEvent.changeText(getByPlaceholderText('First Name'), 'Jane');
+    await fireEvent.changeText(getByPlaceholderText('Email'), 'test@example.com');
+    await fireEvent.changeText(getByPlaceholderText('Password'), 'secret1');
+    await fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'different');
 
-    fireEvent.press(getByText('Create Account'));
+    await fireEvent.press(getByText('Create Account'));
 
     expect(alertSpy).toHaveBeenCalledWith('Error', 'Please fill in all fields correctly');
     expect(mockedSignUp).not.toHaveBeenCalled();
@@ -175,15 +175,15 @@ describe('SignUpScreen', () => {
   describe('API error handling', () => {
     it('shows specific error for 409 conflict', async () => {
       mockedSignUp.mockRejectedValue(new ApiError(409, 'Conflict'));
-      const { getByPlaceholderText, getByText } = renderWithProviders(<SignUpScreen />, {
+      const { getByPlaceholderText, getByText } = await renderWithProviders(<SignUpScreen />, {
         providerOverrides: { withNavigation: false },
       });
 
-      fireEvent.changeText(getByPlaceholderText('First Name'), 'Jane');
-      fireEvent.changeText(getByPlaceholderText('Email'), 'jane@example.com');
-      fireEvent.changeText(getByPlaceholderText('Password'), 'secret1');
-      fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'secret1');
-      fireEvent.press(getByText('Create Account'));
+      await fireEvent.changeText(getByPlaceholderText('First Name'), 'Jane');
+      await fireEvent.changeText(getByPlaceholderText('Email'), 'jane@example.com');
+      await fireEvent.changeText(getByPlaceholderText('Password'), 'secret1');
+      await fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'secret1');
+      await fireEvent.press(getByText('Create Account'));
 
       await waitFor(() => {
         expect(alertSpy).toHaveBeenCalledWith(
@@ -195,15 +195,15 @@ describe('SignUpScreen', () => {
 
     it('shows specific error for 422 validation failure', async () => {
       mockedSignUp.mockRejectedValue(new ApiError(422, 'Validation Failed'));
-      const { getByPlaceholderText, getByText } = renderWithProviders(<SignUpScreen />, {
+      const { getByPlaceholderText, getByText } = await renderWithProviders(<SignUpScreen />, {
         providerOverrides: { withNavigation: false },
       });
 
-      fireEvent.changeText(getByPlaceholderText('First Name'), 'Jane');
-      fireEvent.changeText(getByPlaceholderText('Email'), 'jane@example.com');
-      fireEvent.changeText(getByPlaceholderText('Password'), 'secret1');
-      fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'secret1');
-      fireEvent.press(getByText('Create Account'));
+      await fireEvent.changeText(getByPlaceholderText('First Name'), 'Jane');
+      await fireEvent.changeText(getByPlaceholderText('Email'), 'jane@example.com');
+      await fireEvent.changeText(getByPlaceholderText('Password'), 'secret1');
+      await fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'secret1');
+      await fireEvent.press(getByText('Create Account'));
 
       await waitFor(() => {
         expect(alertSpy).toHaveBeenCalledWith(
@@ -215,15 +215,15 @@ describe('SignUpScreen', () => {
 
     it('shows error message for other ApiError status codes', async () => {
       mockedSignUp.mockRejectedValue(new ApiError(500, 'Internal Server Error'));
-      const { getByPlaceholderText, getByText } = renderWithProviders(<SignUpScreen />, {
+      const { getByPlaceholderText, getByText } = await renderWithProviders(<SignUpScreen />, {
         providerOverrides: { withNavigation: false },
       });
 
-      fireEvent.changeText(getByPlaceholderText('First Name'), 'Jane');
-      fireEvent.changeText(getByPlaceholderText('Email'), 'jane@example.com');
-      fireEvent.changeText(getByPlaceholderText('Password'), 'secret1');
-      fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'secret1');
-      fireEvent.press(getByText('Create Account'));
+      await fireEvent.changeText(getByPlaceholderText('First Name'), 'Jane');
+      await fireEvent.changeText(getByPlaceholderText('Email'), 'jane@example.com');
+      await fireEvent.changeText(getByPlaceholderText('Password'), 'secret1');
+      await fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'secret1');
+      await fireEvent.press(getByText('Create Account'));
 
       await waitFor(() => {
         expect(alertSpy).toHaveBeenCalledWith('Sign Up Error', 'Internal Server Error');
@@ -232,15 +232,15 @@ describe('SignUpScreen', () => {
 
     it('shows generic error for non-ApiError exceptions', async () => {
       mockedSignUp.mockRejectedValue(new Error('Network Error'));
-      const { getByPlaceholderText, getByText } = renderWithProviders(<SignUpScreen />, {
+      const { getByPlaceholderText, getByText } = await renderWithProviders(<SignUpScreen />, {
         providerOverrides: { withNavigation: false },
       });
 
-      fireEvent.changeText(getByPlaceholderText('First Name'), 'Jane');
-      fireEvent.changeText(getByPlaceholderText('Email'), 'jane@example.com');
-      fireEvent.changeText(getByPlaceholderText('Password'), 'secret1');
-      fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'secret1');
-      fireEvent.press(getByText('Create Account'));
+      await fireEvent.changeText(getByPlaceholderText('First Name'), 'Jane');
+      await fireEvent.changeText(getByPlaceholderText('Email'), 'jane@example.com');
+      await fireEvent.changeText(getByPlaceholderText('Password'), 'secret1');
+      await fireEvent.changeText(getByPlaceholderText('Confirm Password'), 'secret1');
+      await fireEvent.press(getByText('Create Account'));
 
       await waitFor(() => {
         expect(alertSpy).toHaveBeenCalledWith('Sign Up Error', 'An error occurred during sign up');
@@ -249,29 +249,29 @@ describe('SignUpScreen', () => {
   });
 
   describe('handleBack navigation', () => {
-    it('calls goBack when canGoBack returns true', () => {
-      const { getByLabelText } = renderWithProviders(<SignUpScreen />, {
+    it('calls goBack when canGoBack returns true', async () => {
+      const { getByLabelText } = await renderWithProviders(<SignUpScreen />, {
         providerOverrides: { withNavigation: false },
       });
 
-      fireEvent.press(getByLabelText('Go back'));
+      await fireEvent.press(getByLabelText('Go back'));
 
       expect(goBackSpy).toHaveBeenCalled();
       expect(navigateSpy).not.toHaveBeenCalled();
     });
 
-    it('navigates to Login when canGoBack returns false', () => {
+    it('navigates to Login when canGoBack returns false', async () => {
       mockedUseNavigation.mockReturnValueOnce({
         navigate: navigateSpy,
         goBack: goBackSpy,
         canGoBack: () => false,
       } as any);
 
-      const { getByLabelText } = renderWithProviders(<SignUpScreen />, {
+      const { getByLabelText } = await renderWithProviders(<SignUpScreen />, {
         providerOverrides: { withNavigation: false },
       });
 
-      fireEvent.press(getByLabelText('Go back'));
+      await fireEvent.press(getByLabelText('Go back'));
 
       expect(navigateSpy).toHaveBeenCalledWith('Login');
       expect(goBackSpy).not.toHaveBeenCalled();

@@ -46,14 +46,14 @@ describe('SummaryScreen', () => {
     } as any);
   });
 
-  it('shows onboarding empty state when no receipts exist and navigates to Scan on CTA press', () => {
-    const { getByText } = renderWithProviders(<SummaryScreen />, {
+  it('shows onboarding empty state when no receipts exist and navigates to Scan on CTA press', async () => {
+    const { getByText } = await renderWithProviders(<SummaryScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     expect(getByText('No Data Yet')).toBeTruthy();
 
-    fireEvent.press(getByText('Scan Your First Receipt'));
+    await fireEvent.press(getByText('Scan Your First Receipt'));
 
     expect(navigateSpy).toHaveBeenCalledWith('Scan');
     expect(mockedSubscribe).toHaveBeenCalledWith('historical-updated', expect.any(Function));
@@ -94,7 +94,7 @@ describe('SummaryScreen', () => {
     ];
     mockedUseReceipts.mockReturnValue({ receipts, loading: false, error: null } as any);
 
-    const { getByText, findByText } = renderWithProviders(<SummaryScreen />, {
+    const { getByText, findByText } = await renderWithProviders(<SummaryScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -104,14 +104,14 @@ describe('SummaryScreen', () => {
       expect(getByText('Receipts Scanned')).toBeTruthy();
     });
 
-    fireEvent.press(getByText('Your Spending Could Be Investing'));
+    await fireEvent.press(getByText('Your Spending Could Be Investing'));
 
     await findByText(/Instead of 3 receipts/i);
   });
 
-  it('shows loading indicator when receipts are loading', () => {
+  it('shows loading indicator when receipts are loading', async () => {
     mockedUseReceipts.mockReturnValue({ receipts: [], loading: true, error: null } as any);
-    const { queryByText, toJSON } = renderWithProviders(<SummaryScreen />, {
+    const { queryByText, toJSON } = await renderWithProviders(<SummaryScreen />, {
       providerOverrides: { withNavigation: false },
     });
     expect(queryByText('No Data Yet')).toBeNull();
@@ -132,11 +132,11 @@ describe('SummaryScreen', () => {
       },
     ];
     mockedUseReceipts.mockReturnValue({ receipts, loading: false, error: null } as any);
-    const { getByText, findByText } = renderWithProviders(<SummaryScreen />, {
+    const { getByText, findByText } = await renderWithProviders(<SummaryScreen />, {
       providerOverrides: { withNavigation: false },
     });
     await waitFor(() => expect(getByText('Total Money Spent')).toBeTruthy());
-    fireEvent.press(getByText('Compound Interest'));
+    await fireEvent.press(getByText('Compound Interest'));
     await findByText(/Earnings on your initial investment/);
   });
 
@@ -174,15 +174,15 @@ describe('SummaryScreen', () => {
       },
     ];
     mockedUseReceipts.mockReturnValue({ receipts, loading: false, error: null } as any);
-    const { getByText, queryByText, findByText } = renderWithProviders(<SummaryScreen />, {
+    const { getByText, queryByText, findByText } = await renderWithProviders(<SummaryScreen />, {
       providerOverrides: { withNavigation: false },
     });
     await waitFor(() => expect(getByText('Total Money Spent')).toBeTruthy());
     // Expand first insight — description is always visible, expandedContent has bullets
-    fireEvent.press(getByText('Your Spending Could Be Investing'));
+    await fireEvent.press(getByText('Your Spending Could Be Investing'));
     await findByText(/Instead of 3 receipts/); // only in expandedContent
     // Click second insight — first collapses, second expands
-    fireEvent.press(getByText('Small Purchases Add Up'));
+    await fireEvent.press(getByText('Small Purchases Add Up'));
     await waitFor(() => expect(queryByText(/Instead of 3 receipts/)).toBeNull());
     await findByText(/Small frequent expenses/); // second insight's expandedContent
   });

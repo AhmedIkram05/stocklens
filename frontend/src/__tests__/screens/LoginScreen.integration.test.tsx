@@ -57,17 +57,17 @@ describe('LoginScreen', () => {
 
   it('performs sign-in flow, starts lock grace, and prompts device auth enrollment', async () => {
     const startLockGrace = jest.fn();
-    const { getByPlaceholderText, getByText } = renderWithProviders(<LoginScreen />, {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<LoginScreen />, {
       providerOverrides: {
         withNavigation: false,
         authValue: { startLockGrace },
       },
     });
 
-    fireEvent.changeText(getByPlaceholderText('Email'), 'demo@example.com');
-    fireEvent.changeText(getByPlaceholderText('Password'), 's3cret!');
+    await fireEvent.changeText(getByPlaceholderText('Email'), 'demo@example.com');
+    await fireEvent.changeText(getByPlaceholderText('Password'), 's3cret!');
 
-    fireEvent.press(getByText('Login'));
+    await fireEvent.press(getByText('Login'));
 
     await waitFor(() => {
       expect(mockedSignIn).toHaveBeenCalledWith({ email: 'demo@example.com', password: 's3cret!' });
@@ -77,23 +77,23 @@ describe('LoginScreen', () => {
     expect(mockedPrompt).toHaveBeenCalledWith('demo@example.com', 's3cret!');
   });
 
-  it('navigates to SignUp screen from footer CTA', () => {
-    const { getByText } = renderWithProviders(<LoginScreen />, {
+  it('navigates to SignUp screen from footer CTA', async () => {
+    const { getByText } = await renderWithProviders(<LoginScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
-    fireEvent.press(getByText('Sign Up'));
+    await fireEvent.press(getByText('Sign Up'));
 
     expect(navigateSpy).toHaveBeenCalledWith('SignUp');
   });
 
-  it('shows missing information alert when password is empty on submit', () => {
-    const { getByPlaceholderText, getByText } = renderWithProviders(<LoginScreen />, {
+  it('shows missing information alert when password is empty on submit', async () => {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<LoginScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
-    fireEvent.changeText(getByPlaceholderText('Email'), 'demo@example.com');
-    fireEvent.press(getByText('Login'));
+    await fireEvent.changeText(getByPlaceholderText('Email'), 'demo@example.com');
+    await fireEvent.press(getByText('Login'));
 
     expect(alertSpy).toHaveBeenCalledWith(
       'Missing information',
@@ -102,12 +102,12 @@ describe('LoginScreen', () => {
     expect(mockedSignIn).not.toHaveBeenCalled();
   });
 
-  it('shows missing information alert when both fields are empty on submit', () => {
-    const { getByText } = renderWithProviders(<LoginScreen />, {
+  it('shows missing information alert when both fields are empty on submit', async () => {
+    const { getByText } = await renderWithProviders(<LoginScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
-    fireEvent.press(getByText('Login'));
+    await fireEvent.press(getByText('Login'));
 
     expect(alertSpy).toHaveBeenCalledWith(
       'Missing information',
@@ -118,13 +118,13 @@ describe('LoginScreen', () => {
 
   it('shows validation error for invalid email format from API', async () => {
     mockedSignIn.mockRejectedValue(new ApiError(422, 'Please enter a valid email and password.'));
-    const { getByPlaceholderText, getByText } = renderWithProviders(<LoginScreen />, {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<LoginScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
-    fireEvent.changeText(getByPlaceholderText('Email'), 'invalid');
-    fireEvent.changeText(getByPlaceholderText('Password'), 'pw');
-    fireEvent.press(getByText('Login'));
+    await fireEvent.changeText(getByPlaceholderText('Email'), 'invalid');
+    await fireEvent.changeText(getByPlaceholderText('Password'), 'pw');
+    await fireEvent.press(getByText('Login'));
 
     await waitFor(() => {
       expect(alertSpy).toHaveBeenCalledWith(
@@ -136,13 +136,13 @@ describe('LoginScreen', () => {
 
   it('shows generic error message on API failure', async () => {
     mockedSignIn.mockRejectedValue(new Error('Network request failed'));
-    const { getByPlaceholderText, getByText } = renderWithProviders(<LoginScreen />, {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<LoginScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
-    fireEvent.changeText(getByPlaceholderText('Email'), 'demo@example.com');
-    fireEvent.changeText(getByPlaceholderText('Password'), 's3cret!');
-    fireEvent.press(getByText('Login'));
+    await fireEvent.changeText(getByPlaceholderText('Email'), 'demo@example.com');
+    await fireEvent.changeText(getByPlaceholderText('Password'), 's3cret!');
+    await fireEvent.press(getByText('Login'));
 
     await waitFor(() => {
       expect(alertSpy).toHaveBeenCalledWith(
@@ -154,13 +154,13 @@ describe('LoginScreen', () => {
 
   it('shows 401 error message for invalid credentials', async () => {
     mockedSignIn.mockRejectedValue(new ApiError(401, 'Invalid email or password.'));
-    const { getByPlaceholderText, getByText } = renderWithProviders(<LoginScreen />, {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<LoginScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
-    fireEvent.changeText(getByPlaceholderText('Email'), 'wrong@example.com');
-    fireEvent.changeText(getByPlaceholderText('Password'), 'wrong');
-    fireEvent.press(getByText('Login'));
+    await fireEvent.changeText(getByPlaceholderText('Email'), 'wrong@example.com');
+    await fireEvent.changeText(getByPlaceholderText('Password'), 'wrong');
+    await fireEvent.press(getByText('Login'));
 
     await waitFor(() => {
       expect(alertSpy).toHaveBeenCalledWith(
@@ -170,25 +170,25 @@ describe('LoginScreen', () => {
     });
   });
 
-  it('renders KeyboardAvoidingView with correct behavior', () => {
-    const { UNSAFE_getByType } = renderWithProviders(<LoginScreen />, {
+  it('renders KeyboardAvoidingView with correct behavior', async () => {
+    const { root } = await renderWithProviders(<LoginScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     const { KeyboardAvoidingView } = require('react-native');
-    const kbView = UNSAFE_getByType(KeyboardAvoidingView);
+    const kbView = root?.queryAll((el) => el.props.behavior !== undefined)[0]!;
     expect(kbView).toBeTruthy();
     expect(kbView.props.behavior).toBe('padding');
   });
 
   it('disables forgot password button after press with 30s cooldown', async () => {
     jest.useFakeTimers();
-    const { getByText, getByPlaceholderText } = renderWithProviders(<LoginScreen />, {
+    const { getByText, getByPlaceholderText } = await renderWithProviders(<LoginScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
-    fireEvent.changeText(getByPlaceholderText('Email'), 'test@example.com');
-    fireEvent.press(getByText('Forgot password?'));
+    await fireEvent.changeText(getByPlaceholderText('Email'), 'test@example.com');
+    await fireEvent.press(getByText('Forgot password?'));
 
     const forgotButton = getByText('Forgot password?');
     expect(forgotButton).toBeTruthy();
@@ -197,12 +197,12 @@ describe('LoginScreen', () => {
     jest.useRealTimers();
   });
 
-  it('shows email required alert when forgot password pressed without email', () => {
-    const { getByText } = renderWithProviders(<LoginScreen />, {
+  it('shows email required alert when forgot password pressed without email', async () => {
+    const { getByText } = await renderWithProviders(<LoginScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
-    fireEvent.press(getByText('Forgot password?'));
+    await fireEvent.press(getByText('Forgot password?'));
 
     expect(alertSpy).toHaveBeenCalledWith(
       'Email required',
@@ -210,8 +210,8 @@ describe('LoginScreen', () => {
     );
   });
 
-  it('renders AuthFooter with sign up prompt', () => {
-    const { getByText } = renderWithProviders(<LoginScreen />, {
+  it('renders AuthFooter with sign up prompt', async () => {
+    const { getByText } = await renderWithProviders(<LoginScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -219,8 +219,8 @@ describe('LoginScreen', () => {
     expect(getByText('Sign Up')).toBeTruthy();
   });
 
-  it('renders logo and welcome text', () => {
-    const { getByText } = renderWithProviders(<LoginScreen />, {
+  it('renders logo and welcome text', async () => {
+    const { getByText } = await renderWithProviders(<LoginScreen />, {
       providerOverrides: { withNavigation: false },
     });
 

@@ -59,8 +59,8 @@ describe('AgentChatScreen comprehensive', () => {
     } as any);
   });
 
-  it('renders empty state with disclaimer when no messages', () => {
-    const result = renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
+  it('renders empty state with disclaimer when no messages', async () => {
+    const result = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
       providerOverrides: { withNavigation: false },
     });
     const { getByText } = result;
@@ -73,7 +73,7 @@ describe('AgentChatScreen comprehensive', () => {
   });
 
   it('hides disclaimer after sending a message', async () => {
-    const result = renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
+    const result = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
       providerOverrides: { withNavigation: false },
     });
     const { getByText, queryByText, getByPlaceholderText } = result;
@@ -83,8 +83,8 @@ describe('AgentChatScreen comprehensive', () => {
 
     // Type a message and trigger submit
     const input = getByPlaceholderText('Ask about your portfolio...');
-    fireEvent.changeText(input, 'How is my portfolio doing?');
-    fireEvent(input, 'submitEditing');
+    await fireEvent.changeText(input, 'How is my portfolio doing?');
+    await fireEvent(input, 'submitEditing');
 
     // Wait for async sendMessage to resolve and state to update
     await waitFor(() => {
@@ -102,13 +102,13 @@ describe('AgentChatScreen comprehensive', () => {
   });
 
   it('shows loading indicator when sending message', async () => {
-    const result = renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
+    const result = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
       providerOverrides: { withNavigation: false },
     });
     const { getByPlaceholderText } = result;
     const input = getByPlaceholderText('Ask about your portfolio...');
-    fireEvent.changeText(input, 'Test message');
-    fireEvent(input, 'submitEditing');
+    await fireEvent.changeText(input, 'Test message');
+    await fireEvent(input, 'submitEditing');
 
     // Should show loading state immediately (input is disabled when loading)
     expect(input.props.editable).toBe(false);
@@ -118,29 +118,29 @@ describe('AgentChatScreen comprehensive', () => {
     });
   });
 
-  it('does not call sendMessage when input is empty', () => {
-    const result = renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
+  it('does not call sendMessage when input is empty', async () => {
+    const result = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
       providerOverrides: { withNavigation: false },
     });
     const { getByPlaceholderText } = result as any;
     const input = getByPlaceholderText('Ask about your portfolio...');
-    fireEvent.changeText(input, ''); // Empty input
+    await fireEvent.changeText(input, ''); // Empty input
 
     // Press submit - should not call sendMessage
-    fireEvent(input, 'submitEditing');
+    await fireEvent(input, 'submitEditing');
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it('shows error message when sendMessage fails', async () => {
     mockSendMessage.mockRejectedValueOnce(new Error('Network error'));
 
-    const result = renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
+    const result = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
       providerOverrides: { withNavigation: false },
     });
     const { getByPlaceholderText, getByText } = result as any;
     const input = getByPlaceholderText('Ask about your portfolio...');
-    fireEvent.changeText(input, 'Test message');
-    fireEvent(input, 'submitEditing');
+    await fireEvent.changeText(input, 'Test message');
+    await fireEvent(input, 'submitEditing');
 
     await waitFor(() => {
       expect(getByText(/sorry, something went wrong/i)).toBeTruthy();
@@ -148,13 +148,13 @@ describe('AgentChatScreen comprehensive', () => {
   });
 
   it('adds user message immediately when sending', async () => {
-    const result = renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
+    const result = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
       providerOverrides: { withNavigation: false },
     });
     const { getByText, getByPlaceholderText } = result;
     const input = getByPlaceholderText('Ask about your portfolio...');
-    fireEvent.changeText(input, 'Hello AI');
-    fireEvent(input, 'submitEditing');
+    await fireEvent.changeText(input, 'Hello AI');
+    await fireEvent(input, 'submitEditing');
 
     // User message should appear immediately
     await waitFor(() => {
@@ -187,15 +187,15 @@ describe('AgentChatScreen comprehensive', () => {
       },
     );
 
-    const result = renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
+    const result = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
       providerOverrides: { withNavigation: false },
     });
     const { getByText } = result;
     // Access getByPlaceholderText via bracket notation
     const getByPlaceholderToken = (result as any)['getByPlaceholderText'];
     const input = getByPlaceholderToken('Ask about your portfolio...');
-    fireEvent.changeText(input, 'Hi');
-    fireEvent(input, 'submitEditing');
+    await fireEvent.changeText(input, 'Hi');
+    await fireEvent(input, 'submitEditing');
 
     // Wait for streaming to complete
     await waitFor(() => {
@@ -204,16 +204,16 @@ describe('AgentChatScreen comprehensive', () => {
   });
 
   it('clears input after sending message', async () => {
-    const result = renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
+    const result = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
       providerOverrides: { withNavigation: false },
     });
     // Access getByPlaceholderText via bracket notation
     const getByPlaceholderText = (result as any)['getByPlaceholderText'];
     const input = getByPlaceholderText('Ask about your portfolio...');
-    fireEvent.changeText(input, 'Test message');
+    await fireEvent.changeText(input, 'Test message');
     expect(input.props.value).toBe('Test message');
 
-    fireEvent(input, 'submitEditing');
+    await fireEvent(input, 'submitEditing');
 
     // Input should be cleared after sending
     await waitFor(() => {
@@ -234,7 +234,7 @@ describe('AgentChatScreen comprehensive', () => {
         traceId: 'trace-2',
       }); // Second message
 
-    const result = renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
+    const result = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
       providerOverrides: { withNavigation: false },
     });
     // Access getByPlaceholderText via bracket notation
@@ -242,15 +242,15 @@ describe('AgentChatScreen comprehensive', () => {
     const input = getByPlaceholderText('Ask about your portfolio...');
 
     // Send first message
-    fireEvent.changeText(input, 'First message');
-    fireEvent(input, 'submitEditing');
+    await fireEvent.changeText(input, 'First message');
+    await fireEvent(input, 'submitEditing');
     await waitFor(() => {
       expect(mockSendMessage).toHaveBeenCalledTimes(1);
     });
 
     // Send second message
-    fireEvent.changeText(input, 'Second message');
-    fireEvent(input, 'submitEditing');
+    await fireEvent.changeText(input, 'Second message');
+    await fireEvent(input, 'submitEditing');
     await waitFor(() => {
       expect(mockSendMessage).toHaveBeenCalledTimes(2);
     });
@@ -267,16 +267,14 @@ describe('AgentChatScreen comprehensive', () => {
     );
   });
 
-  it('does not crash when rendered hidden', () => {
-    expect(() =>
-      renderWithProviders(<AgentChatScreen visible={false} onClose={jest.fn()} />),
-    ).not.toThrow();
+  it('does not crash when rendered hidden', async () => {
+    await renderWithProviders(<AgentChatScreen visible={false} onClose={jest.fn()} />);
   });
 
   // ── New Chat button ───────────────────────────────────────────────────────
 
-  it('renders New Chat button in header', () => {
-    const { getByLabelText } = renderWithProviders(
+  it('renders New Chat button in header', async () => {
+    const { getByLabelText } = await renderWithProviders(
       <AgentChatScreen visible onClose={jest.fn()} />,
       { providerOverrides: { withNavigation: false } },
     );
@@ -284,15 +282,15 @@ describe('AgentChatScreen comprehensive', () => {
   });
 
   it('shows empty disclaimer again after New Chat clears messages', async () => {
-    const result = renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
+    const result = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
       providerOverrides: { withNavigation: false },
     });
     const { getByPlaceholderText, getByLabelText, queryByText } = result;
     const input = getByPlaceholderText('Ask about your portfolio...');
 
     // Send a message
-    fireEvent.changeText(input, 'Hello');
-    fireEvent(input, 'submitEditing');
+    await fireEvent.changeText(input, 'Hello');
+    await fireEvent(input, 'submitEditing');
 
     await waitFor(() => {
       expect(mockSendMessage).toHaveBeenCalled();
@@ -305,7 +303,7 @@ describe('AgentChatScreen comprehensive', () => {
     expect(queryByText('AI Assistant Disclaimer')).toBeNull();
 
     // Press New Chat
-    fireEvent.press(getByLabelText('New chat'));
+    await fireEvent.press(getByLabelText('New chat'));
 
     // Empty state disclaimer should reappear
     await waitFor(() => {
@@ -316,15 +314,15 @@ describe('AgentChatScreen comprehensive', () => {
   });
 
   it('resets conversationId and conversationTitle on New Chat', async () => {
-    const result = renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
+    const result = await renderWithProviders(<AgentChatScreen visible onClose={jest.fn()} />, {
       providerOverrides: { withNavigation: false },
     });
     const { getByPlaceholderText, getByLabelText, queryByText } = result;
     const input = getByPlaceholderText('Ask about your portfolio...');
 
     // Send a message to trigger conversation title fetch
-    fireEvent.changeText(input, 'Test');
-    fireEvent(input, 'submitEditing');
+    await fireEvent.changeText(input, 'Test');
+    await fireEvent(input, 'submitEditing');
 
     await waitFor(() => {
       expect(mockSendMessage).toHaveBeenCalled();
@@ -335,7 +333,7 @@ describe('AgentChatScreen comprehensive', () => {
     });
 
     // The title subtitle should be gone after New Chat
-    fireEvent.press(getByLabelText('New chat'));
+    await fireEvent.press(getByLabelText('New chat'));
     await waitFor(() => {
       // Messages cleared so disclaimer visible
       expect(queryByText('AI Assistant Disclaimer')).toBeTruthy();
@@ -344,42 +342,42 @@ describe('AgentChatScreen comprehensive', () => {
     expect(queryByText('Test')).toBeNull();
   });
 
-  it('does not error when New Chat is pressed with no messages', () => {
-    const { getByLabelText } = renderWithProviders(
+  it('does not error when New Chat is pressed with no messages', async () => {
+    const { getByLabelText } = await renderWithProviders(
       <AgentChatScreen visible onClose={jest.fn()} />,
       { providerOverrides: { withNavigation: false } },
     );
-    expect(() => fireEvent.press(getByLabelText('New chat'))).not.toThrow();
+    await fireEvent.press(getByLabelText('New chat'));
   });
 
-  it('calls onClose when close button pressed', () => {
+  it('calls onClose when close button pressed', async () => {
     const onClose = jest.fn();
-    const { getByLabelText } = renderWithProviders(<AgentChatScreen visible onClose={onClose} />, {
+    const { getByLabelText } = await renderWithProviders(<AgentChatScreen visible onClose={onClose} />, {
       providerOverrides: { withNavigation: false },
     });
-    fireEvent.press(getByLabelText('Close'));
+    await fireEvent.press(getByLabelText('Close'));
     expect(onClose).toHaveBeenCalled();
   });
 
   it('shows feedback modal on thumbs up and submits comment', async () => {
-    const { getByLabelText, getByText, getByPlaceholderText, findByText } = renderWithProviders(
+    const { getByLabelText, getByText, getByPlaceholderText, findByText } = await renderWithProviders(
       <AgentChatScreen visible onClose={jest.fn()} />,
       { providerOverrides: { withNavigation: false } },
     );
 
     const input = getByPlaceholderText('Ask about your portfolio...');
-    fireEvent.changeText(input, 'How is my portfolio?');
-    fireEvent(input, 'submitEditing');
+    await fireEvent.changeText(input, 'How is my portfolio?');
+    await fireEvent(input, 'submitEditing');
 
     await waitFor(() => {
       expect(getByText('Was this helpful?')).toBeTruthy();
     });
 
-    fireEvent.press(getByLabelText('Thumbs up'));
+    await fireEvent.press(getByLabelText('Thumbs up'));
     expect(getByText('Glad we could help!')).toBeTruthy();
 
-    fireEvent.changeText(getByPlaceholderText('Tell us more (optional)'), 'Great response!');
-    fireEvent.press(getByText('Submit'));
+    await fireEvent.changeText(getByPlaceholderText('Tell us more (optional)'), 'Great response!');
+    await fireEvent.press(getByText('Submit'));
 
     await findByText('Thanks for your feedback!');
     // conversationId is 'test-conv-id' because handleSend sets it from the response
@@ -392,24 +390,24 @@ describe('AgentChatScreen comprehensive', () => {
   });
 
   it('shows feedback modal on thumbs down and skips without submitting', async () => {
-    const { getByLabelText, getByText, getByPlaceholderText, queryByText } = renderWithProviders(
+    const { getByLabelText, getByText, getByPlaceholderText, queryByText } = await renderWithProviders(
       <AgentChatScreen visible onClose={jest.fn()} />,
       { providerOverrides: { withNavigation: false } },
     );
 
     const input = getByPlaceholderText('Ask about your portfolio...');
-    fireEvent.changeText(input, 'How is my portfolio?');
-    fireEvent(input, 'submitEditing');
+    await fireEvent.changeText(input, 'How is my portfolio?');
+    await fireEvent(input, 'submitEditing');
 
     await waitFor(() => {
       expect(getByText('Was this helpful?')).toBeTruthy();
     });
 
-    fireEvent.press(getByLabelText('Thumbs down'));
+    await fireEvent.press(getByLabelText('Thumbs down'));
     expect(getByText('Sorry about that')).toBeTruthy();
 
-    fireEvent.changeText(getByPlaceholderText('Tell us more (optional)'), 'Not helpful');
-    fireEvent.press(getByText('Skip'));
+    await fireEvent.changeText(getByPlaceholderText('Tell us more (optional)'), 'Not helpful');
+    await fireEvent.press(getByText('Skip'));
 
     expect(queryByText('Sorry about that')).toBeNull();
     expect(mockSubmitFeedback).not.toHaveBeenCalled();
@@ -476,15 +474,15 @@ describe('AgentChatScreen comprehensive', () => {
       ],
     } as any);
 
-    const { getByText, getByPlaceholderText } = renderWithProviders(
+    const { getByText, getByPlaceholderText } = await renderWithProviders(
       <AgentChatScreen visible onClose={jest.fn()} />,
       { providerOverrides: { withNavigation: false } },
     );
 
     // Send a message (uses the mock that returns empty traceId but has conversationId)
     const input = getByPlaceholderText('Ask about your portfolio...');
-    fireEvent.changeText(input, 'Hi');
-    fireEvent(input, 'submitEditing');
+    await fireEvent.changeText(input, 'Hi');
+    await fireEvent(input, 'submitEditing');
 
     // Wait for the feedback row — should show because conversationId is set
     await waitFor(() => {
@@ -499,21 +497,21 @@ describe('AgentChatScreen comprehensive', () => {
       traceId: '', // No traceId
     });
 
-    const { getByLabelText, getByText, getByPlaceholderText, findByText } = renderWithProviders(
+    const { getByLabelText, getByText, getByPlaceholderText, findByText } = await renderWithProviders(
       <AgentChatScreen visible onClose={jest.fn()} />,
       { providerOverrides: { withNavigation: false } },
     );
 
     const input = getByPlaceholderText('Ask about your portfolio...');
-    fireEvent.changeText(input, 'Rate me');
-    fireEvent(input, 'submitEditing');
+    await fireEvent.changeText(input, 'Rate me');
+    await fireEvent(input, 'submitEditing');
 
     await waitFor(() => {
       expect(getByText('Was this helpful?')).toBeTruthy();
     });
 
-    fireEvent.press(getByLabelText('Thumbs up'));
-    fireEvent.press(getByText('Submit'));
+    await fireEvent.press(getByLabelText('Thumbs up'));
+    await fireEvent.press(getByText('Submit'));
 
     await findByText('Thanks for your feedback!');
     // Should have been called with empty traceId and conversationId

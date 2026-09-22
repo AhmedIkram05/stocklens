@@ -60,16 +60,16 @@ describe('SummaryScreen comprehensive', () => {
 
   // ── Empty state ───────────────────────────────────────────────────────────
 
-  it('shows onboarding empty state when no receipts', () => {
-    const { getByText } = renderScreen();
+  it('shows onboarding empty state when no receipts', async () => {
+    const { getByText } = await renderScreen();
     expect(getByText('No Data Yet')).toBeTruthy();
-    fireEvent.press(getByText('Scan Your First Receipt'));
+    await fireEvent.press(getByText('Scan Your First Receipt'));
     expect(navigateSpy).toHaveBeenCalledWith('Scan');
   });
 
-  it('shows loading when receipts are loading', () => {
+  it('shows loading when receipts are loading', async () => {
     mockedUseReceipts.mockReturnValue({ receipts: [], loading: true, error: null } as any);
-    const { queryByText, toJSON } = renderScreen();
+    const { queryByText, toJSON } = await renderScreen();
     expect(queryByText('No Data Yet')).toBeNull();
     expect(toJSON()).toBeTruthy();
   });
@@ -112,11 +112,12 @@ describe('SummaryScreen comprehensive', () => {
     mockedUseReceipts.mockReturnValue({ receipts, loading: false, error: null } as any);
     mockedCategoryService.listCategories.mockResolvedValue([]);
 
-    const { getByText } = renderScreen();
+    const { getByText, getAllByText } = await renderScreen();
 
     await waitFor(() => {
       expect(getByText('Total Money Spent')).toBeTruthy();
-      expect(getByText('£200.00')).toBeTruthy();
+      // total may render in multiple cards
+      expect(getAllByText('£200.00').length).toBeGreaterThan(0);
       expect(getByText('Receipts Scanned')).toBeTruthy();
       expect(getByText('3')).toBeTruthy(); // receipt count
     });
@@ -142,9 +143,9 @@ describe('SummaryScreen comprehensive', () => {
     ];
     mockedUseReceipts.mockReturnValue({ receipts, loading: false, error: null } as any);
 
-    const { getByText, findByText } = renderScreen();
+    const { getByText, findByText } = await renderScreen();
     await waitFor(() => expect(getByText('Total Money Spent')).toBeTruthy());
-    fireEvent.press(getByText('Your Spending Could Be Investing'));
+    await fireEvent.press(getByText('Your Spending Could Be Investing'));
     await findByText(/Instead of 1 receipts/i);
   });
 
@@ -183,11 +184,11 @@ describe('SummaryScreen comprehensive', () => {
     ];
     mockedUseReceipts.mockReturnValue({ receipts, loading: false, error: null } as any);
 
-    const { getByText, queryByText, findByText } = renderScreen();
+    const { getByText, queryByText, findByText } = await renderScreen();
     await waitFor(() => expect(getByText('Total Money Spent')).toBeTruthy());
-    fireEvent.press(getByText('Your Spending Could Be Investing'));
+    await fireEvent.press(getByText('Your Spending Could Be Investing'));
     await findByText(/Instead of 3 receipts/);
-    fireEvent.press(getByText('Small Purchases Add Up'));
+    await fireEvent.press(getByText('Small Purchases Add Up'));
     await waitFor(() => expect(queryByText(/Instead of 3 receipts/)).toBeNull());
     await findByText(/Small frequent expenses/);
   });
@@ -209,9 +210,9 @@ describe('SummaryScreen comprehensive', () => {
     ];
     mockedUseReceipts.mockReturnValue({ receipts, loading: false, error: null } as any);
 
-    const { getByText, findByText } = renderScreen();
+    const { getByText, findByText } = await renderScreen();
     await waitFor(() => expect(getByText('Total Money Spent')).toBeTruthy());
-    fireEvent.press(getByText('Compound Interest'));
+    await fireEvent.press(getByText('Compound Interest'));
     await findByText(/Earnings on your initial investment/);
   });
 
@@ -259,7 +260,7 @@ describe('SummaryScreen comprehensive', () => {
       { id: 'cat-2', name: 'Dining Out' },
     ]);
 
-    const { findByText } = renderScreen();
+    const { findByText } = await renderScreen();
     await waitFor(() => expect(findByText('Total Money Spent')).toBeTruthy());
     // Category section should appear - just verify the section header renders
     await findByText('Spending by Category');
@@ -282,7 +283,7 @@ describe('SummaryScreen comprehensive', () => {
     mockedUseReceipts.mockReturnValue({ receipts, loading: false, error: null } as any);
     mockedCategoryService.listCategories.mockResolvedValue([]);
 
-    const { findByText } = renderScreen();
+    const { findByText } = await renderScreen();
     await findByText('Spending by Category');
     await findByText('Uncategorised');
   });
@@ -315,7 +316,7 @@ describe('SummaryScreen comprehensive', () => {
     mockedUseReceipts.mockReturnValue({ receipts, loading: false, error: null } as any);
     mockedCategoryService.listCategories.mockResolvedValue([]);
 
-    const { findByText, getByText } = renderScreen();
+    const { findByText, getByText } = await renderScreen();
     await waitFor(() => expect(getByText('Total Money Spent')).toBeTruthy());
     await findByText('Month-over-Month Change');
   });
@@ -336,7 +337,7 @@ describe('SummaryScreen comprehensive', () => {
     mockedUseReceipts.mockReturnValue({ receipts, loading: false, error: null } as any);
     mockedCategoryService.listCategories.mockResolvedValue([]);
 
-    const { queryByText } = renderScreen();
+    const { queryByText } = await renderScreen();
     await waitFor(() => expect(queryByText('Month-over-Month Change')).toBeNull());
   });
 
@@ -362,10 +363,10 @@ describe('SummaryScreen comprehensive', () => {
       refetch: jest.fn().mockResolvedValue(undefined),
     } as any);
 
-    const { UNSAFE_getByType } = renderScreen();
-    const { RefreshControl } = require('react-native');
-    const refreshControl = UNSAFE_getByType(RefreshControl);
-    act(() => refreshControl.props.onRefresh());
+    const { root } = await renderScreen();
+    // v14: onRefresh lives on RCTScrollView.refreshControl element
+    const sv = root?.queryAll((el) => 'refreshControl' in el.props)[0]!;
+    await act(async () => sv.props.refreshControl.props.onRefresh());
     // Wait for async
     await waitFor(() => expect(mockedUseReceipts.mock.results[0].value.refetch).toHaveBeenCalled());
   });
