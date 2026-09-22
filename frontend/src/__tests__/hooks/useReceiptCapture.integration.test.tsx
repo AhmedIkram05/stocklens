@@ -49,7 +49,7 @@ describe('useReceiptCapture', () => {
   it('shows confirmation prompt and navigates when scan succeeds', async () => {
     const navigation = { navigate: jest.fn() };
     const onResetCamera = jest.fn();
-    const { result } = renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
+    const { result } = await renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
 
     (receiptService.scan as jest.Mock).mockResolvedValue(mockScanResponse);
 
@@ -82,7 +82,7 @@ describe('useReceiptCapture', () => {
   });
 
   it('calls handleManualEntry when onEnterManually is triggered (L162)', async () => {
-    const { result } = createHook();
+    const { result } = await createHook();
 
     (receiptService.scan as jest.Mock).mockResolvedValue(mockScanResponse);
 
@@ -94,7 +94,7 @@ describe('useReceiptCapture', () => {
 
     const options = mockedPrompt.mock.calls[0][1];
 
-    act(() => {
+    await act(async () => {
       options.onEnterManually?.();
     });
 
@@ -104,7 +104,7 @@ describe('useReceiptCapture', () => {
   it('resets workflow state and camera when onRescan is triggered (L164-165)', async () => {
     const navigation = { navigate: jest.fn() };
     const onResetCamera = jest.fn();
-    const { result } = renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
+    const { result } = await renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
 
     (receiptService.scan as jest.Mock).mockResolvedValue(mockScanResponse);
 
@@ -129,7 +129,7 @@ describe('useReceiptCapture', () => {
     (receiptService.scan as jest.Mock).mockRejectedValue(
       new Error('No total amount found in receipt'),
     );
-    const { result } = createHook();
+    const { result } = await createHook();
 
     await act(async () => {
       await result.current.actions.processReceipt({
@@ -143,7 +143,7 @@ describe('useReceiptCapture', () => {
 
   it('alerts on unexpected scan errors', async () => {
     (receiptService.scan as jest.Mock).mockRejectedValue(new Error('Network error'));
-    const { result } = createHook();
+    const { result } = await createHook();
 
     await act(async () => {
       await result.current.actions.processReceipt({
@@ -157,7 +157,7 @@ describe('useReceiptCapture', () => {
   it('manual entry via saveAndNavigate creates receipt and navigates', async () => {
     const navigation = { navigate: jest.fn() };
     const onResetCamera = jest.fn();
-    const { result } = renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
+    const { result } = await renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
 
     (receiptService.create as jest.Mock).mockResolvedValue({ id: 'manual-1' });
 
@@ -182,7 +182,7 @@ describe('useReceiptCapture', () => {
   it('shows save error alert when receiptService.create throws (L86)', async () => {
     const navigation = { navigate: jest.fn() };
     const onResetCamera = jest.fn();
-    const { result } = renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
+    const { result } = await renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
 
     (receiptService.create as jest.Mock).mockRejectedValue(new Error('Save failed'));
 
@@ -201,7 +201,7 @@ describe('useReceiptCapture', () => {
 
     const navigation = { navigate: jest.fn() };
     const onResetCamera = jest.fn();
-    const { result } = renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
+    const { result } = await renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
 
     await act(async () => {
       await result.current.actions.processReceipt({
@@ -225,7 +225,7 @@ describe('useReceiptCapture', () => {
 
     const navigation = { navigate: jest.fn() };
     const onResetCamera = jest.fn();
-    const { result } = renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
+    const { result } = await renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
 
     await act(async () => {
       await result.current.actions.processReceipt({
@@ -244,7 +244,7 @@ describe('useReceiptCapture', () => {
     (receiptService.scan as jest.Mock).mockRejectedValue(
       new Error('No total amount found in receipt'),
     );
-    const { result } = createHook();
+    const { result } = await createHook();
 
     await act(async () => {
       await result.current.actions.processReceipt({
@@ -260,7 +260,7 @@ describe('useReceiptCapture', () => {
     (receiptService.scan as jest.Mock).mockRejectedValue(
       new Error('Could not extract text from receipt'),
     );
-    const { result } = createHook();
+    const { result } = await createHook();
 
     await act(async () => {
       await result.current.actions.processReceipt({
@@ -278,7 +278,7 @@ describe('useReceiptCapture', () => {
     (receiptService.scan as jest.Mock).mockRejectedValue(
       new Error('Need better lighting for receipt'),
     );
-    const { result } = createHook();
+    const { result } = await createHook();
 
     await act(async () => {
       await result.current.actions.processReceipt({
@@ -293,7 +293,7 @@ describe('useReceiptCapture', () => {
   });
 
   it('discardDraft calls receiptService.delete and emits event', async () => {
-    const { result } = createHook();
+    const { result } = await createHook();
 
     await act(async () => {
       await result.current.actions.discardDraft('receipt-123');
@@ -303,7 +303,7 @@ describe('useReceiptCapture', () => {
   });
 
   it('discardDraft does nothing when id is null', async () => {
-    const { result } = createHook();
+    const { result } = await createHook();
 
     await act(async () => {
       await result.current.actions.discardDraft(null);
@@ -313,9 +313,9 @@ describe('useReceiptCapture', () => {
   });
 
   it('resetWorkflowState clears all state', async () => {
-    const { result } = createHook();
+    const { result } = await createHook();
 
-    act(() => {
+    await act(async () => {
       result.current.actions.setProcessing(true);
       result.current.actions.setOcrRaw('some text');
       result.current.actions.setManualModalVisible(true);
@@ -327,7 +327,7 @@ describe('useReceiptCapture', () => {
     expect(result.current.state.manualModalVisible).toBe(true);
     expect(result.current.state.manualEntryText).toBe('test');
 
-    act(() => {
+    await act(async () => {
       result.current.actions.resetWorkflowState();
     });
 
@@ -336,10 +336,10 @@ describe('useReceiptCapture', () => {
     expect(result.current.state.manualModalVisible).toBe(true);
   });
 
-  it('opens manual entry modal with prefill value via setManualEntryText and setManualModalVisible', () => {
-    const { result } = createHook();
+  it('opens manual entry modal with prefill value via setManualEntryText and setManualModalVisible', async () => {
+    const { result } = await createHook();
 
-    act(() => {
+    await act(async () => {
       result.current.actions.setManualEntryText('42.5');
       result.current.actions.setManualModalVisible(true);
     });
@@ -348,10 +348,10 @@ describe('useReceiptCapture', () => {
     expect(result.current.state.manualEntryText).toBe('42.5');
   });
 
-  it('sets manual entry text and modal visibility independently', () => {
-    const { result } = createHook();
+  it('sets manual entry text and modal visibility independently', async () => {
+    const { result } = await createHook();
 
-    act(() => {
+    await act(async () => {
       result.current.actions.setManualEntryText('99.99');
       result.current.actions.setManualModalVisible(true);
     });
@@ -359,7 +359,7 @@ describe('useReceiptCapture', () => {
     expect(result.current.state.manualModalVisible).toBe(true);
     expect(result.current.state.manualEntryText).toBe('99.99');
 
-    act(() => {
+    await act(async () => {
       result.current.actions.setManualModalVisible(false);
     });
 

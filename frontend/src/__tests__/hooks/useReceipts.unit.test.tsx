@@ -33,9 +33,9 @@ describe('useReceipts', () => {
     jest.useRealTimers();
   });
 
-  it('returns loading=true initially', () => {
+  it('returns loading=true initially', async () => {
     mockedList.mockReturnValue(new Promise(() => {}));
-    const { result } = renderHook(() => useReceipts());
+    const { result } = await renderHook(() => useReceipts());
     expect(result.current.loading).toBe(true);
     expect(result.current.receipts).toEqual([]);
     expect(result.current.error).toBeNull();
@@ -54,7 +54,7 @@ describe('useReceipts', () => {
       },
     ]);
 
-    const { result } = renderHook(() => useReceipts());
+    const { result } = await renderHook(() => useReceipts());
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
@@ -67,7 +67,7 @@ describe('useReceipts', () => {
   it('returns error when fetch fails', async () => {
     mockedList.mockRejectedValue(new Error('Network error'));
 
-    const { result } = renderHook(() => useReceipts());
+    const { result } = await renderHook(() => useReceipts());
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
@@ -80,7 +80,7 @@ describe('useReceipts', () => {
   it('handles empty receipt list', async () => {
     mockedList.mockResolvedValue([]);
 
-    const { result } = renderHook(() => useReceipts());
+    const { result } = await renderHook(() => useReceipts());
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
@@ -103,7 +103,7 @@ describe('useReceipts', () => {
       },
     ]);
 
-    const { result } = renderHook(() => useReceipts());
+    const { result } = await renderHook(() => useReceipts());
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
@@ -129,7 +129,7 @@ describe('useReceipts', () => {
       },
     ]);
 
-    const { result } = renderHook(() => useReceipts());
+    const { result } = await renderHook(() => useReceipts());
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
@@ -148,7 +148,7 @@ describe('useReceipts', () => {
   it('provides refetch function that fetches silently', async () => {
     mockedList.mockResolvedValue([]);
 
-    const { result } = renderHook(() => useReceipts());
+    const { result } = await renderHook(() => useReceipts());
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false);

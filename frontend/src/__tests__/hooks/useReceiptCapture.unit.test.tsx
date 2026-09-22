@@ -43,8 +43,8 @@ describe('useReceiptCapture', () => {
     );
   };
 
-  it('initializes with correct default state', () => {
-    const { result } = createHookResult();
+  it('initializes with correct default state', async () => {
+    const { result } = await createHookResult();
     expect(result.current.state.processing).toBe(false);
     expect(result.current.state.ocrRaw).toBeNull();
     expect(result.current.state.manualModalVisible).toBe(false);
@@ -55,8 +55,8 @@ describe('useReceiptCapture', () => {
     });
   });
 
-  it('resets workflow state correctly', () => {
-    const { result } = createHookResult();
+  it('resets workflow state correctly', async () => {
+    const { result } = await createHookResult();
 
     // Set some state
     result.current.actions.setProcessing(true);
@@ -90,7 +90,7 @@ describe('useReceiptCapture', () => {
   });
 
   it('processes receipt successfully', async () => {
-    const { result } = createHookResult();
+    const { result } = await createHookResult();
     const photoUri = 'test-photo.jpg';
 
     // Mock service response
@@ -137,7 +137,7 @@ describe('useReceiptCapture', () => {
   });
 
   it('handles foreign currency rejection', async () => {
-    const { result } = createHookResult();
+    const { result } = await createHookResult();
     const photoUri = 'foreign-photo.jpg';
 
     // Mock service response with foreign currency
@@ -184,7 +184,7 @@ describe('useReceiptCapture', () => {
   });
 
   it('handles scan error gracefully', async () => {
-    const { result } = createHookResult();
+    const { result } = await createHookResult();
     const photoUri = 'bad-photo.jpg';
 
     // Mock service error
@@ -205,13 +205,13 @@ describe('useReceiptCapture', () => {
   });
 
   it('handles manual entry submission', async () => {
-    const { result } = createHookResult();
+    const { result } = await createHookResult();
     const amount = 22.5;
     const ocrText = 'MANUAL ENTRY TEST';
     const photoUri = 'manual-photo.jpg';
 
     // Set up pending state
-    act(() => {
+    await act(async () => {
       result.current.pendingRef.current = {
         scanResponse: {
           id: 'scan-mock-123',
@@ -270,7 +270,7 @@ describe('useReceiptCapture', () => {
   });
 
   it('handles draft discard', async () => {
-    const { result } = createHookResult();
+    const { result } = await createHookResult();
     const draftId = 'draft-789';
 
     // Execute action

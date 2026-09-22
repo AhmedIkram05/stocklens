@@ -21,20 +21,20 @@ describe('useDecryptedImage', () => {
     jest.clearAllMocks();
   });
 
-  it('returns undefined when no src provided', () => {
-    const { result } = renderHook(() => useDecryptedImage(null));
+  it('returns undefined when no src provided', async () => {
+    const { result } = await renderHook(() => useDecryptedImage(null));
     expect(result.current).toBeUndefined();
   });
 
-  it('returns undefined when src is undefined', () => {
-    const { result } = renderHook(() => useDecryptedImage(undefined));
+  it('returns undefined when src is undefined', async () => {
+    const { result } = await renderHook(() => useDecryptedImage(undefined));
     expect(result.current).toBeUndefined();
   });
 
   it('decrypts image and returns temp path', async () => {
     mockedDecrypt.mockResolvedValue('file://tmp/decrypted.jpg');
 
-    const { result } = renderHook(() => useDecryptedImage('file://enc-1.enc'));
+    const { result } = await renderHook(() => useDecryptedImage('file://enc-1.enc'));
 
     await waitFor(() => {
       expect(result.current).toBe('file://tmp/decrypted.jpg');
@@ -45,7 +45,7 @@ describe('useDecryptedImage', () => {
   it('returns cached value on subsequent renders', async () => {
     mockedDecrypt.mockResolvedValue('file://tmp/decrypted.jpg');
 
-    const { result, rerender } = renderHook(
+    const { result, rerender } = await renderHook(
       (props: { src: string }) => useDecryptedImage(props.src),
       { initialProps: { src: 'file://enc-cache.enc' } },
     );
@@ -56,7 +56,7 @@ describe('useDecryptedImage', () => {
 
     expect(mockedDecrypt).toHaveBeenCalledTimes(1);
 
-    rerender({ src: 'file://enc-cache.enc' });
+    await rerender({ src: 'file://enc-cache.enc' });
 
     expect(result.current).toBe('file://tmp/decrypted.jpg');
     expect(mockedDecrypt).toHaveBeenCalledTimes(1);
@@ -65,7 +65,7 @@ describe('useDecryptedImage', () => {
   it('falls back to original src on decryption error', async () => {
     mockedDecrypt.mockRejectedValue(new Error('Decryption failed'));
 
-    const { result } = renderHook(() => useDecryptedImage('file://enc-err.enc'));
+    const { result } = await renderHook(() => useDecryptedImage('file://enc-err.enc'));
 
     await waitFor(() => {
       expect(result.current).toBe('file://enc-err.enc');
@@ -80,9 +80,9 @@ describe('useDecryptedImage', () => {
       }),
     );
 
-    const { result, unmount } = renderHook(() => useDecryptedImage('file://enc-unmount.enc'));
+    const { result, unmount } = await renderHook(() => useDecryptedImage('file://enc-unmount.enc'));
 
-    unmount();
+    await unmount();
 
     resolvePromise!('file://tmp/decrypted.jpg');
     await new Promise((r) => setImmediate(r));
@@ -93,7 +93,7 @@ describe('useDecryptedImage', () => {
   it('returns original src when decryption returns empty string', async () => {
     mockedDecrypt.mockResolvedValue('');
 
-    const { result } = renderHook(() => useDecryptedImage('file://enc-empty.enc'));
+    const { result } = await renderHook(() => useDecryptedImage('file://enc-empty.enc'));
 
     await waitFor(() => {
       expect(result.current).toBe('file://enc-empty.enc');
