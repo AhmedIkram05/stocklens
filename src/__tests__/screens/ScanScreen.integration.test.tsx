@@ -51,7 +51,7 @@ const mockTakePictureAsync = cameraModule.__mockTakePictureAsync as jest.Mock;
 const mockedUseReceiptCapture = useReceiptCapture as jest.MockedFunction<typeof useReceiptCapture>;
 const mockedReceiptService = receiptService as jest.Mocked<typeof receiptService>;
 
-const renderScreen = () => renderWithProviders(<ScanScreen />);
+const renderScreen = async () => await renderWithProviders(<ScanScreen />);
 
 const createHookState = () => {
   const hookReturn = {
@@ -83,11 +83,11 @@ describe('ScanScreen', () => {
     mockTakePictureAsync.mockReset();
   });
 
-  it('renders permission prompt when camera access is denied', () => {
+  it('renders permission prompt when camera access is denied', async () => {
     createHookState();
     mockUseCameraPermissions.mockReturnValue([{ granted: false }, jest.fn()]);
 
-    const { getByTestId } = renderScreen();
+    const { getByTestId } = await renderScreen();
 
     expect(getByTestId('camera-permission-text')).toBeTruthy();
   });
@@ -97,7 +97,7 @@ describe('ScanScreen', () => {
     mockedReceiptService.create.mockResolvedValue({ id: '55' } as any);
     mockTakePictureAsync.mockResolvedValue({ uri: 'file://snap.jpg', base64: 'YmFzZTY0' });
 
-    const { getByTestId, queryByTestId } = renderScreen();
+    const { getByTestId, queryByTestId } = await renderScreen();
 
     fireEvent.press(getByTestId('capture-button'));
 
@@ -123,7 +123,7 @@ describe('ScanScreen', () => {
     mockedReceiptService.create.mockResolvedValue({ id: '99' } as any);
     mockTakePictureAsync.mockResolvedValue({ uri: 'file://manual.jpg', base64: 'bWFudWFs' });
 
-    const screen = renderScreen();
+    const screen = await renderScreen();
 
     fireEvent.press(screen.getByTestId('capture-button'));
     await waitFor(() => expect(hook.actions.processReceipt).toHaveBeenCalled());

@@ -46,8 +46,8 @@ describe('SummaryScreen', () => {
     } as any);
   });
 
-  it('shows onboarding empty state when no receipts exist and navigates to Scan on CTA press', () => {
-    const { getByText } = renderWithProviders(<SummaryScreen />, {
+  it('shows onboarding empty state when no receipts exist and navigates to Scan on CTA press', async () => {
+    const { getByText } = await renderWithProviders(<SummaryScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -94,7 +94,7 @@ describe('SummaryScreen', () => {
     ];
     mockedUseReceipts.mockReturnValue({ receipts, loading: false, error: null } as any);
 
-    const { getByText, findByText } = renderWithProviders(<SummaryScreen />, {
+    const { getByText, findByText } = await renderWithProviders(<SummaryScreen />, {
       providerOverrides: { withNavigation: false },
     });
 

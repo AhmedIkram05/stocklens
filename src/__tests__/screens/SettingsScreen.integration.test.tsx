@@ -39,14 +39,14 @@ describe('SettingsScreen', () => {
     mockedReceiptService.deleteAll.mockResolvedValue();
   });
 
-  const renderScreen = (overrides?: Parameters<typeof renderWithProviders>[1]) =>
-    renderWithProviders(
+  const renderScreen = async (overrides?: Parameters<typeof renderWithProviders>[1]) =>
+    await renderWithProviders(
       <SettingsScreen />,
       overrides ?? { providerOverrides: { withNavigation: false } },
     );
 
   const renderAndAwaitSwitches = async (overrides?: Parameters<typeof renderWithProviders>[1]) => {
-    const utils = renderScreen(overrides);
+    const utils = await renderScreen(overrides);
     await waitFor(() => expect(deviceAuth.isDeviceAuthAvailable).toHaveBeenCalled());
     const switches = utils.getAllByRole('switch');
     return { ...utils, switches };
@@ -90,7 +90,7 @@ describe('SettingsScreen', () => {
 
   it('confirms sign out before calling AuthContext', async () => {
     const signOutUser = jest.fn().mockResolvedValue(undefined);
-    const { getByText } = renderScreen({
+    const { getByText } = await renderScreen({
       providerOverrides: {
         withNavigation: false,
         authValue: { signOutUser },
@@ -111,7 +111,7 @@ describe('SettingsScreen', () => {
   });
 
   it('deletes all local data when confirmation accepted', async () => {
-    const { getByText } = renderScreen({
+    const { getByText } = await renderScreen({
       providerOverrides: {
         withNavigation: false,
         authValue: { userProfile: { uid: 'user-42' } as any },

@@ -60,8 +60,8 @@ describe('SignUpScreen', () => {
     mockedPrompt.mockResolvedValue(true as any);
   });
 
-  it('shows validation alert when email format is invalid', () => {
-    const { getByPlaceholderText, getByText } = renderWithProviders(<SignUpScreen />, {
+  it('shows validation alert when email format is invalid', async () => {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<SignUpScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -78,7 +78,7 @@ describe('SignUpScreen', () => {
 
   it('creates account, starts grace period, and prompts device auth enrollment', async () => {
     const startLockGrace = jest.fn();
-    const { getByPlaceholderText, getByText } = renderWithProviders(<SignUpScreen />, {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<SignUpScreen />, {
       providerOverrides: {
         withNavigation: false,
         authValue: { startLockGrace },
@@ -104,8 +104,8 @@ describe('SignUpScreen', () => {
     expect(mockedPrompt).toHaveBeenCalledWith('jane@example.com', 'secret1');
   });
 
-  it('navigates back to login from footer CTA', () => {
-    const { getByText } = renderWithProviders(<SignUpScreen />, {
+  it('navigates back to login from footer CTA', async () => {
+    const { getByText } = await renderWithProviders(<SignUpScreen />, {
       providerOverrides: { withNavigation: false },
     });
 

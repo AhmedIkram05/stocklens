@@ -56,7 +56,7 @@ describe('LoginScreen', () => {
 
   it('performs sign-in flow, starts lock grace, and prompts device auth enrollment', async () => {
     const startLockGrace = jest.fn();
-    const { getByPlaceholderText, getByText } = renderWithProviders(<LoginScreen />, {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<LoginScreen />, {
       providerOverrides: {
         withNavigation: false,
         authValue: { startLockGrace },
@@ -76,8 +76,8 @@ describe('LoginScreen', () => {
     expect(mockedPrompt).toHaveBeenCalledWith('demo@example.com', 's3cret!');
   });
 
-  it('navigates to SignUp screen from footer CTA', () => {
-    const { getByText } = renderWithProviders(<LoginScreen />, {
+  it('navigates to SignUp screen from footer CTA', async () => {
+    const { getByText } = await renderWithProviders(<LoginScreen />, {
       providerOverrides: { withNavigation: false },
     });
 

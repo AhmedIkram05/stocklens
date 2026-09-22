@@ -36,9 +36,9 @@ describe('HomeScreen', () => {
     jest.clearAllMocks();
   });
 
-  const renderScreen = () => {
+  const renderScreen = async () => {
     const testUser = createUserProfile({ first_name: 'Alex', uid: 'user-1' });
-    return renderWithProviders(<HomeScreen />, {
+    return await renderWithProviders(<HomeScreen />, {
       providerOverrides: {
         withNavigation: false,
         authValue: {
@@ -49,12 +49,12 @@ describe('HomeScreen', () => {
     });
   };
 
-  it('shows onboarding empty state and navigates to Scan when CTA pressed', () => {
+  it('shows onboarding empty state and navigates to Scan when CTA pressed', async () => {
     const navigateSpy = jest.fn();
     mockedUseNavigation.mockReturnValue({ navigate: navigateSpy } as any);
     mockedUseReceipts.mockReturnValue({ receipts: [], loading: false, error: null });
 
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
 
     expect(getByText('No Receipts Yet')).toBeTruthy();
     fireEvent.press(getByText('Scan Your First Receipt'));
@@ -104,7 +104,7 @@ describe('HomeScreen', () => {
       error: null,
     });
 
-    const { getByText, getAllByTestId } = renderScreen();
+    const { getByText, getAllByTestId } = await renderScreen();
 
     await waitFor(() => expect(getByText('Total Money Spent')).toBeTruthy());
     expect(getByText('£150.00')).toBeTruthy();

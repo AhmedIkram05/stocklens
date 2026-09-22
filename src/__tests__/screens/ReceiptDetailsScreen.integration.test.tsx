@@ -77,7 +77,7 @@ describe('ReceiptDetailsScreen', () => {
   });
 
   it('renders projections and updates headers when year selectors change', async () => {
-    const { getByText, getAllByText } = renderWithProviders(<ReceiptDetailsScreen />, {
+    const { getByText, getAllByText } = await renderWithProviders(<ReceiptDetailsScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -107,7 +107,7 @@ describe('ReceiptDetailsScreen', () => {
   it('confirms deletion before calling receiptService and navigation', async () => {
     const alertSpy = jest.spyOn(Alert, 'alert');
 
-    const { getByLabelText } = renderWithProviders(<ReceiptDetailsScreen />, {
+    const { getByLabelText } = await renderWithProviders(<ReceiptDetailsScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
