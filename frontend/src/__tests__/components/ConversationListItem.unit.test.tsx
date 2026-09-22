@@ -48,43 +48,43 @@ describe('ConversationListItem', () => {
     jest.useRealTimers();
   });
 
-  it('renders the conversation title', () => {
-    const { getByText } = renderItem();
+  it('renders the conversation title', async () => {
+    const { getByText } = await renderItem();
     expect(getByText('My Portfolio Analysis')).toBeTruthy();
   });
 
-  it('shows "New Conversation" when title is null', () => {
+  it('shows "New Conversation" when title is null', async () => {
     const conv: ConversationSummary = { ...baseConversation, title: null };
-    const { getByText } = renderItem(conv);
+    const { getByText } = await renderItem(conv);
     expect(getByText('New Conversation')).toBeTruthy();
   });
 
-  it('shows message count', () => {
-    const { getByText } = renderItem();
+  it('shows message count', async () => {
+    const { getByText } = await renderItem();
     expect(getByText('5 messages')).toBeTruthy();
   });
 
-  it('shows singular "1 message" for single message', () => {
+  it('shows singular "1 message" for single message', async () => {
     const conv: ConversationSummary = { ...baseConversation, messageCount: 1 };
-    const { getByText } = renderItem(conv);
+    const { getByText } = await renderItem(conv);
     expect(getByText('1 message')).toBeTruthy();
   });
 
-  it('shows relative timestamp from formatRelativeDate', () => {
-    const { getByText } = renderItem();
+  it('shows relative timestamp from formatRelativeDate', async () => {
+    const { getByText } = await renderItem();
     // 2026-07-21T10:30:00Z is 1.5h before the system time of 12:00:00Z
     expect(getByText('1h ago')).toBeTruthy();
   });
 
-  it('calls onPress when tapped', () => {
-    const { getByText } = renderItem();
-    fireEvent.press(getByText('My Portfolio Analysis'));
+  it('calls onPress when tapped', async () => {
+    const { getByText } = await renderItem();
+    await fireEvent.press(getByText('My Portfolio Analysis'));
     expect(mockOnPress).toHaveBeenCalledTimes(1);
   });
 
-  it('calls onDelete on long press', () => {
-    const { getByText } = renderItem();
-    fireEvent(getByText('My Portfolio Analysis'), 'longPress');
+  it('calls onDelete on long press', async () => {
+    const { getByText } = await renderItem();
+    await fireEvent(getByText('My Portfolio Analysis'), 'longPress');
     expect(mockOnDelete).toHaveBeenCalledTimes(1);
   });
 });

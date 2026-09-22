@@ -46,8 +46,8 @@ jest.mock('@react-navigation/native', () => {
 });
 
 describe('AppNavigator', () => {
-  it('shows loading indicator when auth is loading', () => {
-    const { getByTestId } = renderWithProviders(<AppNavigator />, {
+  it('shows loading indicator when auth is loading', async () => {
+    const { getByTestId } = await renderWithProviders(<AppNavigator />, {
       providerOverrides: {
         withNavigation: false,
         authValue: { loading: true },
@@ -56,16 +56,16 @@ describe('AppNavigator', () => {
     expect(getByTestId('activity-indicator')).toBeTruthy();
   });
 
-  it('does not show loading indicator when not loading', () => {
-    const { queryByTestId } = renderWithProviders(<AppNavigator />, {
+  it('does not show loading indicator when not loading', async () => {
+    const { queryByTestId } = await renderWithProviders(<AppNavigator />, {
       providerOverrides: { withNavigation: false },
     });
     expect(queryByTestId('activity-indicator')).toBeNull();
   });
 
-  it('calls unlockWithDeviceAuth when user exists and is locked', () => {
+  it('calls unlockWithDeviceAuth when user exists and is locked', async () => {
     const unlockMock = jest.fn().mockResolvedValue(true);
-    renderWithProviders(<AppNavigator />, {
+    await renderWithProviders(<AppNavigator />, {
       providerOverrides: {
         withNavigation: false,
         authValue: {
@@ -87,9 +87,9 @@ describe('AppNavigator', () => {
     expect(unlockMock).toHaveBeenCalledTimes(1);
   });
 
-  it('does not call unlockWithDeviceAuth when user is null', () => {
+  it('does not call unlockWithDeviceAuth when user is null', async () => {
     const unlockMock = jest.fn().mockResolvedValue(true);
-    renderWithProviders(<AppNavigator />, {
+    await renderWithProviders(<AppNavigator />, {
       providerOverrides: {
         withNavigation: false,
         authValue: {
@@ -103,9 +103,9 @@ describe('AppNavigator', () => {
     expect(unlockMock).not.toHaveBeenCalled();
   });
 
-  it('does not call unlockWithDeviceAuth when not locked', () => {
+  it('does not call unlockWithDeviceAuth when not locked', async () => {
     const unlockMock = jest.fn().mockResolvedValue(true);
-    renderWithProviders(<AppNavigator />, {
+    await renderWithProviders(<AppNavigator />, {
       providerOverrides: {
         withNavigation: false,
         authValue: {
@@ -119,8 +119,8 @@ describe('AppNavigator', () => {
     expect(unlockMock).not.toHaveBeenCalled();
   });
 
-  it('renders without crash when user is authenticated and not locked', () => {
-    const { queryByTestId } = renderWithProviders(<AppNavigator />, {
+  it('renders without crash when user is authenticated and not locked', async () => {
+    const { queryByTestId } = await renderWithProviders(<AppNavigator />, {
       providerOverrides: {
         withNavigation: false,
         authValue: {
@@ -133,8 +133,8 @@ describe('AppNavigator', () => {
     expect(queryByTestId('activity-indicator')).toBeNull();
   });
 
-  it('renders without crash when no user (auth screens)', () => {
-    const { queryByTestId } = renderWithProviders(<AppNavigator />, {
+  it('renders without crash when no user (auth screens)', async () => {
+    const { queryByTestId } = await renderWithProviders(<AppNavigator />, {
       providerOverrides: {
         withNavigation: false,
         authValue: { user: null, loading: false, locked: false },

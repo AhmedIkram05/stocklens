@@ -32,58 +32,58 @@ describe('ReceiptsSorter', () => {
       providerOverrides: { withNavigation: false },
     });
 
-  it('renders sort options (Date, Amount)', () => {
-    const { getByText } = renderSorter();
+  it('renders sort options (Date, Amount)', async () => {
+    const { getByText } = await renderSorter();
     expect(getByText('Date')).toBeTruthy();
     expect(getByText('Amount')).toBeTruthy();
   });
 
-  it('shows active state for the currently selected sort field', () => {
-    const { getByText } = renderSorter();
+  it('shows active state for the currently selected sort field', async () => {
+    const { getByText } = await renderSorter();
     expect(getByText('↓')).toBeTruthy();
   });
 
-  it('toggles direction when same sort field is pressed', () => {
+  it('toggles direction when same sort field is pressed', async () => {
     const onSortChange = jest.fn();
-    const { getByText } = renderSorter({ onSortChange });
+    const { getByText } = await renderSorter({ onSortChange });
 
-    fireEvent.press(getByText('Date'));
+    await fireEvent.press(getByText('Date'));
 
     expect(onSortChange).toHaveBeenCalledWith('date', 'asc');
   });
 
-  it('resets direction when switching sort fields', () => {
+  it('resets direction when switching sort fields', async () => {
     const onSortChange = jest.fn();
-    const { getByText } = renderSorter({ onSortChange });
+    const { getByText } = await renderSorter({ onSortChange });
 
-    fireEvent.press(getByText('Amount'));
+    await fireEvent.press(getByText('Amount'));
 
     expect(onSortChange).toHaveBeenCalledWith('amount', 'asc');
   });
 
-  it('switches to desc default for date sort', () => {
+  it('switches to desc default for date sort', async () => {
     const onSortChange = jest.fn();
-    const { getByText } = renderSorter({
+    const { getByText } = await renderSorter({
       sortBy: 'amount',
       sortDirection: 'asc',
       onSortChange,
     });
 
-    fireEvent.press(getByText('Date'));
+    await fireEvent.press(getByText('Date'));
 
     expect(onSortChange).toHaveBeenCalledWith('date', 'desc');
   });
 
-  it('shows the correct arrow for asc direction', () => {
-    const { getByText } = renderSorter({
+  it('shows the correct arrow for asc direction', async () => {
+    const { getByText } = await renderSorter({
       sortBy: 'amount',
       sortDirection: 'asc',
     });
     expect(getByText('↑')).toBeTruthy();
   });
 
-  it('shows the correct arrow for desc direction', () => {
-    const { getByText } = renderSorter({
+  it('shows the correct arrow for desc direction', async () => {
+    const { getByText } = await renderSorter({
       sortBy: 'amount',
       sortDirection: 'desc',
     });
