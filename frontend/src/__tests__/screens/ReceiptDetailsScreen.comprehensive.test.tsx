@@ -99,7 +99,7 @@ describe('ReceiptDetailsScreen comprehensive', () => {
     });
 
   it('shows line items when present', async () => {
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
 
     await waitFor(() => {
       expect(getByText('Item 1')).toBeTruthy();
@@ -108,7 +108,7 @@ describe('ReceiptDetailsScreen comprehensive', () => {
   });
 
   it('updates projections when year selector changes', async () => {
-    const { getByText, getAllByRole } = renderScreen();
+    const { getByText, getAllByRole } = await renderScreen();
 
     await waitFor(() => {
       expect(getByText('Item 1')).toBeTruthy();
@@ -119,8 +119,8 @@ describe('ReceiptDetailsScreen comprehensive', () => {
       (btn) => btn.props.children === '5Y' || String(btn.props.children).includes('Y'),
     );
     if (yearSelector) {
-      act(() => {
-        fireEvent.press(yearSelector);
+      await act(async () => {
+        await fireEvent.press(yearSelector);
       });
       await waitFor(() => {
         expect(mockedGetHistorical).toHaveBeenCalled();
@@ -129,15 +129,15 @@ describe('ReceiptDetailsScreen comprehensive', () => {
   });
 
   it('handles delete cancellation', async () => {
-    const { getByText, getByLabelText } = renderScreen();
+    const { getByText, getByLabelText } = await renderScreen();
 
     await waitFor(() => {
       expect(getByText('Item 1')).toBeTruthy();
     });
 
     const deleteBtn = getByLabelText('Delete receipt');
-    act(() => {
-      fireEvent.press(deleteBtn);
+    await act(async () => {
+      await fireEvent.press(deleteBtn);
     });
 
     await waitFor(() => {
@@ -152,7 +152,7 @@ describe('ReceiptDetailsScreen comprehensive', () => {
       (btn: any) => btn.text === 'Cancel' && btn.style === 'cancel',
     );
 
-    act(() => {
+    await act(async () => {
       cancelButton?.onPress?.();
     });
 
@@ -161,7 +161,7 @@ describe('ReceiptDetailsScreen comprehensive', () => {
   });
 
   it('handles invalid amount entry (non-numeric)', async () => {
-    const { getByText, getByLabelText, getByPlaceholderText } = renderScreen();
+    const { getByText, getByLabelText, getByPlaceholderText } = await renderScreen();
 
     await waitFor(() => {
       expect(getByText('Item 1')).toBeTruthy();
@@ -169,8 +169,8 @@ describe('ReceiptDetailsScreen comprehensive', () => {
 
     // Open amount modal
     const amountRow = getByLabelText('Edit total amount');
-    act(() => {
-      fireEvent.press(amountRow);
+    await act(async () => {
+      await fireEvent.press(amountRow);
     });
 
     await waitFor(() => {
@@ -179,8 +179,8 @@ describe('ReceiptDetailsScreen comprehensive', () => {
 
     // Enter invalid amount
     const input = getByPlaceholderText('0.00');
-    act(() => {
-      fireEvent.changeText(input, 'abc');
+    await act(async () => {
+      await fireEvent.changeText(input, 'abc');
     });
 
     // Just verify the text change worked - validation error branch is exercised by the change
@@ -188,15 +188,15 @@ describe('ReceiptDetailsScreen comprehensive', () => {
   });
 
   it('handles invalid amount entry (negative number)', async () => {
-    const { getByText, getByLabelText, getByPlaceholderText } = renderScreen();
+    const { getByText, getByLabelText, getByPlaceholderText } = await renderScreen();
 
     await waitFor(() => {
       expect(getByText('Item 1')).toBeTruthy();
     });
 
     const amountRow = getByLabelText('Edit total amount');
-    act(() => {
-      fireEvent.press(amountRow);
+    await act(async () => {
+      await fireEvent.press(amountRow);
     });
 
     await waitFor(() => {
@@ -204,15 +204,15 @@ describe('ReceiptDetailsScreen comprehensive', () => {
     });
 
     const input = getByPlaceholderText('0.00');
-    act(() => {
-      fireEvent.changeText(input, '-50');
+    await act(async () => {
+      await fireEvent.changeText(input, '-50');
     });
 
     expect(input.props.value).toBe('-50');
   });
 
   it('handles invalid date format', async () => {
-    const { getByText, getByLabelText, getByPlaceholderText } = renderScreen();
+    const { getByText, getByLabelText, getByPlaceholderText } = await renderScreen();
 
     await waitFor(() => {
       expect(getByText('Item 1')).toBeTruthy();
@@ -220,8 +220,8 @@ describe('ReceiptDetailsScreen comprehensive', () => {
 
     // Open date modal
     const dateRow = getByLabelText('Edit transaction date');
-    act(() => {
-      fireEvent.press(dateRow);
+    await act(async () => {
+      await fireEvent.press(dateRow);
     });
 
     await waitFor(() => {
@@ -230,8 +230,8 @@ describe('ReceiptDetailsScreen comprehensive', () => {
 
     // Enter invalid date format
     const input = getByPlaceholderText('YYYY-MM-DD');
-    act(() => {
-      fireEvent.changeText(input, 'invalid-date');
+    await act(async () => {
+      await fireEvent.changeText(input, 'invalid-date');
     });
 
     // Just verify text change worked - validation branch exercised
@@ -239,7 +239,7 @@ describe('ReceiptDetailsScreen comprehensive', () => {
   });
 
   it('handles empty merchant name update', async () => {
-    const { getByText, getByLabelText, getByPlaceholderText } = renderScreen();
+    const { getByText, getByLabelText, getByPlaceholderText } = await renderScreen();
 
     await waitFor(() => {
       expect(getByText('Item 1')).toBeTruthy();
@@ -247,8 +247,8 @@ describe('ReceiptDetailsScreen comprehensive', () => {
 
     // Open merchant modal
     const merchantRow = getByLabelText('Edit merchant name');
-    act(() => {
-      fireEvent.press(merchantRow);
+    await act(async () => {
+      await fireEvent.press(merchantRow);
     });
 
     await waitFor(() => {
@@ -257,14 +257,14 @@ describe('ReceiptDetailsScreen comprehensive', () => {
 
     const input = getByPlaceholderText('Enter merchant name');
     // Enter whitespace only
-    act(() => {
-      fireEvent.changeText(input, '   ');
+    await act(async () => {
+      await fireEvent.changeText(input, '   ');
     });
 
     const buttons = getByText('Save').parent;
     if (buttons) {
-      act(() => {
-        fireEvent.press(buttons);
+      await act(async () => {
+        await fireEvent.press(buttons);
       });
 
       // Merchant should not be updated and modal should stay open
@@ -273,15 +273,15 @@ describe('ReceiptDetailsScreen comprehensive', () => {
   });
 
   it('handles successful amount update', async () => {
-    const { getByText, getByLabelText, getByPlaceholderText } = renderScreen();
+    const { getByText, getByLabelText, getByPlaceholderText } = await renderScreen();
 
     await waitFor(() => {
       expect(getByText('Item 1')).toBeTruthy();
     });
 
     const amountRow = getByLabelText('Edit total amount');
-    act(() => {
-      fireEvent.press(amountRow);
+    await act(async () => {
+      await fireEvent.press(amountRow);
     });
 
     await waitFor(() => {
@@ -289,13 +289,13 @@ describe('ReceiptDetailsScreen comprehensive', () => {
     });
 
     const input = getByPlaceholderText('0.00');
-    act(() => {
-      fireEvent.changeText(input, '99.99');
+    await act(async () => {
+      await fireEvent.changeText(input, '99.99');
     });
 
     const saveBtn = getByText('Save').parent;
-    act(() => {
-      fireEvent.press(saveBtn!);
+    await act(async () => {
+      await fireEvent.press(saveBtn!);
     });
 
     await waitFor(() => {
@@ -307,15 +307,15 @@ describe('ReceiptDetailsScreen comprehensive', () => {
   });
 
   it('handles successful merchant name update', async () => {
-    const { getByText, getByLabelText, getByPlaceholderText } = renderScreen();
+    const { getByText, getByLabelText, getByPlaceholderText } = await renderScreen();
 
     await waitFor(() => {
       expect(getByText('Item 1')).toBeTruthy();
     });
 
     const merchantRow = getByLabelText('Edit merchant name');
-    act(() => {
-      fireEvent.press(merchantRow);
+    await act(async () => {
+      await fireEvent.press(merchantRow);
     });
 
     await waitFor(() => {
@@ -323,13 +323,13 @@ describe('ReceiptDetailsScreen comprehensive', () => {
     });
 
     const input = getByPlaceholderText('Enter merchant name');
-    act(() => {
-      fireEvent.changeText(input, 'New Merchant');
+    await act(async () => {
+      await fireEvent.changeText(input, 'New Merchant');
     });
 
     const saveBtn = getByText('Save').parent;
-    act(() => {
-      fireEvent.press(saveBtn!);
+    await act(async () => {
+      await fireEvent.press(saveBtn!);
     });
 
     await waitFor(() => {
@@ -341,15 +341,15 @@ describe('ReceiptDetailsScreen comprehensive', () => {
   });
 
   it('handles delete receipt success', async () => {
-    const { getByText, getByLabelText } = renderScreen();
+    const { getByText, getByLabelText } = await renderScreen();
 
     await waitFor(() => {
       expect(getByText('Item 1')).toBeTruthy();
     });
 
     const deleteBtn = getByLabelText('Delete receipt');
-    act(() => {
-      fireEvent.press(deleteBtn);
+    await act(async () => {
+      await fireEvent.press(deleteBtn);
     });
 
     await waitFor(() => {
@@ -364,7 +364,7 @@ describe('ReceiptDetailsScreen comprehensive', () => {
       (btn: any) => btn.text === 'Delete' && btn.style === 'destructive',
     );
 
-    act(() => {
+    await act(async () => {
       deleteButton?.onPress?.();
     });
 
@@ -376,15 +376,15 @@ describe('ReceiptDetailsScreen comprehensive', () => {
   it('handles delete receipt failure', async () => {
     mockedReceiptService.delete.mockRejectedValueOnce(new Error('Delete failed'));
 
-    const { getByText, getByLabelText } = renderScreen();
+    const { getByText, getByLabelText } = await renderScreen();
 
     await waitFor(() => {
       expect(getByText('Item 1')).toBeTruthy();
     });
 
     const deleteBtn = getByLabelText('Delete receipt');
-    act(() => {
-      fireEvent.press(deleteBtn);
+    await act(async () => {
+      await fireEvent.press(deleteBtn);
     });
 
     await waitFor(() => {
@@ -398,7 +398,7 @@ describe('ReceiptDetailsScreen comprehensive', () => {
       (btn: any) => btn.text === 'Delete' && btn.style === 'destructive',
     );
 
-    act(() => {
+    await act(async () => {
       deleteButton?.onPress?.();
     });
 

@@ -68,11 +68,11 @@ describe('ScanScreen', () => {
     mockTakePictureAsync.mockReset();
   });
 
-  it('renders permission prompt when camera access is denied', () => {
+  it('renders permission prompt when camera access is denied', async () => {
     createHookState();
     mockUseCameraPermissions.mockReturnValue([{ granted: false }, jest.fn()]);
 
-    const { getByTestId } = renderScreen();
+    const { getByTestId } = await renderScreen();
 
     expect(getByTestId('camera-permission-text')).toBeTruthy();
   });
@@ -81,9 +81,9 @@ describe('ScanScreen', () => {
     const hook = createHookState();
     mockTakePictureAsync.mockResolvedValue({ uri: 'file://snap.jpg', base64: 'YmFzZTY0' });
 
-    const { getByTestId, queryByTestId } = renderScreen();
+    const { getByTestId, queryByTestId } = await renderScreen();
 
-    fireEvent.press(getByTestId('capture-button'));
+    await fireEvent.press(getByTestId('capture-button'));
 
     await waitFor(() =>
       expect(hook.actions.processReceipt).toHaveBeenCalledWith({
@@ -98,18 +98,18 @@ describe('ScanScreen', () => {
     const hook = createHookState();
     mockTakePictureAsync.mockResolvedValue({ uri: 'file://manual.jpg', base64: 'bWFudWFs' });
 
-    const screen = renderScreen();
+    const screen = await renderScreen();
 
-    fireEvent.press(screen.getByTestId('capture-button'));
+    await fireEvent.press(screen.getByTestId('capture-button'));
     await waitFor(() => expect(hook.actions.processReceipt).toHaveBeenCalled());
 
     hook.state.manualModalVisible = true;
     hook.state.manualEntryText = '45.67';
     hook.state.ocrRaw = 'Total £45.67';
 
-    screen.rerender(<ScanScreen />);
+    await screen.rerender(<ScanScreen />);
 
-    fireEvent.press(screen.getByTestId('manual-confirm-button'));
+    await fireEvent.press(screen.getByTestId('manual-confirm-button'));
 
     await waitFor(() =>
       expect(hook.actions.saveAndNavigate).toHaveBeenCalledWith(
@@ -124,9 +124,9 @@ describe('ScanScreen', () => {
   it('shows alert when camera capture fails', async () => {
     mockTakePictureAsync.mockRejectedValue(new Error('camera error'));
 
-    const { getByTestId } = renderScreen();
+    const { getByTestId } = await renderScreen();
 
-    fireEvent.press(getByTestId('capture-button'));
+    await fireEvent.press(getByTestId('capture-button'));
 
     await waitFor(() => {
       expect(Alert.alert).toHaveBeenCalledWith('Error', 'Failed to capture image');
@@ -137,15 +137,15 @@ describe('ScanScreen', () => {
     const hook = createHookState();
     mockTakePictureAsync.mockResolvedValue({ uri: 'file://bad.jpg', base64: 'YmFk' });
 
-    const screen = renderScreen();
-    fireEvent.press(screen.getByTestId('capture-button'));
+    const screen = await renderScreen();
+    await fireEvent.press(screen.getByTestId('capture-button'));
     await waitFor(() => expect(hook.actions.processReceipt).toHaveBeenCalled());
 
     hook.state.manualModalVisible = true;
     hook.state.manualEntryText = 'abc';
-    screen.rerender(<ScanScreen />);
+    await screen.rerender(<ScanScreen />);
 
-    fireEvent.press(screen.getByTestId('manual-confirm-button'));
+    await fireEvent.press(screen.getByTestId('manual-confirm-button'));
 
     await waitFor(() => {
       expect(Alert.alert).toHaveBeenCalledWith('Invalid amount', 'Enter a valid number');
@@ -156,14 +156,14 @@ describe('ScanScreen', () => {
     const hook = createHookState();
     mockTakePictureAsync.mockResolvedValue({ uri: 'file://cancel.jpg', base64: 'Y2FuY2Vs' });
 
-    const screen = renderScreen();
-    fireEvent.press(screen.getByTestId('capture-button'));
+    const screen = await renderScreen();
+    await fireEvent.press(screen.getByTestId('capture-button'));
     await waitFor(() => expect(hook.actions.processReceipt).toHaveBeenCalled());
 
     hook.state.manualModalVisible = true;
-    screen.rerender(<ScanScreen />);
+    await screen.rerender(<ScanScreen />);
 
-    fireEvent.press(screen.getByText('Cancel'));
+    await fireEvent.press(screen.getByText('Cancel'));
 
     await waitFor(() => {
       expect(hook.actions.discardDraft).toHaveBeenCalled();
@@ -176,13 +176,13 @@ describe('ScanScreen', () => {
     const hook = createHookState();
     mockTakePictureAsync.mockResolvedValue({ uri: 'file://snap.jpg', base64: 'YmFzZTY0' });
 
-    const { getByTestId, queryByTestId } = renderScreen();
+    const { getByTestId, queryByTestId } = await renderScreen();
 
-    fireEvent.press(getByTestId('capture-button'));
+    await fireEvent.press(getByTestId('capture-button'));
 
     await waitFor(() => expect(queryByTestId('scan-preview-image')).toBeTruthy());
 
-    fireEvent.press(getByTestId('retake-button'));
+    await fireEvent.press(getByTestId('retake-button'));
 
     expect(hook.actions.resetWorkflowState).toHaveBeenCalled();
   });

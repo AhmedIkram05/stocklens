@@ -11,42 +11,42 @@ describe('EmptyStateWithOnboarding', () => {
     onPrimaryPress: jest.fn(),
   };
 
-  it('renders title and subtitle', () => {
-    const { getByText } = renderWithProviders(<EmptyStateWithOnboarding {...defaultProps} />);
+  it('renders title and subtitle', async () => {
+    const { getByText } = await renderWithProviders(<EmptyStateWithOnboarding {...defaultProps} />);
     expect(getByText('Get Started')).toBeTruthy();
     expect(getByText('Start tracking your expenses')).toBeTruthy();
   });
 
-  it('renders primary button text', () => {
-    const { getByText } = renderWithProviders(<EmptyStateWithOnboarding {...defaultProps} />);
+  it('renders primary button text', async () => {
+    const { getByText } = await renderWithProviders(<EmptyStateWithOnboarding {...defaultProps} />);
     expect(getByText('Scan First Receipt')).toBeTruthy();
   });
 
-  it('calls onPrimaryPress when button is pressed', () => {
+  it('calls onPrimaryPress when button is pressed', async () => {
     const onPress = jest.fn();
-    const { getByText } = renderWithProviders(
+    const { getByText } = await renderWithProviders(
       <EmptyStateWithOnboarding {...defaultProps} onPrimaryPress={onPress} />,
     );
-    fireEvent.press(getByText('Scan First Receipt'));
+    await fireEvent.press(getByText('Scan First Receipt'));
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it('renders all 3 onboarding cards with step numbers', () => {
-    const { getByText } = renderWithProviders(<EmptyStateWithOnboarding {...defaultProps} />);
+  it('renders all 3 onboarding cards with step numbers', async () => {
+    const { getByText } = await renderWithProviders(<EmptyStateWithOnboarding {...defaultProps} />);
     expect(getByText('1')).toBeTruthy();
     expect(getByText('2')).toBeTruthy();
     expect(getByText('3')).toBeTruthy();
   });
 
-  it('renders onboarding card titles correctly', () => {
-    const { getByText } = renderWithProviders(<EmptyStateWithOnboarding {...defaultProps} />);
+  it('renders onboarding card titles correctly', async () => {
+    const { getByText } = await renderWithProviders(<EmptyStateWithOnboarding {...defaultProps} />);
     expect(getByText('Scan Your Receipts')).toBeTruthy();
     expect(getByText('See Investment Potential')).toBeTruthy();
     expect(getByText('Track Your Progress')).toBeTruthy();
   });
 
-  it('renders onboarding card subtitles', () => {
-    const { getByText } = renderWithProviders(<EmptyStateWithOnboarding {...defaultProps} />);
+  it('renders onboarding card subtitles', async () => {
+    const { getByText } = await renderWithProviders(<EmptyStateWithOnboarding {...defaultProps} />);
     expect(getByText('Take photos of your spending to track expenses')).toBeTruthy();
     expect(getByText('Discover what your spending could be worth if invested')).toBeTruthy();
     expect(
@@ -54,8 +54,8 @@ describe('EmptyStateWithOnboarding', () => {
     ).toBeTruthy();
   });
 
-  it('accepts custom iconName', () => {
-    const { getByText } = renderWithProviders(
+  it('accepts custom iconName', async () => {
+    const { getByText } = await renderWithProviders(
       <EmptyStateWithOnboarding {...defaultProps} iconName="camera" />,
     );
     expect(getByText('Get Started')).toBeTruthy();

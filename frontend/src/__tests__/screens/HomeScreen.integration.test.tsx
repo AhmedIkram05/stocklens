@@ -5,7 +5,6 @@
  */
 
 import React from 'react';
-import { ScrollView } from 'react-native';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import HomeScreen from '@/screens/HomeScreen';
 import { renderWithProviders } from '../utils';
@@ -69,7 +68,7 @@ describe('HomeScreen', () => {
     });
   };
 
-  it('shows onboarding empty state and navigates to Scan when CTA pressed', () => {
+  it('shows onboarding empty state and navigates to Scan when CTA pressed', async () => {
     const navigateSpy = jest.fn();
     mockedUseNavigation.mockReturnValue({ navigate: navigateSpy } as any);
     mockedUseReceipts.mockReturnValue({
@@ -79,10 +78,10 @@ describe('HomeScreen', () => {
       refetch: jest.fn(),
     });
 
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
 
     expect(getByText('No Receipts Yet')).toBeTruthy();
-    fireEvent.press(getByText('Scan Your First Receipt'));
+    await fireEvent.press(getByText('Scan Your First Receipt'));
 
     expect(navigateSpy).toHaveBeenCalledWith('MainTabs', { screen: 'Scan' });
   });
@@ -138,17 +137,17 @@ describe('HomeScreen', () => {
       refetch: jest.fn(),
     });
 
-    const { getByText, getAllByTestId } = renderScreen();
+    const { getByText, getAllByTestId } = await renderScreen();
 
     await waitFor(() => expect(getByText('Total Money Spent')).toBeTruthy());
     expect(getByText('£150.00')).toBeTruthy();
     expect(getByText('Receipts Scanned')).toBeTruthy();
     expect(getByText('£80.00')).toBeTruthy();
 
-    fireEvent.press(getByText('View all receipts'));
+    await fireEvent.press(getByText('View all receipts'));
     expect(getByText('Show Less')).toBeTruthy();
 
-    fireEvent.press(getAllByTestId('receipt-card')[0]);
+    await fireEvent.press(getAllByTestId('receipt-card')[0]);
     expect(navigateSpy).toHaveBeenCalledWith(
       'ReceiptDetails',
       expect.objectContaining({ receiptId: '1', totalAmount: 80, source: 'regex', confidence: 95 }),
@@ -182,7 +181,7 @@ describe('HomeScreen', () => {
       refetch: jest.fn(),
     });
 
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
     await waitFor(() => {
       expect(getByText('Food')).toBeTruthy();
     });
@@ -214,7 +213,7 @@ describe('HomeScreen', () => {
       refetch: jest.fn(),
     });
 
-    const { queryByText } = renderScreen();
+    const { queryByText } = await renderScreen();
     await waitFor(() => {
       expect(portfolioService.listPortfolios).toHaveBeenCalled();
     });
@@ -250,7 +249,7 @@ describe('HomeScreen', () => {
       refetch: jest.fn(),
     });
 
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
     await waitFor(() => expect(getByText('Portfolio Value')).toBeTruthy());
     // Verify the formatted market value is shown
     expect(getByText('£10,000.00')).toBeTruthy();
@@ -282,11 +281,11 @@ describe('HomeScreen', () => {
       refetch: jest.fn(),
     });
 
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
     await waitFor(() => expect(getByText('Portfolio Value')).toBeTruthy());
 
     // fireEvent.press traverses up the parent chain to find onPress handler
-    fireEvent.press(getByText('Portfolio Value'));
+    await fireEvent.press(getByText('Portfolio Value'));
     expect(navigateSpy).toHaveBeenCalledWith('MainTabs', { screen: 'Portfolio' });
   });
 
@@ -319,12 +318,12 @@ describe('HomeScreen', () => {
       refetch: jest.fn(),
     });
 
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
     await waitFor(() => expect(getByText('Total Money Spent')).toBeTruthy());
 
     // Press the Amount sort button — triggers onSortChange('amount', 'asc')
     // fireEvent.press traverses parents so it reaches TouchableOpacity
-    fireEvent.press(getByText('Amount'));
+    await fireEvent.press(getByText('Amount'));
 
     // Component re-renders with amount sort active
     await waitFor(() => {
@@ -364,15 +363,15 @@ describe('HomeScreen', () => {
       refetch: jest.fn(),
     });
 
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
     await waitFor(() => expect(getByText('Food')).toBeTruthy());
 
     // Press the Food chip — sets filterCategoryId, covers line 289
-    fireEvent.press(getByText('Food'));
+    await fireEvent.press(getByText('Food'));
 
     // Press All chip to clear filter — covers line 268
-    await waitFor(() => {
-      fireEvent.press(getByText('All'));
+    await waitFor(async () => {
+      await fireEvent.press(getByText('All'));
       expect(getByText('All')).toBeTruthy();
     });
   });
@@ -402,11 +401,15 @@ describe('HomeScreen', () => {
     const { portfolioService } = require('@/services/portfolios');
     portfolioService.listPortfolios.mockResolvedValue([]);
 
-    const { UNSAFE_root, getByText } = renderScreen();
+    const { root, getByText } = await renderScreen();
     await waitFor(() => expect(getByText('Total Money Spent')).toBeTruthy());
 
     // Find the main ScrollView and trigger its RefreshControl.onRefresh
-    const scrollView = UNSAFE_root.findByType(ScrollView);
+    const scrollView = root?.queryAll(
+      (el) =>
+        el.props.refreshControl !== undefined ||
+        (typeof el.props.onRefresh === 'function' && 'refreshing' in el.props),
+    )[0]!;
     scrollView.props.refreshControl.props.onRefresh();
 
     await waitFor(() => {

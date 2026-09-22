@@ -49,25 +49,25 @@ describe('OnboardingScreen', () => {
       },
     });
 
-  it('renders the StockLens branding', () => {
-    renderScreen();
+  it('renders the StockLens branding', async () => {
+    await renderScreen();
     expect(screen.getByText('StockLens')).toBeTruthy();
   });
 
-  it('renders subtitle text', () => {
-    renderScreen();
+  it('renders subtitle text', async () => {
+    await renderScreen();
     expect(screen.getByText('Scan your Spending')).toBeTruthy();
     expect(screen.getByText('See your missed Investing')).toBeTruthy();
   });
 
-  it('renders the Get Started button', () => {
-    renderScreen();
+  it('renders the Get Started button', async () => {
+    await renderScreen();
     expect(screen.getByText("Let's Get Started")).toBeTruthy();
   });
 
-  it('navigates to Login when Get Started is pressed', () => {
-    renderScreen();
-    fireEvent.press(screen.getByText("Let's Get Started"));
+  it('navigates to Login when Get Started is pressed', async () => {
+    await renderScreen();
+    await fireEvent.press(screen.getByText("Let's Get Started"));
     expect(mockNavigate).toHaveBeenCalledWith('Login');
   });
 });

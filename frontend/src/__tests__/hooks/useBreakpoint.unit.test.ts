@@ -31,10 +31,10 @@ describe('useBreakpoint', () => {
     mockUseWindowDimensions.mockReturnValue({ width: 375, height: 812, scale: 2, fontScale: 1 });
   });
 
-  it('returns phone dimensions for small phone (<= 360px)', () => {
+  it('returns phone dimensions for small phone (<= 360px)', async () => {
     mockUseWindowDimensions.mockReturnValue({ width: 320, height: 568, scale: 2, fontScale: 1 });
 
-    const { result } = renderHook(() => useBreakpoint());
+    const { result } = await renderHook(() => useBreakpoint());
 
     expect(result.current.width).toBe(320);
     expect(result.current.height).toBe(568);
@@ -46,10 +46,10 @@ describe('useBreakpoint', () => {
     expect(result.current.cardsPerRow).toBe(2);
   });
 
-  it('returns phone dimensions for standard phone (375px)', () => {
+  it('returns phone dimensions for standard phone (375px)', async () => {
     mockUseWindowDimensions.mockReturnValue({ width: 375, height: 812, scale: 2, fontScale: 1 });
 
-    const { result } = renderHook(() => useBreakpoint());
+    const { result } = await renderHook(() => useBreakpoint());
 
     expect(result.current.width).toBe(375);
     expect(result.current.height).toBe(812);
@@ -61,10 +61,10 @@ describe('useBreakpoint', () => {
     expect(result.current.cardsPerRow).toBe(2);
   });
 
-  it('returns phone dimensions for large phone (414px)', () => {
+  it('returns phone dimensions for large phone (414px)', async () => {
     mockUseWindowDimensions.mockReturnValue({ width: 414, height: 896, scale: 2, fontScale: 1 });
 
-    const { result } = renderHook(() => useBreakpoint());
+    const { result } = await renderHook(() => useBreakpoint());
 
     expect(result.current.isLargePhone).toBe(true);
     expect(result.current.isTablet).toBe(false);
@@ -74,10 +74,10 @@ describe('useBreakpoint', () => {
     expect(result.current.cardsPerRow).toBe(2);
   });
 
-  it('returns tablet dimensions (>= 768px)', () => {
+  it('returns tablet dimensions (>= 768px)', async () => {
     mockUseWindowDimensions.mockReturnValue({ width: 1024, height: 768, scale: 2, fontScale: 1 });
 
-    const { result } = renderHook(() => useBreakpoint());
+    const { result } = await renderHook(() => useBreakpoint());
 
     expect(result.current.isTablet).toBe(true);
     expect(result.current.isLargePhone).toBe(false);
@@ -87,48 +87,48 @@ describe('useBreakpoint', () => {
     expect(result.current.cardsPerRow).toBe(3);
   });
 
-  it('returns portrait orientation when height > width', () => {
+  it('returns portrait orientation when height > width', async () => {
     mockUseWindowDimensions.mockReturnValue({ width: 375, height: 812, scale: 2, fontScale: 1 });
 
-    const { result } = renderHook(() => useBreakpoint());
+    const { result } = await renderHook(() => useBreakpoint());
 
     expect(result.current.orientation).toBe('portrait');
   });
 
-  it('returns landscape orientation when width > height', () => {
+  it('returns landscape orientation when width > height', async () => {
     mockUseWindowDimensions.mockReturnValue({ width: 812, height: 375, scale: 2, fontScale: 1 });
 
-    const { result } = renderHook(() => useBreakpoint());
+    const { result } = await renderHook(() => useBreakpoint());
 
     expect(result.current.orientation).toBe('landscape');
   });
 
-  it('updates values when dimensions change', () => {
+  it('updates values when dimensions change', async () => {
     mockUseWindowDimensions.mockReturnValue({ width: 375, height: 812, scale: 2, fontScale: 1 });
-    const { result, rerender } = renderHook(() => useBreakpoint());
+    const { result, rerender } = await renderHook(() => useBreakpoint());
 
     expect(result.current.isTablet).toBe(false);
     expect(result.current.width).toBe(375);
 
     mockUseWindowDimensions.mockReturnValue({ width: 1024, height: 768, scale: 2, fontScale: 1 });
-    rerender(undefined);
+    await rerender(undefined);
 
     expect(result.current.isTablet).toBe(true);
     expect(result.current.width).toBe(1024);
     expect(result.current.orientation).toBe('landscape');
   });
 
-  it('returns correct spacing values for phone', () => {
+  it('returns correct spacing values for phone', async () => {
     mockUseWindowDimensions.mockReturnValue({ width: 375, height: 812, scale: 2, fontScale: 1 });
-    const { result } = renderHook(() => useBreakpoint());
+    const { result } = await renderHook(() => useBreakpoint());
 
     expect(result.current.contentHorizontalPadding).toBe(12);
     expect(result.current.sectionVerticalSpacing).toBe(24);
   });
 
-  it('returns correct spacing values for tablet', () => {
+  it('returns correct spacing values for tablet', async () => {
     mockUseWindowDimensions.mockReturnValue({ width: 1024, height: 768, scale: 2, fontScale: 1 });
-    const { result } = renderHook(() => useBreakpoint());
+    const { result } = await renderHook(() => useBreakpoint());
 
     expect(result.current.contentHorizontalPadding).toBe(32);
     expect(result.current.sectionVerticalSpacing).toBe(32);

@@ -93,8 +93,8 @@ describe('TradeScreen', () => {
     jest.restoreAllMocks();
   });
 
-  it('renders trade form with ticker and shares inputs', () => {
-    const { getByPlaceholderText, getAllByText } = renderWithProviders(<TradeScreen />, {
+  it('renders trade form with ticker and shares inputs', async () => {
+    const { getByPlaceholderText, getAllByText } = await renderWithProviders(<TradeScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -103,8 +103,8 @@ describe('TradeScreen', () => {
     expect(getByPlaceholderText('0')).toBeTruthy();
   });
 
-  it('shows buy/sell mode toggle', () => {
-    const { getAllByText } = renderWithProviders(<TradeScreen />, {
+  it('shows buy/sell mode toggle', async () => {
+    const { getAllByText } = await renderWithProviders(<TradeScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -113,13 +113,13 @@ describe('TradeScreen', () => {
   });
 
   it('looks up quote when ticker is entered', async () => {
-    const { getByPlaceholderText } = renderWithProviders(<TradeScreen />, {
+    const { getByPlaceholderText } = await renderWithProviders(<TradeScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     const tickerInput = getByPlaceholderText('AAPL');
-    fireEvent.changeText(tickerInput, 'AAPL');
-    fireEvent(tickerInput, 'blur');
+    await fireEvent.changeText(tickerInput, 'AAPL');
+    await fireEvent(tickerInput, 'blur');
 
     await waitFor(() => {
       expect(mockedMarketService.getQuote).toHaveBeenCalledWith('AAPL');
@@ -127,16 +127,16 @@ describe('TradeScreen', () => {
   });
 
   it('shows quote preview after ticker lookup', async () => {
-    const { getByPlaceholderText, getByText } = renderWithProviders(<TradeScreen />, {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<TradeScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     const tickerInput = getByPlaceholderText('AAPL');
-    fireEvent.changeText(tickerInput, 'AAPL');
-    fireEvent(tickerInput, 'blur');
+    await fireEvent.changeText(tickerInput, 'AAPL');
+    await fireEvent(tickerInput, 'blur');
 
     const sharesInput = getByPlaceholderText('0');
-    fireEvent.changeText(sharesInput, '10');
+    await fireEvent.changeText(sharesInput, '10');
 
     await waitFor(() => {
       expect(getByText(/AAPL/)).toBeTruthy();
@@ -146,13 +146,13 @@ describe('TradeScreen', () => {
   it('shows quote error state', async () => {
     mockedMarketService.getQuote.mockRejectedValue(new Error('Symbol not found'));
 
-    const { getByPlaceholderText, getByText } = renderWithProviders(<TradeScreen />, {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<TradeScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     const tickerInput = getByPlaceholderText('AAPL');
-    fireEvent.changeText(tickerInput, 'INVALID');
-    fireEvent(tickerInput, 'blur');
+    await fireEvent.changeText(tickerInput, 'INVALID');
+    await fireEvent(tickerInput, 'blur');
 
     await waitFor(() => {
       expect(getByText('Could not fetch quote')).toBeTruthy();
@@ -166,7 +166,7 @@ describe('TradeScreen', () => {
       name: 'Trade' as any,
     } as any);
 
-    renderWithProviders(<TradeScreen />, {
+    await renderWithProviders(<TradeScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -176,21 +176,21 @@ describe('TradeScreen', () => {
   });
 
   it('submits buy order', async () => {
-    const { getByPlaceholderText, getByText } = renderWithProviders(<TradeScreen />, {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<TradeScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     const tickerInput = getByPlaceholderText('AAPL');
-    fireEvent.changeText(tickerInput, 'AAPL');
-    fireEvent(tickerInput, 'blur');
+    await fireEvent.changeText(tickerInput, 'AAPL');
+    await fireEvent(tickerInput, 'blur');
 
     await waitFor(() => expect(mockedMarketService.getQuote).toHaveBeenCalled());
 
     const sharesInput = getByPlaceholderText('0');
-    fireEvent.changeText(sharesInput, '10');
+    await fireEvent.changeText(sharesInput, '10');
 
     const confirmButton = getByText('Buy US$1,805.00');
-    fireEvent.press(confirmButton);
+    await fireEvent.press(confirmButton);
 
     await waitFor(() => {
       expect(mockedPortfolioService.createTransaction).toHaveBeenCalledWith('1', {
@@ -210,7 +210,7 @@ describe('TradeScreen', () => {
       name: 'Trade' as any,
     } as any);
 
-    const { getByPlaceholderText, getByText } = renderWithProviders(<TradeScreen />, {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<TradeScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -219,16 +219,16 @@ describe('TradeScreen', () => {
     });
 
     const tickerInput = getByPlaceholderText('AAPL');
-    fireEvent.changeText(tickerInput, 'AAPL');
-    fireEvent(tickerInput, 'blur');
+    await fireEvent.changeText(tickerInput, 'AAPL');
+    await fireEvent(tickerInput, 'blur');
 
     await waitFor(() => expect(mockedMarketService.getQuote).toHaveBeenCalled());
 
     const sharesInput = getByPlaceholderText('0');
-    fireEvent.changeText(sharesInput, '5');
+    await fireEvent.changeText(sharesInput, '5');
 
     const confirmButton = getByText(' Sell US$902.50');
-    fireEvent.press(confirmButton);
+    await fireEvent.press(confirmButton);
 
     await waitFor(() => {
       expect(mockedPortfolioService.createTransaction).toHaveBeenCalledWith('1', {
@@ -248,7 +248,7 @@ describe('TradeScreen', () => {
       name: 'Trade' as any,
     } as any);
 
-    const { getByPlaceholderText, getByText } = renderWithProviders(<TradeScreen />, {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<TradeScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -257,13 +257,13 @@ describe('TradeScreen', () => {
     });
 
     const tickerInput = getByPlaceholderText('AAPL');
-    fireEvent.changeText(tickerInput, 'AAPL');
-    fireEvent(tickerInput, 'blur');
+    await fireEvent.changeText(tickerInput, 'AAPL');
+    await fireEvent(tickerInput, 'blur');
 
     await waitFor(() => expect(mockedMarketService.getQuote).toHaveBeenCalled());
 
     const sharesInput = getByPlaceholderText('0');
-    fireEvent.changeText(sharesInput, '20');
+    await fireEvent.changeText(sharesInput, '20');
 
     await waitFor(() => {
       expect(getByText('You only own 10 shares of AAPL')).toBeTruthy();
@@ -273,33 +273,33 @@ describe('TradeScreen', () => {
   it('handles submit error', async () => {
     mockedPortfolioService.createTransaction.mockRejectedValue(new Error('Insufficient funds'));
 
-    const { getByPlaceholderText, getByText } = renderWithProviders(<TradeScreen />, {
+    const { getByPlaceholderText, getByText } = await renderWithProviders(<TradeScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     const tickerInput = getByPlaceholderText('AAPL');
-    fireEvent.changeText(tickerInput, 'AAPL');
-    fireEvent(tickerInput, 'blur');
+    await fireEvent.changeText(tickerInput, 'AAPL');
+    await fireEvent(tickerInput, 'blur');
 
     await waitFor(() => expect(mockedMarketService.getQuote).toHaveBeenCalled());
 
     const sharesInput = getByPlaceholderText('0');
-    fireEvent.changeText(sharesInput, '10');
+    await fireEvent.changeText(sharesInput, '10');
 
     const confirmButton = getByText('Buy US$1,805.00');
-    fireEvent.press(confirmButton);
+    await fireEvent.press(confirmButton);
 
     await waitFor(() => {
       expect(getByText('Transaction failed')).toBeTruthy();
     });
   });
 
-  it('back button calls navigation.goBack', () => {
-    const { getByLabelText } = renderWithProviders(<TradeScreen />, {
+  it('back button calls navigation.goBack', async () => {
+    const { getByLabelText } = await renderWithProviders(<TradeScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
-    fireEvent.press(getByLabelText('Go back'));
+    await fireEvent.press(getByLabelText('Go back'));
 
     expect(goBackSpy).toHaveBeenCalled();
   });

@@ -1,6 +1,5 @@
 import React from 'react';
-import { RefreshControl } from 'react-native';
-import { fireEvent, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, waitFor } from '@testing-library/react-native';
 
 import PortfolioDetailScreen from '@/screens/portfolio/PortfolioDetailScreen';
 import { renderWithProviders } from '../../utils';
@@ -167,7 +166,7 @@ describe('PortfolioDetailScreen', () => {
   it('shows loading state initially', async () => {
     mockedGraphqlRequest.mockImplementation(() => new Promise(() => {}));
 
-    const { queryByText } = renderWithProviders(<PortfolioDetailScreen />, {
+    const { queryByText } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -175,7 +174,7 @@ describe('PortfolioDetailScreen', () => {
   });
 
   it('renders portfolio name and total value when loaded', async () => {
-    const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -186,7 +185,7 @@ describe('PortfolioDetailScreen', () => {
   });
 
   it('renders metrics row (Day Change, Total P&L, TWR)', async () => {
-    const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -202,7 +201,7 @@ describe('PortfolioDetailScreen', () => {
   });
 
   it('renders holdings table with data', async () => {
-    const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -222,7 +221,7 @@ describe('PortfolioDetailScreen', () => {
       },
     });
 
-    const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -240,7 +239,7 @@ describe('PortfolioDetailScreen', () => {
       },
     });
 
-    const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -250,7 +249,7 @@ describe('PortfolioDetailScreen', () => {
   });
 
   it('renders action buttons (Deposit, Trade, Benchmark)', async () => {
-    const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -262,37 +261,37 @@ describe('PortfolioDetailScreen', () => {
   });
 
   it('Deposit button navigates to Deposit screen', async () => {
-    const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     await waitFor(() => expect(getByText('Test Portfolio')).toBeTruthy());
 
-    fireEvent.press(getByText('Deposit'));
+    await fireEvent.press(getByText('Deposit'));
 
     expect(navigateSpy).toHaveBeenCalledWith('Deposit', { portfolioId: '1' });
   });
 
   it('Trade button navigates to Trade screen', async () => {
-    const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     await waitFor(() => expect(getByText('Test Portfolio')).toBeTruthy());
 
-    fireEvent.press(getByText('Trade'));
+    await fireEvent.press(getByText('Trade'));
 
     expect(navigateSpy).toHaveBeenCalledWith('Trade', { portfolioId: '1', mode: 'buy' });
   });
 
   it('Benchmark button navigates to Benchmark screen', async () => {
-    const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     await waitFor(() => expect(getByText('Test Portfolio')).toBeTruthy());
 
-    fireEvent.press(getByText('Benchmark'));
+    await fireEvent.press(getByText('Benchmark'));
 
     expect(navigateSpy).toHaveBeenCalledWith('Benchmark', { portfolioId: '1' });
   });
@@ -300,7 +299,7 @@ describe('PortfolioDetailScreen', () => {
   it('handles error state with retry button', async () => {
     mockedGraphqlRequest.mockRejectedValue(new Error('Failed to load'));
 
-    const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -313,14 +312,14 @@ describe('PortfolioDetailScreen', () => {
   it('retry button re-fetches performance', async () => {
     mockedGraphqlRequest.mockRejectedValueOnce(new Error('Failed to load'));
 
-    const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     await waitFor(() => expect(getByText('Failed to load')).toBeTruthy());
 
     mockedGraphqlRequest.mockResolvedValueOnce(mockGqlResponse);
-    fireEvent.press(getByText('Retry'));
+    await fireEvent.press(getByText('Retry'));
 
     await waitFor(() => {
       expect(mockedGraphqlRequest).toHaveBeenCalledTimes(2);
@@ -329,7 +328,7 @@ describe('PortfolioDetailScreen', () => {
   });
 
   it('pull-to-refresh refetches performance data', async () => {
-    const { getByText, UNSAFE_getAllByType } = renderWithProviders(<PortfolioDetailScreen />, {
+    const { getByText, root } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -340,10 +339,12 @@ describe('PortfolioDetailScreen', () => {
     mockedGraphqlRequest.mockClear();
     mockedGraphqlRequest.mockResolvedValue(mockGqlResponse);
 
-    // Trigger refresh via RefreshControl
-    const refreshControls = UNSAFE_getAllByType(RefreshControl);
-    expect(refreshControls.length).toBeGreaterThanOrEqual(1);
-    fireEvent(refreshControls[0], 'refresh');
+    // v14: onRefresh lives on RCTScrollView.refreshControl element
+    const sv = root?.queryAll((el) => 'refreshControl' in el.props)[0];
+    expect(sv).toBeTruthy();
+    await act(async () => {
+      sv!.props.refreshControl.props.onRefresh();
+    });
 
     await waitFor(() => {
       expect(mockedGraphqlRequest).toHaveBeenCalled();
@@ -375,7 +376,7 @@ describe('PortfolioDetailScreen', () => {
       },
     });
 
-    const { getByText, getAllByText } = renderWithProviders(<PortfolioDetailScreen />, {
+    const { getByText, getAllByText } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -389,7 +390,7 @@ describe('PortfolioDetailScreen', () => {
   });
 
   it('subscribes to a live quote stream per holding ticker', async () => {
-    const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -400,7 +401,7 @@ describe('PortfolioDetailScreen', () => {
   });
 
   it('applies quote ticks to the rendered prices', async () => {
-    const { getByText } = renderWithProviders(<PortfolioDetailScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -420,7 +421,7 @@ describe('PortfolioDetailScreen', () => {
   });
 
   it('unsubscribes all quote streams on unmount', async () => {
-    const { getByText, unmount } = renderWithProviders(<PortfolioDetailScreen />, {
+    const { getByText, unmount } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -428,7 +429,7 @@ describe('PortfolioDetailScreen', () => {
 
     const cleanups = mockedSubscribe.mock.results.map((r) => r.value as jest.Mock);
     expect(cleanups.length).toBeGreaterThanOrEqual(2);
-    unmount();
+    await unmount();
     cleanups.forEach((c) => expect(c).toHaveBeenCalled());
   });
 });

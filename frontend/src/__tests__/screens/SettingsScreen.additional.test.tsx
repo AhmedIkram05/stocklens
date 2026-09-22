@@ -50,7 +50,7 @@ describe('SettingsScreen edge cases', () => {
     (deviceAuth.isDeviceAuthAvailable as jest.Mock).mockResolvedValue(false);
     (deviceAuth.isDeviceEnabled as jest.Mock).mockResolvedValue(false);
 
-    const { getAllByRole } = renderScreen();
+    const { getAllByRole } = await renderScreen();
 
     await waitFor(() => {
       expect(deviceAuth.isDeviceAuthAvailable).toHaveBeenCalled();
@@ -61,8 +61,8 @@ describe('SettingsScreen edge cases', () => {
     expect(switches[0].props.value).toBe(false);
 
     // Should show explanatory alert when toggled
-    act(() => {
-      fireEvent(switches[0], 'onValueChange', true);
+    await act(async () => {
+      await fireEvent(switches[0], 'onValueChange', true);
     });
 
     await waitFor(() => {
@@ -82,7 +82,7 @@ describe('SettingsScreen edge cases', () => {
       error: 'Auth failed',
     } as any);
 
-    const { getAllByRole } = renderScreen();
+    const { getAllByRole } = await renderScreen();
 
     // Wait for initial load
     await waitFor(() => {
@@ -91,8 +91,8 @@ describe('SettingsScreen edge cases', () => {
 
     // Toggle switch to enable
     const switchEl = getAllByRole('switch')[0];
-    act(() => {
-      fireEvent(switchEl, 'onValueChange', true);
+    await act(async () => {
+      await fireEvent(switchEl, 'onValueChange', true);
     });
 
     // Wait for auth attempt
@@ -119,7 +119,7 @@ describe('SettingsScreen edge cases', () => {
     (deviceAuth.setDeviceEnabled as jest.Mock).mockResolvedValueOnce(undefined);
     (deviceAuth.clearDeviceCredentials as jest.Mock).mockResolvedValueOnce(undefined);
 
-    const { getAllByRole } = renderScreen();
+    const { getAllByRole } = await renderScreen();
 
     // Wait for initial load
     await waitFor(() => {
@@ -128,8 +128,8 @@ describe('SettingsScreen edge cases', () => {
 
     // Toggle switch to enable
     const switchEl = getAllByRole('switch')[0];
-    act(() => {
-      fireEvent(switchEl, 'onValueChange', true);
+    await act(async () => {
+      await fireEvent(switchEl, 'onValueChange', true);
     });
 
     // Wait for successful enable
@@ -149,13 +149,13 @@ describe('SettingsScreen edge cases', () => {
   it('handles clear data error', async () => {
     mockedReceiptService.deleteAll.mockRejectedValueOnce(new Error('Delete failed'));
 
-    const { getByText } = renderScreen({
+    const { getByText } = await renderScreen({
       providerOverrides: { withNavigation: false },
     });
 
     // Tap clear data
-    act(() => {
-      fireEvent.press(getByText('Clear All Data'));
+    await act(async () => {
+      await fireEvent.press(getByText('Clear All Data'));
     });
 
     // Wait for confirmation dialog
@@ -181,7 +181,7 @@ describe('SettingsScreen edge cases', () => {
       (btn: any) => btn.text === 'Delete' && btn.style === 'destructive',
     );
 
-    act(() => {
+    await act(async () => {
       deleteBtn?.onPress?.();
     });
 
@@ -194,7 +194,7 @@ describe('SettingsScreen edge cases', () => {
   it('handles sign out error', async () => {
     // First render to get the initial alert mock
     const signOutUser = jest.fn().mockRejectedValueOnce(new Error('Sign out failed'));
-    const { getByText } = renderScreen({
+    const { getByText } = await renderScreen({
       providerOverrides: {
         withNavigation: false,
         authValue: { signOutUser },
@@ -202,8 +202,8 @@ describe('SettingsScreen edge cases', () => {
     });
 
     // Tap log out
-    act(() => {
-      fireEvent.press(getByText('Log Out'));
+    await act(async () => {
+      await fireEvent.press(getByText('Log Out'));
     });
 
     // Confirm sign out
@@ -229,7 +229,7 @@ describe('SettingsScreen edge cases', () => {
       (btn: any) => btn.text === 'Sign Out' && btn.style === 'destructive',
     );
 
-    act(() => {
+    await act(async () => {
       signOutBtn?.onPress?.();
     });
 
@@ -240,19 +240,18 @@ describe('SettingsScreen edge cases', () => {
   });
 
   it('refreshes device auth status on pull-to-refresh', async () => {
-    const { UNSAFE_getByType } = renderScreen();
+    const { root } = await renderScreen();
 
     await waitFor(() => {
       expect(deviceAuth.isDeviceAuthAvailable).toHaveBeenCalled();
     });
 
-    // Get RefreshControl and trigger it
-    const { RefreshControl } = require('react-native');
-    const refreshControl = UNSAFE_getByType(RefreshControl);
+    // v14: onRefresh lives on RCTScrollView.refreshControl element
+    const sv = root?.queryAll((el) => 'refreshControl' in el.props)[0]!;
 
     // Simulate pull-to-refresh
-    act(() => {
-      refreshControl.props.onRefresh();
+    await act(async () => {
+      sv.props.refreshControl.props.onRefresh();
     });
 
     // Wait for refresh to complete
@@ -269,7 +268,7 @@ describe('SettingsScreen edge cases', () => {
     (deviceAuth.authenticateDevice as jest.Mock).mockResolvedValue({ success: true } as any);
     (deviceAuth.setDeviceEnabled as jest.Mock).mockResolvedValue(undefined);
 
-    const { getAllByRole } = renderScreen();
+    const { getAllByRole } = await renderScreen();
 
     // Wait for initial load
     await waitFor(() => {
@@ -279,8 +278,8 @@ describe('SettingsScreen edge cases', () => {
     const switchEl = getAllByRole('switch')[0];
 
     // Rapid toggle on/off/on
-    act(() => {
-      fireEvent(switchEl, 'onValueChange', true);
+    await act(async () => {
+      await fireEvent(switchEl, 'onValueChange', true);
     });
 
     await waitFor(() => {

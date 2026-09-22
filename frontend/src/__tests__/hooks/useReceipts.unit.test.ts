@@ -62,7 +62,7 @@ describe('useReceipts', () => {
     });
     mockedReceiptService.list.mockResolvedValueOnce([receipt1]);
 
-    const { result, unmount } = renderHook(() => useReceipts());
+    const { result, unmount } = await renderHook(() => useReceipts());
 
     // Wait until loading completes
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -98,13 +98,13 @@ describe('useReceipts', () => {
     await waitFor(() => expect(result.current.receipts[0].id).toBe('8'));
 
     // Advance timers for periodic refresh
-    act(() => {
+    await act(async () => {
       jest.advanceTimersByTime(30000);
     });
     expect(mockedReceiptService.list).toHaveBeenCalledTimes(3);
 
     // Unmount should unsubscribe
-    unmount();
+    await unmount();
     expect(unsubSpy).toHaveBeenCalled();
     jest.runOnlyPendingTimers();
     jest.useRealTimers();
@@ -116,7 +116,7 @@ describe('useReceipts', () => {
   it('captures fetch errors', async () => {
     mockedReceiptService.list.mockRejectedValueOnce(new Error('boom'));
 
-    const { result } = renderHook(() => useReceipts());
+    const { result } = await renderHook(() => useReceipts());
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 

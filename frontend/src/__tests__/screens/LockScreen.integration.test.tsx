@@ -43,8 +43,8 @@ describe('LockScreen', () => {
       },
     });
 
-  it('renders locked screen with email and unlock options', () => {
-    const { getByText } = renderScreen();
+  it('renders locked screen with email and unlock options', async () => {
+    const { getByText } = await renderScreen();
 
     expect(getByText('Locked')).toBeTruthy();
     expect(getByText('Unlock to continue')).toBeTruthy();
@@ -54,26 +54,26 @@ describe('LockScreen', () => {
 
   it('calls unlockWithDeviceAuth when device auth button pressed', async () => {
     unlockWithDeviceAuth.mockResolvedValue(true);
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
 
-    fireEvent.press(getByText('Unlock with Device Passcode'));
+    await fireEvent.press(getByText('Unlock with Device Passcode'));
 
     await waitFor(() => expect(unlockWithDeviceAuth).toHaveBeenCalled());
   });
 
   it('shows alert when device auth unlock fails', async () => {
     unlockWithDeviceAuth.mockResolvedValue(false);
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
 
-    fireEvent.press(getByText('Unlock with Device Passcode'));
+    await fireEvent.press(getByText('Unlock with Device Passcode'));
 
     await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('Unlock Failed', expect.any(String)));
   });
 
-  it('validates password field before unlocking with credentials', () => {
-    const { getByText } = renderScreen();
+  it('validates password field before unlocking with credentials', async () => {
+    const { getByText } = await renderScreen();
 
-    fireEvent.press(getByText('Unlock'));
+    await fireEvent.press(getByText('Unlock'));
 
     expect(alertSpy).toHaveBeenCalledWith('Missing Password', 'Please enter your account password');
     expect(unlockWithCredentials).not.toHaveBeenCalled();
@@ -81,10 +81,10 @@ describe('LockScreen', () => {
 
   it('unlocks with credentials when password provided', async () => {
     unlockWithCredentials.mockResolvedValue(true);
-    const { getByPlaceholderText, getByText } = renderScreen();
+    const { getByPlaceholderText, getByText } = await renderScreen();
 
-    fireEvent.changeText(getByPlaceholderText('Password'), 'securePass123');
-    fireEvent.press(getByText('Unlock'));
+    await fireEvent.changeText(getByPlaceholderText('Password'), 'securePass123');
+    await fireEvent.press(getByText('Unlock'));
 
     await waitFor(() => {
       expect(unlockWithCredentials).toHaveBeenCalledWith('test@example.com', 'securePass123');
@@ -93,10 +93,10 @@ describe('LockScreen', () => {
 
   it('shows alert when credential unlock fails', async () => {
     unlockWithCredentials.mockResolvedValue(false);
-    const { getByPlaceholderText, getByText } = renderScreen();
+    const { getByPlaceholderText, getByText } = await renderScreen();
 
-    fireEvent.changeText(getByPlaceholderText('Password'), 'wrongPass');
-    fireEvent.press(getByText('Unlock'));
+    await fireEvent.changeText(getByPlaceholderText('Password'), 'wrongPass');
+    await fireEvent.press(getByText('Unlock'));
 
     await waitFor(() => {
       expect(alertSpy).toHaveBeenCalledWith('Unlock Failed', 'Invalid password. Please try again.');
@@ -104,9 +104,9 @@ describe('LockScreen', () => {
   });
 
   it('triggers forgot password flow', async () => {
-    const { getByText } = renderScreen({ email: 'user@test.com' });
+    const { getByText } = await renderScreen({ email: 'user@test.com' });
 
-    fireEvent.press(getByText('Forgot password?'));
+    await fireEvent.press(getByText('Forgot password?'));
 
     await waitFor(() => {
       expect(alertSpy).toHaveBeenCalledWith(
@@ -125,8 +125,8 @@ describe('LockScreen', () => {
     expect(buttons?.find((b: any) => b.text === 'Cancel')).toBeDefined();
   });
 
-  it('shows no account alert when forgot password pressed without email', () => {
-    const { getByText } = renderWithProviders(<LockScreen />, {
+  it('shows no account alert when forgot password pressed without email', async () => {
+    const { getByText } = await renderWithProviders(<LockScreen />, {
       providerOverrides: {
         authValue: {
           unlockWithDeviceAuth: jest.fn(),
@@ -137,16 +137,16 @@ describe('LockScreen', () => {
       },
     });
 
-    fireEvent.press(getByText('Forgot password?'));
+    await fireEvent.press(getByText('Forgot password?'));
 
     expect(alertSpy).toHaveBeenCalledWith('No Account', expect.any(String));
   });
 
   it('shows error alert when device auth throws', async () => {
     unlockWithDeviceAuth.mockRejectedValue(new Error('auth failed'));
-    const { getByText } = renderScreen();
+    const { getByText } = await renderScreen();
 
-    fireEvent.press(getByText('Unlock with Device Passcode'));
+    await fireEvent.press(getByText('Unlock with Device Passcode'));
 
     await waitFor(() => {
       expect(alertSpy).toHaveBeenCalledWith(
@@ -157,9 +157,9 @@ describe('LockScreen', () => {
   });
 
   it('sends forgot password and shows success message', async () => {
-    const { getByText } = renderScreen({ email: 'user@test.com' });
+    const { getByText } = await renderScreen({ email: 'user@test.com' });
 
-    fireEvent.press(getByText('Forgot password?'));
+    await fireEvent.press(getByText('Forgot password?'));
 
     const alertCall = alertSpy.mock.calls.find((c) => c[0] === 'Send Reset Link?');
     expect(alertCall).toBeDefined();

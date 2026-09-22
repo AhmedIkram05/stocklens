@@ -80,7 +80,7 @@ describe('ReceiptDetailsScreen', () => {
   });
 
   it('renders projections and updates headers when year selectors change', async () => {
-    const { getByText, getAllByText } = renderWithProviders(<ReceiptDetailsScreen />, {
+    const { getByText, getAllByText } = await renderWithProviders(<ReceiptDetailsScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -90,14 +90,14 @@ describe('ReceiptDetailsScreen', () => {
     });
 
     const yearOptions = getAllByText('3Y');
-    fireEvent.press(yearOptions[0]);
+    await fireEvent.press(yearOptions[0]);
 
     await waitFor(() => {
       expect(getByText('If invested 3 years ago')).toBeTruthy();
     });
 
     const futureOptions = getAllByText('10Y');
-    fireEvent.press(futureOptions[1]);
+    await fireEvent.press(futureOptions[1]);
 
     await waitFor(() => {
       expect(getByText('If invested today for 10 years')).toBeTruthy();
@@ -110,11 +110,11 @@ describe('ReceiptDetailsScreen', () => {
   it('confirms deletion before calling receiptService and navigation', async () => {
     const alertSpy = jest.spyOn(Alert, 'alert');
 
-    const { getByLabelText } = renderWithProviders(<ReceiptDetailsScreen />, {
+    const { getByLabelText } = await renderWithProviders(<ReceiptDetailsScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
-    fireEvent.press(getByLabelText('Delete receipt'));
+    await fireEvent.press(getByLabelText('Delete receipt'));
 
     const confirmButtons = alertSpy.mock.calls[0][2];
     const destructiveButton = confirmButtons?.find((button) => button?.style === 'destructive');

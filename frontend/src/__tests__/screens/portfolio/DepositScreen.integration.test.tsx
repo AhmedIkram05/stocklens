@@ -88,8 +88,8 @@ describe('DepositScreen', () => {
     jest.restoreAllMocks();
   });
 
-  it('renders with two tabs (From Receipt, Manual)', () => {
-    const { getByText } = renderWithProviders(<DepositScreen />, {
+  it('renders with two tabs (From Receipt, Manual)', async () => {
+    const { getByText } = await renderWithProviders(<DepositScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -98,10 +98,10 @@ describe('DepositScreen', () => {
     expect(getByText('Add Deposit')).toBeTruthy();
   });
 
-  it('shows loading state', () => {
+  it('shows loading state', async () => {
     mockedReceiptService.list.mockImplementation(() => new Promise(() => {}));
 
-    const { queryByText } = renderWithProviders(<DepositScreen />, {
+    const { queryByText } = await renderWithProviders(<DepositScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -109,7 +109,7 @@ describe('DepositScreen', () => {
   });
 
   it('shows receipt list when data loads', async () => {
-    const { getByText } = renderWithProviders(<DepositScreen />, {
+    const { getByText } = await renderWithProviders(<DepositScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -120,19 +120,19 @@ describe('DepositScreen', () => {
   });
 
   it('selects a receipt and shows deposit button with amount', async () => {
-    const { getByText } = renderWithProviders(<DepositScreen />, {
+    const { getByText } = await renderWithProviders(<DepositScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     await waitFor(() => expect(getByText('Tesco')).toBeTruthy());
 
-    fireEvent.press(getByText('Tesco'));
+    await fireEvent.press(getByText('Tesco'));
 
     expect(getByText('Deposit £150.50')).toBeTruthy();
   });
 
   it('toggles between receipt and manual tabs', async () => {
-    const { getByText, queryByPlaceholderText } = renderWithProviders(<DepositScreen />, {
+    const { getByText, queryByPlaceholderText } = await renderWithProviders(<DepositScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -140,24 +140,24 @@ describe('DepositScreen', () => {
 
     expect(queryByPlaceholderText('0.00')).toBeNull();
 
-    fireEvent.press(getByText('Manual'));
+    await fireEvent.press(getByText('Manual'));
 
     expect(getByText('Amount')).toBeTruthy();
     expect(queryByPlaceholderText('0.00')).toBeTruthy();
   });
 
-  it('manual tab shows amount input', () => {
-    const { getByText, getByPlaceholderText } = renderWithProviders(<DepositScreen />, {
+  it('manual tab shows amount input', async () => {
+    const { getByText, getByPlaceholderText } = await renderWithProviders(<DepositScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
-    fireEvent.press(getByText('Manual'));
+    await fireEvent.press(getByText('Manual'));
 
     expect(getByPlaceholderText('0.00')).toBeTruthy();
   });
 
-  it('confirm button is disabled when nothing selected or entered', () => {
-    const { getByText } = renderWithProviders(<DepositScreen />, {
+  it('confirm button is disabled when nothing selected or entered', async () => {
+    const { getByText } = await renderWithProviders(<DepositScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -166,14 +166,14 @@ describe('DepositScreen', () => {
   });
 
   it('submits deposit with receipt data', async () => {
-    const { getByText } = renderWithProviders(<DepositScreen />, {
+    const { getByText } = await renderWithProviders(<DepositScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     await waitFor(() => expect(getByText('Tesco')).toBeTruthy());
 
-    fireEvent.press(getByText('Tesco'));
-    fireEvent.press(getByText('Deposit £150.50'));
+    await fireEvent.press(getByText('Tesco'));
+    await fireEvent.press(getByText('Deposit £150.50'));
 
     await waitFor(() => {
       expect(mockedPortfolioService.createCashFlow).toHaveBeenCalledWith('1', {
@@ -187,16 +187,16 @@ describe('DepositScreen', () => {
   });
 
   it('submits manual amount deposit', async () => {
-    const { getByText, getByPlaceholderText } = renderWithProviders(<DepositScreen />, {
+    const { getByText, getByPlaceholderText } = await renderWithProviders(<DepositScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
-    fireEvent.press(getByText('Manual'));
+    await fireEvent.press(getByText('Manual'));
 
     const input = getByPlaceholderText('0.00');
-    fireEvent.changeText(input, '250');
+    await fireEvent.changeText(input, '250');
 
-    fireEvent.press(getByText('Deposit £250.00'));
+    await fireEvent.press(getByText('Deposit £250.00'));
 
     await waitFor(() => {
       expect(mockedPortfolioService.createCashFlow).toHaveBeenCalledWith('1', {
@@ -210,7 +210,7 @@ describe('DepositScreen', () => {
   it('handles empty receipts state with Scan New Receipt button', async () => {
     mockedReceiptService.list.mockResolvedValue([]);
 
-    const { getByText } = renderWithProviders(<DepositScreen />, {
+    const { getByText } = await renderWithProviders(<DepositScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -223,13 +223,13 @@ describe('DepositScreen', () => {
   it('Scan New Receipt navigates to Scan screen', async () => {
     mockedReceiptService.list.mockResolvedValue([]);
 
-    const { getByText } = renderWithProviders(<DepositScreen />, {
+    const { getByText } = await renderWithProviders(<DepositScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     await waitFor(() => expect(getByText('Scan New Receipt')).toBeTruthy());
 
-    fireEvent.press(getByText('Scan New Receipt'));
+    await fireEvent.press(getByText('Scan New Receipt'));
 
     expect(navigateSpy).toHaveBeenCalledWith('Scan');
   });
@@ -237,7 +237,7 @@ describe('DepositScreen', () => {
   it('handles receipt error with retry', async () => {
     mockedReceiptService.list.mockRejectedValue(new Error('Network error'));
 
-    const { getByText } = renderWithProviders(<DepositScreen />, {
+    const { getByText } = await renderWithProviders(<DepositScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -250,7 +250,7 @@ describe('DepositScreen', () => {
   it('retry fetches receipts again after error', async () => {
     mockedReceiptService.list.mockRejectedValueOnce(new Error('Network error'));
 
-    const { getByText } = renderWithProviders(<DepositScreen />, {
+    const { getByText } = await renderWithProviders(<DepositScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -258,7 +258,7 @@ describe('DepositScreen', () => {
 
     mockedReceiptService.list.mockResolvedValueOnce(mockReceipts);
 
-    fireEvent.press(getByText('Retry'));
+    await fireEvent.press(getByText('Retry'));
 
     await waitFor(() => {
       expect(mockedReceiptService.list).toHaveBeenCalledTimes(2);

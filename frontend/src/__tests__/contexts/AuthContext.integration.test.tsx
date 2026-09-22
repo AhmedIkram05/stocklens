@@ -94,10 +94,10 @@ describe('AuthContext', () => {
    * Validates that useAuth hook throws error when used outside AuthProvider.
    * This prevents undefined behavior and helps developers catch mistakes early.
    */
-  it('throws when useAuth is used outside provider', () => {
-    expect(() =>
+  it('throws when useAuth is used outside provider', async () => {
+    await expect(
       renderHook(() => useAuth(), { wrapper: ({ children }) => <>{children}</> }),
-    ).toThrow('useAuth must be used within an AuthProvider');
+    ).rejects.toThrow('useAuth must be used within an AuthProvider');
   });
 
   /**
@@ -107,7 +107,7 @@ describe('AuthContext', () => {
    */
   it('provides unlocked state when device auth succeeds', async () => {
     // Render the auth hook with provider
-    const { result } = renderHook(() => useAuth(), {
+    const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });
 
@@ -128,7 +128,7 @@ describe('AuthContext', () => {
    * Ensures clean state after logout - user shouldn't see lock screen without being signed in.
    */
   it('signs out and resets lock state', async () => {
-    const { result } = renderHook(() => useAuth(), {
+    const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });
 
@@ -149,7 +149,7 @@ describe('AuthContext', () => {
    * Fallback mechanism when device authentication fails or isn't available.
    */
   it('unlockWithCredentials verifies credentials via backend API', async () => {
-    const { result } = renderHook(() => useAuth(), {
+    const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });
 
@@ -180,7 +180,7 @@ describe('AuthContext', () => {
       updated_at: new Date().toISOString(),
     });
 
-    const { result } = renderHook(() => useAuth(), {
+    const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });
 
@@ -209,7 +209,7 @@ describe('AuthContext', () => {
     apiService.getAccessToken.mockResolvedValue('bad-token');
     authService.getProfile.mockRejectedValue(new Error('Invalid token'));
 
-    const { result } = renderHook(() => useAuth(), {
+    const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });
 
@@ -228,7 +228,7 @@ describe('AuthContext', () => {
     const { authService } = require('@/services/auth');
     authService.signIn.mockResolvedValue(null);
 
-    const { result } = renderHook(() => useAuth(), {
+    const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });
 
@@ -250,7 +250,7 @@ describe('AuthContext', () => {
     const { authService } = require('@/services/auth');
     authService.signIn.mockRejectedValue(new Error('Network error'));
 
-    const { result } = renderHook(() => useAuth(), {
+    const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });
 
@@ -279,7 +279,7 @@ describe('AuthContext', () => {
       updated_at: new Date().toISOString(),
     });
 
-    const { result } = renderHook(() => useAuth(), {
+    const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });
 
@@ -310,7 +310,7 @@ describe('AuthContext', () => {
 
     authService.getProfile.mockResolvedValue(null);
 
-    const { result } = renderHook(() => useAuth(), {
+    const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });
 
@@ -334,7 +334,7 @@ describe('AuthContext', () => {
     const { authService } = require('@/services/auth');
     authService.signOut.mockRejectedValue(new Error('Network error'));
 
-    const { result } = renderHook(() => useAuth(), {
+    const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });
 
@@ -353,18 +353,15 @@ describe('AuthContext', () => {
    * Line covered: 300
    */
   it('startLockGrace can be called multiple times without error', async () => {
-    const { result } = renderHook(() => useAuth(), {
+    const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });
 
     await act(async () => {});
-
-    expect(() => {
-      act(() => {
-        result.current.startLockGrace();
-        result.current.startLockGrace();
-      });
-    }).not.toThrow();
+    await act(async () => {
+      result.current.startLockGrace();
+      result.current.startLockGrace();
+    });
 
     expect(result.current.locked).toBe(false);
   });
@@ -377,7 +374,7 @@ describe('AuthContext', () => {
     const { authenticateDevice } = require('@/hooks/useDeviceAuth');
     authenticateDevice.mockResolvedValue({ success: false });
 
-    const { result } = renderHook(() => useAuth(), {
+    const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });
 
@@ -399,7 +396,7 @@ describe('AuthContext', () => {
     const { authenticateDevice } = require('@/hooks/useDeviceAuth');
     authenticateDevice.mockRejectedValue(new Error('Device auth error'));
 
-    const { result } = renderHook(() => useAuth(), {
+    const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });
 
@@ -421,13 +418,13 @@ describe('AuthContext', () => {
     const { authService } = require('@/services/auth');
     authService.signOut.mockResolvedValue(undefined);
 
-    const { result } = renderHook(() => useAuth(), {
+    const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });
 
     await act(async () => {});
 
-    act(() => {
+    await act(async () => {
       result.current.startLockGrace();
     });
 
@@ -495,7 +492,7 @@ describe('AuthContext', () => {
         updated_at: new Date().toISOString(),
       });
 
-      const { result } = renderHook(() => useAuth(), {
+      const { result } = await renderHook(() => useAuth(), {
         wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
       });
 
@@ -535,7 +532,7 @@ describe('AuthContext', () => {
         updated_at: new Date().toISOString(),
       });
 
-      const { result } = renderHook(() => useAuth(), {
+      const { result } = await renderHook(() => useAuth(), {
         wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
       });
 
@@ -580,7 +577,7 @@ describe('AuthContext', () => {
         updated_at: new Date().toISOString(),
       });
 
-      const { result } = renderHook(() => useAuth(), {
+      const { result } = await renderHook(() => useAuth(), {
         wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
       });
 
@@ -619,7 +616,7 @@ describe('AuthContext', () => {
       });
       authenticateDevice.mockResolvedValue({ success: true });
 
-      const { result } = renderHook(() => useAuth(), {
+      const { result } = await renderHook(() => useAuth(), {
         wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
       });
 
@@ -662,7 +659,7 @@ describe('AuthContext', () => {
         updated_at: new Date().toISOString(),
       });
 
-      const { result } = renderHook(() => useAuth(), {
+      const { result } = await renderHook(() => useAuth(), {
         wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
       });
 

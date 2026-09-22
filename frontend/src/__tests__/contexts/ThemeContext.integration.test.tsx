@@ -22,10 +22,10 @@ describe('ThemeContext', () => {
    * Validates that useTheme hook throws error when used outside ThemeProvider.
    * Prevents undefined behavior if developer forgets to wrap app in provider.
    */
-  it('throws when useTheme is used outside provider', () => {
-    expect(() =>
+  it('throws when useTheme is used outside provider', async () => {
+    await expect(
       renderHook(() => useTheme(), { wrapper: ({ children }) => <>{children}</> }),
-    ).toThrow('useTheme must be used within a ThemeProvider');
+    ).rejects.toThrow('useTheme must be used within a ThemeProvider');
   });
 
   /**
@@ -42,7 +42,7 @@ describe('ThemeContext', () => {
     const setItemAsync = jest.spyOn(SecureStore, 'setItemAsync').mockResolvedValue();
 
     // Render theme hook
-    const { result } = renderHook(() => useTheme(), {
+    const { result } = await renderHook(() => useTheme(), {
       wrapper: ThemeProvider,
     });
 
@@ -83,7 +83,7 @@ describe('ThemeContext', () => {
     jest.spyOn(SecureStore, 'getItemAsync').mockResolvedValueOnce('dark');
 
     // Render theme hook
-    const { result } = renderHook(() => useTheme(), {
+    const { result } = await renderHook(() => useTheme(), {
       wrapper: ThemeProvider,
     });
 

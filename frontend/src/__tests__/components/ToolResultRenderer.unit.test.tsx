@@ -9,26 +9,28 @@ import { renderWithProviders } from '@/__tests__/utils/renderWithProviders';
 import { getToolRenderer, renderToolResult } from '@/components/chat/ToolResultRenderer';
 
 describe('getToolRenderer', () => {
-  it('returns specialised renderer for get_portfolio_summary', () => {
+  it('returns specialised renderer for get_portfolio_summary', async () => {
     const renderer = getToolRenderer('get_portfolio_summary');
     expect(renderer).toBeDefined();
     const el = renderer({ data: { name: 'Test', total_market_value_gbp: 1000 } });
     expect(el).toBeDefined();
   });
 
-  it('returns JSON fallback for unknown tool', () => {
+  it('returns JSON fallback for unknown tool', async () => {
     const renderer = getToolRenderer('some_unknown_tool');
     expect(renderer).toBeDefined();
-    const { getByText } = renderWithProviders(
+    const { getByText } = await renderWithProviders(
       renderToolResult('some_unknown_tool', { key: 'value' }),
     );
     expect(getByText(/"key"/)).toBeTruthy();
   });
 
-  it('returns fallback for undefined tool', () => {
+  it('returns fallback for undefined tool', async () => {
     const renderer = getToolRenderer('undefined_tool');
     expect(renderer).toBeDefined();
-    const { getByText } = renderWithProviders(renderToolResult('undefined_tool', { test: true }));
+    const { getByText } = await renderWithProviders(
+      renderToolResult('undefined_tool', { test: true }),
+    );
     expect(getByText(/test/)).toBeTruthy();
   });
 });
@@ -44,22 +46,22 @@ describe('PortfolioSummaryRenderer', () => {
     holding_count: 5,
   };
 
-  it('renders portfolio name', () => {
-    const { getByText } = renderWithProviders(
+  it('renders portfolio name', async () => {
+    const { getByText } = await renderWithProviders(
       renderToolResult('get_portfolio_summary', sampleData),
     );
     expect(getByText('My Portfolio')).toBeTruthy();
   });
 
-  it('displays total value', () => {
-    const { getByText } = renderWithProviders(
+  it('displays total value', async () => {
+    const { getByText } = await renderWithProviders(
       renderToolResult('get_portfolio_summary', sampleData),
     );
     expect(getByText(/50,000/)).toBeTruthy();
   });
 
-  it('shows positive P&L in green', () => {
-    const { getAllByText } = renderWithProviders(
+  it('shows positive P&L in green', async () => {
+    const { getAllByText } = await renderWithProviders(
       renderToolResult('get_portfolio_summary', sampleData),
     );
     const matches = getAllByText(/5,000\.00 GBP/);
@@ -67,34 +69,34 @@ describe('PortfolioSummaryRenderer', () => {
     expect(matches[0].props.children).toContain('5,000.00 GBP');
   });
 
-  it('handles negative P&L', () => {
+  it('handles negative P&L', async () => {
     const negativeData = { ...sampleData, unrealised_pl_gbp: -2000 };
-    const { getByText } = renderWithProviders(
+    const { getByText } = await renderWithProviders(
       renderToolResult('get_portfolio_summary', negativeData),
     );
     expect(getByText(/-2,000/)).toBeTruthy();
   });
 
-  it('renders gracefully with empty data', () => {
-    expect(() => renderWithProviders(renderToolResult('get_portfolio_summary', {}))).not.toThrow();
+  it('renders gracefully with empty data', async () => {
+    await renderWithProviders(renderToolResult('get_portfolio_summary', {}));
   });
 
-  it('renders description when present', () => {
-    const { getByText } = renderWithProviders(
+  it('renders description when present', async () => {
+    const { getByText } = await renderWithProviders(
       renderToolResult('get_portfolio_summary', sampleData),
     );
     expect(getByText('Test portfolio')).toBeTruthy();
   });
 
-  it('hides description section when absent', () => {
-    const { queryByText } = renderWithProviders(
+  it('hides description section when absent', async () => {
+    const { queryByText } = await renderWithProviders(
       renderToolResult('get_portfolio_summary', { name: 'My Portfolio' }),
     );
     expect(queryByText('Test portfolio')).toBeNull();
   });
 
-  it('handles null values gracefully', () => {
-    const { getAllByText } = renderWithProviders(
+  it('handles null values gracefully', async () => {
+    const { getAllByText } = await renderWithProviders(
       renderToolResult('get_portfolio_summary', { name: 'Test' }),
     );
     // formatCurrency returns '—' for null values (Total Value, Cost Basis, Cash Balance).
@@ -112,23 +114,23 @@ describe('PortfolioHoldingsRenderer', () => {
     total: 2,
   };
 
-  it('renders ticker symbols', () => {
-    const { getByText } = renderWithProviders(
+  it('renders ticker symbols', async () => {
+    const { getByText } = await renderWithProviders(
       renderToolResult('get_portfolio_holdings', sampleData),
     );
     expect(getByText('AAPL')).toBeTruthy();
     expect(getByText('GOOGL')).toBeTruthy();
   });
 
-  it('shows shares count', () => {
-    const { getByText } = renderWithProviders(
+  it('shows shares count', async () => {
+    const { getByText } = await renderWithProviders(
       renderToolResult('get_portfolio_holdings', sampleData),
     );
     expect(getByText('10')).toBeTruthy();
   });
 
-  it('handles empty holdings', () => {
-    const { getByText } = renderWithProviders(
+  it('handles empty holdings', async () => {
+    const { getByText } = await renderWithProviders(
       renderToolResult('get_portfolio_holdings', { holdings: [], total: 0 }),
     );
     expect(getByText(/No holdings/)).toBeTruthy();
@@ -144,19 +146,23 @@ describe('SectorExposureRenderer', () => {
     ],
   };
 
-  it('renders sector names', () => {
-    const { getByText } = renderWithProviders(renderToolResult('get_sector_exposure', sampleData));
+  it('renders sector names', async () => {
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_sector_exposure', sampleData),
+    );
     expect(getByText('Technology')).toBeTruthy();
     expect(getByText('Finance')).toBeTruthy();
   });
 
-  it('shows allocation percentages', () => {
-    const { getByText } = renderWithProviders(renderToolResult('get_sector_exposure', sampleData));
+  it('shows allocation percentages', async () => {
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_sector_exposure', sampleData),
+    );
     expect(getByText(/60\.0%/)).toBeTruthy();
   });
 
-  it('handles empty sectors', () => {
-    const { getByText } = renderWithProviders(
+  it('handles empty sectors', async () => {
+    const { getByText } = await renderWithProviders(
       renderToolResult('get_sector_exposure', { total_value_gbp: 0, sectors: [] }),
     );
     expect(getByText(/No sector data/)).toBeTruthy();
@@ -164,32 +170,30 @@ describe('SectorExposureRenderer', () => {
 });
 
 describe('PortfolioPerformanceRenderer', () => {
-  it('renders TWR metrics', () => {
+  it('renders TWR metrics', async () => {
     const data = {
       twr: 0.0523,
       twr_annualised: 0.105,
       total_gain_loss: 2500,
       total_gain_loss_pct: 5.23,
     };
-    const { getByText } = renderWithProviders(renderToolResult('get_portfolio_performance', data));
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_portfolio_performance', data),
+    );
     expect(getByText(/^TWR$/)).toBeTruthy();
   });
 
-  it('handles partial data', () => {
-    expect(() =>
-      renderWithProviders(renderToolResult('get_portfolio_performance', { twr: 0.01 })),
-    ).not.toThrow();
+  it('handles partial data', async () => {
+    await renderWithProviders(renderToolResult('get_portfolio_performance', { twr: 0.01 }));
   });
 
-  it('empty data renders without crash', () => {
-    expect(() =>
-      renderWithProviders(renderToolResult('get_portfolio_performance', {})),
-    ).not.toThrow();
+  it('empty data renders without crash', async () => {
+    await renderWithProviders(renderToolResult('get_portfolio_performance', {}));
   });
 });
 
 describe('BenchmarkComparisonRenderer', () => {
-  it('renders alpha and tracking error', () => {
+  it('renders alpha and tracking error', async () => {
     const data = {
       portfolio_return: 0.08,
       benchmark_return: 0.05,
@@ -198,14 +202,14 @@ describe('BenchmarkComparisonRenderer', () => {
       information_ratio: 0.25,
       benchmark_ticker: 'SPY',
     };
-    const { getByText } = renderWithProviders(renderToolResult('compare_to_benchmark', data));
+    const { getByText } = await renderWithProviders(renderToolResult('compare_to_benchmark', data));
     expect(getByText(/Alpha/)).toBeTruthy();
     expect(getByText(/Tracking/)).toBeTruthy();
   });
 });
 
 describe('DiversificationScoreRenderer', () => {
-  it('renders score and ticker exposures', () => {
+  it('renders score and ticker exposures', async () => {
     const data = {
       hhi_score: 850,
       concentration_level: 'low',
@@ -216,7 +220,7 @@ describe('DiversificationScoreRenderer', () => {
         { ticker: 'MSFT', exposure_pct: 12.8 },
       ],
     };
-    const { getByText } = renderWithProviders(
+    const { getByText } = await renderWithProviders(
       renderToolResult('get_portfolio_diversification_score', data),
     );
     expect(getByText(/850/)).toBeTruthy();
@@ -247,16 +251,16 @@ describe('TickerComparisonRenderer', () => {
     ],
   };
 
-  it('renders ticker symbols as column headers', () => {
-    const { getByText } = renderWithProviders(
+  it('renders ticker symbols as column headers', async () => {
+    const { getByText } = await renderWithProviders(
       renderToolResult('compare_tickers_side_by_side', data),
     );
     expect(getByText('AAPL')).toBeTruthy();
     expect(getByText('MSFT')).toBeTruthy();
   });
 
-  it('handles empty tickers', () => {
-    const { getByText } = renderWithProviders(
+  it('handles empty tickers', async () => {
+    const { getByText } = await renderWithProviders(
       renderToolResult('compare_tickers_side_by_side', { tickers: [] }),
     );
     expect(getByText(/No comparison/)).toBeTruthy();
@@ -273,19 +277,21 @@ describe('OhlcvRenderer', () => {
     ],
   };
 
-  it('renders OHLCV data', () => {
-    const { getByText } = renderWithProviders(renderToolResult('get_market_ohlcv', data));
+  it('renders OHLCV data', async () => {
+    const { getByText } = await renderWithProviders(renderToolResult('get_market_ohlcv', data));
     expect(getByText(/2026-07-20/)).toBeTruthy();
   });
 
-  it('handles empty OHLCV array', () => {
-    const { getByText } = renderWithProviders(renderToolResult('get_market_ohlcv', { ohlcv: [] }));
+  it('handles empty OHLCV array', async () => {
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_market_ohlcv', { ohlcv: [] }),
+    );
     expect(getByText(/No OHLCV/)).toBeTruthy();
   });
 });
 
 describe('QuoteRenderer', () => {
-  it('renders price and change', () => {
+  it('renders price and change', async () => {
     const data = {
       ticker: 'AAPL',
       price: 175.5,
@@ -294,11 +300,11 @@ describe('QuoteRenderer', () => {
       previous_close: 173.2,
       volume: 40000000,
     };
-    const { getByText } = renderWithProviders(renderToolResult('get_market_quote', data));
+    const { getByText } = await renderWithProviders(renderToolResult('get_market_quote', data));
     expect(getByText(/175/)).toBeTruthy();
   });
 
-  it('handles negative change', () => {
+  it('handles negative change', async () => {
     const data = {
       ticker: 'AAPL',
       price: 170,
@@ -307,13 +313,13 @@ describe('QuoteRenderer', () => {
       previous_close: 173.5,
       volume: 45000000,
     };
-    const { getByText } = renderWithProviders(renderToolResult('get_market_quote', data));
+    const { getByText } = await renderWithProviders(renderToolResult('get_market_quote', data));
     expect(getByText(/-3\.5/)).toBeTruthy();
   });
 });
 
 describe('TickerInfoRenderer', () => {
-  it('renders company info', () => {
+  it('renders company info', async () => {
     const data = {
       company_name: 'Apple Inc.',
       sector: 'Technology',
@@ -321,35 +327,35 @@ describe('TickerInfoRenderer', () => {
       market_cap: 2500000000000,
       pe_ratio: 28.5,
     };
-    const { getByText } = renderWithProviders(renderToolResult('get_ticker_info', data));
+    const { getByText } = await renderWithProviders(renderToolResult('get_ticker_info', data));
     expect(getByText('Apple Inc.')).toBeTruthy();
     expect(getByText(/2500\.00B/)).toBeTruthy();
   });
 
-  it('renders description when present', () => {
+  it('renders description when present', async () => {
     const data = {
       company_name: 'Apple Inc.',
       description: 'A technology company that designs consumer electronics.',
       sector: 'Technology',
     };
-    const { getByText } = renderWithProviders(renderToolResult('get_ticker_info', data));
+    const { getByText } = await renderWithProviders(renderToolResult('get_ticker_info', data));
     expect(getByText('A technology company that designs consumer electronics.')).toBeTruthy();
   });
 
-  it('renders country and exchange when present', () => {
+  it('renders country and exchange when present', async () => {
     const data = {
       company_name: 'Apple Inc.',
       sector: 'Technology',
       country: 'US',
       exchange: 'NASDAQ',
     };
-    const { getByText } = renderWithProviders(renderToolResult('get_ticker_info', data));
+    const { getByText } = await renderWithProviders(renderToolResult('get_ticker_info', data));
     expect(getByText('US')).toBeTruthy();
     expect(getByText('NASDAQ')).toBeTruthy();
   });
 
-  it('handles null company_name gracefully', () => {
-    const { getByText } = renderWithProviders(
+  it('handles null company_name gracefully', async () => {
+    const { getByText } = await renderWithProviders(
       renderToolResult('get_ticker_info', { ticker: 'AAPL', sector: 'Technology' }),
     );
     expect(getByText('AAPL')).toBeTruthy();
@@ -369,13 +375,13 @@ describe('NewsRenderer', () => {
     ],
   };
 
-  it('renders article titles', () => {
-    const { getByText } = renderWithProviders(renderToolResult('get_market_news', data));
+  it('renders article titles', async () => {
+    const { getByText } = await renderWithProviders(renderToolResult('get_market_news', data));
     expect(getByText(/Apple Q3/)).toBeTruthy();
   });
 
-  it('handles empty articles', () => {
-    const { getByText } = renderWithProviders(
+  it('handles empty articles', async () => {
+    const { getByText } = await renderWithProviders(
       renderToolResult('get_market_news', { articles: [] }),
     );
     expect(getByText(/No news/)).toBeTruthy();
@@ -383,22 +389,22 @@ describe('NewsRenderer', () => {
 });
 
 describe('LstmForecastRenderer', () => {
-  it('renders UP prediction badge', () => {
+  it('renders UP prediction badge', async () => {
     const data = { ticker: 'AAPL', prediction: 'UP', confidence: 0.72, model_version: 'v2' };
-    const { getByText } = renderWithProviders(renderToolResult('get_lstm_forecast', data));
+    const { getByText } = await renderWithProviders(renderToolResult('get_lstm_forecast', data));
     expect(getByText('UP')).toBeTruthy();
     expect(getByText(/72%/)).toBeTruthy();
   });
 
-  it('renders DOWN prediction', () => {
+  it('renders DOWN prediction', async () => {
     const data = { ticker: 'AAPL', prediction: 'DOWN', confidence: 0.65 };
-    const { getByText } = renderWithProviders(renderToolResult('get_lstm_forecast', data));
+    const { getByText } = await renderWithProviders(renderToolResult('get_lstm_forecast', data));
     expect(getByText('DOWN')).toBeTruthy();
   });
 
-  it('renders FLAT prediction', () => {
+  it('renders FLAT prediction', async () => {
     const data = { ticker: 'AAPL', prediction: 'FLAT', confidence: 0.55 };
-    const { getByText } = renderWithProviders(renderToolResult('get_lstm_forecast', data));
+    const { getByText } = await renderWithProviders(renderToolResult('get_lstm_forecast', data));
     expect(getByText('FLAT')).toBeTruthy();
   });
 });
@@ -414,14 +420,16 @@ describe('SpendingAnalysisRenderer', () => {
     ],
   };
 
-  it('renders categories with bars', () => {
-    const { getByText } = renderWithProviders(renderToolResult('get_spending_analysis', data));
+  it('renders categories with bars', async () => {
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_spending_analysis', data),
+    );
     expect(getByText(/Groceries/)).toBeTruthy();
     expect(getByText(/Transport/)).toBeTruthy();
   });
 
-  it('handles empty categories', () => {
-    const { getByText } = renderWithProviders(
+  it('handles empty categories', async () => {
+    const { getByText } = await renderWithProviders(
       renderToolResult('get_spending_analysis', { category_breakdown: [] }),
     );
     expect(getByText(/No spending/)).toBeTruthy();
@@ -451,14 +459,16 @@ describe('RecentTransactionsRenderer', () => {
     total: 2,
   };
 
-  it('renders transaction rows', () => {
-    const { getByText } = renderWithProviders(renderToolResult('get_recent_transactions', data));
+  it('renders transaction rows', async () => {
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_recent_transactions', data),
+    );
     expect(getByText('AAPL')).toBeTruthy();
     expect(getByText('BUY')).toBeTruthy();
   });
 
-  it('handles empty transactions', () => {
-    const { getByText } = renderWithProviders(
+  it('handles empty transactions', async () => {
+    const { getByText } = await renderWithProviders(
       renderToolResult('get_recent_transactions', { transactions: [] }),
     );
     expect(getByText(/No transactions/)).toBeTruthy();
@@ -466,44 +476,48 @@ describe('RecentTransactionsRenderer', () => {
 });
 
 describe('CashFlowSummaryRenderer', () => {
-  it('renders deposit summary', () => {
+  it('renders deposit summary', async () => {
     const data = {
       total_deposits_gbp: 50000,
       deposit_count: 12,
       most_recent_deposit: { amount: 5000, date: '2026-07-20T00:00:00' },
     };
-    const { getByText } = renderWithProviders(renderToolResult('get_cash_flow_summary', data));
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_cash_flow_summary', data),
+    );
     expect(getByText(/50,000/)).toBeTruthy();
     expect(getByText(/12/)).toBeTruthy();
   });
 
-  it('handles null most_recent', () => {
+  it('handles null most_recent', async () => {
     const data = { total_deposits_gbp: 0, deposit_count: 0, most_recent_deposit: null };
-    expect(() =>
-      renderWithProviders(renderToolResult('get_cash_flow_summary', data)),
-    ).not.toThrow();
+    await renderWithProviders(renderToolResult('get_cash_flow_summary', data));
   });
 
-  it('renders last_deposit details when present', () => {
+  it('renders last_deposit details when present', async () => {
     const data = {
       total_deposits_gbp: 50000,
       deposit_count: 12,
       most_recent_deposit: { amount: 5000, date: '2026-07-20T00:00:00' },
     };
-    const { getByText } = renderWithProviders(renderToolResult('get_cash_flow_summary', data));
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_cash_flow_summary', data),
+    );
     expect(getByText(/Last Deposit/)).toBeTruthy();
     expect(getByText(/5,000\.00 GBP on 2026-07-20/)).toBeTruthy();
   });
 
-  it('hides last_deposit section when most_recent_deposit is null', () => {
+  it('hides last_deposit section when most_recent_deposit is null', async () => {
     const data = { total_deposits_gbp: 0, deposit_count: 0, most_recent_deposit: null };
-    const { queryByText } = renderWithProviders(renderToolResult('get_cash_flow_summary', data));
+    const { queryByText } = await renderWithProviders(
+      renderToolResult('get_cash_flow_summary', data),
+    );
     expect(queryByText(/Last Deposit/)).toBeNull();
   });
 });
 
 describe('DividendInsightsRenderer', () => {
-  it('renders dividend data', () => {
+  it('renders dividend data', async () => {
     const data = {
       ticker: 'AAPL',
       dividend_yield: 0.005,
@@ -511,15 +525,17 @@ describe('DividendInsightsRenderer', () => {
       payout_ratio: 0.15,
       ex_dividend_date: '2026-08-10T00:00:00',
     };
-    const { getByText } = renderWithProviders(renderToolResult('get_dividend_insights', data));
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_dividend_insights', data),
+    );
     expect(getByText(/0\.50%/)).toBeTruthy();
   });
 
-  it('handles missing fields gracefully', () => {
-    expect(() => renderWithProviders(renderToolResult('get_dividend_insights', {}))).not.toThrow();
+  it('handles missing fields gracefully', async () => {
+    await renderWithProviders(renderToolResult('get_dividend_insights', {}));
   });
 
-  it('renders last_dividend_date when present', () => {
+  it('renders last_dividend_date when present', async () => {
     const data = {
       ticker: 'AAPL',
       dividend_yield: 0.005,
@@ -528,69 +544,71 @@ describe('DividendInsightsRenderer', () => {
       last_dividend_date: '2026-07-01',
       last_dividend_value: 0.24,
     };
-    const { getByText } = renderWithProviders(renderToolResult('get_dividend_insights', data));
+    const { getByText } = await renderWithProviders(
+      renderToolResult('get_dividend_insights', data),
+    );
     expect(getByText(/Last Dividend/)).toBeTruthy();
     expect(getByText(/0\.24/)).toBeTruthy();
   });
 
-  it('hides last_dividend_date section when absent', () => {
+  it('hides last_dividend_date section when absent', async () => {
     const data = {
       ticker: 'AAPL',
       dividend_yield: 0.005,
       dividend_rate: 0.96,
     };
-    const { queryByText } = renderWithProviders(renderToolResult('get_dividend_insights', data));
+    const { queryByText } = await renderWithProviders(
+      renderToolResult('get_dividend_insights', data),
+    );
     expect(queryByText(/Last Dividend/)).toBeNull();
   });
 });
 
 describe('Tool result numeric coercion', () => {
-  it('renders numeric strings from tool output without throwing', () => {
-    expect(() =>
-      renderWithProviders(
-        renderToolResult('get_market_quote', {
-          ticker: 'AAPL',
-          price: '208.12',
-          change: '1.27',
-          change_pct: '0.61',
-          previous_close: '206.85',
-          volume: '1234567',
-        }),
-      ),
-    ).not.toThrow();
+  it('renders numeric strings from tool output without throwing', async () => {
+    await renderWithProviders(
+      renderToolResult('get_market_quote', {
+        ticker: 'AAPL',
+        price: '208.12',
+        change: '1.27',
+        change_pct: '0.61',
+        previous_close: '206.85',
+        volume: '1234567',
+      }),
+    );
   });
 });
 
 describe('renderToolResult fallback for _raw / error / string data', () => {
-  it('falls back to JSON for string data', () => {
+  it('falls back to JSON for string data', async () => {
     // String data is wrapped as { _raw: <string> } and rendered via JsonFallbackRenderer
     // Output looks like: { "_raw": "{\"price\": 208.12}" }
-    const { getByText } = renderWithProviders(
+    const { getByText } = await renderWithProviders(
       renderToolResult('get_market_quote', '{"price": 208.12}'),
     );
     expect(getByText(/_raw/)).toBeTruthy();
     expect(getByText(/208.12/)).toBeTruthy();
   });
 
-  it('falls back to JSON for data with only _raw key', () => {
-    const { getByText } = renderWithProviders(
+  it('falls back to JSON for data with only _raw key', async () => {
+    const { getByText } = await renderWithProviders(
       renderToolResult('get_portfolio_summary', { _raw: 'serialization error' }),
     );
     expect(getByText(/_raw/)).toBeTruthy();
     expect(getByText(/serialization error/)).toBeTruthy();
   });
 
-  it('falls back to JSON for data with only error key', () => {
-    const { getByText } = renderWithProviders(
+  it('falls back to JSON for data with only error key', async () => {
+    const { getByText } = await renderWithProviders(
       renderToolResult('get_market_quote', { error: 'No quote data available' }),
     );
     expect(getByText(/error/)).toBeTruthy();
     expect(getByText(/No quote data/)).toBeTruthy();
   });
 
-  it('uses specific renderer when data has normal keys alongside error', () => {
+  it('uses specific renderer when data has normal keys alongside error', async () => {
     // Data has error + price — should use QuoteRenderer, not JSON fallback
-    const { getByText } = renderWithProviders(
+    const { getByText } = await renderWithProviders(
       renderToolResult('get_market_quote', { error: 'stale data', price: 100, ticker: 'AAPL' }),
     );
     expect(getByText(/AAPL/)).toBeTruthy();
@@ -599,19 +617,19 @@ describe('renderToolResult fallback for _raw / error / string data', () => {
 });
 
 describe('JSON fallback renderer', () => {
-  it('pretty-prints JSON for unknown tools', () => {
-    const { getByText } = renderWithProviders(
+  it('pretty-prints JSON for unknown tools', async () => {
+    const { getByText } = await renderWithProviders(
       renderToolResult('mystery_tool', { hello: 'world', count: 42 }),
     );
     expect(getByText(/"hello"/)).toBeTruthy();
     expect(getByText(/"world"/)).toBeTruthy();
   });
 
-  it('handles null data gracefully', () => {
-    expect(() => renderWithProviders(renderToolResult('mystery_tool', null))).not.toThrow();
+  it('handles null data gracefully', async () => {
+    await renderWithProviders(renderToolResult('mystery_tool', null));
   });
 
-  it('handles array data gracefully', () => {
-    expect(() => renderWithProviders(renderToolResult('unknown', [1, 2, 3]))).not.toThrow();
+  it('handles array data gracefully', async () => {
+    await renderWithProviders(renderToolResult('unknown', [1, 2, 3]));
   });
 });

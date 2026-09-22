@@ -75,7 +75,7 @@ describe('SectorExposureScreen', () => {
       () => new Promise((resolve) => setTimeout(() => resolve(mockData), 50)),
     );
 
-    const { getByText, queryByText } = renderWithProviders(<SectorExposureScreen />, {
+    const { getByText, queryByText } = await renderWithProviders(<SectorExposureScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -97,7 +97,7 @@ describe('SectorExposureScreen', () => {
   it('renders sector percentages correctly', async () => {
     mockedGetSectorExposure.mockResolvedValue(mockData);
 
-    const { findByText, findAllByText } = renderWithProviders(<SectorExposureScreen />, {
+    const { findByText, findAllByText } = await renderWithProviders(<SectorExposureScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -109,13 +109,13 @@ describe('SectorExposureScreen', () => {
   it('shows ticker list when sector is tapped', async () => {
     mockedGetSectorExposure.mockResolvedValue(mockData);
 
-    const { findByText, getByText } = renderWithProviders(<SectorExposureScreen />, {
+    const { findByText, getByText } = await renderWithProviders(<SectorExposureScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     await findByText('Technology');
 
-    fireEvent.press(getByText('Technology'));
+    await fireEvent.press(getByText('Technology'));
 
     expect(getByText('Holdings')).toBeTruthy();
     expect(getByText('AAPL')).toBeTruthy();
@@ -130,7 +130,7 @@ describe('SectorExposureScreen', () => {
     // First call fails
     mockedGetSectorExposure.mockRejectedValueOnce(new Error('API error'));
 
-    const { findByText, getByText } = renderWithProviders(<SectorExposureScreen />, {
+    const { findByText, getByText } = await renderWithProviders(<SectorExposureScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -138,7 +138,7 @@ describe('SectorExposureScreen', () => {
 
     // Second call succeeds on retry
     mockedGetSectorExposure.mockResolvedValueOnce(mockData);
-    fireEvent.press(getByText('Retry'));
+    await fireEvent.press(getByText('Retry'));
 
     await waitFor(() => {
       expect(getByText('Technology')).toBeTruthy();
@@ -151,7 +151,7 @@ describe('SectorExposureScreen', () => {
       sectors: [],
     });
 
-    const { findByText } = renderWithProviders(<SectorExposureScreen />, {
+    const { findByText } = await renderWithProviders(<SectorExposureScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -161,7 +161,7 @@ describe('SectorExposureScreen', () => {
   it('shows 3 sectors badge in subtitle', async () => {
     mockedGetSectorExposure.mockResolvedValue(mockData);
 
-    const { findByText } = renderWithProviders(<SectorExposureScreen />, {
+    const { findByText } = await renderWithProviders(<SectorExposureScreen />, {
       providerOverrides: { withNavigation: false },
     });
 

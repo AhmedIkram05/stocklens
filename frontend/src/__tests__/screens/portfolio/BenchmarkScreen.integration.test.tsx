@@ -88,7 +88,7 @@ const mockInsuffientCumulativeData = {
 };
 
 async function flushMicrotasks() {
-  await act(() => Promise.resolve());
+  await act(async () => Promise.resolve());
 }
 
 describe('BenchmarkScreen', () => {
@@ -113,7 +113,7 @@ describe('BenchmarkScreen', () => {
   it('renders loading state initially', async () => {
     mockedPortfolioService.getBenchmark.mockImplementation(() => new Promise(() => {}));
 
-    const { getByText, queryByText } = renderWithProviders(<BenchmarkScreen />, {
+    const { getByText, queryByText } = await renderWithProviders(<BenchmarkScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -123,7 +123,7 @@ describe('BenchmarkScreen', () => {
   });
 
   it('renders benchmark data when loaded', async () => {
-    const { getByText } = renderWithProviders(<BenchmarkScreen />, {
+    const { getByText } = await renderWithProviders(<BenchmarkScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -143,7 +143,7 @@ describe('BenchmarkScreen', () => {
   });
 
   it('shows portfolio return and benchmark return', async () => {
-    const { getByText } = renderWithProviders(<BenchmarkScreen />, {
+    const { getByText } = await renderWithProviders(<BenchmarkScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -156,7 +156,7 @@ describe('BenchmarkScreen', () => {
   it('shows empty chart state when insufficient data', async () => {
     mockedPortfolioService.getBenchmark.mockResolvedValue(mockInsuffientCumulativeData);
 
-    const { getByText } = renderWithProviders(<BenchmarkScreen />, {
+    const { getByText } = await renderWithProviders(<BenchmarkScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -166,7 +166,7 @@ describe('BenchmarkScreen', () => {
   });
 
   it('renders chart when cumulative return data exists', async () => {
-    const { getByText } = renderWithProviders(<BenchmarkScreen />, {
+    const { getByText } = await renderWithProviders(<BenchmarkScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -176,14 +176,14 @@ describe('BenchmarkScreen', () => {
   });
 
   it('toggles benchmark ticker buttons (SPY/QQQ)', async () => {
-    const { getByText } = renderWithProviders(<BenchmarkScreen />, {
+    const { getByText } = await renderWithProviders(<BenchmarkScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     await flushMicrotasks();
     expect(getByText('+4.20%')).toBeTruthy();
 
-    fireEvent.press(getByText('QQQ'));
+    await fireEvent.press(getByText('QQQ'));
 
     await waitFor(() => {
       expect(mockedPortfolioService.getBenchmark).toHaveBeenCalledWith(
@@ -195,14 +195,14 @@ describe('BenchmarkScreen', () => {
   });
 
   it('changes period via YearSelector', async () => {
-    const { getByText } = renderWithProviders(<BenchmarkScreen />, {
+    const { getByText } = await renderWithProviders(<BenchmarkScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     await flushMicrotasks();
     expect(getByText('+4.20%')).toBeTruthy();
 
-    fireEvent.press(getByText('3Y'));
+    await fireEvent.press(getByText('3Y'));
 
     await waitFor(() => {
       expect(mockedPortfolioService.getBenchmark).toHaveBeenCalledWith(
@@ -214,7 +214,7 @@ describe('BenchmarkScreen', () => {
   });
 
   it('handles API error gracefully keeping stale data', async () => {
-    const { getByText } = renderWithProviders(<BenchmarkScreen />, {
+    const { getByText } = await renderWithProviders(<BenchmarkScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -223,7 +223,7 @@ describe('BenchmarkScreen', () => {
 
     mockedPortfolioService.getBenchmark.mockRejectedValue(new Error('Network error'));
 
-    fireEvent.press(getByText('QQQ'));
+    await fireEvent.press(getByText('QQQ'));
 
     await waitFor(() => {
       expect(getByText('+4.20%')).toBeTruthy();

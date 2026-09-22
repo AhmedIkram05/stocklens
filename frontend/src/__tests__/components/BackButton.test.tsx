@@ -29,28 +29,28 @@ const renderBackButton = (ui: React.ReactElement) =>
 describe('BackButton', () => {
   beforeEach(() => mockGoBack.mockClear());
 
-  it('icon variant calls navigation.goBack on press', () => {
-    const { getByLabelText } = renderBackButton(<BackButton />);
-    fireEvent.press(getByLabelText('Go back'));
+  it('icon variant calls navigation.goBack on press', async () => {
+    const { getByLabelText } = await renderBackButton(<BackButton />);
+    await fireEvent.press(getByLabelText('Go back'));
     expect(mockGoBack).toHaveBeenCalledTimes(1);
   });
 
-  it('text variant renders the label and honours a custom onPress', () => {
+  it('text variant renders the label and honours a custom onPress', async () => {
     const onPress = jest.fn();
-    const { getByText } = renderBackButton(
+    const { getByText } = await renderBackButton(
       <BackButton variant="text" label="Cancel" onPress={onPress} />,
     );
-    fireEvent.press(getByText('Cancel'));
+    await fireEvent.press(getByText('Cancel'));
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(mockGoBack).not.toHaveBeenCalled();
   });
 
-  it('does not fire when disabled', () => {
+  it('does not fire when disabled', async () => {
     const onPress = jest.fn();
-    const { getByText } = renderBackButton(
+    const { getByText } = await renderBackButton(
       <BackButton variant="text" label="Cancel" disabled onPress={onPress} />,
     );
-    fireEvent.press(getByText('Cancel'));
+    await fireEvent.press(getByText('Cancel'));
     expect(onPress).not.toHaveBeenCalled();
     expect(mockGoBack).not.toHaveBeenCalled();
   });
