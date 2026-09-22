@@ -98,7 +98,7 @@ describe('PortfolioListScreen', () => {
   it('renders loading state initially', async () => {
     mockedPortfolioService.listPortfolios.mockImplementation(() => new Promise(() => {}));
 
-    const { getByText, queryByText } = renderWithProviders(<PortfolioListScreen />, {
+    const { getByText, queryByText } = await renderWithProviders(<PortfolioListScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -109,7 +109,7 @@ describe('PortfolioListScreen', () => {
   it('shows "No portfolios yet" when list returns empty', async () => {
     mockedPortfolioService.listPortfolios.mockResolvedValue([]);
 
-    const { getByText } = renderWithProviders(<PortfolioListScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioListScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -122,7 +122,7 @@ describe('PortfolioListScreen', () => {
   });
 
   it('renders portfolio cards when data loads', async () => {
-    const { getByText, getAllByText } = renderWithProviders(<PortfolioListScreen />, {
+    const { getByText, getAllByText } = await renderWithProviders(<PortfolioListScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -144,7 +144,7 @@ describe('PortfolioListScreen', () => {
   it('falls back to individual getPerformance when bulk fails', async () => {
     mockedPortfolioService.getBulkPerformance.mockRejectedValue(new Error('Bulk unavailable'));
 
-    const { getByText } = renderWithProviders(<PortfolioListScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioListScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -161,25 +161,25 @@ describe('PortfolioListScreen', () => {
   });
 
   it('navigates to CreatePortfolio when "+" is pressed', async () => {
-    const { getByText } = renderWithProviders(<PortfolioListScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioListScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     await waitFor(() => expect(getByText('Growth Fund')).toBeTruthy());
 
-    fireEvent.press(getByText('+'));
+    await fireEvent.press(getByText('+'));
 
     expect(navigateSpy).toHaveBeenCalledWith('CreatePortfolio');
   });
 
   it('navigates to PortfolioDetail with correct params when card is pressed', async () => {
-    const { getByText } = renderWithProviders(<PortfolioListScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioListScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     await waitFor(() => expect(getByText('Growth Fund')).toBeTruthy());
 
-    fireEvent.press(getByText('Growth Fund'));
+    await fireEvent.press(getByText('Growth Fund'));
 
     expect(navigateSpy).toHaveBeenCalledWith('PortfolioDetail', {
       portfolioId: '1',
@@ -190,7 +190,7 @@ describe('PortfolioListScreen', () => {
   it('shows error state when API fails', async () => {
     mockedPortfolioService.listPortfolios.mockRejectedValue(new Error('Network error'));
 
-    const { getByText } = renderWithProviders(<PortfolioListScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioListScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
