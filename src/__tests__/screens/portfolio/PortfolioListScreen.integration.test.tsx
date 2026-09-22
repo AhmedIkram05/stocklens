@@ -88,7 +88,7 @@ describe('PortfolioListScreen', () => {
   it('renders loading state initially', async () => {
     mockedPortfolioService.listPortfolios.mockImplementation(() => new Promise(() => {}));
 
-    const { getByText, queryByText } = renderWithProviders(<PortfolioListScreen />, {
+    const { getByText, queryByText } = await renderWithProviders(<PortfolioListScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -99,7 +99,7 @@ describe('PortfolioListScreen', () => {
   it('shows "No portfolios yet" when list returns empty', async () => {
     mockedPortfolioService.listPortfolios.mockResolvedValue([]);
 
-    const { getByText } = renderWithProviders(<PortfolioListScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioListScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -109,7 +109,7 @@ describe('PortfolioListScreen', () => {
   });
 
   it('renders portfolio cards when data loads', async () => {
-    const { getByText, getAllByText } = renderWithProviders(<PortfolioListScreen />, {
+    const { getByText, getAllByText } = await renderWithProviders(<PortfolioListScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -124,7 +124,7 @@ describe('PortfolioListScreen', () => {
   });
 
   it('navigates to CreatePortfolio when "+" is pressed', async () => {
-    const { getByText } = renderWithProviders(<PortfolioListScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioListScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -136,7 +136,7 @@ describe('PortfolioListScreen', () => {
   });
 
   it('navigates to PortfolioDetail with correct params when card is pressed', async () => {
-    const { getByText } = renderWithProviders(<PortfolioListScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioListScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -153,7 +153,7 @@ describe('PortfolioListScreen', () => {
   it('shows error state when API fails', async () => {
     mockedPortfolioService.listPortfolios.mockRejectedValue(new Error('Network error'));
 
-    const { getByText } = renderWithProviders(<PortfolioListScreen />, {
+    const { getByText } = await renderWithProviders(<PortfolioListScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
