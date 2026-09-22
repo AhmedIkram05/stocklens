@@ -39,14 +39,14 @@ describe('subscriptionClient', () => {
     await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
   });
 
-  it('reuses one shared client across subscribes', () => {
+  it('reuses one shared client across subscribes', async () => {
     const before = mockCreateClient.mock.calls.length;
     getSubscriptionClient();
     getSubscriptionClient();
     expect(mockCreateClient.mock.calls.length).toBe(before + 1);
   });
 
-  it('subscribes with the doc + ticker variables and routes next to the callback', () => {
+  it('subscribes with the doc + ticker variables and routes next to the callback', async () => {
     const onNext = jest.fn();
     subscribeMarketQuote('AAPL', onNext);
 
@@ -62,7 +62,7 @@ describe('subscriptionClient', () => {
     expect(onNext).toHaveBeenCalledWith(quote);
   });
 
-  it('ignores envelopes without quote data', () => {
+  it('ignores envelopes without quote data', async () => {
     const onNext = jest.fn();
     subscribeMarketQuote('AAPL', onNext);
     const [, sink] = subscribeFn.mock.calls[0] as unknown as [
@@ -74,7 +74,7 @@ describe('subscriptionClient', () => {
     expect(onNext).not.toHaveBeenCalled();
   });
 
-  it('cleanup calls unsubscribe and never disposes the shared client', () => {
+  it('cleanup calls unsubscribe and never disposes the shared client', async () => {
     const cleanup = subscribeMarketQuote('MSFT', jest.fn());
 
     cleanup();
