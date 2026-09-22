@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { act, renderHook } from '@testing-library/react-native';
+import { act, renderHook, renderHookAsync } from '@testing-library/react-native';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 
 // Mock new auth service and API client to avoid actual HTTP calls during tests
@@ -93,10 +93,10 @@ describe('AuthContext', () => {
    * Validates that useAuth hook throws error when used outside AuthProvider.
    * This prevents undefined behavior and helps developers catch mistakes early.
    */
-  it('throws when useAuth is used outside provider', () => {
-    expect(() =>
-      renderHook(() => useAuth(), { wrapper: ({ children }) => <>{children}</> }),
-    ).toThrow('useAuth must be used within an AuthProvider');
+  it('throws when useAuth is used outside provider', async () => {
+    await expect(
+      renderHookAsync(() => useAuth(), { wrapper: ({ children }) => <>{children}</> }),
+    ).rejects.toThrow('useAuth must be used within an AuthProvider');
   });
 
   /**
@@ -106,7 +106,7 @@ describe('AuthContext', () => {
    */
   it('provides unlocked state when device auth succeeds', async () => {
     // Render the auth hook with provider
-    const { result } = renderHook(() => useAuth(), {
+    const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });
 
@@ -127,7 +127,7 @@ describe('AuthContext', () => {
    * Ensures clean state after logout - user shouldn't see lock screen without being signed in.
    */
   it('signs out and resets lock state', async () => {
-    const { result } = renderHook(() => useAuth(), {
+    const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });
 
@@ -148,7 +148,7 @@ describe('AuthContext', () => {
    * Fallback mechanism when device authentication fails or isn't available.
    */
   it('unlockWithCredentials verifies credentials via backend API', async () => {
-    const { result } = renderHook(() => useAuth(), {
+    const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
     });
 
