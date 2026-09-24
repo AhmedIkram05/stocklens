@@ -1,43 +1,102 @@
+x-airflow-common: &airflow-common
+  build:
+    context: ..
+    dockerfile: airflow/Dockerfile
+  environment:
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://stocklens:stocklens@postgres:5432/airflow_db
+    AIRFLOW_CONN_POSTGRES_DEFAULT: postgresql://stocklens:stocklens@postgres:5432/stocklens
+    DATABASE_URL: postgresql+asyncpg://stocklens:stocklens@postgres:5432/stocklens
+    MLFLOW_TRACKING_URI: http://mlflow:5001
+    MODEL_ARTIFACT_DIR: /model_artifacts/champion
+    AWS_REGION: eu-west-2
+    ENVIRONMENT: development
+    PYTHONPATH: /app:/opt/airflow/dags
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./config:/opt/airflow/config
+    - ../backend:/app/backend
+    - ../backend/ml:/app/ml
+    - model_artifacts:/model_artifacts
+    - mlflow_data:/mlflow
+  networks:
+    - stocklens_default
+  restart: unless-stopped
+
 services:
-  airflow:
-    build:
-      context: ..
-      dockerfile: airflow/Dockerfile
+  airflow-migrate:
+    <<: *airflow-common
+    command:
+      - bash
+      - -c
+      - |
+        python3 <<'PYEOF'
+        import time
+        import psycopg2
+        from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+        for _ in range(30):
+            try:
+                conn = psycopg2.connect(host='postgres', user='stocklens', password='stocklens', dbname='stocklens')
+                conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+                cur = conn.cursor()
+                cur.execute("SELECT 1 FROM pg_database WHERE datname='airflow_db'")
+                if not cur.fetchone():
+                    cur.execute('CREATE DATABASE airflow_db')
+                conn.close()
+                break
+            except Exception as e:
+                print(f'waiting for postgres: {e}')
+                time.sleep(2)
+        PYEOF
+        airflow db migrate
+        bash /opt/airflow/scripts/init_airflow_variables.sh
+        airflow users create --username "$${AIRFLOW_ADMIN_USER:-admin}" --password "$${AIRFLOW_ADMIN_PASSWORD:-admin}" --firstname "$${AIRFLOW_ADMIN_FIRSTNAME:-Admin}" --lastname "$${AIRFLOW_ADMIN_LASTNAME:-User}" --role Admin --email "$${AIRFLOW_ADMIN_EMAIL:-admin@example.com}" || true
+    restart: 'no'
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: airflow api-server --port 8080
     ports:
-      - '8080:8080' # Airflow API server (UI + REST)
-    environment:
-      AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
-      # FAB auth (replaces default Simple Auth in Airflow 3)
-      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      - '8080:8080'
+    depends_on:
+      airflow-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8080/api/v2/monitor/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
-      # Airflow metadata DB (SQLite — dev only; Phase 5 → RDS PostgreSQL)
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
+  airflow-scheduler:
+    <<: *airflow-common
+    command: airflow scheduler
+    depends_on:
+      airflow-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD-SHELL', 'airflow jobs check --job-type SchedulerJob --hostname $$HOSTNAME']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
-      # StockLens backend connections
-      DATABASE_URL: postgresql+asyncpg://stocklens:stocklens@postgres:5432/stocklens
-      MLFLOW_TRACKING_URI: http://mlflow:5001
-      MODEL_ARTIFACT_DIR: /model_artifacts/champion
-      AWS_REGION: eu-west-2
-      ENVIRONMENT: development
-      PYTHONPATH: /app:/opt/airflow/dags
-
-    volumes:
-      - ./dags:/opt/airflow/dags
-      - airflow_db:/opt/airflow
-      - model_artifacts:/model_artifacts # Read champion model path
-      - mlflow_data:/mlflow # Read MLflow artifacts
-      - ./config:/opt/airflow/config
-      - ../backend:/app/backend # Mount backend source for PythonOperator imports
-      - ../backend/ml:/app/ml # Mount ML module for ml.pipeline imports
-
-    # Connect to the backend's Docker network (created by root docker-compose.yml)
-    networks:
-      - stocklens_backend
-
-    restart: unless-stopped
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: airflow dag-processor
+    depends_on:
+      airflow-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD-SHELL', 'airflow jobs check --job-type DagProcessorJob --hostname $$HOSTNAME']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 volumes:
-  airflow_db:
   model_artifacts:
     external: true
     name: stocklens_model_artifacts
@@ -46,6 +105,5 @@ volumes:
     name: stocklens_mlflow_data
 
 networks:
-  stocklens_backend:
+  stocklens_default:
     external: true
-    name: stocklens_default

@@ -560,7 +560,7 @@ class MLConfig:
         default_factory=lambda: os.environ.get("MODEL_ARTIFACT_DIR", "/model_artifacts/champion")
     )
     MLFLOW_TRACKING_URI: str = field(
-        default_factory=lambda: os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+        default_factory=lambda: os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:5001")
     )
     DATABASE_URL: str = field(
         default_factory=lambda: os.environ.get(
