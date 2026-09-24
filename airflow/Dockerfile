@@ -26,8 +26,6 @@ ENV PATH="/root/.cargo/bin:$PATH"
 RUN pip install maturin --no-cache-dir
 
 WORKDIR /src
-# ponytail: single COPY layer (no dep-split like backend). Builds are
-# CI-only so layering gains are negligible vs simplicity.
 COPY backend/ml/features-engine /src
 RUN maturin build --release --features extension --out /wheels
 
@@ -89,6 +87,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     'apache-airflow-providers-postgres>=5.0.0' \
     'apache-airflow-providers-fab>=1.0.0' \
     'apache-airflow-providers-amazon>=9.0.0' \
+    'psycopg2-binary>=2.9.0' \
     alembic>=1.15.0
 
 # Install Rust native module (features_engine)
@@ -114,15 +113,10 @@ WORKDIR ${AIRFLOW_HOME}
 # Backend source code is mounted at runtime via docker-compose volumes
 # (not copied into the image) so DAGs can import backend modules directly.
 
-# ponytail: single-container dev setup (scheduler + dag-processor + api-server).
-# Phase 5 EC2: split into separate scheduler/dag-processor/api-server/worker containers.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8080/api/v2/monitor/health || exit 1
 
 # Make init script executable
 RUN chmod +x /opt/airflow/scripts/init_airflow_variables.sh
 
-CMD ["bash", "-c", "\
-    airflow db migrate \
-    && bash /opt/airflow/scripts/init_airflow_variables.sh \
-    && (airflow dag-processor & airflow scheduler & exec airflow api-server --port 8080)"]
+CMD ["airflow", "api-server", "--port", "8080"]
