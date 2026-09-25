@@ -18,7 +18,11 @@ import structlog
 import torch
 
 from ml.config import ML_CONFIG as ml_config
-from ml.features import compute_all_features, compute_cross_sectional_features
+from ml.features import (
+    compute_all_features,
+    compute_causal_vol_pct,
+    compute_cross_sectional_features,
+)
 from ml.model import GlobalLSTM
 from src.config import settings
 
@@ -39,6 +43,7 @@ class PredictionService:
 
     def __init__(self) -> None:
         self.model: GlobalLSTM | None = None
+        self.ensemble: list[GlobalLSTM] = []
         self.model_version: str = "0"
         self.device = torch.device("cpu")  # Inference always on CPU
         self._feature_means: np.ndarray | None = None
@@ -46,7 +51,11 @@ class PredictionService:
         self._vocab: dict[str, int] | None = None
 
     def load_model(self, model_path: str = "/model_artifacts/champion/model.pt") -> bool:
-        """Load champion model from disk.
+        """Load champion model(s) from disk.
+
+        Loads the seed ensemble (``model_seed{i}.pt`` siblings written next to
+        ``model.pt``) when present — predictions then average probabilities
+        across seeds. Falls back to the single ``model.pt`` checkpoint.
 
         Args:
             model_path: Path to the saved model .pt file.
@@ -55,16 +64,25 @@ class PredictionService:
             True if model loaded successfully, False otherwise.
         """
         path = Path(model_path)
-        if not path.exists():
+        seed_paths = sorted(path.parent.glob("model_seed*.pt")) if path.parent.exists() else []
+        if not path.exists() and not seed_paths:
             logger.warning("no_champion_model_found", path=model_path)
             return False
 
         try:
-            self.model = GlobalLSTM.load(str(path), device=self.device)
-            self.model.to(self.device)
-            self.model.eval()
+            paths = seed_paths or [path]
+            self.ensemble = [GlobalLSTM.load(str(p), device=self.device) for p in paths]
+            for m in self.ensemble:
+                m.to(self.device)
+                m.eval()
+            self.model = self.ensemble[0]
             self.model_version = self.model._model_version
-            logger.info("champion_model_loaded", path=model_path, version=self.model_version)
+            logger.info(
+                "champion_model_loaded",
+                path=model_path,
+                version=self.model_version,
+                ensemble_size=len(self.ensemble),
+            )
             return True
         except Exception as exc:
             logger.exception("failed_to_load_champion_model", error=str(exc))
@@ -96,10 +114,20 @@ class PredictionService:
         return named, len(named)
 
     def _compute_vol_pct(self, close_series: pd.Series) -> np.ndarray:
-        """Compute vol percentile (14th feature) for a ticker's close series."""
+        """Compute vol percentile (14th feature) for a ticker's close series.
+
+        Uses the same causal expanding percentile as the training pipeline
+        (``ml.features.compute_causal_vol_pct``) so the distributions match:
+        each day's rank uses only history up to that day. The fetch window
+        (``ml_config.PREDICTION_FETCH_LIMIT``) is sized so the expanding
+        percentile has comparable depth to training.
+        """
         daily_log_ret = np.log(close_series / close_series.shift(1))
-        rolling_vol = daily_log_ret.rolling(window=ml_config.SEQUENCE_LENGTH).std()
-        vol_pct = rolling_vol.rank(pct=True).values.astype(np.float32)[:, np.newaxis]
+        rolling_vol = daily_log_ret.rolling(window=ml_config.VOL_LOOKBACK).std()
+        vol_pct = (
+            compute_causal_vol_pct(rolling_vol, min_periods=ml_config.VOL_PCT_MIN_PERIODS)
+            .values.astype(np.float32)[:, np.newaxis]
+        )
         vol_pct = np.nan_to_num(vol_pct, nan=0.5)
         return vol_pct
 
@@ -318,11 +346,22 @@ class PredictionService:
         with torch.no_grad():
             features_tensor = features_tensor.to(self.device)
             ticker_idx = ticker_idx.to(self.device)
-            logits = self.model(features_tensor, ticker_idx)
-            probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
+            per_model = [
+                torch.softmax(m(features_tensor, ticker_idx), dim=-1).cpu().numpy()[0]
+                for m in (self.ensemble or [self.model])
+            ]
+            probs = np.mean(per_model, axis=0) if len(per_model) > 1 else per_model[0]
 
-        # Parse results
-        pred_class = int(np.argmax(probs))
+        # Parse results — abstention rule (mirrors training evaluation):
+        # if the UP-vs-DOWN edge is below the checkpoint margin, predict FLAT.
+        margin = getattr(self.model, "_margin", None) or 0.0
+        edge = float(probs[2] - probs[0])  # p_up - p_down
+        if edge >= margin:
+            pred_class = 2  # UP
+        elif edge <= -margin:
+            pred_class = 0  # DOWN
+        else:
+            pred_class = 1  # FLAT (abstain)
         confidence = float(probs[pred_class])
         probabilities = {CLASS_NAMES[i]: float(probs[i]) for i in range(len(CLASS_NAMES))}
 
@@ -346,6 +385,7 @@ class PredictionService:
             "confidence": confidence,
             "probabilities": probabilities,
             "model_version": self.model_version,
+            "margin": margin,
         }
 
 

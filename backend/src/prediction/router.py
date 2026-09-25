@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from ml.config import ML_CONFIG as ml_config
 from src.auth.dependencies import get_current_user
 from src.auth.schemas import UserInDB
 from src.cache.redis import get_redis
@@ -70,8 +71,10 @@ async def predict(
             detail="Prediction model not yet loaded. Train and deploy a champion model first.",
         )
 
-    # Fetch OHLCV data (90+ days for feature computation)
-    rows = await fetch_ohlcv(ticker, limit=500)
+    # Fetch OHLCV data — deep history so the causal vol-percentile feature
+    # sees the same expanding-rank depth it had during training.
+    fetch_limit = ml_config.PREDICTION_FETCH_LIMIT
+    rows = await fetch_ohlcv(ticker, limit=fetch_limit)
     if not rows or len(rows) < 60:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -81,7 +84,7 @@ async def predict(
     # Fetch SPY benchmark data for cross-sectional features
     spy_rows = None
     try:
-        spy_rows = await fetch_ohlcv("SPY", limit=500)
+        spy_rows = await fetch_ohlcv("SPY", limit=fetch_limit)
     except Exception:
         logger.warning("spy_data_fetch_failed", ticker=ticker)
 
