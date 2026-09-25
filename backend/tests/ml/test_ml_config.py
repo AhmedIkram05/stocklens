@@ -80,11 +80,15 @@ def test_hyperparameter_ranges_positive() -> None:
         "TRAIN_SPLIT",
         "VAL_SPLIT",
         "TEST_SPLIT",
-        "VOL_FILTER_PERCENTILE",
     ]:
         val = getattr(cfg, name)
         assert isinstance(val, float), f"{name} should be float, got {type(val)}"
         assert val > 0, f"{name}={val} should be positive"
+
+    # Optional knob: None = disabled (off by default), float in (0, 1) when set.
+    assert MLConfig().VOL_FILTER_PERCENTILE is None or (
+        0 < MLConfig().VOL_FILTER_PERCENTILE < 1
+    )
 
 
 def test_split_fractions_are_float() -> None:
