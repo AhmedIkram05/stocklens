@@ -34,7 +34,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Set up QEMU for ARM64 emulation
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Build features-engine ARM64 wheel
         run: |
@@ -80,7 +80,7 @@ jobs:
 
       - name: Set up QEMU for ARM64 emulation
         # ADR 009: QEMU required for linux/arm64 builds on x86 runners
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Download pre-built features-engine wheel
         uses: actions/download-artifact@v4
@@ -124,7 +124,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Set up QEMU for ARM64 emulation
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Download pre-built features-engine wheel
         uses: actions/download-artifact@v4
