@@ -64,10 +64,13 @@ class TestDirectionalAccuracy:
         assert "accuracy" in metrics
         assert "per_class_f1" in metrics
         assert "confusion_matrix" in metrics
-        assert "simulated_sharpe" in metrics
-        assert "long_short_sharpe" in metrics
+        assert "coverage" in metrics
+        assert "margin" in metrics
         assert "total_samples" in metrics
         assert metrics["total_samples"] == 20
+        # No forward-return data supplied → Sharpe metrics stay None.
+        assert metrics["sharpe_long_only_0bps"] is None
+        assert metrics["sharpe_long_short_0bps"] is None
 
 
 class TestPerClassF1:
@@ -90,93 +93,121 @@ class TestPerClassF1:
         assert f1["FLAT"] == pytest.approx(1.0)
 
 
-class TestSimulatedSharpe:
-    def test_perfect_up_strategy(self) -> None:
-        from ml.evaluate import compute_simulated_sharpe
+class TestMarginRule:
+    """|p_up − p_down| < margin ⇒ FLAT (abstain)."""
 
-        # Mix of UP and FLAT so std > 0
-        labels = np.array([2, 2, 1, 2, 2])  # True UP, UP, FLAT, UP, UP
-        preds = np.array([2, 2, 1, 2, 2])  # Perfect predictions
+    def test_edge_ge_margin_up(self) -> None:
+        from ml.evaluate import apply_margin_rule
 
-        sharpe = compute_simulated_sharpe(labels, preds)
+        probs = np.array([[0.2, 0.1, 0.7], [0.45, 0.1, 0.45]])
+        preds = apply_margin_rule(probs, margin=0.2)
+        assert preds[0] == 2  # edge 0.5 ≥ 0.2 → UP
+        assert preds[1] == 1  # edge 0.0 < 0.2 → FLAT (abstain)
+
+    def test_negative_edge_down(self) -> None:
+        from ml.evaluate import apply_margin_rule
+
+        probs = np.array([[0.7, 0.1, 0.2]])
+        assert apply_margin_rule(probs, margin=0.3)[0] == 0
+
+    def test_zero_margin_collapses_to_binary(self) -> None:
+        from ml.evaluate import apply_margin_rule
+
+        probs = np.array([[0.34, 0.33, 0.33], [0.2, 0.5, 0.3]])
+        preds = apply_margin_rule(probs, margin=0.0)
+        # edge = p_up − p_down; ≥ 0 → UP, < 0 → DOWN (FLAT never predicted)
+        assert list(preds) == [0, 2]
+
+
+class TestEvaluateFromProbs:
+    def test_margin_and_coverage(self) -> None:
+        from ml.evaluate import evaluate_from_probs
+
+        labels = np.array([2, 0, 1, 2, 0])
+        probs = np.array(
+            [
+                [0.1, 0.1, 0.8],  # edge 0.7 → UP, label UP → correct
+                [0.8, 0.1, 0.1],  # edge −0.7 → DOWN, label DOWN → correct
+                [0.4, 0.2, 0.4],  # edge 0.0 → FLAT (abstain, label FLAT)
+                [0.1, 0.1, 0.8],  # UP, label UP → correct
+                [0.1, 0.1, 0.8],  # UP, label DOWN → wrong
+            ]
+        )
+        m = evaluate_from_probs(probs, labels, margin=0.2)
+        assert m["total_samples"] == 5
+        assert m["coverage"] == pytest.approx(4 / 5)
+        assert m["margin"] == pytest.approx(0.2)
+        assert m["n_directional"] == 4
+        assert m["n_directional_correct"] == 3
+        assert m["directional_accuracy"] == pytest.approx(0.75)
+
+    def test_sharpe_with_forward_returns(self) -> None:
+        from ml.evaluate import evaluate_from_probs
+
+        n = 30
+        labels = np.full(n, 2)
+        probs = np.tile([0.2, 0.1, 0.7], (n, 1))  # always UP
+        fwd_rets = np.linspace(0.001, 0.01, n)
+        dates = np.array(
+            np.datetime64("2024-01-01") + np.arange(n) * np.timedelta64(1, "D"),
+            dtype="datetime64[D]",
+        )
+        m = evaluate_from_probs(
+            probs,
+            labels,
+            fwd_rets=fwd_rets,
+            dates=dates,
+            ticker_idxs=np.zeros(n, dtype=np.int64),
+        )
+        assert m["sharpe_long_only_0bps"] is not None
+        assert m["sharpe_long_only_0bps"] > 0
+        assert m["sharpe_long_only_10bps"] is not None
+        assert m["sharpe_long_only_10bps"] < m["sharpe_long_only_0bps"]
+
+
+class TestRealSharpe:
+    """Real forward-return Sharpe (replaces the old ±1% label proxy)."""
+
+    @staticmethod
+    def _synth(n: int = 30, seed: int = 3) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        rng = np.random.default_rng(seed)
+        fwd_rets = rng.normal(0.001, 0.004, size=n)
+        dates = np.array(
+            np.datetime64("2024-01-01") + np.arange(n) * np.timedelta64(1, "D"),
+            dtype="datetime64[D]",
+        )
+        return fwd_rets, dates, np.zeros(n, dtype=np.int64)
+
+    def test_perfect_up_prediction_positive_long_sharpe(self) -> None:
+        from ml.evaluate import _strategy_sharpe
+
+        fwd_rets, dates, ticker_idxs = self._synth()
+        labels = np.where(fwd_rets > 0, 2, 0)
+        sharpe = _strategy_sharpe(
+            labels, fwd_rets, dates, ticker_idxs, mode="long_only", cost_bps=0
+        )
         assert sharpe > 0
 
-    def test_always_wrong_strategy(self) -> None:
-        from ml.evaluate import compute_simulated_sharpe
+    def test_always_flat_gives_zero(self) -> None:
+        from ml.evaluate import _strategy_sharpe
 
-        # Always predict DOWN when UP is true -> always flat (no signal)
-        labels = np.array([2, 2, 2])
-        preds = np.array([0, 0, 0])
-
-        sharpe = compute_simulated_sharpe(labels, preds)
-        assert sharpe == 0.0  # No long positions
-
-    def test_mixed_strategy(self) -> None:
-        from ml.evaluate import compute_simulated_sharpe
-
-        labels = np.array([2, 0, 2, 0])  # UP, DOWN, UP, DOWN
-        preds = np.array([2, 2, 2, 2])  # Always predict UP
-
-        sharpe = compute_simulated_sharpe(labels, preds)
-        # Long on UP and DOWN days -> mixed returns
-        assert isinstance(sharpe, float)
-
-    def test_zero_std_returns_zero(self) -> None:
-        from ml.evaluate import compute_simulated_sharpe
-
-        # Single sample: std will be 0
-        labels = np.array([2])
-        preds = np.array([2])
-
-        sharpe = compute_simulated_sharpe(labels, preds)
+        fwd_rets, dates, ticker_idxs = self._synth()
+        preds = np.ones(len(fwd_rets), dtype=np.int64)
+        sharpe = _strategy_sharpe(
+            preds, fwd_rets, dates, ticker_idxs, mode="long_short", cost_bps=0
+        )
         assert sharpe == 0.0
 
+    def test_wrong_direction_negative(self) -> None:
+        from ml.evaluate import _strategy_sharpe
 
-class TestLongShortSharpe:
-    def test_long_short_boosts_sharpe(self) -> None:
-        """Long-short doubles signal vs long-only when model is right in both directions."""
-        from ml.evaluate import compute_long_short_sharpe, compute_simulated_sharpe
-
-        # Equal UP and DOWN, mostly correct, some wrong — gives variance for non-zero Sharpe
-        labels = np.array([2, 2, 2, 0, 0, 0, 1, 1, 2, 0])
-        preds = np.array([2, 2, 2, 0, 0, 0, 1, 1, 1, 1])  # last two wrong (pred FLAT)
-
-        long_only = compute_simulated_sharpe(labels, preds)
-        long_short = compute_long_short_sharpe(labels, preds)
-        # Long-short captures signal from BOTH UP and DOWN, so mean return > long-only
-        assert long_short > long_only
-        assert long_short > 0
-
-    def test_always_flat(self) -> None:
-        """No signal = zero Sharpe."""
-        from ml.evaluate import compute_long_short_sharpe
-
-        labels = np.array([2, 0, 2, 0])
-        preds = np.array([1, 1, 1, 1])  # Always FLAT
-
-        sharpe = compute_long_short_sharpe(labels, preds)
-        assert sharpe == 0.0
-
-    def test_asymmetric_model_penalized(self) -> None:
-        """Model that always predicts UP gets BOTH correct UP and wrong DOWN."""
-        from ml.evaluate import compute_long_short_sharpe
-
-        labels = np.array([2, 0, 2, 0])
-        preds = np.array([2, 2, 2, 2])  # Always UP
-
-        sharpe = compute_long_short_sharpe(labels, preds)
-        # UP predictions earn +1%, DOWN predictions lose -1%
-        # avg return = (0.01 + -0.01 + 0.01 + -0.01) / 4 = 0
-        assert sharpe == 0.0
-
-    def test_zero_std_returns_zero(self) -> None:
-        from ml.evaluate import compute_long_short_sharpe
-
-        labels = np.array([2])
-        preds = np.array([2])
-
-        sharpe = compute_long_short_sharpe(labels, preds)
-        assert sharpe == 0.0
+        fwd_rets, dates, ticker_idxs = self._synth()
+        labels = np.where(fwd_rets > 0, 2, 0)
+        preds = np.where(labels == 2, 0, 2)  # always wrong direction
+        sharpe = _strategy_sharpe(
+            preds, fwd_rets, dates, ticker_idxs, mode="long_short", cost_bps=0
+        )
+        assert sharpe < 0
 
 
 class TestPlotFunctions:
