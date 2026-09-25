@@ -401,33 +401,21 @@ class MLflowManager:
     # Disk persistence
     # ------------------------------------------------------------------
 
-    def save_champion_to_disk(
-        self,
-        model: GlobalLSTM,
-        vocab: Optional[dict[str, int]] = None,
-        feature_means: Optional[np.ndarray] = None,
-        feature_stds: Optional[np.ndarray] = None,
-    ) -> str:
-        """Save champion model to disk for backend inference.
+    def _resolve_save_dir(self) -> Path:
+        """Directory the champion checkpoint is written to (or read from).
 
         Falls back to a local temp dir when the configured path
         (``/model_artifacts/champion``) is not writable — e.g. native macOS
-        runs outside Docker. Uses atomic write (temp file + rename) so the
-        backend never reads a partially-written model file. The checkpoint
-        includes ticker vocabulary and standardisation params.
-
-        Args:
-            model: Trained GlobalLSTM instance.
-            vocab: Ticker-to-index vocabulary for entity embedding lookup.
-            feature_means: Per-feature means (from global pooled z-score).
-            feature_stds: Per-feature stds (from global pooled z-score).
-
-        Returns:
-            Path to the saved model file.
+        runs outside Docker. Both ``save_champion_to_disk`` and the paired
+        promotion gate must use this same resolution, or the gate silently
+        looks in a different directory than the save writes to.
         """
         save_dir = Path(ML_CONFIG.MODEL_ARTIFACT_DIR)
         try:
             save_dir.mkdir(parents=True, exist_ok=True)
+            probe = save_dir / ".write_test"
+            probe.touch()
+            probe.unlink()
         except (OSError, PermissionError):  # fmt: skip
             fallback = Path(tempfile.gettempdir()) / "stocklens_model"
             logger.warning(
@@ -437,6 +425,40 @@ class MLflowManager:
             )
             save_dir = fallback
             save_dir.mkdir(parents=True, exist_ok=True)
+        return save_dir
+
+    def save_champion_to_disk(
+        self,
+        model: GlobalLSTM,
+        vocab: Optional[dict[str, int]] = None,
+        feature_means: Optional[np.ndarray] = None,
+        feature_stds: Optional[np.ndarray] = None,
+        margin: Optional[float] = None,
+        ensemble_models: Optional[list[GlobalLSTM]] = None,
+    ) -> str:
+        """Save champion model to disk for backend inference.
+
+        Falls back to a local temp dir when the configured path
+        (``/model_artifacts/champion``) is not writable — e.g. native macOS
+        runs outside Docker. Uses atomic write (temp file + rename) so the
+        backend never reads a partially-written model file. The checkpoint
+        includes ticker vocabulary, standardisation params and the abstention
+        margin selected on the validation set.
+
+        Args:
+            model: Trained GlobalLSTM instance (seed 0 when ensembling).
+            vocab: Ticker-to-index vocabulary for entity embedding lookup.
+            feature_means: Per-feature means (from global pooled z-score).
+            feature_stds: Per-feature stds (from global pooled z-score).
+            margin: Abstention margin (|p_up - p_down| below this ⇒ FLAT).
+            ensemble_models: Additional seed models for the probability
+                ensemble. Saved alongside ``model.pt`` as
+                ``model_seed{i}.pt``; inference averages their outputs.
+
+        Returns:
+            Path to the saved model file.
+        """
+        save_dir = self._resolve_save_dir()
         save_path = str(save_dir / "model.pt")
 
         # Write to a temp file in the same directory, then atomic rename
@@ -447,6 +469,7 @@ class MLflowManager:
                 vocab=vocab,
                 feature_means=feature_means,
                 feature_stds=feature_stds,
+                margin=margin,
             )
             os.fsync(fd)  # flush OS buffer
             os.replace(tmp_path, save_path)  # atomic on POSIX, near-atomic on macOS
@@ -457,6 +480,20 @@ class MLflowManager:
                 os.unlink(tmp_path)
 
         logger.info("Champion model saved to disk (atomic)", extra={"path": save_path})
+
+        members = ensemble_models or []
+        for i, member in enumerate(members):
+            member.save(
+                str(save_dir / f"model_seed{i}.pt"),
+                vocab=vocab,
+                feature_means=feature_means,
+                feature_stds=feature_stds,
+                margin=margin,
+            )
+        if members:
+            logger.info(
+                "Champion seed checkpoints saved (ensemble)", extra={"count": len(members)}
+            )
 
         # -- Publish to champion S3 bucket if configured --
         champion_s3_uri = os.environ.get("CHAMPION_S3_URI", "")
