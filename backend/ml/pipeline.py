@@ -844,9 +844,13 @@ async def run_pipeline() -> dict[str, Any]:
     seed_paths = sorted(mlflow_mgr._resolve_save_dir().glob("model_seed*.pt"))
     if os.path.exists(champion_path) or seed_paths:
         try:
+            # Re-scoring runs on CPU: loading checkpoints onto MPS crashes in
+            # F.embedding ("Placeholder storage has not been allocated") and
+            # CPU is plenty for a one-off gate evaluation.
+            gate_device = torch.device("cpu")
             champ_models = [
-                GlobalLSTM.load(str(p), device=device) for p in seed_paths
-            ] or [GlobalLSTM.load(champion_path, device=device)]
+                GlobalLSTM.load(str(p), device=gate_device) for p in seed_paths
+            ] or [GlobalLSTM.load(champion_path, device=gate_device)]
             champion = champ_models[0]
             champ_means = champion._feature_means
             champ_stds = champion._feature_stds
@@ -870,7 +874,7 @@ async def run_pipeline() -> dict[str, Any]:
                     champ_ds, batch_size=ML_CONFIG.BATCH_SIZE, shuffle=False
                 )
                 per_model_probs = [
-                    predict_probs(m, champ_loader, device)[0] for m in champ_models
+                    predict_probs(m, champ_loader, gate_device)[0] for m in champ_models
                 ]
                 champ_probs = (
                     np.mean(per_model_probs, axis=0)
