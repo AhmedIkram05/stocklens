@@ -74,6 +74,18 @@ def compute_volatility_rank(close: pd.Series, period: int = 252) -> pd.Series:
     )
 
 
+def compute_causal_vol_pct(vol_series: pd.Series, min_periods: int = 60) -> pd.Series:
+    """Expanding-percentile rank of rolling volatility — causal, no look-ahead.
+
+    Each day's percentile uses only history up to that day, so the value at
+    date t is computable in live trading. Training (pipeline.py) and inference
+    (prediction service) MUST both use this helper so feature semantics match;
+    the inference fetch depth (PREDICTION_FETCH_LIMIT) is sized to cover the
+    training window so both expanding percentiles see comparable history.
+    """
+    return vol_series.expanding(min_periods=min_periods).rank(pct=True)
+
+
 def _safe_array(df: pd.DataFrame, col: str, dtype: type = np.float64) -> np.ndarray:
     """Safely extract a column as a numpy array, falling back to NaN if missing."""
     if col in df.columns:
@@ -96,6 +108,13 @@ def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
     V2 extras (bb_pctb, bb_width, atr_14, obv, williams_r_14, roc_10) are
     dropped after compute — tested multiple times and each one hurts
     performance (turns the model into a single-class predictor).
+
+    Scale-free transform: nominal prices drift across eras, so
+    price-denominated indicators are re-expressed relative to the current
+    close before z-scoring — MAs become log(close/ma) distance, MACD is
+    divided by close. Without this, z-scores fit on a 2016–2023 training
+    era saturate the LSTM on 2024+ data (threshold models are insensitive
+    to the drift; recurrent nets are not).
     """
     feature_cols = [
         "log_ret_1d",
@@ -118,6 +137,12 @@ def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
     volume = _safe_array(df, "volume")
     result = _dict_to_df(_rust.compute_all_features(close, high, low, volume), df.index)
     result = result[feature_cols]
+
+    close_safe = np.where(close > 0, close, np.nan)
+    for ma_col in ("ma_5", "ma_10", "ma_20", "ma_50"):
+        result[ma_col] = np.log(close_safe / result[ma_col].to_numpy(dtype=np.float64))
+    for osc_col in ("macd", "macd_signal", "macd_hist"):
+        result[osc_col] = result[osc_col].to_numpy(dtype=np.float64) / close_safe
 
     if "ticker" in df.columns:
         result["ticker"] = df["ticker"]
