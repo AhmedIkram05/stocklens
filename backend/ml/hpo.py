@@ -2,14 +2,21 @@
 Optuna hyperparameter optimization for GlobalLSTM.
 
 Phase 1 — optimize model hyperparams (lr, hidden_dim, dropout, weight_decay,
-focal_gamma) with a fixed threshold_mult. Prepares the dataset once; each
-trial reinitializes the model and trains from scratch.
+focal_gamma) with a fixed threshold_mult. The dataset is prepared once; each
+trial reinitializes the model and trains from scratch. Per-epoch validation
+metrics are reported to the pruner so bad trials die early, and the objective
+is the smoothed validation directional accuracy (mean of the last 3 epochs).
 
-Phase 2 — sweep threshold_mult separately using the best model HPs from Phase 1.
+Phase 2 — sweep threshold_mult using the best model HPs from Phase 1.
+Selection is by VALIDATION directional accuracy only; test metrics are
+logged for reporting but never used for selection.
+
+Results persist across runs: the Optuna study lives in a sqlite file under
+``ml/.optuna/`` and the winning HPs in ``ml/.optuna/best_hps.json``.
 
 Usage:
-    docker compose run ml python -m ml.hpo              # Phase 1
-    docker compose run ml python -m ml.hpo --phase 2    # Phase 2
+    python -m ml.hpo              # Phase 1
+    python -m ml.hpo --phase 2    # Phase 2
 
 Reference:
     https://optuna.readthedocs.io/en/stable/
@@ -21,6 +28,7 @@ import asyncio
 import json
 import logging
 import sys
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -53,6 +61,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Persistent results live next to the code so they survive container restarts.
+_OPTUNA_DIR = Path(__file__).resolve().parent / ".optuna"
+STORAGE_URI = f"sqlite:///{_OPTUNA_DIR / 'lstm_hpo.sqlite'}"
+BEST_HPS_PATH = _OPTUNA_DIR / "best_hps.json"
+
+N_TRIALS = 30
+TRIAL_TIMEOUT_S = 7200
+TRIAL_EPOCHS = 40
+
 # ── Search space ──────────────────────────────────────────────────────────
 # 5 dimensions, reasonable ranges based on prior runs.
 # Threshold_mult is kept fixed in Phase 1 and swept separately in Phase 2.
@@ -74,7 +91,12 @@ def suggest_hps(trial: Trial) -> dict[str, Any]:
 
 
 class LSTMObjective:
-    """Optuna objective: train a model with trial HPs, return val_dir_acc."""
+    """Optuna objective: train a model with trial HPs, return val_dir_acc.
+
+    Per-epoch val directional accuracy is reported to the pruner inside the
+    training loop (via the ``epoch_callback`` hook), so MedianPruner actually
+    kills unpromising trials mid-run instead of after the fact.
+    """
 
     def __init__(
         self,
@@ -83,7 +105,7 @@ class LSTMObjective:
         vocab_size: int,
         n_features: int,
         device: torch.device,
-        n_epochs: int = 40,
+        n_epochs: int = TRIAL_EPOCHS,
     ) -> None:
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -95,6 +117,9 @@ class LSTMObjective:
     def __call__(self, trial: Trial) -> float:
         hps = suggest_hps(trial)
 
+        # Same seed every trial so HP comparisons are apples-to-apples.
+        set_seed(42)
+
         model = GlobalLSTM(
             n_features=self.n_features,
             vocab_size=self.vocab_size,
@@ -104,6 +129,11 @@ class LSTMObjective:
             dropout=hps["dropout"],
             n_classes=ML_CONFIG.N_CLASSES,
         ).to(self.device)
+
+        def report_epoch(epoch_idx: int, metrics: dict[str, float]) -> None:
+            trial.report(metrics["val_dir_acc"], epoch_idx)
+            if trial.should_prune():
+                raise optuna.TrialPruned()
 
         history = train(
             model,
@@ -116,27 +146,21 @@ class LSTMObjective:
             patience=10,
             min_delta=3e-3,
             device=self.device,
+            epoch_callback=report_epoch,
         )
 
-        # Report intermediate values for pruning
-        for epoch_idx, dir_acc in enumerate(history.get("val_directional_accuracies", [])):
-            trial.report(dir_acc, epoch_idx)
-            if trial.should_prune():
-                raise optuna.TrialPruned()
-
+        # Smoothed val metric (mean of last 3 epochs) from the training loop.
         return history.get("best_dir_acc", 0.0)
 
 
-# ── Phase 1 — model hyperparameter search ─────────────────────────────────
+# ── Data preparation ──────────────────────────────────────────────────────
 
 
-async def _prepare_data(
-    threshold_mult: float | None = None,
-) -> dict[str, Any]:
-    """Fetch data, prepare dataset, split, normalise.
+async def _prepare_data(threshold_mult: float | None = None) -> dict[str, Any]:
+    """Fetch data, prepare dataset, split with embargo, normalise.
 
-    Returns a dict with tensors, loaders, vocab, and metadata so the
-    caller can run multiple training passes (one per trial).
+    Returns raw split tuples, loaders, vocab and metadata so callers can run
+    multiple training passes (one per trial) without refetching.
     """
     device = get_device()
 
@@ -153,28 +177,26 @@ async def _prepare_data(
     vocab, vocab_size = build_ticker_vocabulary(tickers_with_data)
     logger.info("Data fetched: %d tickers", len(tickers_with_data))
 
-    # Fetch SPY for cross-sectional features
-    spy_features_df = None
-    try:
-        spy_ohlcv = await fetch_ohlcv_for_tickers([ML_CONFIG.BENCHMARK_TICKER])
-        if ML_CONFIG.BENCHMARK_TICKER in spy_ohlcv:
-            spy_arr = spy_ohlcv[ML_CONFIG.BENCHMARK_TICKER]
-            spy_df = pd.DataFrame(
-                {
-                    "adjusted_close": spy_arr["adjusted_close"],
-                    "high": spy_arr["high"],
-                    "low": spy_arr["low"],
-                    "volume": spy_arr["volume"],
-                }
-            )
-            spy_features = compute_all_features(spy_df)
-            spy_features_df = spy_features.drop(columns=["ticker"], errors="ignore")
-            spy_features_df.index = spy_arr["date"]
-            logger.info("SPY cross-sectional features ready")
-    except Exception as exc:
-        logger.warning("SPY features unavailable — training with 14 features: %s", exc)
+    # SPY is required: cross-sectional features must match the 17-feature
+    # inference contract, so fail loudly instead of silently degrading.
+    spy_ohlcv = await fetch_ohlcv_for_tickers([ML_CONFIG.BENCHMARK_TICKER])
+    if ML_CONFIG.BENCHMARK_TICKER not in spy_ohlcv:
+        raise RuntimeError("SPY data unavailable — cannot build cross-sectional features")
+    spy_arr = spy_ohlcv[ML_CONFIG.BENCHMARK_TICKER]
+    spy_df = pd.DataFrame(
+        {
+            "adjusted_close": spy_arr["adjusted_close"],
+            "high": spy_arr["high"],
+            "low": spy_arr["low"],
+            "volume": spy_arr["volume"],
+        }
+    )
+    spy_features = compute_all_features(spy_df)
+    spy_features_df = spy_features.drop(columns=["ticker"], errors="ignore")
+    spy_features_df.index = spy_arr["date"]
+    logger.info("SPY cross-sectional features ready")
 
-    sequences, labels, ticker_idxs = prepare_global_dataset(
+    sequences, labels, ticker_idxs, dates, fwd_rets = prepare_global_dataset(
         ohlcv_data,
         vocab,
         spy_features_df=spy_features_df,
@@ -190,6 +212,9 @@ async def _prepare_data(
         ticker_idxs,
         train_frac=ML_CONFIG.TRAIN_SPLIT,
         val_frac=ML_CONFIG.VAL_SPLIT,
+        dates=dates,
+        forward_returns=fwd_rets,
+        embargo_days=ML_CONFIG.EMBARGO_DAYS,
     )
     train_data, val_data, test_data, means, stds = fit_normalize_splits(
         train_data,
@@ -198,22 +223,34 @@ async def _prepare_data(
     )
 
     train_loader = DataLoader(
-        SequenceDataset(*train_data),
+        SequenceDataset(
+            train_data[0], train_data[1], train_data[2],
+            dates=train_data[3], forward_returns=train_data[4],
+        ),
         batch_size=ML_CONFIG.BATCH_SIZE,
         shuffle=True,
     )
     val_loader = DataLoader(
-        SequenceDataset(*val_data),
+        SequenceDataset(
+            val_data[0], val_data[1], val_data[2],
+            dates=val_data[3], forward_returns=val_data[4],
+        ),
         batch_size=ML_CONFIG.BATCH_SIZE,
         shuffle=False,
     )
     test_loader = DataLoader(
-        SequenceDataset(*test_data),
+        SequenceDataset(
+            test_data[0], test_data[1], test_data[2],
+            dates=test_data[3], forward_returns=test_data[4],
+        ),
         batch_size=ML_CONFIG.BATCH_SIZE,
         shuffle=False,
     )
 
     return {
+        "train_data": train_data,
+        "val_data": val_data,
+        "test_data": test_data,
         "train_loader": train_loader,
         "val_loader": val_loader,
         "test_loader": test_loader,
@@ -226,6 +263,9 @@ async def _prepare_data(
     }
 
 
+# ── Phase 1 — model hyperparameter search ─────────────────────────────────
+
+
 async def run_phase1() -> dict[str, Any]:
     """Phase 1: optimise model HPs with fixed threshold."""
     set_seed(42)
@@ -236,12 +276,14 @@ async def run_phase1() -> dict[str, Any]:
     data = await _prepare_data()
     device = data["device"]
 
+    _OPTUNA_DIR.mkdir(parents=True, exist_ok=True)
     study = optuna.create_study(
         study_name="lstm_hpo_phase1",
         direction="maximize",
         sampler=TPESampler(seed=42),
         pruner=MedianPruner(n_startup_trials=5, n_warmup_steps=5),
-        storage=None,  # in-memory
+        storage=STORAGE_URI,
+        load_if_exists=True,
     )
 
     objective = LSTMObjective(
@@ -250,11 +292,10 @@ async def run_phase1() -> dict[str, Any]:
         vocab_size=data["vocab_size"],
         n_features=ML_CONFIG.N_FEATURES,
         device=device,
-        n_epochs=40,
     )
 
-    logger.info("Starting optimisation (%d max trials)", 30)
-    study.optimize(objective, n_trials=30, timeout=7200, show_progress_bar=True)
+    logger.info("Starting optimisation (%d max trials)", N_TRIALS)
+    study.optimize(objective, n_trials=N_TRIALS, timeout=TRIAL_TIMEOUT_S, show_progress_bar=True)
 
     best_trial = study.best_trial
     best_hps = best_trial.params
@@ -269,7 +310,9 @@ async def run_phase1() -> dict[str, Any]:
     for k, v in best_hps.items():
         logger.info("  %s: %s", k, v)
 
-    # ── Train final model on train+val, evaluate on test ──
+    # ── Refit the winning HPs on train (val held out for early stopping) ──
+    # Merging val into train would leave no signal for early stopping and
+    # epoch selection, so the final model trains on train only.
     final_model = GlobalLSTM(
         n_features=ML_CONFIG.N_FEATURES,
         vocab_size=data["vocab_size"],
@@ -280,16 +323,10 @@ async def run_phase1() -> dict[str, Any]:
         n_classes=ML_CONFIG.N_CLASSES,
     ).to(device)
 
-    # Merge train + val for the final training pass
-    combined = _merge_datasets(data["train_loader"], data["val_loader"])
-    combined_loader = DataLoader(combined, batch_size=ML_CONFIG.BATCH_SIZE, shuffle=True)
-
-    # Train on full train+val; no validation set available (it's merged into training data).
-    # Without a held-out set, early stopping is skipped and model trains for full epochs.
     train(
         final_model,
-        combined_loader,
-        val_loader=None,
+        data["train_loader"],
+        data["val_loader"],
         n_epochs=ML_CONFIG.EPOCHS,
         lr=best_hps["learning_rate"],
         weight_decay=best_hps["weight_decay"],
@@ -299,7 +336,16 @@ async def run_phase1() -> dict[str, Any]:
         device=device,
     )
 
-    test_metrics = evaluate(final_model, data["test_loader"], device)
+    test_data = data["test_data"]
+    test_metrics = evaluate(
+        final_model,
+        data["test_loader"],
+        device,
+        margin=0.0,
+        fwd_rets=test_data[4],
+        dates=test_data[3],
+        ticker_idxs=test_data[2],
+    )
     logger.info("Test metrics: %s", test_metrics)
 
     # ── Log to MLflow ──
@@ -321,36 +367,47 @@ async def run_phase1() -> dict[str, Any]:
                 "n_trials": len(study.trials),
                 "n_pruned": n_pruned,
                 "phase": "1",
+                "selection_metric": "val_dir_acc_smoothed",
+                "selection_split": "val",
             }
         )
+        sharpe_ls_0 = test_metrics.get("sharpe_long_short_0bps")
+        sharpe_ls_10 = test_metrics.get("sharpe_long_short_10bps")
         mlflow_mgr.log_metrics(
             {
                 "val_directional_accuracy": best_trial.value,
                 "test_accuracy": test_metrics["accuracy"],
+                "test_coverage": test_metrics["coverage"],
                 "test_directional_accuracy": test_metrics["directional_accuracy"],
-                "test_simulated_sharpe": test_metrics["simulated_sharpe"],
-                "test_long_short_sharpe": test_metrics["long_short_sharpe"],
+                **(
+                    {
+                        "test_sharpe_long_short_0bps": sharpe_ls_0,
+                        "test_sharpe_long_short_10bps": sharpe_ls_10,
+                    }
+                    if sharpe_ls_0 is not None
+                    else {}
+                ),
             }
         )
 
         # Log trial history as artifact
         _log_trial_history(mlflow_mgr, study)
-
-        # Save champion to disk
-        champion_path = mlflow_mgr.save_champion_to_disk(
-            final_model,
-            vocab=data["vocab"],
-            feature_means=data["means"],
-            feature_stds=data["stds"],
-        )
-        logger.info("Champion saved: %s", champion_path)
     finally:
         mlflow_mgr.end_run()
 
+    # Persist best HPs (no champion save here — only the gated pipeline
+    # promotes models; Phase 2 consumes these HPs).
+    BEST_HPS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(BEST_HPS_PATH, "w") as f:
+        json.dump(best_hps, f, indent=2, default=str)
+    logger.info("Best HPs saved to %s", BEST_HPS_PATH)
+
     print("\n=== HPO Phase 1 Complete ===")
-    print(f"Best val_dir_acc:        {best_trial.value:.2%}")
-    print(f"Test dir_acc:            {test_metrics['directional_accuracy']:.2%}")
-    print(f"Test Sharpe:             {test_metrics['simulated_sharpe']:.2f}")
+    print(f"Best val_dir_acc (smoothed): {best_trial.value:.2%}")
+    print(f"Test 3-class accuracy:       {test_metrics['accuracy']:.2%}")
+    print(f"Test dir_acc:                {test_metrics['directional_accuracy']:.2%}")
+    if sharpe_ls_0 is not None:
+        print(f"Test LS Sharpe @0/@10bps:    {sharpe_ls_0:.2f} / {sharpe_ls_10:.2f}")
     print(f"Best HPs:                {json.dumps(best_hps, default=str)}")
     print(f"Trials (total / pruned): {len(study.trials)} / {n_pruned}")
 
@@ -363,16 +420,15 @@ async def run_phase1() -> dict[str, Any]:
 async def run_phase2() -> dict[str, Any]:
     """Phase 2: sweep threshold_mult using the model HPs from Phase 1.
 
-    Reads best_hps from the Phase 1 output, then for each threshold_mult
-    value (0.3 → 1.0 in 0.1 steps) prepares a new dataset, trains a full
-    model, and reports test metrics. The winning threshold is logged to
-    MLflow.
+    For each threshold_mult value (0.3 → 1.0 in 0.1 steps) a dataset is
+    prepared, a model trained, and VALIDATION directional accuracy recorded.
+    Selection uses val only — test metrics are logged alongside for
+    reporting but play no part in the choice.
     """
     set_seed(42)
     logger.info("Phase 2: sweep threshold_mult")
 
-    # Load best HPs from Phase 1 artifact (if available) or use defaults.
-    # If no Phase 1 run exists, use sensible defaults.
+    # Load best HPs from Phase 1 output (if available) or use defaults.
     best_hps = _load_best_hps() or {
         "learning_rate": 0.001,
         "hidden_dim": 64,
@@ -402,7 +458,7 @@ async def run_phase2() -> dict[str, Any]:
             n_classes=ML_CONFIG.N_CLASSES,
         ).to(device)
 
-        history = train(
+        train(
             model,
             data["train_loader"],
             data["val_loader"],
@@ -415,29 +471,49 @@ async def run_phase2() -> dict[str, Any]:
             device=device,
         )
 
-        test_metrics = evaluate(model, data["test_loader"], device)
+        val_data = data["val_data"]
+        val_metrics = evaluate(
+            model,
+            data["val_loader"],
+            device,
+            margin=0.0,
+            fwd_rets=val_data[4],
+            dates=val_data[3],
+            ticker_idxs=val_data[2],
+        )
+        test_data = data["test_data"]
+        test_metrics = evaluate(
+            model,
+            data["test_loader"],
+            device,
+            margin=0.0,
+            fwd_rets=test_data[4],
+            dates=test_data[3],
+            ticker_idxs=test_data[2],
+        )
         results.append(
             {
                 "threshold_mult": tmult,
-                "val_dir_acc": history.get("best_dir_acc", 0.0),
-                "test_dir_acc": test_metrics["directional_accuracy"],
-                "test_sharpe": test_metrics["simulated_sharpe"],
+                "val_dir_acc": val_metrics["directional_accuracy"],
+                "test_dir_acc": test_metrics["directional_accuracy"],  # reporting only
+                "test_sharpe": test_metrics.get("sharpe_long_short_0bps"),
             }
         )
         logger.info(
-            "  threshold=%.1f → val_dir=%.4f  test_dir=%.4f  sharpe=%.2f",
+            "  threshold=%.1f → val_dir=%.4f  test_dir=%.4f  sharpe=%s",
             tmult,
-            history.get("best_dir_acc", 0.0),
+            val_metrics["directional_accuracy"],
             test_metrics["directional_accuracy"],
-            test_metrics["simulated_sharpe"],
+            test_metrics.get("sharpe_long_short_0bps"),
         )
 
-    # Pick best by test_dir_acc
-    best = max(results, key=lambda r: r["test_dir_acc"])
+    # Selection on VALIDATION only — the test column is informational.
+    best = max(results, key=lambda r: r["val_dir_acc"])
     logger.info("=" * 50)
     logger.info(
-        "Best threshold_mult: %.1f (test_dir_acc=%.4f)",
+        "Best threshold_mult: %.1f (val_dir_acc=%.4f; test_dir_acc=%.4f, reporting only)",
         best["threshold_mult"],
+        best["val_dir_acc"],
         best["test_dir_acc"],
     )
 
@@ -450,13 +526,15 @@ async def run_phase2() -> dict[str, Any]:
                 **best_hps,
                 "n_trials": len(candidates),
                 "phase": "2",
+                "selection_metric": "val_dir_acc",
+                "selection_split": "val",
             }
         )
         mlflow_mgr.log_metrics(
             {
                 "best_threshold_mult": best["threshold_mult"],
-                "best_test_dir_acc": best["test_dir_acc"],
-                "best_test_sharpe": best["test_sharpe"],
+                "best_val_dir_acc": best["val_dir_acc"],
+                "reported_test_dir_acc": best["test_dir_acc"],
             }
         )
         with open("/tmp/phase2_results.json", "w") as f:
@@ -466,8 +544,7 @@ async def run_phase2() -> dict[str, Any]:
         mlflow_mgr.end_run()
 
     print("\n=== HPO Phase 2 Complete ===")
-    print(f"Best threshold_mult: {best['threshold_mult']:.1f}")
-    print(f"Test dir_acc:        {best['test_dir_acc']:.2%}")
+    print(f"Best threshold_mult: {best['threshold_mult']:.1f} (selected on val)")
     for r in results:
         print(
             f"  mult={r['threshold_mult']:.1f}  "
@@ -479,29 +556,6 @@ async def run_phase2() -> dict[str, Any]:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
-
-
-def _merge_datasets(*loaders: DataLoader) -> SequenceDataset:
-    """Merge samples from multiple DataLoaders into a single dataset."""
-    all_seqs: list[np.ndarray] = []
-    all_labels: list[np.ndarray] = []
-    all_idxs: list[np.ndarray] = []
-    for loader in loaders:
-        for seq, lbl, idx in loader.dataset:  # type: ignore[attr-defined]
-            all_seqs.append(seq.numpy())
-            all_labels.append(np.atleast_1d(lbl.numpy()))
-            all_idxs.append(np.atleast_1d(idx.numpy()))
-    if not all_seqs:
-        return SequenceDataset(
-            np.empty((0,)),
-            np.empty((0,)),
-            np.empty((0,)),
-        )
-    return SequenceDataset(
-        np.stack(all_seqs, axis=0),
-        np.concatenate(all_labels),
-        np.concatenate(all_idxs),
-    )
 
 
 def _log_trial_history(mlflow_mgr: MLflowManager, study: optuna.Study) -> None:
@@ -524,7 +578,7 @@ def _log_trial_history(mlflow_mgr: MLflowManager, study: optuna.Study) -> None:
     mlflow_mgr.log_artifact(path, artifact_path="hpo")
 
 
-def _load_best_hps(path: str = "/tmp/hpo_best_hps.json") -> dict[str, Any] | None:
+def _load_best_hps(path: Path = BEST_HPS_PATH) -> dict[str, Any] | None:
     """Load best HPs from Phase 1 output, if it exists."""
     try:
         with open(path) as f:
@@ -548,11 +602,6 @@ def main() -> None:
         metrics = asyncio.run(run_phase2())
     else:
         metrics = asyncio.run(run_phase1())
-
-    # Save best HPs for Phase 2 consumption
-    if "best_hps" in metrics:
-        with open("/tmp/hpo_best_hps.json", "w") as f:
-            json.dump(metrics["best_hps"], f, indent=2, default=str)
 
     if not metrics:
         sys.exit(1)
