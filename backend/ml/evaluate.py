@@ -1,7 +1,10 @@
 """
 Evaluation metrics for the GlobalLSTM model.
 
-All functions operate on numpy arrays (not tensors) for easy logging and plotting.
+All metrics operate on numpy arrays. Sharpe ratios are computed from the
+ACTUAL forward log returns carried by each window (no label-magnitude
+proxies). The decision rule supports abstention: when the margin between
+P(UP) and P(DOWN) is below `margin`, the model predicts FLAT (no trade).
 """
 
 from __future__ import annotations
@@ -18,51 +21,72 @@ from ml.model import GlobalLSTM
 
 logger = logging.getLogger(__name__)
 
+DOWN, FLAT, UP = 0, 1, 2
+
 
 @torch.no_grad()
-def evaluate(
+def predict_probs(
     model: GlobalLSTM,
     dataloader: DataLoader,
     device: torch.device,
-) -> dict[str, Any]:
-    """Comprehensive evaluation on a DataLoader.
+) -> tuple[np.ndarray, np.ndarray]:
+    """Run inference and return class probabilities + labels.
 
-    Args:
-        model: GlobalLSTM instance.
-        dataloader: DataLoader (typically test set).
-        device: torch.device.
-
-    Returns:
-        Dict with keys: accuracy, per_class_f1, confusion_matrix,
-        directional_accuracy, n_directional, n_directional_correct,
-        simulated_sharpe, long_short_sharpe, total_samples.
+    The dataloader must NOT shuffle so results align with any per-window
+    metadata (forward returns, dates) taken from the source SequenceDataset.
     """
     model.eval()
-    all_preds: list[np.ndarray] = []
+    all_probs: list[np.ndarray] = []
     all_labels: list[np.ndarray] = []
 
-    for features, labels, ticker_idxs in dataloader:
+    for features, labels, _ticker_idxs in dataloader:
         features = features.to(device)
-        ticker_idxs = ticker_idxs.to(device)
+        ticker_idxs = _ticker_idxs.to(device)
 
         logits = model(features, ticker_idxs)
-        preds = logits.argmax(dim=-1)
-
-        all_preds.append(preds.cpu().numpy())
+        all_probs.append(torch.softmax(logits, dim=-1).cpu().numpy())
         all_labels.append(labels.numpy())
 
-    preds = np.concatenate(all_preds)
-    labels = np.concatenate(all_labels)
+    return np.concatenate(all_probs), np.concatenate(all_labels)
 
-    # Directional accuracy (overall)
+
+def apply_margin_rule(probs: np.ndarray, margin: float) -> np.ndarray:
+    """Decision rule with abstention.
+
+    Predict UP/DOWN only when |P(UP) - P(DOWN)| >= margin, else FLAT (no trade).
+    Returns integer class predictions (0=DOWN, 1=FLAT, 2=UP).
+    """
+    edge = probs[:, UP] - probs[:, DOWN]
+    return np.where(edge >= margin, UP, np.where(edge <= -margin, DOWN, FLAT)).astype(int)
+
+
+def evaluate_from_probs(
+    probs: np.ndarray,
+    labels: np.ndarray,
+    margin: float = 0.0,
+    fwd_rets: np.ndarray | None = None,
+    dates: np.ndarray | None = None,
+    ticker_idxs: np.ndarray | None = None,
+) -> dict[str, Any]:
+    """Compute all evaluation metrics from class probabilities + labels.
+
+    Args:
+        probs: (N, n_classes) class probabilities.
+        labels: (N,) true class labels.
+        margin: Abstention margin (0.0 = always trade on argmax edge).
+        fwd_rets: (N,) actual forward log returns per window (for real Sharpe).
+        dates: (N,) window end dates (datetime64).
+        ticker_idxs: (N,) ticker indices per window.
+    """
+    preds = apply_margin_rule(probs, margin)
+
     accuracy = float((preds == labels).mean())
+    coverage = float((preds != FLAT).mean())
 
-    # Per-class metrics
     per_class_f1 = _compute_per_class_f1(labels, preds, n_classes=ML_CONFIG.N_CLASSES)
     confusion_matrix = _compute_confusion_matrix(labels, preds, n_classes=ML_CONFIG.N_CLASSES)
 
-    # Directional accuracy (UP vs DOWN only, ignoring FLAT)
-    directional_mask = labels != 1
+    directional_mask = labels != FLAT
     n_directional = int(directional_mask.sum())
     if n_directional > 0:
         n_directional_correct = int((preds[directional_mask] == labels[directional_mask]).sum())
@@ -71,23 +95,173 @@ def evaluate(
         n_directional_correct = 0
         directional_acc = 0.0
 
-    # Simulated Sharpe (long-only)
-    simulated_sharpe = compute_simulated_sharpe(labels, preds)
-
-    # Long-short Sharpe (long UP, short DOWN)
-    long_short_sharpe = compute_long_short_sharpe(labels, preds)
+    if fwd_rets is not None and dates is not None and ticker_idxs is not None:
+        sharpe = _real_sharpe_metrics(preds, fwd_rets, dates, ticker_idxs)
+    else:
+        sharpe = {
+            "sharpe_long_only_0bps": None,
+            "sharpe_long_only_10bps": None,
+            "sharpe_long_short_0bps": None,
+            "sharpe_long_short_10bps": None,
+        }
 
     return {
         "accuracy": accuracy,
+        "coverage": coverage,
         "directional_accuracy": directional_acc,
         "n_directional": n_directional,
         "n_directional_correct": n_directional_correct,
         "per_class_f1": per_class_f1,
         "confusion_matrix": confusion_matrix.tolist(),
-        "simulated_sharpe": simulated_sharpe,
-        "long_short_sharpe": long_short_sharpe,
+        "margin": float(margin),
         "total_samples": len(labels),
+        **sharpe,
     }
+
+
+@torch.no_grad()
+def evaluate(
+    model: GlobalLSTM,
+    dataloader: DataLoader,
+    device: torch.device,
+    margin: float = 0.0,
+    fwd_rets: np.ndarray | None = None,
+    dates: np.ndarray | None = None,
+    ticker_idxs: np.ndarray | None = None,
+) -> dict[str, Any]:
+    """Evaluate a model on a DataLoader (unshuffled).
+
+    Convenience wrapper around predict_probs + evaluate_from_probs for
+    callers that have no precomputed probabilities (e.g. HPO test eval).
+    """
+    probs, labels = predict_probs(model, dataloader, device)
+    return evaluate_from_probs(
+        probs, labels, margin=margin, fwd_rets=fwd_rets, dates=dates, ticker_idxs=ticker_idxs
+    )
+
+
+def sweep_margin(
+    probs: np.ndarray,
+    labels: np.ndarray,
+    fwd_rets: np.ndarray,
+    dates: np.ndarray,
+    ticker_idxs: np.ndarray,
+) -> tuple[float, list[dict[str, float]]]:
+    """Sweep the abstention margin on validation data.
+
+    Selects the margin maximising the cost-free long-short Sharpe on val
+    (the same metric the model is judged on at test time). Never touch test.
+
+    A minimum-coverage guard (MARGIN_MIN_COVERAGE of windows must stay
+    active) prevents the degenerate solution where a huge margin "wins"
+    by barely trading at all — a near-empty portfolio's Sharpe is noise.
+
+    Returns:
+        (best_margin, full_curve) where curve is a list of
+        {"margin", "sharpe_long_short_0bps"} dicts.
+    """
+    best_margin = 0.0
+    best_sharpe = -np.inf
+    curve: list[dict[str, float]] = []
+    n = len(probs)
+
+    for m in np.arange(ML_CONFIG.MARGIN_MIN, ML_CONFIG.MARGIN_MAX + 1e-9, ML_CONFIG.MARGIN_STEP):
+        m = float(m)
+        preds = apply_margin_rule(probs, m)
+        sharpe = _strategy_sharpe(
+            preds, fwd_rets, dates, ticker_idxs, mode="long_short", cost_bps=0.0
+        )
+        coverage = float((preds != 1).mean()) if n else 0.0
+        curve.append({"margin": round(m, 3), "sharpe_long_short_0bps": sharpe})
+        if coverage < ML_CONFIG.MARGIN_MIN_COVERAGE:
+            continue  # degenerate: too few active positions to trust the Sharpe
+        if sharpe > best_sharpe:
+            best_sharpe = sharpe
+            best_margin = m
+
+    return best_margin, curve
+
+
+def _real_sharpe_metrics(
+    preds: np.ndarray,
+    fwd_rets: np.ndarray,
+    dates: np.ndarray,
+    ticker_idxs: np.ndarray,
+) -> dict[str, float | None]:
+    """Sharpe ratios from actual forward log returns.
+
+    Reports long-only and long-short, each at 0 cost and at
+    ML_CONFIG.COST_BPS_ROUND_TRIP charged once per active position.
+    """
+    out: dict[str, float | None] = {}
+    for mode in ("long_only", "long_short"):
+        for cost in (0.0, ML_CONFIG.COST_BPS_ROUND_TRIP):
+            key = f"sharpe_{mode}_{int(cost)}bps"
+            try:
+                out[key] = _strategy_sharpe(
+                    preds, fwd_rets, dates, ticker_idxs, mode=mode, cost_bps=cost
+                )
+            except Exception as e:  # noqa: BLE001 - eval must not crash training
+                logger.warning("Sharpe computation failed (%s): %s", key, e)
+                out[key] = None
+    return out
+
+
+def _strategy_sharpe(
+    preds: np.ndarray,
+    fwd_rets: np.ndarray,
+    dates: np.ndarray,
+    ticker_idxs: np.ndarray,
+    mode: str,
+    cost_bps: float,
+) -> float:
+    """Annualised Sharpe of the strategy implied by `preds` on real returns.
+
+    Portfolio construction:
+      1. Per ticker keep only NON-OVERLAPPING windows (every
+         FORECAST_HORIZON-th window in date order) — overlapping h-day
+         returns would inflate the sample count by ~h.
+      2. Equal-weight all windows that end on the same date (cross-sectional
+         portfolio return for that date).
+      3. Keep every FORECAST_HORIZON-th portfolio date so annualisation
+         (sqrt(252/h) periods per year) uses genuinely non-overlapping
+         holding periods.
+
+    Cost: `cost_bps` round-trip charged once per active position.
+    """
+    h = ML_CONFIG.FORECAST_HORIZON
+
+    if mode == "long_only":
+        signal = (preds == UP).astype(float)
+    else:
+        signal = np.where(preds == UP, 1.0, np.where(preds == DOWN, -1.0, 0.0))
+
+    keep = np.zeros(len(preds), dtype=bool)
+    for t in np.unique(ticker_idxs):
+        idx = np.flatnonzero(ticker_idxs == t)
+        keep[idx[::h]] = True
+
+    sig = signal[keep]
+    rets = fwd_rets[keep]
+    dts = dates[keep]
+
+    active = sig != 0.0
+    gross = sig * rets
+    gross[active] -= cost_bps / 1e4
+
+    unique_dates, inv = np.unique(dts, return_inverse=True)
+    counts = np.bincount(inv)
+    sums = np.bincount(inv, weights=gross)
+    port = sums / np.maximum(counts, 1)
+
+    port = port[::h]
+
+    if len(port) < 2:
+        return 0.0
+    std = float(port.std())
+    if std == 0.0:
+        return 0.0
+    return float(port.mean() / std * np.sqrt(252.0 / h))
 
 
 def _compute_per_class_f1(
@@ -97,7 +271,7 @@ def _compute_per_class_f1(
 ) -> dict[str, float]:
     """Compute per-class F1 score.
 
-    Uses sklearn.metrics.f1_score with 'macro' average.
+    Uses sklearn.metrics.f1_score.
 
     Returns:
         Dict mapping class name to F1 score.
@@ -121,115 +295,6 @@ def _compute_confusion_matrix(
     from sklearn.metrics import confusion_matrix
 
     return confusion_matrix(labels, preds, labels=np.arange(n_classes))
-
-
-def compute_simulated_sharpe(
-    labels: np.ndarray,
-    preds: np.ndarray,
-    annual_factor: float = 252.0,
-) -> float:
-    """Compute Sharpe ratio from a simulated trading strategy.
-
-    Strategy: Long the ticker when model predicts UP (class 2).
-    Flat (cash) when model predicts FLAT (class 1) or DOWN (class 0).
-
-    Daily return from strategy:
-        - If prediction is UP: return = market_return (from labels)
-        - If prediction is FLAT/DOWN: return = 0 (cash)
-
-    Since we're simulating from historical labels, we use the actual
-    market return when the strategy is long.
-
-    Args:
-        labels: True class labels (0=DOWN, 1=FLAT, 2=UP).
-        preds: Predicted class labels.
-        annual_factor: Number of trading days per year.
-
-    Returns:
-        Annualised Sharpe ratio. Returns 0.0 if std is 0.
-    """
-    # Strategy daily returns: long when prediction is UP, cash otherwise
-    # For simulation, we need actual daily returns. Convert labels back:
-    # UP (2) -> positive return, DOWN (0) -> negative return, FLAT (1) -> zero
-    # Use approximate returns from label severity
-    # ponytail: uses label as proxy for return magnitude. Replace with actual
-    # log returns when available from the dataset for more accurate simulation.
-
-    # Binary signal: 1.0 when long (pred=UP), 0.0 when flat (pred=FLAT/DOWN)
-    signal = (preds == 2).astype(float)
-
-    # Actual market returns: approximate from labels
-    # DOWN -> -1%, FLAT -> 0%, UP -> +1% (normalised approximation)
-    # ponytail: 1% per directional day is a rough proxy. Replace with actual
-    # forward returns from the feature engineering pipeline for accuracy.
-    market_returns = np.where(labels == 2, 0.01, np.where(labels == 0, -0.01, 0.0))
-
-    # Strategy returns
-    strategy_returns = signal * market_returns
-
-    mean_return = float(np.mean(strategy_returns))
-    std_return = float(np.std(strategy_returns))
-
-    if std_return == 0.0:
-        return 0.0
-
-    # Annualise
-    annualised_return = mean_return * annual_factor
-    annualised_std = std_return * np.sqrt(annual_factor)
-    sharpe = annualised_return / annualised_std
-
-    return float(sharpe)
-
-
-def compute_long_short_sharpe(
-    labels: np.ndarray,
-    preds: np.ndarray,
-    annual_factor: float = 252.0,
-) -> float:
-    """Compute Sharpe ratio from a long-short trading strategy.
-
-    Strategy: Long when model predicts UP (+1), short when model predicts
-    DOWN (-1), flat (cash) when FLAT (0).
-
-    This doubles the return signal compared to long-only: correct UP
-    predictions earn +1%, correct DOWN predictions also earn +1%
-    (shorting a -1% move). Incorrect predictions lose -1% in either
-    direction. A symmetric model gets 2x the long-only Sharpe; an
-    asymmetric model that's good at UP but bad at DOWN gets penalised.
-
-    This is a more honest evaluation metric for directional forecasting
-    since the model should profit from both UP and DOWN predictions.
-
-    Args:
-        labels: True class labels (0=DOWN, 1=FLAT, 2=UP).
-        preds: Predicted class labels.
-        annual_factor: Number of trading days per year.
-
-    Returns:
-        Annualised Sharpe ratio. Returns 0.0 if std is 0.
-    """
-    # Signal: +1 (long UP), -1 (short DOWN), 0 (flat)
-    signal = np.where(preds == 2, 1.0, np.where(preds == 0, -1.0, 0.0))
-
-    # Market returns: +1% for UP, -1% for DOWN, 0% for FLAT
-    market_returns = np.where(labels == 2, 0.01, np.where(labels == 0, -0.01, 0.0))
-
-    # Strategy returns: signal × market_return
-    # Correct UP: (+1) × (+0.01) = +0.01
-    # Correct DOWN: (-1) × (-0.01) = +0.01
-    # Wrong UP: (+1) × (-0.01) = -0.01
-    # Wrong DOWN: (-1) × (+0.01) = -0.01
-    strategy_returns = signal * market_returns
-
-    mean_return = float(np.mean(strategy_returns))
-    std_return = float(np.std(strategy_returns))
-
-    if std_return == 0.0:
-        return 0.0
-
-    annualised_return = mean_return * annual_factor
-    annualised_std = std_return * np.sqrt(annual_factor)
-    return float(annualised_return / annualised_std)
 
 
 def plot_confusion_matrix(
