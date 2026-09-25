@@ -22,6 +22,15 @@ import numpy as np
 import pandas as pd
 
 
+def compute_forward_returns(close: pd.Series, forecast_horizon: int) -> pd.Series:
+    """Actual forward log return over the forecast horizon.
+
+    Stored per window and used for realistic Sharpe evaluation — never
+    derive returns from label classes.
+    """
+    return np.log(close.shift(-forecast_horizon) / close)
+
+
 def compute_adaptive_labels(
     close: pd.Series,
     vol_lookback: int = 30,
@@ -40,7 +49,7 @@ def compute_adaptive_labels(
         Series with labels: 0=DOWN, 1=FLAT, 2=UP. NaN for last horizon+
         rows where future return is unavailable.
     """
-    forward_ret = np.log(close.shift(-forecast_horizon) / close)
+    forward_ret = compute_forward_returns(close, forecast_horizon)
 
     daily_log_ret = np.log(close / close.shift(1))
     rolling_vol = daily_log_ret.rolling(window=vol_lookback).std()
