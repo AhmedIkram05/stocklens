@@ -96,3 +96,4 @@ Cargo.lock
 # Receipt images stored locally during development
 backend/data/
 backend/mlflow.db
+kaggle
