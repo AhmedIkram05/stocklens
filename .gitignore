@@ -97,3 +97,4 @@ Cargo.lock
 backend/data/
 backend/mlflow.db
 kaggle
+kaggle.zip
