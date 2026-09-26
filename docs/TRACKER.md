@@ -198,12 +198,15 @@ When updating this file, agents must follow these rules:
 **Goal:** Train a Global multi-ticker LSTM 5-day directional forecasting model with entity embeddings, logged to MLflow, served via FastAPI `/predict` endpoint.
 **Final Architecture:**
 
-- **17 features:** log returns 1/5/21d, MA 5/10/20/50, RSI(14), MACD line/signal/hist, vol_30d, vol_rank, vol_pct (rolling 30d vol percentile), excess_ret_1d/5d/21d vs SPY benchmark
-- **Model:** GlobalLSTM — Embedding(vocab_size, 16) → Linear(17+16, 80) → 2-layer uni LSTM(hidden 80, dropout 0.535) → Linear(80, 3) → logits
-- **Loss:** FocalLoss(γ=1.49, α=class_weights), AdamW(lr=3.14e-4, wd=2.06e-4), CosineAnnealingLR, grad clipping max_norm=5.0
-- **Labeling:** Adaptive threshold 1.0×σ_30d×sqrt(5), 5-day horizon, bottom 40th-pctile vol filter per ticker
-- **Split:** Chronological 70/15/15, split-then-normalize (global pooled z-score, fit on train only)
-- **v22 champion:** **53.18% directional accuracy**, **0.75 Simulated Sharpe**, **0.66 Long-Short Sharpe**
+- **17 features:** log returns 1/5/21d, scale-free MAs (log close/MA 5/10/20/50), RSI(14), MACD line/signal/hist (÷close), vol_30d, vol_rank (252d causal), vol_pct (**causal expanding rank**, shared train+serve), excess_ret_1d/5d/21d vs SPY benchmark
+- **Model:** GlobalLSTM — Embedding(vocab_size, 16) → Linear(17+16, 112) → 2-layer uni LSTM(hidden 112, dropout 0.45) → Linear(112, 3) → logits
+- **Champion:** 5-seed probability ensemble (per-seed softmax probs averaged; margin/abstention rule carried in checkpoint)
+- **Loss:** FocalLoss(γ=1.19, pt from unweighted CE, α=class_weights), AdamW(lr=8.7e-3, wd=8e-5), CosineAnnealingLR (T_max=n_epochs or `ML_T_MAX`), grad clipping max_norm=5.0, smoothed early stop (mean of last 3 val_dir_acc)
+- **Labeling:** Adaptive threshold 2.0×σ_30d×sqrt(5) (`ML_THRESHOLD_MULT`, selected on val), 5-day horizon; vol filter train-only & off by default
+- **Split:** Chronological 70/15/15 with **10-day purge embargo**, split-then-normalize (global pooled z-score, fit on train only)
+- **Evaluation:** Real-return Sharpe (stride-5 non-overlapping, per-date equal-weight, √(252/5) annualisation, 0bps/10bps costs); baselines = logistic regression + HistGradientBoosting
+- **Promotion:** Paired McNemar gate — champion re-scored on challenger's exact test set; >2pp AND exact two-sided p<0.05
+- **Rebuilt champion (v24):** **53.17% directional accuracy** (n=2,221, vs 50% chance; HGB baseline 50.83%), long-only Sharpe ~2.9 @ 10bps real-return costs. Prior v22 numbers (53.18%/0.75 Sharpe) were **test-selected** (HPO Phase 2 picked threshold on test) and its Sharpe used a fake ±1% label proxy — both retired by the rebuild.
 
 ### Step Tracker
 
@@ -219,7 +222,8 @@ When updating this file, agents must follow these rules:
 | R7   | Frontend Integration               | ✅ Complete | PredictionCard component, SummaryScreen LSTM projection, prediction badges on holdings                                                                                                                                                                                                                                                                                                                  |
 | R11  | Signal Recovery                    | ✅ Complete | FocalLoss(γ=2.0), early stop on val_dir_acc, split-then-normalize, vol_pct feature, bottom 40th-pctile vol filter. Jumped dir acc ~29% → 50.66%                                                                                                                                                                                                                                                         |
 | R12  | Cross-Sectional Features           | ✅ Complete | 3 excess returns vs SPY (excess_ret_1d/5d/21d), long_short_sharpe eval metric. v22 champion: 53.18% dir acc, 0.75 Sharpe, 0.66 Long-Short Sharpe                                                                                                                                                                                                                                                        |
-| R13  | Optuna Hyperparameter Optimisation | ✅ Complete | `ml/hpo.py` — Phase 1: 5-dim search (lr, hidden_dim, dropout, weight_decay, focal_gamma), 30 trials, MedianPruner, TPESampler, MLflow-logged. Best trial val_dir_acc=55.54%. Phase 2: threshold_mult sweep 0.3→1.0, best=1.0 (test_dir=51.63%, Sharpe=0.75). Applied best HPs to `config.py`. Fixed val leak bug in final champion training (`val_loader=None` when train+val merged). 20 pytest tests. |
+| R13  | Optuna Hyperparameter Optimisation | ✅ Complete | `ml/hpo.py` — Phase 1: 5-dim search (lr, hidden_dim, dropout, weight_decay, focal_gamma), 30 trials, MedianPruner, TPESampler, MLflow-logged. Best trial val_dir_acc=55.54%. Phase 2: threshold_mult sweep 0.3→1.0, best=1.0 (test_dir=51.63%, Sharpe=0.75). Applied best HPs to `config.py`. Fixed val leak bug in final champion training (`val_loader=None` when train+val merged). 20 pytest tests. **Superseded by R14:** phase-2 selection moved to val (test was leakage), pruner made real (per-epoch reports), storage persisted to sqlite. |
+| R14  | LSTM Methodology Rebuild           | ✅ Complete | Root-cause audit of the old pipeline: test-set leakage (HPO phase 2), look-ahead vol_pct (full-history rank + train/serve skew), vol filter on val+test, fake Sharpe (±1% label proxy), unpaired promotion gate, no purge/embargo, decorative pruner. Rebuilt: causal vol_pct shared train+serve, 10-day embargo, val-only selection, real-return Sharpe (stride-5 per-date EW + costs), FocalLoss pt fix, smoothed early stop (K=3), scale-free features (log close/MA, MACD÷close), threshold 2.0, data scale-up to 7,389 tickers / 28.2M rows (Kaggle bulk ingest + 90-day recency filter → ~102 live tickers × 10yr), 5-seed probability-ensemble champion, paired McNemar gate (champion re-scored on challenger test set, vocab remap), Optuna 30 trials with real per-epoch pruning + persistent sqlite storage, baselines (logistic 49.06% / HGB 50.83%). Result: 53.17% dir acc (n=2,221) vs HGB 50.83%, long-only Sharpe ~2.9 @ 10bps. |
 
 ### Deviations from Plan
 
