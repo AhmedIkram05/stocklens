@@ -4,17 +4,26 @@ StockLens weekly retraining + drift detection DAG.
 Schedule: Every Monday at 06:00 UTC
 Runs via Airflow LocalExecutor (single container, SQLite metadata).
 
+The DAG owns its data lifecycle: it ingests fresh OHLCV before deciding
+whether to retrain, so the training window always ends near today.
+
 Tasks:
-  1. check_new_ohlcv_data — Check if new OHLCV data exists since last run
-  2. train_challenger      — Run the ML training pipeline via ECS GPU task (EcsRunTaskOperator)
-  3. detect_new_champion   — If champion was promoted, recompute reference distributions
-  4. run_drift_detection   — PSI/KS/JS on portfolio tickers, Evidently report, S3 upload
-  5. cleanup               — Prune old prediction_log (>90d) and drift_metrics (>365d)
+  1. ingest_training_universe — Append fresh daily bars for every training
+     ticker (+SPY) from Yahoo v8 (idempotent, ON CONFLICT DO NOTHING)
+  2. check_new_ohlcv_data     — Branch: retrain only if the newest price date
+     advanced >= 14 days past the champion's trained_at (staleness guard)
+  3. train_challenger         — Run the ML training pipeline via ECS GPU task (EcsRunTaskOperator)
+  4. detect_new_champion      — If champion was promoted, recompute reference distributions
+  5. run_drift_detection      — PSI/KS/JS on portfolio tickers, Evidently report, S3 upload
+  6. cleanup                  — Prune old prediction_log (>90d) and drift_metrics (>365d)
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
+import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 
 from airflow.models import DAG
@@ -33,30 +42,116 @@ default_args = {
     "execution_timeout": timedelta(hours=4),
 }
 
+# Retrain only when the price tail advanced at least this far past the
+# champion's trained_at. Weekly runs re-ingest (~25 min) but skip training
+# unless the universe actually grew two weeks' worth of new labeled windows.
+STALENESS_DAYS = 14
 
-# ── Task implementations ───────────────────────────────────────────────────────
-def _check_new_ohlcv_data(**context) -> str:
-    """Check for new OHLCV data since last run. Branch: train or skip."""
+# Ingest fetches the training window + buffer so deep-history (Kaggle-backed)
+# tickers keep their yfinance tail contiguous with the training cutoff.
+INGEST_BUFFER_YEARS = 2
+
+
+def _pg_conn():
+    """The stocklens DB connection from postgres_default."""
     from airflow.hooks.base import BaseHook
 
-    pg_conn = BaseHook.get_connection("postgres_default")
-    dsn = (
+    return BaseHook.get_connection("postgres_default")
+
+
+def _pg_dsn() -> str:
+    """Asyncpg DSN for the stocklens DB from the postgres_default connection."""
+    pg_conn = _pg_conn()
+    return (
         f"postgresql://{pg_conn.login}:{pg_conn.password}"
         f"@{pg_conn.host}:{pg_conn.port}/{pg_conn.schema or 'stocklens'}"
     )
+
+
+# ── Task implementations ───────────────────────────────────────────────────────
+def _run_ingest(**context) -> None:
+    """Ingest fresh OHLCV for the full training universe (+SPY) via seed script."""
+    script = _seed_script_path()
+    pg_conn = _pg_conn()
+    years = int(v("ml_ohlcv_years") or 10) + INGEST_BUFFER_YEARS
+
+    env = dict(os.environ)
+    env["DATABASE_DSN"] = (
+        f"host={pg_conn.host} port={pg_conn.port or 5432}"
+        f" dbname={pg_conn.schema or 'stocklens'}"
+        f" user={pg_conn.login} password={pg_conn.password}"
+    )
+    env["TRAINING_TICKERS"] = v("training_tickers") or "ALL"
+
+    result = subprocess.run(
+        [sys.executable, script, "--years", str(years)],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=90 * 60,  # ~489 tickers x 2s delay + fetch time + retries headroom
+    )
+    tail = (result.stdout or "").strip().splitlines()[-3:]
+    print(f"Ingest exit={result.returncode}: {tail}")
+    if result.returncode != 0:
+        stderr_tail = (result.stderr or "").strip().splitlines()[-5:]
+        raise RuntimeError(
+            f"OHLCV ingest failed (exit {result.returncode}). stderr tail: {stderr_tail}"
+        )
+
+
+def _seed_script_path() -> str:
+    """Locate backend/scripts/seed_ohlcv.py across dev mount, prod image, and repo checkout."""
+    repo_candidate = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "backend", "scripts", "seed_ohlcv.py",
+    )
+    for candidate in (
+        "/app/backend/scripts/seed_ohlcv.py",
+        "/app/scripts/seed_ohlcv.py",
+        repo_candidate,
+    ):
+        if os.path.exists(candidate):
+            return candidate
+    raise FileNotFoundError(
+        "seed_ohlcv.py not found at /app/backend/scripts, /app/scripts, or "
+        f"{repo_candidate} — the Airflow image must copy backend/ (Dockerfile: COPY backend/ /app/)"
+    )
+
+
+def _check_new_ohlcv_data(**context) -> str:
+    """Branch: train only if data advanced >= STALENESS_DAYS past champion."""
     import asyncpg
+
+    dsn = _pg_dsn()
 
     async def _check():
         conn = await asyncpg.connect(dsn)
         try:
-            row = await conn.fetchval("SELECT MAX(date) FROM ohlcv_prices")
-            if row is None:
-                return "skip_retraining"
-            week_ago = datetime.now(tz=timezone.utc) - timedelta(days=7)
-            recent = await conn.fetchval(
-                "SELECT COUNT(*) FROM ohlcv_prices WHERE date >= $1", week_ago,
+            row = await conn.fetchrow(
+                """
+                SELECT (SELECT MAX(date) FROM ohlcv_prices) AS max_date,
+                       (SELECT trained_at FROM model_registry
+                        WHERE alias = 'champion'
+                        ORDER BY trained_at DESC LIMIT 1) AS champion_trained_at
+                """
             )
-            return "train_challenger" if recent and recent > 0 else "skip_retraining"
+            if row is None or row["max_date"] is None:
+                return "skip_retraining"
+            # No champion yet — bootstrap training.
+            if row["champion_trained_at"] is None:
+                return "train_challenger"
+            trained_at = row["champion_trained_at"]
+            tz = trained_at.tzinfo or timezone.utc
+            max_date = datetime(
+                row["max_date"].year, row["max_date"].month, row["max_date"].day, tzinfo=tz,
+            )
+            advance = (max_date - trained_at).days
+            print(
+                f"Staleness check: newest price date {row['max_date']}, "
+                f"champion trained_at {trained_at}, advance {advance}d "
+                f"(threshold {STALENESS_DAYS}d)"
+            )
+            return "train_challenger" if advance >= STALENESS_DAYS else "skip_retraining"
         finally:
             await conn.close()
 
@@ -71,14 +166,9 @@ def v(key: str) -> str:
 
 def _detect_new_champion(**context) -> str:
     """Check if training promoted a new champion → recompute ref distributions."""
-    from airflow.hooks.base import BaseHook
-
-    pg_conn = BaseHook.get_connection("postgres_default")
-    dsn = (
-        f"postgresql://{pg_conn.login}:{pg_conn.password}"
-        f"@{pg_conn.host}:{pg_conn.port}/{pg_conn.schema or 'stocklens'}"
-    )
     import asyncpg
+
+    dsn = _pg_dsn()
 
     async def _check():
         conn = await asyncpg.connect(dsn)
@@ -195,14 +285,9 @@ def _run_drift_detection(**context) -> None:
 
 def _cleanup(**context) -> None:
     """Prune old prediction_log and drift_metrics rows."""
-    from airflow.hooks.base import BaseHook
-
-    pg_conn = BaseHook.get_connection("postgres_default")
-    dsn = (
-        f"postgresql://{pg_conn.login}:{pg_conn.password}"
-        f"@{pg_conn.host}:{pg_conn.port}/{pg_conn.schema or 'stocklens'}"
-    )
     import asyncpg
+
+    dsn = _pg_dsn()
 
     async def _run():
         conn = await asyncpg.connect(dsn)
@@ -244,7 +329,13 @@ with DAG(
     tags=["stocklens", "ml", "drift"],
 ) as dag:
 
-    # ── Task 1: Check for new data (branching) ──
+    # ── Task 1: Ingest fresh OHLCV for the training universe (always) ──
+    ingest_universe = PythonOperator(
+        task_id="ingest_training_universe",
+        python_callable=_run_ingest,
+    )
+
+    # ── Task 2: Staleness guard (branch) ──
     check_data = BranchPythonOperator(
         task_id="check_new_ohlcv_data",
         python_callable=_check_new_ohlcv_data,
@@ -252,7 +343,7 @@ with DAG(
 
     skip_retraining = EmptyOperator(task_id="skip_retraining")
 
-    # ── Task 2: Train challenger (runs on GPU via ECS EcsRunTaskOperator) ──
+    # ── Task 3: Train challenger (runs on GPU via ECS EcsRunTaskOperator) ──
     train_challenger = EcsRunTaskOperator(
         task_id="train_challenger",
         cluster=v("ecs_cluster_name"),
@@ -278,6 +369,11 @@ with DAG(
                         {"name": "ENVIRONMENT", "value": v("environment")},
                         {"name": "AWS_REGION", "value": v("aws_region")},
                         {"name": "CHAMPION_S3_URI", "value": v("champion_s3_uri")},
+                        # Winning recipe (must match the locally-validated rebuild)
+                        {"name": "TRAINING_TICKERS", "value": v("training_tickers")},
+                        {"name": "ML_OHLCV_YEARS", "value": v("ml_ohlcv_years")},
+                        {"name": "ML_THRESHOLD_MULT", "value": v("ml_threshold_mult")},
+                        {"name": "ML_SEEDS", "value": v("ml_seeds")},
                     ],
                 },
             ],
@@ -315,6 +411,6 @@ with DAG(
     )
 
     # ── Task dependencies ──
-    check_data >> [train_challenger, skip_retraining]
+    ingest_universe >> check_data >> [train_challenger, skip_retraining]
     train_challenger >> detect_new_champion >> [capture_reference, skip_reference]
     [capture_reference, skip_reference] >> run_drift >> cleanup

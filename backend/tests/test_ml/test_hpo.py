@@ -8,7 +8,6 @@ import sys
 import tempfile
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 import optuna
 import pytest
 import torch
@@ -18,7 +17,6 @@ from ml.hpo import (
     LSTMObjective,
     _load_best_hps,
     _log_trial_history,
-    _merge_datasets,
     suggest_hps,
 )
 from ml.mlflow_manager import MLflowManager
@@ -69,60 +67,6 @@ class TestSuggestHPs:
             trial = self._make_trial()
             fg = suggest_hps(trial)["focal_gamma"]
             assert 1.0 <= fg <= 3.0
-
-
-class TestMergeDatasets:
-    """_merge_datasets combines samples from multiple DataLoaders."""
-
-    def test_merges_single_loader(self):
-        seqs = np.random.randn(10, 30, 17).astype(np.float32)
-        labels = np.random.randint(0, 3, size=10).astype(np.int64)
-        idxs = np.zeros(10, dtype=np.int64)
-        ds = TensorDataset(
-            torch.from_numpy(seqs),
-            torch.from_numpy(labels),
-            torch.from_numpy(idxs),
-        )
-        loader = DataLoader(ds, batch_size=4)
-        merged = _merge_datasets(loader)
-        assert len(merged) == 10
-
-    def test_merges_two_loaders(self):
-        seqs1 = np.random.randn(5, 30, 17).astype(np.float32)
-        labels1 = np.zeros(5, dtype=np.int64)
-        idxs1 = np.zeros(5, dtype=np.int64)
-        seqs2 = np.random.randn(7, 30, 17).astype(np.float32)
-        labels2 = np.ones(7, dtype=np.int64)
-        idxs2 = np.zeros(7, dtype=np.int64)
-
-        ds1 = TensorDataset(
-            torch.from_numpy(seqs1), torch.from_numpy(labels1), torch.from_numpy(idxs1)
-        )
-        ds2 = TensorDataset(
-            torch.from_numpy(seqs2), torch.from_numpy(labels2), torch.from_numpy(idxs2)
-        )
-        merged = _merge_datasets(DataLoader(ds1), DataLoader(ds2))
-        assert len(merged) == 12
-
-    def test_preserves_order(self):
-        seqs = np.random.randn(8, 30, 17).astype(np.float32)
-        labels = np.array([0, 1, 2, 0, 1, 2, 0, 1], dtype=np.int64)
-        idxs = np.zeros(8, dtype=np.int64)
-        ds = TensorDataset(torch.from_numpy(seqs), torch.from_numpy(labels), torch.from_numpy(idxs))
-        loader = DataLoader(ds, batch_size=4, shuffle=False)
-        merged = _merge_datasets(loader)
-        merged_labels = merged.labels
-        assert torch.equal(merged_labels, torch.from_numpy(labels))
-
-    def test_empty_loader_returns_empty(self):
-        # Empty DataLoader is pathological — _merge_datasets will loop 0 times
-        seqs = np.empty((0, 30, 17), dtype=np.float32)
-        labels = np.empty((0,), dtype=np.int64)
-        idxs = np.empty((0,), dtype=np.int64)
-        ds = TensorDataset(torch.from_numpy(seqs), torch.from_numpy(labels), torch.from_numpy(idxs))
-        loader = DataLoader(ds, batch_size=4)
-        merged = _merge_datasets(loader)
-        assert len(merged) == 0
 
 
 class TestLoadBestHPs:

@@ -13,8 +13,9 @@ Key features:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Callable
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -24,6 +25,10 @@ from ml.config import ML_CONFIG
 from ml.model import GlobalLSTM
 
 logger = logging.getLogger(__name__)
+
+# Early stopping smooths val directional accuracy over this many epochs —
+# single-epoch readings carry ~±1pp noise at this validation set size.
+SMOOTH_K = 3
 
 
 def compute_class_weights(labels: torch.Tensor, n_classes: int = 3) -> torch.Tensor:
@@ -67,7 +72,11 @@ class FocalLoss(nn.Module):
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         ce_loss = F.cross_entropy(logits, targets, reduction="none", weight=self.alpha)
-        pt = torch.exp(-ce_loss)
+        # pt must come from the UNWEIGHTED loss: the weighted CE is
+        # alpha_t * log(p_t), so exp(-weighted_ce) is not p_t and the focal
+        # factor would be miscalibrated against the class weights.
+        unweighted = F.cross_entropy(logits, targets, reduction="none")
+        pt = torch.exp(-unweighted)
         focal_loss = ((1 - pt) ** self.gamma * ce_loss).mean()
         return focal_loss
 
@@ -181,14 +190,16 @@ def train(
     patience: int = ML_CONFIG.PATIENCE,
     min_delta: float = ML_CONFIG.MIN_DELTA,
     device: torch.device | None = None,
+    epoch_callback: Callable[[int, dict[str, float]], None] | None = None,
 ) -> dict[str, list[float]]:
-    """Full training loop with early stopping on directional accuracy.
+    """Full training loop with early stopping on smoothed directional accuracy.
 
-    Early stopping monitors *directional accuracy* (UP/DOWN only) instead of
-    validation loss. On noisy financial data, validation loss is essentially
-    flat throughout training because the model can never escape the prior.
-    Directional accuracy, while also noisy, provides a useful signal for
-    model selection.
+    Early stopping monitors the mean of the last SMOOTH_K validation
+    directional accuracy readings (UP/DOWN only) instead of validation loss.
+    On noisy financial data, validation loss is essentially flat throughout
+    training because the model can never escape the prior. A single-epoch
+    directional accuracy reading is noisy (~±1pp), so selection uses the
+    smoothed mean.
 
     Args:
         model: GlobalLSTM instance.
@@ -199,12 +210,16 @@ def train(
         weight_decay: AdamW weight decay.
         focal_gamma: Focal loss gamma — down-weights well-classified FLAT samples.
         patience: Early stopping patience.
-        min_delta: Minimum directional accuracy improvement.
+        min_delta: Minimum smoothed directional accuracy improvement.
         device: Target device. Auto-detected if None.
+        epoch_callback: Invoked after each validation epoch with
+            (epoch, metrics_dict). May raise (e.g. optuna.TrialPruned) to
+            abort training — exceptions propagate deliberately.
 
     Returns:
         Dict with keys: train_losses, val_losses, val_accuracies,
-        val_directional_accuracies, best_epoch.
+        val_directional_accuracies, best_epoch, best_dir_acc (best SMOOTHED
+        val directional accuracy).
     """
     if device is None:
         from ml.utils import get_device
@@ -221,16 +236,14 @@ def train(
         except Exception as e:
             logger.warning("torch.compile failed, continuing without: %s", e)
 
-    # Use all CPU cores for intra-op parallelism
-    if device.type == "cpu":
-        torch.set_num_threads(torch.get_num_threads())
-
     # Compute class weights from training data
     all_labels = []
     for _, labels, _ in train_loader:
         all_labels.append(labels)
     train_labels = torch.cat(all_labels)
-    class_weights = compute_class_weights(train_labels).to(device)
+    class_weights = (
+        compute_class_weights(train_labels).to(device) if ML_CONFIG.USE_CLASS_WEIGHTS else None
+    )
 
     # Focal Loss with class weights — focuses on hard directional samples
     # instead of letting well-classified FLAT samples dominate the gradient.
@@ -242,8 +255,12 @@ def train(
         weight_decay=weight_decay,
     )
 
-    # Cosine annealing LR — starts at lr and decays to 0 over n_epochs.
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs)
+    # Cosine annealing LR — decays to 0 over T_max epochs. T_max from config
+    # when overridden; defaulting to the full budget strands early-stopped
+    # models at near-peak LR for their whole (short) life.
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=ML_CONFIG.COSINE_T_MAX or n_epochs
+    )
 
     history: dict[str, Any] = {
         "train_losses": [],
@@ -283,18 +300,36 @@ def train(
                 scheduler.get_last_lr()[0],
             )
 
-            # Early stopping on directional accuracy
-            if val_dir_acc > best_dir_acc + min_delta:
-                best_dir_acc = val_dir_acc
+            if epoch_callback is not None:
+                epoch_callback(
+                    epoch,
+                    {
+                        "train_loss": train_loss,
+                        "val_loss": val_loss,
+                        "val_acc": val_acc,
+                        "val_dir_acc": val_dir_acc,
+                    },
+                )
+
+            # Early stopping on the smoothed (mean of last SMOOTH_K) val
+            # directional accuracy — raw single-epoch readings are noise.
+            smoothed = float(np.mean(history["val_directional_accuracies"][-SMOOTH_K:]))
+            if smoothed > best_dir_acc + min_delta:
+                best_dir_acc = smoothed
                 best_epoch = epoch
                 patience_counter = 0
                 best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
-                logger.info("New best val_dir_acc: %.4f at epoch %d", val_dir_acc, epoch)
+                logger.info(
+                    "New best smoothed val_dir_acc: %.4f (raw %.4f) at epoch %d",
+                    smoothed,
+                    val_dir_acc,
+                    epoch,
+                )
             else:
                 patience_counter += 1
                 if patience_counter >= patience:
                     logger.info(
-                        "Early stopping at epoch %d (best epoch %d, val_dir_acc %.4f)",
+                        "Early stopping at epoch %d (best epoch %d, smoothed val_dir_acc %.4f)",
                         epoch,
                         best_epoch,
                         best_dir_acc,

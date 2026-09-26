@@ -65,6 +65,6 @@ hpo-phase2: backend-ml ## Sweep threshold_mult using Phase 1 best HPs on macOS M
 train-all: backend-ml ## Train on full S&P 500 (~7min/epoch, hours total)
 	$(MAKE) train TRAINING_TICKERS="$$(python3 -c "from ml.config import _ALL_SP500; print(','.join(_ALL_SP500))")"
 
-seed: backend-ml ## Seed OHLCV data from host (raw Yahoo v8 chart API)
+seed: backend-ml ## Seed OHLCV data from host (raw Yahoo v8 chart API; backend/scripts/seed_ohlcv.py)
 	PYTHONPATH=/Users/ahmedikram/GitHub\ Repos/stocklens/backend \
-	/Users/ahmedikram/GitHub\ Repos/stocklens/backend/.venv/bin/python scripts/seed_ohlcv.py
+	/Users/ahmedikram/GitHub\ Repos/stocklens/backend/.venv/bin/python backend/scripts/seed_ohlcv.py

@@ -493,9 +493,11 @@ _DEV_SUBSET = _ALL_SP500[8::9]  # ~53 tickers, alphabetically spread across full
 
 
 def _train_tickers_env() -> list[str]:
-    """Return ticker list: TRAINING_TICKERS env (comma-sep) or dev subset."""
+    """Return ticker list: TRAINING_TICKERS env ("ALL" = full S&P 500) or dev subset."""
     env = os.environ.get("TRAINING_TICKERS")
     if env:
+        if env.strip().upper() == "ALL":
+            return list(_ALL_SP500)
         return [t.strip() for t in env.split(",") if t.strip()]
     return _DEV_SUBSET
 
@@ -505,46 +507,93 @@ class MLConfig:
     """All ML training and inference configuration."""
 
     # Sequence settings
-    SEQUENCE_LENGTH: int = 30
+    SEQUENCE_LENGTH: int = int(os.environ.get("ML_SEQ_LEN", "30"))
     N_FEATURES: int = 17  # 13 V1 + vol_pct + 3 cross-sectional (excess_ret_1d/5d/21d vs SPY)
     BENCHMARK_TICKER: str = "SPY"  # Market benchmark for cross-sectional features
 
-    # FLAT band = threshold_mult × σ_30d × √horizon.
-    # At 0.3: ~28% FLAT, 28.7% acc, 0.26 Sharpe (model can't learn 3-way).
-    # At 0.4: ~36% FLAT, 47.1% acc, 0.42 Sharpe, F1_flat=0.05.
-    # At 0.5: ~44% FLAT, 49.4% acc, 0.67 Sharpe, F1_flat~0 — best overall.
-    # At 0.7: ~52% FLAT, 48.7% acc, 0.46 Sharpe, F1_flat=0.0.
+    # FLAT band = threshold_mult × σ_30d × √horizon. Selected on val, never test.
     VOL_LOOKBACK: int = 30
     THRESHOLD_MULT: float = (
-        1.0  # Optuna HPO Phase 2 — swept 0.3→1.0, 1.0 best (test_dir=51.63%, sharpe=0.75).
+        # Champion recipe (HPO phase-1 recipe + val-selected threshold; see
+        # .optuna/best_hps.json). Old default 1.0 gave 32-36% dir acc.
+        float(os.environ.get("ML_THRESHOLD_MULT", "2.0"))
     )
-    # Full pipeline retrain with all HPO HPs: 49.78% — tied MLflow best (49.80%).
     FORECAST_HORIZON: int = 5  # N-day forward return (1=daily, 5=weekly, 21=monthly)
 
-    # Volatility regime filter — only train on windows where the ticker's 30-day
-    # rolling vol is above this percentile of its own history. Low-vol periods
-    # produce labels that are mostly noise (tiny moves classified as directional).
-    # 0.40 = keep top 60% of vol regimes per ticker.
-    VOL_FILTER_PERCENTILE: float = 0.40
+    # Causal volatility-percentile feature: expanding rank of rolling vol so each
+    # day's percentile uses only history up to that day (no look-ahead).
+    VOL_PCT_MIN_PERIODS: int = 60
+
+    # Optional TRAIN-ONLY volatility regime filter. None = keep all windows
+    # (val/test are never filtered — they must match the live distribution).
+    VOL_FILTER_PERCENTILE: float | None = (
+        float(os.environ["ML_VOL_FILTER"]) if "ML_VOL_FILTER" in os.environ else None
+    )
+
+    # Abstention decision rule: |p_up - p_down| < margin ⇒ predict FLAT (no trade).
+    # Margin swept on val, chosen margin stored in the checkpoint.
+    MARGIN_MIN: float = 0.0
+    MARGIN_MAX: float = 0.8
+    MARGIN_STEP: float = 0.05
+    # Sweep guard: a margin is only eligible if >= this fraction of val
+    # windows stay active — stops degenerate barely-trade-at-all winners.
+    MARGIN_MIN_COVERAGE: float = 0.20
+
+    # Drop tickers whose most recent data is older than this many days behind
+    # the dataset's latest date (bulk snapshots include thousands of delisted
+    # names that can never appear in the recent evaluation era).
+    TICKER_MIN_RECENCY_DAYS: int = 90
+
+    # Embargo between splits: drop train windows whose 5-day label window
+    # overlaps val/test start. 2×h calendar days covers the label horizon;
+    # shared pre-boundary feature content is not leakage (features are
+    # computed from data strictly before the split date).
+    EMBARGO_DAYS: int = FORECAST_HORIZON * 2
+
+    # Transaction cost charged per non-flat position (round trip, basis points).
+    COST_BPS_ROUND_TRIP: float = 10.0
+
+    # Seeds to average test metrics over (mean ± CI for honest reporting).
+    N_SEEDS: int = int(os.environ.get("ML_SEEDS", "5"))  # champion recipe = 5-seed prob ensemble
 
     # Model architecture — V1 LSTM only. V2 (Conv1D+BiLSTM+Attention+RegimeGate)
     # tested and caused gradient stall — 203k params could never escape uniform init.
-    EMBED_DIM: int = 16
-    HIDDEN_DIM: int = 80  # Optuna HPO Phase 1: searched 32→128, best=80
+    EMBED_DIM: int = int(os.environ.get("ML_EMBED_DIM", "16"))
+    HIDDEN_DIM: int = int(
+        os.environ.get("ML_HIDDEN_DIM", "112")
+    )  # Optuna phase-1 champion HPs (backend/ml/.optuna/best_hps.json)
     N_LAYERS: int = 2  # 1 layer collapsed to majority-class prediction
-    DROPOUT: float = 0.535  # Optuna HPO Phase 1: searched 0.1→0.7, best=0.535
+    DROPOUT: float = float(
+        os.environ.get("ML_DROPOUT", "0.45")
+    )  # Optuna champion HPs (was 0.535 from the old tiny-data search)
     N_CLASSES: int = 3  # DOWN, FLAT, UP
 
-    # Training
-    EPOCHS: int = 100
+    # Training (ML_EPOCHS env override exists for smoke runs)
+    EPOCHS: int = field(default_factory=lambda: int(os.environ.get("ML_EPOCHS", "100")))
     BATCH_SIZE: int = 256  # 256 for MPS GPU memory efficiency
-    LEARNING_RATE: float = 3.14e-4  # Optuna HPO Phase 1: searched 1e-5→1e-3, best=3.14e-4
-    WEIGHT_DECAY: float = 2.06e-4  # Optuna HPO Phase 1: searched 1e-5→1e-3, best=2.06e-4
+    LEARNING_RATE: float = float(
+        # Optuna phase-1 champion HP (old tiny-data search picked 3.14e-4).
+        os.environ.get("ML_LR", "8.652300790339428e-3")
+    )
+    # Cosine T_max; None → decay over the full epoch budget (early stopping
+    # then strands the model at near-peak LR for its whole life).
+    COSINE_T_MAX: int | None = int(t) if (t := os.environ.get("ML_T_MAX")) else None
+    WEIGHT_DECAY: float = float(
+        os.environ.get("ML_WD", "8.046267289217277e-05")
+    )  # Optuna champion HP
     PATIENCE: int = (
         15  # early stopping after 15 epochs without val_dir_acc improvement (MIN_DELTA=0.5%)
     )
     MIN_DELTA: float = 5e-3  # minimum directional accuracy improvement to reset patience (0.5%)
-    FOCAL_GAMMA: float = 1.49  # Optuna HPO Phase 1: searched 0.5→4.0, best=1.49
+    FOCAL_GAMMA: float = (
+        float(os.environ.get("ML_FOCAL_GAMMA", "1.1879180415391768"))  # Optuna champion HP
+    )
+    # Ablation switch: "0" disables inverse-frequency class weighting (plain CE
+    # behaviour when combined with ML_FOCAL_GAMMA=0).
+    USE_CLASS_WEIGHTS: bool = os.environ.get("ML_CLASS_WEIGHTS", "1") != "0"
+    # Margin sweep off by default — val-selected margins generalize worse than
+    # plain argmax (winner's curse over margin candidates).
+    MARGIN_SWEEP_ENABLED: bool = os.environ.get("ML_MARGIN_SWEEP", "0") == "1"
 
     # Split
     TRAIN_SPLIT: float = 0.7
@@ -553,7 +602,15 @@ class MLConfig:
 
     # Data
     TRAINING_TICKERS: list[str] = field(default_factory=lambda: _train_tickers_env())
-    OHLCV_YEARS: int = 6  # Training window — was 20yr, reduced to 6yr for ~9s/epoch epochs
+    OHLCV_YEARS: int = field(
+        default_factory=lambda: int(os.environ.get("ML_OHLCV_YEARS", "6"))
+    )  # Training window — 6yr by default; raise via ML_OHLCV_YEARS after backfill
+
+    # Inference fetch depth (rows): sized to cover OHLCV_YEARS so the causal
+    # vol_pct expanding percentile at inference sees comparable history to training.
+    PREDICTION_FETCH_LIMIT: int = field(
+        default_factory=lambda: max(2100, int(os.environ.get("ML_OHLCV_YEARS", "6")) * 260)
+    )
 
     # Paths
     MODEL_ARTIFACT_DIR: str = field(

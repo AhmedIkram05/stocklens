@@ -58,6 +58,7 @@ class GlobalLSTM(nn.Module):
         self._feature_means: Optional[np.ndarray] = None
         self._feature_stds: Optional[np.ndarray] = None
         self._model_version: str = "0"
+        self._margin: Optional[float] = None
 
         # Ticker entity embedding
         self.ticker_embedding = nn.Embedding(
@@ -158,6 +159,7 @@ class GlobalLSTM(nn.Module):
         feature_means: Optional[np.ndarray] = None,
         feature_stds: Optional[np.ndarray] = None,
         model_version: str = "0",
+        margin: Optional[float] = None,
     ) -> None:
         """Save model state dict and config metadata.
 
@@ -167,6 +169,7 @@ class GlobalLSTM(nn.Module):
             feature_means: Per-feature means for z-score standardisation (inverse of training).
             feature_stds: Per-feature stds for z-score standardisation.
             model_version: Model version string (default "0").
+            margin: Abstention margin swept on validation data (None = always trade).
         """
         payload: dict = {
             "state_dict": self.state_dict(),
@@ -186,6 +189,8 @@ class GlobalLSTM(nn.Module):
             payload["feature_means"] = feature_means
         if feature_stds is not None:
             payload["feature_stds"] = feature_stds
+        if margin is not None:
+            payload["margin"] = margin
         torch.save(payload, path)
 
     @classmethod
@@ -221,6 +226,7 @@ class GlobalLSTM(nn.Module):
         model._feature_means = checkpoint.get("feature_means")
         model._feature_stds = checkpoint.get("feature_stds")
         model._model_version = checkpoint.get("model_version", "0")
+        model._margin = checkpoint.get("margin")
 
         model.eval()
         return model

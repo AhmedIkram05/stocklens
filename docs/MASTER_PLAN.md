@@ -260,17 +260,15 @@ Index: `idx_ohlcv_ticker_date ON ohlcv_prices(ticker, date)` UNIQUE
 
 ### Table: `model_registry` (Phase 3+)
 
-| Column               | Type         | Constraints                   |
-| -------------------- | ------------ | ----------------------------- |
-| id                   | BIGSERIAL    | PK                            |
-| ticker               | VARCHAR(10)  |                               |
-| mlflow_run_id        | VARCHAR(100) |                               |
-| model_version        | VARCHAR(20)  |                               |
-| alias                | VARCHAR(20)  | e.g. 'champion', 'production' |
-| directional_accuracy | REAL         |                               |
-| per_class_f1         | JSONB        |                               |
-| simulated_sharpe     | REAL         |                               |
-| trained_at           | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW()       |
+| Column        | Type         | Constraints                                                                                                               |
+| ------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| id            | BIGSERIAL    | PK                                                                                                                        |
+| ticker        | VARCHAR(10)  |                                                                                                                           |
+| mlflow_run_id | VARCHAR(100) |                                                                                                                           |
+| model_version | VARCHAR(20)  |                                                                                                                           |
+| alias         | VARCHAR(20)  | e.g. 'champion', 'production'                                                                                             |
+| metrics       | JSONB        | directional_accuracy, per_class_f1, coverage, margin, real-return Sharpe (sharpe_long_only / sharpe_long_short @ 0/10bps) |
+| trained_at    | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW()                                                                                                   |
 
 Index: `idx_conversations_user ON agent_conversations(user_id)`
 
@@ -493,9 +491,9 @@ After all six phases, every StockLens CV bullet is replaced with provably true c
 
 | Before                                                              | After                                                                                                                                                                                                                                               |
 | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "ARIMA forecasting and Linear Regression for portfolio projections" | "PyTorch LSTM directional classifier (up/flat/down) with 30-day feature window, trained on 50+ S&P 500 components"                                                                                                                                  |
+| "ARIMA forecasting and Linear Regression for portfolio projections" | "PyTorch LSTM directional classifier (up/flat/down) with 30-day feature window, trained on ~102 live US tickers (recency-filtered from a 7,389-ticker DB), served as a 5-seed probability ensemble"                                                 |
 | "Per-category OCR with 78 tests"                                    | "Full-stack Python OCR pipeline with pytesseract + Bedrock Claude Haiku fallback, 80+ pytest suite"                                                                                                                                                 |
-| "78 tests covering ML flows"                                        | "LSTM evaluated by directional accuracy, per-class F1, and simulated Sharpe ratio"                                                                                                                                                                  |
+| "78 tests covering ML flows"                                        | "LSTM evaluated by directional accuracy vs 50% chance, per-class F1, real-return Sharpe (0/10bps costs), and HGB/logistic baselines on identical splits"                                                                                            |
 | _(no infra claim)_                                                  | "Terraform-provisioned AWS stack: RDS (Multi-AZ, PITR), ECS Fargate (auto-scaling), WAF (rate-based + SQLi/XSS), Secrets Manager (4+ secrets), CloudWatch observability (p50/p95/p99 dashboards), AWS Budgets + cost anomaly detection, OIDC CI/CD" |
 | _(no agent claim)_                                                  | "LangGraph ReAct agent with 16 financial tools, LLM-as-Judge evaluation sampling 10% of conversations"                                                                                                                                              |
 | _(no MLOps claim)_                                                  | "Airflow weekly retraining pipeline with Evidently drift detection, champion/challenger model promotion"                                                                                                                                            |

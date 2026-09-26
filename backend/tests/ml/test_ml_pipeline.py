@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
@@ -172,7 +173,9 @@ async def test_fetch_ohlcv_returns_empty_dict_when_no_data() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_ohlcv_array(ticker: str, n_days: int = 200) -> np.ndarray:
+def _make_ohlcv_array(ticker: str, n_days: int = 400) -> np.ndarray:
+    # 400 days: the Rust vol_rank feature needs a 252-day causal window before
+    # it stops being NaN; shorter histories yield zero usable windows.
     """Create a structured numpy array mimicking OHLCV data."""
     dtype = [
         ("date", "datetime64[D]"),
@@ -201,7 +204,7 @@ def test_prepare_global_dataset_basic() -> None:
     data = {t: _make_ohlcv_array(t) for t in tickers}
     vocab = {"<UNK>": 0, "AAPL": 1, "MSFT": 2}
 
-    seqs, labels, idxs = prepare_global_dataset(data, vocab, spy_features_df=None)
+    seqs, labels, idxs, _, _ = prepare_global_dataset(data, vocab, spy_features_df=None)
     assert len(seqs) > 0
     assert len(labels) == len(seqs)
     assert len(idxs) == len(seqs)
@@ -228,7 +231,7 @@ def test_prepare_global_dataset_with_spy() -> None:
         index=dates,
     )
 
-    seqs, _, _ = prepare_global_dataset(data, vocab, spy_features_df=spy_df)
+    seqs, _, _, _, _ = prepare_global_dataset(data, vocab, spy_features_df=spy_df)
     assert seqs.shape[2] == 17  # 13 V1 + vol_pct + 3 excess returns
 
 
@@ -236,7 +239,7 @@ def test_prepare_global_dataset_empty_data() -> None:
     """Empty OHLCV data returns empty arrays."""
     from ml.pipeline import prepare_global_dataset
 
-    seqs, labels, idxs = prepare_global_dataset({}, {})
+    seqs, labels, idxs, _, _ = prepare_global_dataset({}, {})
     assert len(seqs) == 0
     assert len(labels) == 0
     assert len(idxs) == 0
@@ -347,10 +350,15 @@ def _pipeline_up_to_gate(*, champion_da: float | None, test_metrics: dict):
     seqs = np.zeros((120, 30, ML_CONFIG.N_FEATURES), dtype=np.float32)
     labels = np.zeros(120, dtype=np.int64)
     idxs = np.zeros(120, dtype=np.int64)
+    fwd_rets = np.zeros(120, dtype=np.float64)
+    dates = np.array(
+        np.datetime64("2024-01-01") + np.arange(120) * np.timedelta64(1, "D"),
+        dtype="datetime64[D]",
+    )
     split = (
-        (seqs[:70], labels[:70], idxs[:70]),
-        (seqs[70:90], labels[70:90], idxs[70:90]),
-        (seqs[90:], labels[90:], idxs[90:]),
+        (seqs[:70], labels[:70], idxs[:70], dates[:70], fwd_rets[:70]),
+        (seqs[70:90], labels[70:90], idxs[70:90], dates[70:90], fwd_rets[70:90]),
+        (seqs[90:], labels[90:], idxs[90:], dates[90:], fwd_rets[90:]),
     )
 
     with (
@@ -359,10 +367,18 @@ def _pipeline_up_to_gate(*, champion_da: float | None, test_metrics: dict):
         patch("ml.pipeline.get_device", return_value=torch.device("cpu")),
         patch(
             "ml.pipeline.fetch_ohlcv_for_tickers",
-            AsyncMock(side_effect=[{"AAA": np.zeros(10)}, {}]),  # data, then no SPY
+            AsyncMock(
+                side_effect=[
+                    {"AAA": _make_ohlcv_array("AAA")},
+                    {"SPY": _make_ohlcv_array("SPY")},
+                ]
+            ),  # data, then SPY
         ),
         patch("ml.pipeline.build_ticker_vocabulary", return_value=({"AAA": 0}, 1)),
-        patch("ml.pipeline.prepare_global_dataset", return_value=(seqs, labels, idxs)),
+        patch(
+            "ml.pipeline.prepare_global_dataset",
+            return_value=(seqs, labels, idxs, dates, fwd_rets),
+        ),
         patch("ml.pipeline.chronological_split", return_value=split),
         patch(
             "ml.pipeline.fit_normalize_splits",
@@ -370,7 +386,16 @@ def _pipeline_up_to_gate(*, champion_da: float | None, test_metrics: dict):
         ),
         patch(
             "ml.pipeline._run_lstm_pipeline",
-            AsyncMock(return_value=(test_metrics, "v1", MagicMock(), "run_1")),
+            AsyncMock(
+                return_value=(
+                    test_metrics,
+                    "v1",
+                    MagicMock(),
+                    "run_1",
+                    np.zeros(120, dtype=np.int64),
+                    [],
+                )
+            ),
         ),
         patch("ml.pipeline.MLflowManager", return_value=mgr),
         patch("ml.pipeline._record_in_db", rec_champion),
@@ -381,6 +406,9 @@ def _pipeline_up_to_gate(*, champion_da: float | None, test_metrics: dict):
         ),
         patch("ml.reference_distributions.store_reference_in_db", AsyncMock()),
     ):
+        # Force the paired gate off (no champion checkpoint) so these tests
+        # exercise the unpaired binomial fallback deterministically.
+        mgr._resolve_save_dir.return_value = Path("/tmp/nonexistent_gate_test_dir")
         yield mgr, rec_champion, rec_challenger
 
 

@@ -47,7 +47,9 @@ class TestSlidingWindows:
         labels = np.random.randint(0, 3, size=50).astype(float)
         ticker_idxs = np.zeros(50)
 
-        seqs, labs, tidxs = create_sliding_windows(data, labels, ticker_idxs, sequence_length=30)
+        seqs, labs, tidxs, _, _ = create_sliding_windows(
+            data, labels, ticker_idxs, sequence_length=30
+        )
 
         assert len(seqs) <= 21
         assert seqs.shape[1:] == (30, 3)
@@ -59,7 +61,7 @@ class TestSlidingWindows:
         labels = np.ones(20)
         ticker_idxs = np.zeros(20)
 
-        seqs, _, _ = create_sliding_windows(data, labels, ticker_idxs, sequence_length=30)
+        seqs, _, _, _, _ = create_sliding_windows(data, labels, ticker_idxs, sequence_length=30)
         assert len(seqs) == 0
 
     def test_nan_labels_filtered(self) -> None:
@@ -69,7 +71,7 @@ class TestSlidingWindows:
         labels = np.full(50, np.nan)
         ticker_idxs = np.zeros(50)
 
-        seqs, labs, _ = create_sliding_windows(data, labels, ticker_idxs, sequence_length=30)
+        seqs, labs, _, _, _ = create_sliding_windows(data, labels, ticker_idxs, sequence_length=30)
         assert len(seqs) == 0
         assert len(labs) == 0
 
