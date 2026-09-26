@@ -39,3 +39,7 @@ Adopt **S3 bootstrap**. The serving container downloads the champion artifact fr
 | MLflow `load_model` at runtime | Heavy runtime dep in lean image; MLflow client resilience on Cold Start; no code path yet exists |
 | Bake `.pt` into the image      | Champ changes weekly → rebuild + redeploy image on every promotion; defeats ECR immutable tags   |
 | EFS mount for model artifacts  | Extra recurring cost + mount plumbing for a 0.5 MB file; overkill vs one-shot S3 download        |
+
+## Addendum (2026-09-26) — Ensemble Champion Bundle
+
+The champion artifact is no longer a single `.pt`: since the R14 LSTM rebuild the promoted champion is a **5-seed probability ensemble**. `save_champion_to_disk()` writes `model.pt` (seed-0 reference; carries vocab + feature means/stds + margin) plus `model_seed0..4.pt` member checkpoints. `prediction_service.load_model` globs `model_seed*.pt` next to `model.pt` and averages per-seed softmax probabilities at request time; a lone `model.pt` still loads (backward compatible). The S3 bootstrap must therefore copy the whole champion prefix (`model.pt` + `model_seed*.pt`), not just `model.pt`. Promotion decisions come from the paired McNemar gate (`ml/promotion_stats.py::decide_promotion_paired`) — the champion ensemble is re-scored on the challenger's test set with its own means/stds/vocab before promote/block.
