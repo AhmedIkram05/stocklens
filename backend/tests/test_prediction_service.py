@@ -34,6 +34,7 @@ def mock_global_lstm():
     model = Mock()
     model._model_version = "test-v1"
     model._vocab = {"AAPL": 1, "MSFT": 2, "SPY": 3}
+    model._margin = None
     model._feature_means = np.zeros(17, dtype=np.float32)
     model._feature_stds = np.ones(17, dtype=np.float32)
 
