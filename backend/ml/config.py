@@ -514,7 +514,9 @@ class MLConfig:
     # FLAT band = threshold_mult × σ_30d × √horizon. Selected on val, never test.
     VOL_LOOKBACK: int = 30
     THRESHOLD_MULT: float = (
-        float(os.environ.get("ML_THRESHOLD_MULT", "1.0"))  # HPO Phase 2 swept 0.3→1.0 on val
+        # Champion recipe (HPO phase-1 recipe + val-selected threshold; see
+        # .optuna/best_hps.json). Old default 1.0 gave 32-36% dir acc.
+        float(os.environ.get("ML_THRESHOLD_MULT", "2.0"))
     )
     FORECAST_HORIZON: int = 5  # N-day forward return (1=daily, 5=weekly, 21=monthly)
 
@@ -552,34 +554,35 @@ class MLConfig:
     COST_BPS_ROUND_TRIP: float = 10.0
 
     # Seeds to average test metrics over (mean ± CI for honest reporting).
-    N_SEEDS: int = int(os.environ.get("ML_SEEDS", "1"))
+    N_SEEDS: int = int(os.environ.get("ML_SEEDS", "5"))  # champion recipe = 5-seed prob ensemble
 
     # Model architecture — V1 LSTM only. V2 (Conv1D+BiLSTM+Attention+RegimeGate)
     # tested and caused gradient stall — 203k params could never escape uniform init.
     EMBED_DIM: int = int(os.environ.get("ML_EMBED_DIM", "16"))
-    HIDDEN_DIM: int = int(os.environ.get("ML_HIDDEN_DIM", "80"))  # Optuna HPO Phase 1: searched 32→128, best=80
+    HIDDEN_DIM: int = int(os.environ.get("ML_HIDDEN_DIM", "112"))  # Optuna phase-1 champion HPs (backend/ml/.optuna/best_hps.json)
     N_LAYERS: int = 2  # 1 layer collapsed to majority-class prediction
-    DROPOUT: float = float(os.environ.get("ML_DROPOUT", "0.535"))  # Optuna HPO Phase 1: searched 0.1→0.7, best=0.535
+    DROPOUT: float = float(os.environ.get("ML_DROPOUT", "0.45"))  # Optuna champion HPs (was 0.535 from the old tiny-data search)
     N_CLASSES: int = 3  # DOWN, FLAT, UP
 
     # Training (ML_EPOCHS env override exists for smoke runs)
     EPOCHS: int = field(default_factory=lambda: int(os.environ.get("ML_EPOCHS", "100")))
     BATCH_SIZE: int = 256  # 256 for MPS GPU memory efficiency
     LEARNING_RATE: float = float(
-        os.environ.get("ML_LR", "3.14e-4")  # Optuna HPO Phase 1: searched 1e-5→1e-3, best=3.14e-4
+        # Optuna phase-1 champion HP (old tiny-data search picked 3.14e-4).
+        os.environ.get("ML_LR", "8.652300790339428e-3")
     )
     # Cosine T_max; None → decay over the full epoch budget (early stopping
     # then strands the model at near-peak LR for its whole life).
     COSINE_T_MAX: int | None = (
         int(t) if (t := os.environ.get("ML_T_MAX")) else None
     )
-    WEIGHT_DECAY: float = float(os.environ.get("ML_WD", "2.06e-4"))
+    WEIGHT_DECAY: float = float(os.environ.get("ML_WD", "8.046267289217277e-05"))  # Optuna champion HP
     PATIENCE: int = (
         15  # early stopping after 15 epochs without val_dir_acc improvement (MIN_DELTA=0.5%)
     )
     MIN_DELTA: float = 5e-3  # minimum directional accuracy improvement to reset patience (0.5%)
     FOCAL_GAMMA: float = (
-        float(os.environ.get("ML_FOCAL_GAMMA", "1.49"))  # HPO Phase 1: searched 0.5→4.0
+        float(os.environ.get("ML_FOCAL_GAMMA", "1.1879180415391768"))  # Optuna champion HP
     )
     # Ablation switch: "0" disables inverse-frequency class weighting (plain CE
     # behaviour when combined with ML_FOCAL_GAMMA=0).
