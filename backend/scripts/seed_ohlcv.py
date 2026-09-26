@@ -34,9 +34,18 @@ from decimal import Decimal
 BATCH_SIZE = 5000
 DELAY = 2.0  # polite delay between tickers
 USER_AGENTS = [
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+    (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+        "(KHTML, like Gecko) Version/17.2 Safari/605.1.15"
+    ),
 ]
 
 DEFAULT_DSN = "host=localhost port=5432 dbname=stocklens user=stocklens password=stocklens"
@@ -89,8 +98,8 @@ def fetch(ticker: str, years: int) -> list[dict]:
                 break
             except urllib.error.HTTPError as e:
                 if e.code == 429:
-                    wait = (2 ** attempt) * 3
-                    print(f"  429 on {host}, retry {attempt+1} in {wait}s")
+                    wait = (2**attempt) * 3
+                    print(f"  429 on {host}, retry {attempt + 1} in {wait}s")
                     time.sleep(wait)
                     continue
                 raise
@@ -112,16 +121,20 @@ def fetch(ticker: str, years: int) -> list[dict]:
     rows = []
     for i, ts in enumerate(timestamps):
         dt = datetime.utcfromtimestamp(ts).date()
-        rows.append({
-            "ticker": ticker,
-            "date": dt,
-            "open": _d(quotes.get("open", [None] * len(timestamps))[i]),
-            "high": _d(quotes.get("high", [None] * len(timestamps))[i]),
-            "low": _d(quotes.get("low", [None] * len(timestamps))[i]),
-            "close": _d(quotes.get("close", [None] * len(timestamps))[i]),
-            "adjusted_close": _d(adjclose.get("adjclose", [None] * len(timestamps))[i]),
-            "volume": int(v) if (v := quotes.get("volume", [None] * len(timestamps))[i]) else None,
-        })
+        rows.append(
+            {
+                "ticker": ticker,
+                "date": dt,
+                "open": _d(quotes.get("open", [None] * len(timestamps))[i]),
+                "high": _d(quotes.get("high", [None] * len(timestamps))[i]),
+                "low": _d(quotes.get("low", [None] * len(timestamps))[i]),
+                "close": _d(quotes.get("close", [None] * len(timestamps))[i]),
+                "adjusted_close": _d(adjclose.get("adjclose", [None] * len(timestamps))[i]),
+                "volume": int(v)
+                if (v := quotes.get("volume", [None] * len(timestamps))[i])
+                else None,
+            }
+        )
     return rows
 
 
@@ -131,8 +144,16 @@ def _d(v):
 
 def insert_rows(conn, rows: list[dict]) -> None:
     values = [
-        (r["ticker"], r["date"], r["open"], r["high"], r["low"],
-         r["close"], r["adjusted_close"], r["volume"])
+        (
+            r["ticker"],
+            r["date"],
+            r["open"],
+            r["high"],
+            r["low"],
+            r["close"],
+            r["adjusted_close"],
+            r["volume"],
+        )
         for r in rows
     ]
     sql = """
@@ -152,9 +173,17 @@ def insert_rows(conn, rows: list[dict]) -> None:
 
 def main(dsn: str | None = None, tickers: str | None = None, years: int | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dsn", default=None, help="psycopg2 key=value DSN (else DATABASE_DSN env)")
-    parser.add_argument("--tickers", default=None, help="comma-separated tickers (else TRAINING_TICKERS env / ML_CONFIG)")
-    parser.add_argument("--years", type=int, default=None, help="years of history to fetch (default 12)")
+    parser.add_argument(
+        "--dsn", default=None, help="psycopg2 key=value DSN (else DATABASE_DSN env)"
+    )
+    parser.add_argument(
+        "--tickers",
+        default=None,
+        help="comma-separated tickers (else TRAINING_TICKERS env / ML_CONFIG)",
+    )
+    parser.add_argument(
+        "--years", type=int, default=None, help="years of history to fetch (default 12)"
+    )
     args = parser.parse_args()
 
     dsn = resolve_dsn(dsn if dsn is not None else args.dsn)
@@ -184,7 +213,10 @@ def main(dsn: str | None = None, tickers: str | None = None, years: int | None =
             insert_rows(conn, rows)
             total += len(rows)
             pct = (i + 1) / len(universe) * 100
-            print(f"  [{i+1}/{len(universe)}] {ticker}: {len(rows)} rows ({total} total, {pct:.0f}%)")
+            print(
+                f"  [{i + 1}/{len(universe)}] {ticker}: {len(rows)} rows"
+                f" ({total} total, {pct:.0f}%)"
+            )
     finally:
         conn.close()
 

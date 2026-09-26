@@ -193,7 +193,9 @@ def prepare_global_dataset(
         kept = {t: arr for t, arr in ohlcv_data.items() if arr["date"].max() >= cutoff}
         logger.info(
             "Ticker recency filter: kept %d of %d tickers (data must reach %s)",
-            len(kept), len(ohlcv_data), cutoff,
+            len(kept),
+            len(ohlcv_data),
+            cutoff,
         )
         ohlcv_data = kept
 
@@ -385,16 +387,25 @@ async def _run_lstm_pipeline(
     # Last two tuple slots are (dates, fwd_rets) — pass as keywords because
     # SequenceDataset's signature order is (forward_returns, dates).
     train_ds = SequenceDataset(
-        train_data[0], train_data[1], train_data[2],
-        dates=train_data[3], forward_returns=train_data[4],
+        train_data[0],
+        train_data[1],
+        train_data[2],
+        dates=train_data[3],
+        forward_returns=train_data[4],
     )
     val_ds = SequenceDataset(
-        val_data[0], val_data[1], val_data[2],
-        dates=val_data[3], forward_returns=val_data[4],
+        val_data[0],
+        val_data[1],
+        val_data[2],
+        dates=val_data[3],
+        forward_returns=val_data[4],
     )
     test_ds = SequenceDataset(
-        test_data[0], test_data[1], test_data[2],
-        dates=test_data[3], forward_returns=test_data[4],
+        test_data[0],
+        test_data[1],
+        test_data[2],
+        dates=test_data[3],
+        forward_returns=test_data[4],
     )
 
     train_loader = DataLoader(train_ds, batch_size=ML_CONFIG.BATCH_SIZE, shuffle=True)
@@ -487,9 +498,7 @@ async def _run_lstm_pipeline(
             seed = 42 + seed_i
             set_seed(seed)
             seed_model = _new_model()
-            logger.info(
-                "Training LSTM (seed %d, %d/%d)", seed, seed_i + 1, ML_CONFIG.N_SEEDS
-            )
+            logger.info("Training LSTM (seed %d, %d/%d)", seed, seed_i + 1, ML_CONFIG.N_SEEDS)
             history = train(
                 seed_model, train_loader, val_loader, device=device, n_epochs=ML_CONFIG.EPOCHS
             )
@@ -805,18 +814,23 @@ async def run_pipeline() -> dict[str, Any]:
     logger.info("Normalization complete — means/stds fit on training data only")
 
     # 8. Train LSTM, evaluate, register model (pure — no promotion logic)
-    (test_metrics, model_version, trained_model, run_id, challenger_preds, seed_models) = (
-        await _run_lstm_pipeline(
-            train_data,
-            val_data,
-            test_data,
-            tickers_with_data,
-            vocab_size,
-            vocab,
-            global_means,
-            global_stds,
-            device,
-        )
+    (
+        test_metrics,
+        model_version,
+        trained_model,
+        run_id,
+        challenger_preds,
+        seed_models,
+    ) = await _run_lstm_pipeline(
+        train_data,
+        val_data,
+        test_data,
+        tickers_with_data,
+        vocab_size,
+        vocab,
+        global_means,
+        global_stds,
+        device,
     )
 
     # ------------------------------------------------------------------
@@ -848,9 +862,9 @@ async def run_pipeline() -> dict[str, Any]:
             # F.embedding ("Placeholder storage has not been allocated") and
             # CPU is plenty for a one-off gate evaluation.
             gate_device = torch.device("cpu")
-            champ_models = [
-                GlobalLSTM.load(str(p), device=gate_device) for p in seed_paths
-            ] or [GlobalLSTM.load(champion_path, device=gate_device)]
+            champ_models = [GlobalLSTM.load(str(p), device=gate_device) for p in seed_paths] or [
+                GlobalLSTM.load(champion_path, device=gate_device)
+            ]
             champion = champ_models[0]
             champ_means = champion._feature_means
             champ_stds = champion._feature_stds
@@ -870,9 +884,7 @@ async def run_pipeline() -> dict[str, Any]:
                     dtype=np.int64,
                 )
                 champ_ds = SequenceDataset(champ_seqs, test_raw[1], champ_ticker_idxs)
-                champ_loader = DataLoader(
-                    champ_ds, batch_size=ML_CONFIG.BATCH_SIZE, shuffle=False
-                )
+                champ_loader = DataLoader(champ_ds, batch_size=ML_CONFIG.BATCH_SIZE, shuffle=False)
                 per_model_probs = [
                     predict_probs(m, champ_loader, gate_device)[0] for m in champ_models
                 ]
@@ -930,9 +942,7 @@ async def run_pipeline() -> dict[str, Any]:
         "challenger_improvement_pp": (
             (da_improvement * 100) if da_improvement is not None else 100.0
         ),
-        "promotion_p_value": decision["p_value"]
-        if decision["p_value"] is not None
-        else -1.0,
+        "promotion_p_value": decision["p_value"] if decision["p_value"] is not None else -1.0,
         "promotion_n_directional": float(test_metrics.get("n_directional") or 0),
         "gate_mode_paired": 1.0 if gate_mode == "paired-mcnemar" else 0.0,
     }

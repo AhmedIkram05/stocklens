@@ -124,10 +124,9 @@ class PredictionService:
         """
         daily_log_ret = np.log(close_series / close_series.shift(1))
         rolling_vol = daily_log_ret.rolling(window=ml_config.VOL_LOOKBACK).std()
-        vol_pct = (
-            compute_causal_vol_pct(rolling_vol, min_periods=ml_config.VOL_PCT_MIN_PERIODS)
-            .values.astype(np.float32)[:, np.newaxis]
-        )
+        vol_pct = compute_causal_vol_pct(
+            rolling_vol, min_periods=ml_config.VOL_PCT_MIN_PERIODS
+        ).values.astype(np.float32)[:, np.newaxis]
         vol_pct = np.nan_to_num(vol_pct, nan=0.5)
         return vol_pct
 

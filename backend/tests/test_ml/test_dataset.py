@@ -47,7 +47,9 @@ class TestSlidingWindows:
         labels = np.random.randint(0, 3, size=50).astype(float)
         ticker_idxs = np.zeros(50)
 
-        seqs, labs, tidxs, _, _ = create_sliding_windows(data, labels, ticker_idxs, sequence_length=30)
+        seqs, labs, tidxs, _, _ = create_sliding_windows(
+            data, labels, ticker_idxs, sequence_length=30
+        )
 
         assert len(seqs) <= 21
         assert seqs.shape[1:] == (30, 3)

@@ -241,60 +241,60 @@ flowchart LR
 
 **Training configuration (from `ml/config.py`):**
 
-| Hyperparameter       | Value              | Optuna Search Space                             | Source                       |
-| -------------------- | ------------------ | ----------------------------------------------- | ---------------------------- |
-| Sequence length      | 30 trading days    | -                                               | Fixed (`ML_SEQ_LEN`)         |
-| Forecast horizon     | 5 trading days     | -                                               | Fixed                        |
-| Embedding dimension  | 16                 | -                                               | Fixed (`ML_EMBED_DIM`)       |
-| Hidden dimension     | **112**            | 32 → 128                                        | Optuna best (Trial 15/30)    |
-| LSTM layers          | 2                  | -                                               | Fixed (unidirectional)       |
-| Dropout              | **0.45**           | 0.2 → 0.6                                       | Optuna best                  |
-| Focal loss gamma     | **1.19**           | 1 → 3                                           | Optuna best                  |
-| Learning rate        | **8.7e-3**         | 1e-4 → 1e-2                                     | Optuna best                  |
-| Weight decay         | **8e-5**           | 1e-5 → 1e-2                                     | Optuna best                  |
-| Threshold multiplier | 2.0                | Phase 2 sweep, **selected on val only**         | Recipe (`ML_THRESHOLD_MULT`) |
-| Batch size           | 256                | -                                               | Fixed (MPS GPU efficient)    |
-| Features             | 17                 | 13 technical + vol_pct + 3 cross-sectional      | Fixed                        |
-| Classes              | 3                  | DOWN / FLAT / UP                                | Fixed                        |
-| Tickers              | ~102 live          | Recency-filtered (data within 90 days of now)   | `TRAINING_TICKERS=ALL`       |
-| OHLCV lookback       | 10 years           | -                                               | `ML_OHLCV_YEARS`             |
-| Train / Val / Test   | 70 / 15 / 15       | Chronological + 10-day purge embargo            | Fixed                        |
-| Epochs               | 100 (early stop)   | Smoothed val directional accuracy (K=3)         | Training config              |
-| Seeds                | 5 (probability ensemble) | Mean of per-seed softmax probs            | `ML_SEEDS`                   |
+| Hyperparameter       | Value                    | Optuna Search Space                           | Source                       |
+| -------------------- | ------------------------ | --------------------------------------------- | ---------------------------- |
+| Sequence length      | 30 trading days          | -                                             | Fixed (`ML_SEQ_LEN`)         |
+| Forecast horizon     | 5 trading days           | -                                             | Fixed                        |
+| Embedding dimension  | 16                       | -                                             | Fixed (`ML_EMBED_DIM`)       |
+| Hidden dimension     | **112**                  | 32 → 128                                      | Optuna best (Trial 15/30)    |
+| LSTM layers          | 2                        | -                                             | Fixed (unidirectional)       |
+| Dropout              | **0.45**                 | 0.2 → 0.6                                     | Optuna best                  |
+| Focal loss gamma     | **1.19**                 | 1 → 3                                         | Optuna best                  |
+| Learning rate        | **8.7e-3**               | 1e-4 → 1e-2                                   | Optuna best                  |
+| Weight decay         | **8e-5**                 | 1e-5 → 1e-2                                   | Optuna best                  |
+| Threshold multiplier | 2.0                      | Phase 2 sweep, **selected on val only**       | Recipe (`ML_THRESHOLD_MULT`) |
+| Batch size           | 256                      | -                                             | Fixed (MPS GPU efficient)    |
+| Features             | 17                       | 13 technical + vol_pct + 3 cross-sectional    | Fixed                        |
+| Classes              | 3                        | DOWN / FLAT / UP                              | Fixed                        |
+| Tickers              | ~102 live                | Recency-filtered (data within 90 days of now) | `TRAINING_TICKERS=ALL`       |
+| OHLCV lookback       | 10 years                 | -                                             | `ML_OHLCV_YEARS`             |
+| Train / Val / Test   | 70 / 15 / 15             | Chronological + 10-day purge embargo          | Fixed                        |
+| Epochs               | 100 (early stop)         | Smoothed val directional accuracy (K=3)       | Training config              |
+| Seeds                | 5 (probability ensemble) | Mean of per-seed softmax probs                | `ML_SEEDS`                   |
 
 **Performance metrics (rebuilt pipeline, held-out test set):**
 
-| Metric                        | Rebuilt (5-seed ensemble) | Baselines (same splits)     | Old pipeline (for reference)    |
-| ----------------------------- | ------------------------- | --------------------------- | ------------------------------- |
-| Directional Accuracy          | **53.17%** (n=2,221)      | HGB 50.83% · Logistic 49.06% | 49.78% honest / 51.63% (test-selected) |
-| Seed spread                   | 50.5% – 55.8% (mean 52.2% ± 1.0pp) | -                  | -                               |
-| Long-only Sharpe (real returns) | ~2.9 @ 10bps costs      | -                           | 0.75 (fake ±1% proxy, retired)  |
-| Long-short Sharpe @ 10bps     | ≈ 0 (edge dies with costs)| -                           | reported but fake               |
-| Coverage / abstention         | 100% (margin=0)           | -                           | -                               |
+| Metric                          | Rebuilt (5-seed ensemble)          | Baselines (same splits)      | Old pipeline (for reference)           |
+| ------------------------------- | ---------------------------------- | ---------------------------- | -------------------------------------- |
+| Directional Accuracy            | **53.17%** (n=2,221)               | HGB 50.83% · Logistic 49.06% | 49.78% honest / 51.63% (test-selected) |
+| Seed spread                     | 50.5% – 55.8% (mean 52.2% ± 1.0pp) | -                            | -                                      |
+| Long-only Sharpe (real returns) | ~2.9 @ 10bps costs                 | -                            | 0.75 (fake ±1% proxy, retired)         |
+| Long-short Sharpe @ 10bps       | ≈ 0 (edge dies with costs)         | -                            | reported but fake                      |
+| Coverage / abstention           | 100% (margin=0)                    | -                            | -                                      |
 
 > **Context:** Predicting 3-class directional movement over a 5-day window in highly stochastic markets. Directional accuracy is a **binary-style metric** (chance = 50%), so 53.17% is a real but modest edge — and it clears an independent gradient-boosting baseline trained on the identical splits. The threshold multiplier of 2.0 makes ~73% of labels FLAT, so 3-class accuracy is low by design (the model abstains from trading noise); the headline metric is directional accuracy. Sharpe is computed from **actual forward log returns** in a stride-5 non-overlapping per-date equal-weight portfolio, with 0bps and 10bps round-trip cost variants.
 
 **17 features in detail:**
 
-| #   | Feature             | Computation                                            | Domain |
-| --- | ------------------- | ------------------------------------------------------ | ------ |
-| 1   | `log_return_1d`     | log(close<sub>t</sub> / close<sub>t-1</sub>)           | Rust   |
-| 2   | `log_return_5d`     | log(close<sub>t</sub> / close<sub>t-5</sub>)           | Rust   |
-| 3   | `log_return_21d`    | log(close<sub>t</sub> / close<sub>t-21</sub>)          | Rust   |
-| 4   | `ma_5`              | log(close / 5-day MA) — scale-free                     | Rust   |
-| 5   | `ma_10`             | log(close / 10-day MA) — scale-free                    | Rust   |
-| 6   | `ma_20`             | log(close / 20-day MA) — scale-free                    | Rust   |
-| 7   | `ma_50`             | log(close / 50-day MA) — scale-free                    | Rust   |
-| 8   | `rsi_14`            | 14-day Relative Strength Index (Wilder's)              | Rust   |
-| 9   | `macd`              | MACD line (12/26 EMA), divided by close — scale-free   | Rust   |
-| 10  | `macd_signal`       | MACD signal line, divided by close                     | Rust   |
-| 11  | `macd_hist`         | MACD histogram, divided by close                       | Rust   |
-| 12  | `vol_30d`           | 30-day rolling std of daily log returns                | Rust   |
-| 13  | `vol_rank`          | 252-day causal rolling percentile rank of vol          | Rust   |
-| 14  | `vol_pct`           | **causal expanding-rank percentile** of 30d vol (min 60 periods; identical helper used at train & serve) | Python |
-| 15  | `excess_ret_1d`     | 1-day cross-sectional excess vs. SPY                   | Python |
-| 16  | `excess_ret_5d`     | 5-day cross-sectional excess vs. SPY                   | Python |
-| 17  | `excess_ret_21d`    | 21-day cross-sectional excess vs. SPY                  | Python |
+| #   | Feature          | Computation                                                                                              | Domain |
+| --- | ---------------- | -------------------------------------------------------------------------------------------------------- | ------ |
+| 1   | `log_return_1d`  | log(close<sub>t</sub> / close<sub>t-1</sub>)                                                             | Rust   |
+| 2   | `log_return_5d`  | log(close<sub>t</sub> / close<sub>t-5</sub>)                                                             | Rust   |
+| 3   | `log_return_21d` | log(close<sub>t</sub> / close<sub>t-21</sub>)                                                            | Rust   |
+| 4   | `ma_5`           | log(close / 5-day MA) — scale-free                                                                       | Rust   |
+| 5   | `ma_10`          | log(close / 10-day MA) — scale-free                                                                      | Rust   |
+| 6   | `ma_20`          | log(close / 20-day MA) — scale-free                                                                      | Rust   |
+| 7   | `ma_50`          | log(close / 50-day MA) — scale-free                                                                      | Rust   |
+| 8   | `rsi_14`         | 14-day Relative Strength Index (Wilder's)                                                                | Rust   |
+| 9   | `macd`           | MACD line (12/26 EMA), divided by close — scale-free                                                     | Rust   |
+| 10  | `macd_signal`    | MACD signal line, divided by close                                                                       | Rust   |
+| 11  | `macd_hist`      | MACD histogram, divided by close                                                                         | Rust   |
+| 12  | `vol_30d`        | 30-day rolling std of daily log returns                                                                  | Rust   |
+| 13  | `vol_rank`       | 252-day causal rolling percentile rank of vol                                                            | Rust   |
+| 14  | `vol_pct`        | **causal expanding-rank percentile** of 30d vol (min 60 periods; identical helper used at train & serve) | Python |
+| 15  | `excess_ret_1d`  | 1-day cross-sectional excess vs. SPY                                                                     | Python |
+| 16  | `excess_ret_5d`  | 5-day cross-sectional excess vs. SPY                                                                     | Python |
+| 17  | `excess_ret_21d` | 21-day cross-sectional excess vs. SPY                                                                    | Python |
 
 Additional Rust-engine indicators (Bollinger %B, ATR-14, OBV, Williams %R, ROC-10) are computed but deliberately dropped — they historically pushed the model toward single-class collapse; revisit after further data scaling.
 
@@ -641,18 +641,18 @@ flowchart TB
 
 **MLOps configuration:**
 
-| Component               | Detail                                                                                                                                                                |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Orchestrator**        | Apache Airflow 2.11 on ECS Fargate ARM64                                                                                                                              |
-| **Schedule**            | Weekly, Monday 06:00 UTC (cron)                                                                                                                                       |
-| **Experiment tracking** | MLflow 3.14 - every training run logged with hyperparameters, loss curves, evaluation metrics                                                                         |
-| **Model registry**      | PostgreSQL `model_registry` table - tracks champion model ID, S3 URI, performance metrics                                                                             |
+| Component               | Detail                                                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Orchestrator**        | Apache Airflow 2.11 on ECS Fargate ARM64                                                                                                                                                                                                                                                                                                                                                             |
+| **Schedule**            | Weekly, Monday 06:00 UTC (cron)                                                                                                                                                                                                                                                                                                                                                                      |
+| **Experiment tracking** | MLflow 3.14 - every training run logged with hyperparameters, loss curves, evaluation metrics                                                                                                                                                                                                                                                                                                        |
+| **Model registry**      | PostgreSQL `model_registry` table - tracks champion model ID, S3 URI, performance metrics                                                                                                                                                                                                                                                                                                            |
 | **Champion promotion**  | Paired gate in `ml/promotion_stats.py::decide_promotion_paired`: champion is **re-scored on the challenger's exact test set** (own means/stds/vocab, ensemble-averaged probs), then promotion requires `da_improvement > 0.02` (effect size) **and** exact two-sided McNemar p<0.05 (paired significance). Unpaired `should_promote` binomial remains as fallback when no champion checkpoint exists |
-| **Champion delivery**   | EFS mount (zero-copy) + S3 (durable/CloudFront) + model_registry DB                                                                                                   |
-| **Drift detection**     | Evidently AI - PSI threshold=0.25, KS threshold=0.3, JSD threshold=0.3                                                                                                |
-| **Drift reporting**     | Reports stored at `s3://stocklens-drift-reports-dev/drift_reports/`                                                                                                   |
-| **Serving backends**    | Fargate (EFS mount) or optional SageMaker endpoint (`ml.m5.xlarge`)                                                                                                   |
-| **Prediction logging**  | 90-day retention in PostgreSQL for offline analysis                                                                                                                   |
+| **Champion delivery**   | EFS mount (zero-copy) + S3 (durable/CloudFront) + model_registry DB                                                                                                                                                                                                                                                                                                                                  |
+| **Drift detection**     | Evidently AI - PSI threshold=0.25, KS threshold=0.3, JSD threshold=0.3                                                                                                                                                                                                                                                                                                                               |
+| **Drift reporting**     | Reports stored at `s3://stocklens-drift-reports-dev/drift_reports/`                                                                                                                                                                                                                                                                                                                                  |
+| **Serving backends**    | Fargate (EFS mount) or optional SageMaker endpoint (`ml.m5.xlarge`)                                                                                                                                                                                                                                                                                                                                  |
+| **Prediction logging**  | 90-day retention in PostgreSQL for offline analysis                                                                                                                                                                                                                                                                                                                                                  |
 
 ---
 

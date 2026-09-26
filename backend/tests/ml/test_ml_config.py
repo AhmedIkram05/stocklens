@@ -19,7 +19,7 @@ def test_defaults_are_set() -> None:
     assert cfg.SEQUENCE_LENGTH == 30
     assert cfg.N_FEATURES == 17
     assert cfg.EMBED_DIM == 16
-    assert cfg.HIDDEN_DIM == 80
+    assert cfg.HIDDEN_DIM == 112
     assert cfg.N_LAYERS == 2
     assert cfg.N_CLASSES == 3
     assert cfg.EPOCHS == 100
@@ -86,9 +86,8 @@ def test_hyperparameter_ranges_positive() -> None:
         assert val > 0, f"{name}={val} should be positive"
 
     # Optional knob: None = disabled (off by default), float in (0, 1) when set.
-    assert MLConfig().VOL_FILTER_PERCENTILE is None or (
-        0 < MLConfig().VOL_FILTER_PERCENTILE < 1
-    )
+    pct = MLConfig().VOL_FILTER_PERCENTILE
+    assert pct is None or 0 < pct < 1
 
 
 def test_split_fractions_are_float() -> None:

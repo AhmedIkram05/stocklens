@@ -36,16 +36,16 @@ Classifier            112 → 3           Linear → logits (no softmax)
 
 ### Feature set (17 total)
 
-| #  | Feature          | Source | Notes                                                    |
-|----|------------------|--------|----------------------------------------------------------|
-| 1–3 | `log_ret_1d/5d/21d` | Rust | Momentum (computed from `adjusted_close`)            |
-| 4–7 | `ma_5/10/20/50`  | Rust   | **Scale-free**: stored as `log(close / ma)` — survives cross-era price-level drift |
-| 8  | `rsi_14`         | Rust   | Oscillator                                               |
-| 9–11 | `macd/signal/hist` | Rust | **Scale-free**: stored as `value / close`              |
-| 12 | `vol_30d`        | Rust   | Rolling 30d std of log returns                           |
-| 13 | `vol_rank`       | Rust   | Causal 252-day rolling rank (no look-ahead)              |
-| 14 | `vol_pct`        | Python | **Causal** expanding percentile rank of vol_30d (`compute_causal_vol_pct`, `min_periods=60`) — shared helper used identically by training pipeline and the prediction service |
-| 15–17 | `excess_ret_1d/5d/21d` | Python | Cross-sectional log-return excess vs SPY |
+| #     | Feature                | Source | Notes                                                                                                                                                                         |
+| ----- | ---------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1–3   | `log_ret_1d/5d/21d`    | Rust   | Momentum (computed from `adjusted_close`)                                                                                                                                     |
+| 4–7   | `ma_5/10/20/50`        | Rust   | **Scale-free**: stored as `log(close / ma)` — survives cross-era price-level drift                                                                                            |
+| 8     | `rsi_14`               | Rust   | Oscillator                                                                                                                                                                    |
+| 9–11  | `macd/signal/hist`     | Rust   | **Scale-free**: stored as `value / close`                                                                                                                                     |
+| 12    | `vol_30d`              | Rust   | Rolling 30d std of log returns                                                                                                                                                |
+| 13    | `vol_rank`             | Rust   | Causal 252-day rolling rank (no look-ahead)                                                                                                                                   |
+| 14    | `vol_pct`              | Python | **Causal** expanding percentile rank of vol_30d (`compute_causal_vol_pct`, `min_periods=60`) — shared helper used identically by training pipeline and the prediction service |
+| 15–17 | `excess_ret_1d/5d/21d` | Python | Cross-sectional log-return excess vs SPY                                                                                                                                      |
 
 The Rust engine also computes 6 V2 indicators (Bollinger %B/width, ATR-14, OBV, Williams %R,
 ROC-10) but they are **dropped** — with the old small dataset each one pushed the model toward
@@ -82,18 +82,18 @@ non-FLAT labels, chance = 50%).
 
 ## 3. Methodology Fixes (what was actually broken, and the fix)
 
-| # | Flaw (pre-rebuild) | Fix |
-|---|--------------------|-----|
-| 1 | HPO phase 2 selected the label threshold by **test-set** accuracy | All selection on validation; test logged once, reporting-only |
-| 2 | `vol_pct` was a **full-history percentile rank** (look-ahead) and inference used a short-window rank (train/serve skew) | `compute_causal_vol_pct` — expanding rank with `min_periods=60`, same helper at train and serve; inference fetch window sized by `PREDICTION_FETCH_LIMIT = max(2100, OHLCV_YEARS×260)` |
-| 3 | Fake Sharpe: ±1% label-magnitude proxy, ×252 annualization on 5-day returns, no dates/costs | Deleted. `evaluate._strategy_sharpe`: per-window **actual forward log returns**, non-overlapping stride-h windows per ticker, per-date equal-weight portfolio, annualization `√(252/h)`, reported at 0bps and `COST_BPS_ROUND_TRIP=10`bps |
-| 4 | No purge/embargo at split boundaries (5-day label overlap) | 10-day embargo on train before val, val before test |
-| 5 | Early stopping / HPO objective on single-epoch val accuracy (±1.2pp noise) | Smoothed metric: mean of last-3 epochs' val directional accuracy; HPO objective = same smoothed value |
-| 6 | FocalLoss `pt` computed from **weighted** CE → mis-calibrated focal factor | `pt` from unweighted CE; class weights applied separately (`ML_CLASS_WEIGHTS`, needed — plain CE collapses to always-FLAT) |
-| 7 | Optuna MedianPruner never pruned (intermediates reported after training) | `epoch_callback` reports val metrics **inside** the epoch loop; `TrialPruned` raised mid-run. Persistent storage: `backend/ml/.optuna/lstm_hpo.sqlite` |
-| 8 | HPO phase 1 saved a champion to disk, **bypassing the promotion gate** | Removed — HPO never touches the champion |
-| 9 | Unpaired promotion gate (champion DA from an old period treated as a fixed binomial baseline) | **Paired McNemar gate**: the champion is re-scored on the challenger's test set (its own means/stds/vocab — ticker indices remapped via `inv_vocab → champion._vocab`; ensemble champions are re-scored as an ensemble). `decide_promotion_paired` = effect size ≥2pp **and** exact two-sided McNemar p<0.05. Unpaired binomial kept only as documented fallback |
-| 10 | Test-time leakage in margin/threshold selection | Margin sweep (when enabled) selects on val only; label threshold tuned on val only |
+| #   | Flaw (pre-rebuild)                                                                                                      | Fix                                                                                                                                                                                                                                                                                                                                                              |
+| --- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | HPO phase 2 selected the label threshold by **test-set** accuracy                                                       | All selection on validation; test logged once, reporting-only                                                                                                                                                                                                                                                                                                    |
+| 2   | `vol_pct` was a **full-history percentile rank** (look-ahead) and inference used a short-window rank (train/serve skew) | `compute_causal_vol_pct` — expanding rank with `min_periods=60`, same helper at train and serve; inference fetch window sized by `PREDICTION_FETCH_LIMIT = max(2100, OHLCV_YEARS×260)`                                                                                                                                                                           |
+| 3   | Fake Sharpe: ±1% label-magnitude proxy, ×252 annualization on 5-day returns, no dates/costs                             | Deleted. `evaluate._strategy_sharpe`: per-window **actual forward log returns**, non-overlapping stride-h windows per ticker, per-date equal-weight portfolio, annualization `√(252/h)`, reported at 0bps and `COST_BPS_ROUND_TRIP=10`bps                                                                                                                        |
+| 4   | No purge/embargo at split boundaries (5-day label overlap)                                                              | 10-day embargo on train before val, val before test                                                                                                                                                                                                                                                                                                              |
+| 5   | Early stopping / HPO objective on single-epoch val accuracy (±1.2pp noise)                                              | Smoothed metric: mean of last-3 epochs' val directional accuracy; HPO objective = same smoothed value                                                                                                                                                                                                                                                            |
+| 6   | FocalLoss `pt` computed from **weighted** CE → mis-calibrated focal factor                                              | `pt` from unweighted CE; class weights applied separately (`ML_CLASS_WEIGHTS`, needed — plain CE collapses to always-FLAT)                                                                                                                                                                                                                                       |
+| 7   | Optuna MedianPruner never pruned (intermediates reported after training)                                                | `epoch_callback` reports val metrics **inside** the epoch loop; `TrialPruned` raised mid-run. Persistent storage: `backend/ml/.optuna/lstm_hpo.sqlite`                                                                                                                                                                                                           |
+| 8   | HPO phase 1 saved a champion to disk, **bypassing the promotion gate**                                                  | Removed — HPO never touches the champion                                                                                                                                                                                                                                                                                                                         |
+| 9   | Unpaired promotion gate (champion DA from an old period treated as a fixed binomial baseline)                           | **Paired McNemar gate**: the champion is re-scored on the challenger's test set (its own means/stds/vocab — ticker indices remapped via `inv_vocab → champion._vocab`; ensemble champions are re-scored as an ensemble). `decide_promotion_paired` = effect size ≥2pp **and** exact two-sided McNemar p<0.05. Unpaired binomial kept only as documented fallback |
+| 10  | Test-time leakage in margin/threshold selection                                                                         | Margin sweep (when enabled) selects on val only; label threshold tuned on val only                                                                                                                                                                                                                                                                               |
 
 Other: the Seed-everything contract (`set_seed`) covers torch/numpy/random per run; scheduler is
 `CosineAnnealingLR(T_max=ML_T_MAX or n_epochs)`; seed-0 model is the registered artifact.
@@ -102,15 +102,15 @@ Other: the Seed-everything contract (`set_seed`) covers torch/numpy/random per r
 
 ## 4. Honest Results (10-year window, ~102 tickers, threshold_mult=2.0)
 
-| Metric | Rebuilt LSTM (5-seed ensemble) | Context |
-| --- | --- | --- |
-| Test directional accuracy | **53.17%** (n_dir=2221, SE ≈ 1.1pp) | Coverage 100%, margin 0 |
-| Per-seed range | 50.5% – 55.8% (mean 52.2% ± 1.0pp) | Seed variance is real — ensemble is the point |
-| HistGradientBoosting baseline (same splits) | 50.83% | `ml/baselines.py`, class_weight-balanced LR: 49.06% |
-| Old champion (pre-rebuild) | 49.95% | Old "51.63%" was test-set-selected |
-| Long-only Sharpe | ~2.85 @ 10bps costs | Real forward returns, stride-5, per-date EW |
-| Long-short Sharpe | ≈ 0 @ 10bps costs | The LS edge does not survive transaction costs |
-| 3-class accuracy | ~3.5% | By design at threshold 2.0 (~73% FLAT labels); abstention-first framing |
+| Metric                                      | Rebuilt LSTM (5-seed ensemble)      | Context                                                                 |
+| ------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
+| Test directional accuracy                   | **53.17%** (n_dir=2221, SE ≈ 1.1pp) | Coverage 100%, margin 0                                                 |
+| Per-seed range                              | 50.5% – 55.8% (mean 52.2% ± 1.0pp)  | Seed variance is real — ensemble is the point                           |
+| HistGradientBoosting baseline (same splits) | 50.83%                              | `ml/baselines.py`, class_weight-balanced LR: 49.06%                     |
+| Old champion (pre-rebuild)                  | 49.95%                              | Old "51.63%" was test-set-selected                                      |
+| Long-only Sharpe                            | ~2.85 @ 10bps costs                 | Real forward returns, stride-5, per-date EW                             |
+| Long-short Sharpe                           | ≈ 0 @ 10bps costs                   | The LS edge does not survive transaction costs                          |
+| 3-class accuracy                            | ~3.5%                               | By design at threshold 2.0 (~73% FLAT labels); abstention-first framing |
 
 Promotion history: the ensemble was promoted via the (then-available) unpaired gate
 (+3.2pp, binomial p<0.05). The **paired McNemar gate is verified end-to-end**: a later challenger
@@ -160,7 +160,7 @@ Promotion history: the ensemble was promoted via the (then-available) unpaired g
 
 - Optuna: Akiba et al., 2019 (TPE + median pruning) — https://optuna.org
 - McNemar test: McNemar, 1947; exact two-sided variant via `math.comb` in `ml/promotion_stats.py`.
-- Focal loss: Lin et al., 2017 — `pt` must come from the *unweighted* softmax probability.
+- Focal loss: Lin et al., 2017 — `pt` must come from the _unweighted_ softmax probability.
 - Sharpe with stride-h non-overlapping holds: annualization `√(252/h)` follows from i.i.d. h-day
   variance scaling; see Lo (2002), "The Statistics of Sharpe Ratios".
 - Kaggle dataset: `jacksoncrow/stock-market-dataset` (US equities + ETFs, 1962–2020 snapshot).

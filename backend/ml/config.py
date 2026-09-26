@@ -559,9 +559,13 @@ class MLConfig:
     # Model architecture — V1 LSTM only. V2 (Conv1D+BiLSTM+Attention+RegimeGate)
     # tested and caused gradient stall — 203k params could never escape uniform init.
     EMBED_DIM: int = int(os.environ.get("ML_EMBED_DIM", "16"))
-    HIDDEN_DIM: int = int(os.environ.get("ML_HIDDEN_DIM", "112"))  # Optuna phase-1 champion HPs (backend/ml/.optuna/best_hps.json)
+    HIDDEN_DIM: int = int(
+        os.environ.get("ML_HIDDEN_DIM", "112")
+    )  # Optuna phase-1 champion HPs (backend/ml/.optuna/best_hps.json)
     N_LAYERS: int = 2  # 1 layer collapsed to majority-class prediction
-    DROPOUT: float = float(os.environ.get("ML_DROPOUT", "0.45"))  # Optuna champion HPs (was 0.535 from the old tiny-data search)
+    DROPOUT: float = float(
+        os.environ.get("ML_DROPOUT", "0.45")
+    )  # Optuna champion HPs (was 0.535 from the old tiny-data search)
     N_CLASSES: int = 3  # DOWN, FLAT, UP
 
     # Training (ML_EPOCHS env override exists for smoke runs)
@@ -573,10 +577,10 @@ class MLConfig:
     )
     # Cosine T_max; None → decay over the full epoch budget (early stopping
     # then strands the model at near-peak LR for its whole life).
-    COSINE_T_MAX: int | None = (
-        int(t) if (t := os.environ.get("ML_T_MAX")) else None
-    )
-    WEIGHT_DECAY: float = float(os.environ.get("ML_WD", "8.046267289217277e-05"))  # Optuna champion HP
+    COSINE_T_MAX: int | None = int(t) if (t := os.environ.get("ML_T_MAX")) else None
+    WEIGHT_DECAY: float = float(
+        os.environ.get("ML_WD", "8.046267289217277e-05")
+    )  # Optuna champion HP
     PATIENCE: int = (
         15  # early stopping after 15 epochs without val_dir_acc improvement (MIN_DELTA=0.5%)
     )

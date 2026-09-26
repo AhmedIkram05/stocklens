@@ -491,9 +491,7 @@ class MLflowManager:
                 margin=margin,
             )
         if members:
-            logger.info(
-                "Champion seed checkpoints saved (ensemble)", extra={"count": len(members)}
-            )
+            logger.info("Champion seed checkpoints saved (ensemble)", extra={"count": len(members)})
 
         # -- Publish to champion S3 bucket if configured --
         champion_s3_uri = os.environ.get("CHAMPION_S3_URI", "")

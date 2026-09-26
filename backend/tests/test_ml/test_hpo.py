@@ -8,7 +8,6 @@ import sys
 import tempfile
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 import optuna
 import pytest
 import torch

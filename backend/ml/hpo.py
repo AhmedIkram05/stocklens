@@ -31,7 +31,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import optuna
 import pandas as pd
 import torch
@@ -224,24 +223,33 @@ async def _prepare_data(threshold_mult: float | None = None) -> dict[str, Any]:
 
     train_loader = DataLoader(
         SequenceDataset(
-            train_data[0], train_data[1], train_data[2],
-            dates=train_data[3], forward_returns=train_data[4],
+            train_data[0],
+            train_data[1],
+            train_data[2],
+            dates=train_data[3],
+            forward_returns=train_data[4],
         ),
         batch_size=ML_CONFIG.BATCH_SIZE,
         shuffle=True,
     )
     val_loader = DataLoader(
         SequenceDataset(
-            val_data[0], val_data[1], val_data[2],
-            dates=val_data[3], forward_returns=val_data[4],
+            val_data[0],
+            val_data[1],
+            val_data[2],
+            dates=val_data[3],
+            forward_returns=val_data[4],
         ),
         batch_size=ML_CONFIG.BATCH_SIZE,
         shuffle=False,
     )
     test_loader = DataLoader(
         SequenceDataset(
-            test_data[0], test_data[1], test_data[2],
-            dates=test_data[3], forward_returns=test_data[4],
+            test_data[0],
+            test_data[1],
+            test_data[2],
+            dates=test_data[3],
+            forward_returns=test_data[4],
         ),
         batch_size=ML_CONFIG.BATCH_SIZE,
         shuffle=False,

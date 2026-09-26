@@ -74,9 +74,7 @@ async def run_baselines() -> dict[str, dict]:
     y_train = train_data[1].astype(int)
 
     baselines = {
-        "logistic_regression": LogisticRegression(
-            max_iter=3000, class_weight="balanced"
-        ),
+        "logistic_regression": LogisticRegression(max_iter=3000, class_weight="balanced"),
         "hist_gradient_boosting": HistGradientBoostingClassifier(
             max_iter=300, learning_rate=0.1, early_stopping=True, random_state=42
         ),
