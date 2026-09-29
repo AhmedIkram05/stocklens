@@ -83,7 +83,7 @@ jobs:
         uses: docker/setup-qemu-action@v3
 
       - name: Download pre-built features-engine wheel
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: features-engine-wheel
           path: wheels
@@ -127,7 +127,7 @@ jobs:
         uses: docker/setup-qemu-action@v3
 
       - name: Download pre-built features-engine wheel
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: features-engine-wheel
           path: wheels
@@ -370,7 +370,7 @@ jobs:
         working-directory: ${{ env.TERRAFORM_DIR }}
 
       - name: Download plan artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: tfplan-${{ github.sha }}
           path: ${{ env.TERRAFORM_DIR }}
