@@ -34,7 +34,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Set up QEMU for ARM64 emulation
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Build features-engine ARM64 wheel
         run: |
@@ -52,7 +52,7 @@ jobs:
           ls -la wheels/wheels/
 
       - name: Upload wheel artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: features-engine-wheel
           path: wheels/
@@ -80,7 +80,7 @@ jobs:
 
       - name: Set up QEMU for ARM64 emulation
         # ADR 009: QEMU required for linux/arm64 builds on x86 runners
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Download pre-built features-engine wheel
         uses: actions/download-artifact@v4
@@ -89,7 +89,7 @@ jobs:
           path: wheels
 
       - name: Build and push ARM64 backend image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: backend
           file: backend/Dockerfile
@@ -124,7 +124,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Set up QEMU for ARM64 emulation
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Download pre-built features-engine wheel
         uses: actions/download-artifact@v4
@@ -133,7 +133,7 @@ jobs:
           path: wheels
 
       - name: Build and push Airflow ARM64 image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: airflow/Dockerfile
@@ -174,7 +174,7 @@ jobs:
           df -h /
 
       - name: Build and push ML training image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: backend/ml
           platforms: linux/amd64
@@ -209,7 +209,7 @@ jobs:
         # SageMaker CreateModel rejects OCI manifest types (both index and
         # single-manifest). Must use Docker V2 media type explicitly.
         # Attestations also use OCI media types, so they must be disabled.
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: backend
           file: backend/sagemaker/Dockerfile.sagemaker
@@ -338,7 +338,7 @@ jobs:
         working-directory: ${{ env.TERRAFORM_DIR }}
 
       - name: Upload plan artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tfplan-${{ github.sha }}
           path: ${{ env.TERRAFORM_DIR }}/tfplan
