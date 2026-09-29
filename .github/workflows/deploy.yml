@@ -52,7 +52,7 @@ jobs:
           ls -la wheels/wheels/
 
       - name: Upload wheel artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: features-engine-wheel
           path: wheels/
@@ -338,7 +338,7 @@ jobs:
         working-directory: ${{ env.TERRAFORM_DIR }}
 
       - name: Upload plan artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tfplan-${{ github.sha }}
           path: ${{ env.TERRAFORM_DIR }}/tfplan
