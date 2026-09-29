@@ -44,7 +44,7 @@
   },
   "devDependencies": {
     "@graphql-codegen/cli": "^7.4.0",
-    "@graphql-codegen/typescript": "^4.1.0",
+    "@graphql-codegen/typescript": "^6.1.0",
     "@graphql-codegen/typescript-operations": "^4.2.0",
     "@testing-library/jest-native": "^5.4.3",
     "@testing-library/react-native": "^14.0.1",
