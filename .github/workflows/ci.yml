@@ -99,7 +99,7 @@ jobs:
         working-directory: backend/ml/features-engine
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
@@ -153,7 +153,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ${{ runner.os }}-host
