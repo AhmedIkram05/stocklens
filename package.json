@@ -57,7 +57,7 @@
     "graphql": "^16.10.0",
     "jest": "^30.5.2",
     "jest-expo": "~54.0.0",
-    "jest-fetch-mock": "^3.0.3",
+    "jest-fetch-mock": "^4.2.0",
     "prettier": "^3.9.5",
     "test-renderer": "^1.1.0",
     "ts-jest": "^29.4.14",
