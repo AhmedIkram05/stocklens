@@ -13,14 +13,58 @@ updates:
     commit-message:
       prefix: 'chore'
       prefix-development: 'chore'
-    # Native module versions are tied to the Expo SDK: each `expo-*` package is
-    # released in lockstep with the SDK, so its version is decided by
-    # `expo/bundledNativeModules.json` (what `npx expo install` resolves
-    # against) rather than by "latest on npm". react must additionally match
-    # react-native-renderer exactly. Patch and minor bumps stay open; majors are
-    # SDK migrations, not dependency updates, and have to go through
-    # `npx expo install --fix` so the whole set moves together.
+    # Native module versions are tied to the Expo SDK. Every package that
+    # `expo/bundledNativeModules.json` pins is released in lockstep with the
+    # SDK, so its version is decided by that file -- what `npx expo install`
+    # resolves against -- not by "latest on npm". These packages declare
+    # `peerDependencies: {expo: '*'}`, so npm reports no conflict when a
+    # bump crosses SDK lines and CI stays green on a tree that cannot work.
+    # Patch and minor bumps stay open; majors are SDK migrations, not
+    # dependency updates, and must go through `npx expo install --fix` so the
+    # whole set moves together.
+    #
+    # The list below is every bundled native module present in package.json,
+    # plus `expo` and `react`/`react-native` (which must additionally match
+    # the bundled react-native renderer). Regenerate it after any SDK change:
+    #   node -e 'const b=require("./node_modules/expo/bundledNativeModules.json");
+    #     const d={...require("./package.json").dependencies,
+    #              ...require("./package.json").devDependencies};
+    #     console.log(Object.keys(b).filter(k=>k in d).sort().join("\n"))'
     ignore:
+      - dependency-name: '@expo/vector-icons'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@testing-library/react-native'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'eslint'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'expo'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'expo-blur'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'expo-camera'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'expo-constants'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'expo-file-system'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'expo-font'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'expo-haptics'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'expo-image-manipulator'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'expo-linear-gradient'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'expo-local-authentication'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'expo-secure-store'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'expo-sqlite'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'expo-status-bar'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'jest-expo'
+        update-types: ['version-update:semver-major']
       - dependency-name: 'react'
         update-types: ['version-update:semver-major']
       - dependency-name: 'react-native'
@@ -32,15 +76,6 @@ updates:
       - dependency-name: 'react-native-screens'
         update-types: ['version-update:semver-major']
       - dependency-name: 'react-native-svg'
-        update-types: ['version-update:semver-major']
-      - dependency-name: '@testing-library/react-native'
-        update-types: ['version-update:semver-major']
-      # SDK 54 ships these on the 14.x / 3.x lines; 57.x is a later SDK.
-      - dependency-name: 'expo-font'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'expo-image-manipulator'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'expo-status-bar'
         update-types: ['version-update:semver-major']
 
   - package-ecosystem: 'github-actions'
