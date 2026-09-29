@@ -89,7 +89,7 @@ jobs:
           path: wheels
 
       - name: Build and push ARM64 backend image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: backend
           file: backend/Dockerfile
@@ -133,7 +133,7 @@ jobs:
           path: wheels
 
       - name: Build and push Airflow ARM64 image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: airflow/Dockerfile
@@ -174,7 +174,7 @@ jobs:
           df -h /
 
       - name: Build and push ML training image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: backend/ml
           platforms: linux/amd64
@@ -209,7 +209,7 @@ jobs:
         # SageMaker CreateModel rejects OCI manifest types (both index and
         # single-manifest). Must use Docker V2 media type explicitly.
         # Attestations also use OCI media types, so they must be disabled.
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: backend
           file: backend/sagemaker/Dockerfile.sagemaker
