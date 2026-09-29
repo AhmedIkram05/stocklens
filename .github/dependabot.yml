@@ -13,6 +13,26 @@ updates:
     commit-message:
       prefix: 'chore'
       prefix-development: 'chore'
+    # React Native's version is tied to the Expo SDK: react must exactly
+    # match react-native-renderer, and Expo pins both (see
+    # node_modules/expo/bundledNativeModules.json). Patch and minor bumps
+    # stay open; majors are SDK migrations, not dependency updates, and have
+    # to go through `expo install` so the whole set moves together.
+    ignore:
+      - dependency-name: 'react'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'react-native'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'react-native-gesture-handler'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'react-native-safe-area-context'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'react-native-screens'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'react-native-svg'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@testing-library/react-native'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: 'github-actions'
     directory: '/'
