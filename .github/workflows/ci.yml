@@ -158,7 +158,7 @@ jobs:
         with:
           shared-key: ${{ runner.os }}-host
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Set up virtual environment
