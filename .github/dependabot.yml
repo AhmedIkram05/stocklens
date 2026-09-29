@@ -13,11 +13,13 @@ updates:
     commit-message:
       prefix: 'chore'
       prefix-development: 'chore'
-    # React Native's version is tied to the Expo SDK: react must exactly
-    # match react-native-renderer, and Expo pins both (see
-    # node_modules/expo/bundledNativeModules.json). Patch and minor bumps
-    # stay open; majors are SDK migrations, not dependency updates, and have
-    # to go through `expo install` so the whole set moves together.
+    # Native module versions are tied to the Expo SDK: each `expo-*` package is
+    # released in lockstep with the SDK, so its version is decided by
+    # `expo/bundledNativeModules.json` (what `npx expo install` resolves
+    # against) rather than by "latest on npm". react must additionally match
+    # react-native-renderer exactly. Patch and minor bumps stay open; majors are
+    # SDK migrations, not dependency updates, and have to go through
+    # `npx expo install --fix` so the whole set moves together.
     ignore:
       - dependency-name: 'react'
         update-types: ['version-update:semver-major']
@@ -32,6 +34,13 @@ updates:
       - dependency-name: 'react-native-svg'
         update-types: ['version-update:semver-major']
       - dependency-name: '@testing-library/react-native'
+        update-types: ['version-update:semver-major']
+      # SDK 54 ships these on the 14.x / 3.x lines; 57.x is a later SDK.
+      - dependency-name: 'expo-font'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'expo-image-manipulator'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'expo-status-bar'
         update-types: ['version-update:semver-major']
 
   - package-ecosystem: 'github-actions'
