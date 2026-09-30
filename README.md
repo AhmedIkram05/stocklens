@@ -35,6 +35,9 @@
   <a href="https://github.com/AhmedIkram05/stocklens/actions/workflows/codeql.yml">
     <img src="https://github.com/AhmedIkram05/stocklens/actions/workflows/codeql.yml/badge.svg" alt="CodeQL">
   </a>
+  <a href="https://github.com/AhmedIkram05/stocklens/actions/workflows/deploy.yml">
+    <img src="https://github.com/AhmedIkram05/stocklens/actions/workflows/deploy.yml/badge.svg" alt="Deploy">
+  </a>
   <a href="https://codecov.io/gh/AhmedIkram05/stocklens">
     <img src="https://codecov.io/gh/AhmedIkram05/stocklens/branch/main/graph/badge.svg" alt="Codecov">
   </a>
