@@ -67,6 +67,11 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Configure AWS credentials (OIDC)
+        # Gated on AWS_DEPLOY_ENABLED: nothing in this job's steps uses AWS
+        # (postgres is a local service container, eval runs on LangSmith +
+        # yfinance), but the OIDC role is currently dead and red-failed the
+        # whole job at this step since July. Unset variable = step skipped.
+        if: vars.AWS_DEPLOY_ENABLED == 'true'
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.ECS_DEPLOY_ROLE_ARN }}
