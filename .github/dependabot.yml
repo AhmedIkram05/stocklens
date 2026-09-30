@@ -13,69 +13,54 @@ updates:
     commit-message:
       prefix: 'chore'
       prefix-development: 'chore'
-    # Native module versions are tied to the Expo SDK. Every package that
+    # Expo SDK-managed packages. Every package that
     # `expo/bundledNativeModules.json` pins is released in lockstep with the
     # SDK, so its version is decided by that file -- what `npx expo install`
     # resolves against -- not by "latest on npm". These packages declare
-    # `peerDependencies: {expo: '*'}`, so npm reports no conflict when a
-    # bump crosses SDK lines and CI stays green on a tree that cannot work.
-    # Patch and minor bumps stay open; majors are SDK migrations, not
-    # dependency updates, and must go through `npx expo install --fix` so the
-    # whole set moves together.
+    # `peerDependencies: {expo: '*'}`, so npm reports no conflict when a bump
+    # crosses SDK lines and CI stays green on a tree that cannot work.
+    # Within-major bumps drift too (e.g. react-native-screens 4.16.0 -> 4.28.0
+    # exceeded the SDK's ~4.16.0 pin and had to be reverted by
+    # `npx expo install --fix`), so ALL updates for these are ignored here;
+    # the whole set moves together via `npx expo install --fix`.
     #
-    # The list below is every bundled native module present in package.json,
-    # plus `expo` and `react`/`react-native` (which must additionally match
-    # the bundled react-native renderer). Regenerate it after any SDK change:
+    # `jest`/`@types/jest` are paired to `jest-expo`'s SDK version (SDK 54
+    # pairs jest-expo 54 with jest ~29.7.0), not to "latest".
+    #
+    # Regenerate the bundled list after any SDK change:
     #   node -e 'const b=require("./node_modules/expo/bundledNativeModules.json");
     #     const d={...require("./package.json").dependencies,
     #              ...require("./package.json").devDependencies};
     #     console.log(Object.keys(b).filter(k=>k in d).sort().join("\n"))'
     ignore:
+      # SDK-managed: all updates go through `npx expo install --fix`.
       - dependency-name: '@expo/vector-icons'
-        update-types: ['version-update:semver-major']
+      - dependency-name: '@types/jest'
+      - dependency-name: 'expo'
+      - dependency-name: 'expo-blur'
+      - dependency-name: 'expo-camera'
+      - dependency-name: 'expo-constants'
+      - dependency-name: 'expo-file-system'
+      - dependency-name: 'expo-font'
+      - dependency-name: 'expo-haptics'
+      - dependency-name: 'expo-image-manipulator'
+      - dependency-name: 'expo-linear-gradient'
+      - dependency-name: 'expo-local-authentication'
+      - dependency-name: 'expo-secure-store'
+      - dependency-name: 'expo-sqlite'
+      - dependency-name: 'expo-status-bar'
+      - dependency-name: 'jest'
+      - dependency-name: 'jest-expo'
+      - dependency-name: 'react'
+      - dependency-name: 'react-native'
+      - dependency-name: 'react-native-gesture-handler'
+      - dependency-name: 'react-native-safe-area-context'
+      - dependency-name: 'react-native-screens'
+      - dependency-name: 'react-native-svg'
+      # Not SDK-managed: majors are migrations, patches/minors stay open.
       - dependency-name: '@testing-library/react-native'
         update-types: ['version-update:semver-major']
       - dependency-name: 'eslint'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'expo'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'expo-blur'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'expo-camera'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'expo-constants'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'expo-file-system'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'expo-font'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'expo-haptics'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'expo-image-manipulator'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'expo-linear-gradient'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'expo-local-authentication'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'expo-secure-store'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'expo-sqlite'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'expo-status-bar'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'jest-expo'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'react'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'react-native'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'react-native-gesture-handler'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'react-native-safe-area-context'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'react-native-screens'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'react-native-svg'
         update-types: ['version-update:semver-major']
 
   - package-ecosystem: 'github-actions'
