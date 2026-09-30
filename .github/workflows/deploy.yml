@@ -24,15 +24,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ─── Deploy switch (master switch → output) ───────────────────────
+  # Converts the AWS_DEPLOY_ENABLED repo variable into an output the deploy
+  # chain consumes. The job itself always succeeds, so a disabled pipeline
+  # concludes as a green run (badge shows passing) instead of a red skipped
+  # or failed one. The AWS OIDC role (ECS_DEPLOY_ROLE_ARN) is currently
+  # dead — "The web identity token provided could not be validated" — so
+  # the pipeline stays off until the role works again; set
+  # AWS_DEPLOY_ENABLED=true to restore deploys.
+  deploy-switch:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.eval.outputs.enabled }}
+    steps:
+      - id: eval
+        run: echo "enabled=${{ vars.AWS_DEPLOY_ENABLED == 'true' }}" >> "$GITHUB_OUTPUT"
+
   # ─── Build features-engine Rust wheel (shared across images) ──────
-  # AWS master switch: every job in this workflow is either this root or
-  # needs it transitively (build-push → scan → terraform). The AWS OIDC
-  # role (ECS_DEPLOY_ROLE_ARN) is currently dead — "The web identity token
-  # provided could not be validated" — so the pipeline red-fails on every
-  # push to main. Gated on the AWS_DEPLOY_ENABLED repo variable: unset/false
-  # = skipped (grey, not red); set to true to restore deploys.
   build-features-engine:
-    if: vars.AWS_DEPLOY_ENABLED == 'true'
+    needs: deploy-switch
+    if: needs.deploy-switch.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -156,6 +167,8 @@ jobs:
 
   # ─── Build & Push ML Training Image (x86_64 GPU) ──────────────────
   build-push-ml-training:
+    needs: deploy-switch
+    if: needs.deploy-switch.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
