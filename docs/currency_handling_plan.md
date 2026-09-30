@@ -140,7 +140,7 @@ fx_rate_to_gbp=1, total_amount_gbp=total_amount;` (legacy rows assumed GBP).
     money display in `HomeScreen`, `PortfolioListScreen`, `PortfolioDetailScreen`,
     `DepositScreen`, `ReceiptDetailsScreen` where it shows holding/transaction values
     with `formatCurrency(value, holding.currency)` so a $ stock shows `$`.
-`ponytail:` aggregate portfolio totals (total market value, free cash, P&L sums)
+    `ponytail:` aggregate portfolio totals (total market value, free cash, P&L sums)
     stay GBP (no currency arg) — they are already GBP-normalized backend-side.
 
 ## Testing Strategy
