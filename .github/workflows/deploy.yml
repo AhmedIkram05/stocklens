@@ -25,7 +25,14 @@ concurrency:
 
 jobs:
   # ─── Build features-engine Rust wheel (shared across images) ──────
+  # AWS master switch: every job in this workflow is either this root or
+  # needs it transitively (build-push → scan → terraform). The AWS OIDC
+  # role (ECS_DEPLOY_ROLE_ARN) is currently dead — "The web identity token
+  # provided could not be validated" — so the pipeline red-fails on every
+  # push to main. Gated on the AWS_DEPLOY_ENABLED repo variable: unset/false
+  # = skipped (grey, not red); set to true to restore deploys.
   build-features-engine:
+    if: vars.AWS_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
