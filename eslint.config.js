@@ -51,6 +51,8 @@ module.exports = [
       'import/no-named-as-default-member': 'off',
       'import/first': 'off',
       'react/jsx-curly-brace-presence': 'off',
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/refs': 'off',
 
       // ── React Native ──
       'react-native/no-raw-text': 'off',
