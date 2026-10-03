@@ -32,10 +32,20 @@ updates:
     #     const d={...require("./package.json").dependencies,
     #              ...require("./package.json").devDependencies};
     #     console.log(Object.keys(b).filter(k=>k in d).sort().join("\n"))'
+    # Keep the hand-maintained entries below that list intact -- the command
+    # only knows about bundledNativeModules.json, so anything the SDK pins
+    # some other way has to be added by hand.
     ignore:
       # SDK-managed: all updates go through `npx expo install --fix`.
       - dependency-name: '@expo/vector-icons'
       - dependency-name: '@types/jest'
+      # SDK-managed but NOT in `expo/bundledNativeModules.json`, so the
+      # regeneration command above will not emit it -- `expo@54` declares it
+      # as a direct dependency instead. Its version tracks the SDK: 54 wants
+      # ~54.0.12, 57 wants ~57.0.21. Letting it float installs the preset for
+      # a different SDK, which pulls in `babel-plugin-react-compiler` and
+      # breaks every React Native jest mock (see #233).
+      - dependency-name: 'babel-preset-expo'
       - dependency-name: 'expo'
       - dependency-name: 'expo-blur'
       - dependency-name: 'expo-camera'
