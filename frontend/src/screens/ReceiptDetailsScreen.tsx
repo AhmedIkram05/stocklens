@@ -8,19 +8,14 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
-  TextInput,
   StyleSheet,
   Alert,
   ScrollView,
-  Modal,
   TouchableOpacity,
-  FlatList,
-  ActivityIndicator,
   RefreshControl,
 } from 'react-native';
 import type { TextStyle, ViewStyle } from 'react-native';
 import ScreenContainer from '../components/ScreenContainer';
-import PageHeader from '../components/PageHeader';
 import BackButton from '../components/BackButton';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,7 +35,7 @@ import { formatCurrencyRounded } from '../utils/formatters';
 type ReceiptDetailsRouteProp = RouteProp<RootStackParamList, 'ReceiptDetails'>;
 
 import { STOCK_PRESETS } from '../services/stockPresets';
-import { PERIOD_OPTIONS, periodToYears, periodLabel } from '../constants/periods';
+import { periodToYears, periodLabel } from '../constants/periods';
 
 import { subscribe, emit } from '../services/eventBus';
 import {
@@ -49,10 +44,14 @@ import {
   getHistoricalCAGRForPeriod,
 } from '../services/projectionService';
 import { formatCurrencyGBP, formatRelativeDate } from '../utils/formatters';
-import YearSelector from '../components/YearSelector';
 import StockCard from '../components/StockCard';
 import ReceiptCard from '../components/ReceiptCard';
-import Carousel from '../components/Carousel';
+import ProjectionCarouselSection from '../components/ProjectionCarouselSection';
+import EditValueModal from '../components/EditValueModal';
+import CategoryPickerModal from '../components/CategoryPickerModal';
+import DepositModal from '../components/DepositModal';
+import ReceiptMetaPanel from '../components/ReceiptMetaPanel';
+import ReceiptItemsCard from '../components/ReceiptItemsCard';
 
 import type { SourceBadgeKey } from '../components/ReceiptCard';
 
@@ -62,6 +61,17 @@ const SOURCE_BADGE: Record<SourceBadgeKey, { label: string; color: string }> = {
   degraded: { label: 'Low Quality', color: '#f97316' },
   failed: { label: 'Failed', color: '#ef4444' },
 };
+
+/** Projected value of `amount` for each stock preset over `period`. */
+function buildInvestmentOptions(totalAmount: number, period: string) {
+  const yrs = periodToYears(period);
+  return STOCK_PRESETS.map((stock) => {
+    const futureValue = totalAmount * Math.pow(1 + stock.returnRate, yrs);
+    const gain = futureValue - totalAmount;
+    const percentReturn = (futureValue / totalAmount - 1) * 100;
+    return { ...stock, futureValue, gain, percentReturn };
+  });
+}
 
 /** Receipt details and projection screen. */
 export default function ReceiptDetailsScreen() {
@@ -239,37 +249,15 @@ export default function ReceiptDetailsScreen() {
     useBreakpoint();
   const { theme } = useTheme();
 
-  const investmentOptions = useMemo(() => {
-    const yrs = periodToYears(selectedYears);
-    return STOCK_PRESETS.map((stock) => {
-      const futureValue = totalAmount * Math.pow(1 + stock.returnRate, yrs);
-      const gain = futureValue - totalAmount;
-      const percentReturn = (futureValue / totalAmount - 1) * 100;
+  const investmentOptions = useMemo(
+    () => buildInvestmentOptions(totalAmount, selectedYears),
+    [selectedYears, totalAmount],
+  );
 
-      return {
-        ...stock,
-        futureValue,
-        gain,
-        percentReturn,
-      };
-    });
-  }, [selectedYears, totalAmount]);
-
-  const futureInvestmentOptions = useMemo(() => {
-    const yrs = periodToYears(selectedFutureYears);
-    return STOCK_PRESETS.map((stock) => {
-      const futureValue = totalAmount * Math.pow(1 + stock.returnRate, yrs);
-      const gain = futureValue - totalAmount;
-      const percentReturn = (futureValue / totalAmount - 1) * 100;
-
-      return {
-        ...stock,
-        futureValue,
-        gain,
-        percentReturn,
-      };
-    });
-  }, [selectedFutureYears, totalAmount]);
+  const futureInvestmentOptions = useMemo(
+    () => buildInvestmentOptions(totalAmount, selectedFutureYears),
+    [selectedFutureYears, totalAmount],
+  );
 
   // historical CAGRs per ticker and period label (e.g. { NVDA: {"5Y": 0.18, "3Y": 0.22} })
   const [historicalRates, setHistoricalRates] = useState<Record<string, Record<string, number>>>(
@@ -466,8 +454,6 @@ export default function ReceiptDetailsScreen() {
 
   const formattedAmount = formatCurrencyGBP(totalAmount || 0);
 
-  const formattedEditableAmount = formatCurrencyGBP(totalAmount || 0);
-
   const formattedYearsLabel = periodLabel(selectedYears);
   const formattedFutureYearsLabel = periodLabel(selectedFutureYears);
 
@@ -642,7 +628,7 @@ export default function ReceiptDetailsScreen() {
             <View style={{ width: '100%' }}>
               <ReceiptCard
                 image={image}
-                amount={formattedEditableAmount}
+                amount={formattedAmount}
                 label={formatRelativeDate(date)}
                 time={new Date(date).toLocaleString()}
                 onPress={() => {}}
@@ -652,110 +638,54 @@ export default function ReceiptDetailsScreen() {
             </View>
 
             {/* Total Amount — tappable to edit */}
-            <TouchableOpacity
-              style={[styles.metaPanel, { backgroundColor: theme.surface }]}
+            <ReceiptMetaPanel
+              label="Total Amount"
+              value={formatCurrencyGBP(totalAmount || 0)}
               onPress={() => {
                 setAmountEditValue(totalAmount > 0 ? totalAmount.toFixed(2) : '');
                 setAmountModalVisible(true);
               }}
-              activeOpacity={0.7}
               accessibilityLabel="Edit total amount"
-            >
-              <Text style={[styles.metaLabel, { color: theme.textSecondary }]}>Total Amount</Text>
-              <View style={styles.categoryValueTouch}>
-                <Text style={[styles.metaValue, { color: theme.text }]}>
-                  {formatCurrencyGBP(totalAmount || 0)}
-                </Text>
-                <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
-              </View>
-            </TouchableOpacity>
+            />
 
             {/* Date — tappable to edit */}
-            <TouchableOpacity
-              style={[styles.metaPanel, { backgroundColor: theme.surface }]}
+            <ReceiptMetaPanel
+              label="Date"
+              value={formatRelativeDate(receipt?.transaction_date ?? date)}
               onPress={() => {
                 setDateEditValue(receipt?.transaction_date ?? date ?? '');
                 setDateModalVisible(true);
               }}
-              activeOpacity={0.7}
               accessibilityLabel="Edit transaction date"
-            >
-              <Text style={[styles.metaLabel, { color: theme.textSecondary }]}>Date</Text>
-              <View style={styles.categoryValueTouch}>
-                <Text style={[styles.metaValue, { color: theme.text }]}>
-                  {formatRelativeDate(receipt?.transaction_date ?? date)}
-                </Text>
-                <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
-              </View>
-            </TouchableOpacity>
+            />
 
             {merchantName && (
-              <TouchableOpacity
-                style={[styles.metaPanel, { backgroundColor: theme.surface }]}
+              <ReceiptMetaPanel
+                label="Merchant"
+                value={merchantName}
                 onPress={() => {
                   setMerchantEditValue(merchantName);
                   setMerchantModalVisible(true);
                 }}
-                activeOpacity={0.7}
                 accessibilityLabel="Edit merchant name"
-              >
-                <Text style={[styles.metaLabel, { color: theme.textSecondary }]}>Merchant</Text>
-                <View style={styles.categoryValueTouch}>
-                  <Text style={[styles.metaValue, { color: theme.text }]}>{merchantName}</Text>
-                  <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
-                </View>
-              </TouchableOpacity>
+              />
             )}
 
             {lineItems.length > 0 && (
-              <View style={[styles.itemsPanel, { backgroundColor: theme.surface }]}>
-                <View style={styles.itemHeaderRow}>
-                  <Text style={[styles.cascadeTitle, { color: theme.text }]}>
-                    Items ({lineItems.length})
-                  </Text>
-                  <Text style={[styles.itemSubtotal, { color: theme.text }]}>
-                    {formatCurrencyGBP(itemsSubtotal)}
-                  </Text>
-                </View>
-                {lineItems.map((it, i) => (
-                  <View key={i} style={styles.itemRow}>
-                    <Text style={[styles.itemName, { color: theme.text }]}>
-                      {it.name ?? it.description ?? 'Item'}
-                    </Text>
-                    <Text style={[styles.itemPrice, { color: theme.text }]}>
-                      {formatCurrencyGBP(it.price ?? it.amount ?? 0)}
-                    </Text>
-                  </View>
-                ))}
-                {totalMismatch && (
-                  <View
-                    style={[styles.totalMismatchBox, { backgroundColor: brandColors.red + '14' }]}
-                  >
-                    <Ionicons name="warning" size={16} color={brandColors.red} />
-                    <Text style={[styles.totalMismatchText, { color: brandColors.red }]}>
-                      Items total {formatCurrencyGBP(itemsSubtotal)} but receipt says{' '}
-                      {formatCurrencyGBP(totalAmount)}. The scanned total may be incorrect — tap
-                      Total Amount above to fix it.
-                    </Text>
-                  </View>
-                )}
-              </View>
+              <ReceiptItemsCard
+                items={lineItems}
+                subtotal={itemsSubtotal}
+                totalAmount={totalAmount}
+                mismatch={totalMismatch}
+              />
             )}
 
-            <TouchableOpacity
-              style={[styles.metaPanel, { backgroundColor: theme.surface }]}
+            <ReceiptMetaPanel
+              label="Category"
+              value={categoryName ?? 'Uncategorised'}
               onPress={() => setCategoryModalVisible(true)}
-              activeOpacity={0.7}
               accessibilityLabel="Edit category"
-            >
-              <Text style={[styles.metaLabel, { color: theme.textSecondary }]}>Category</Text>
-              <View style={styles.categoryValueTouch}>
-                <Text style={[styles.metaValue, { color: theme.text }]}>
-                  {categoryName ?? 'Uncategorised'}
-                </Text>
-                <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
-              </View>
-            </TouchableOpacity>
+            />
 
             {source && (
               <View style={[styles.cascadePanel, { backgroundColor: theme.surface }]}>
@@ -827,75 +757,34 @@ export default function ReceiptDetailsScreen() {
             {/* Spacer before investment projections */}
             <View style={{ height: spacing.xl }} />
 
-            <PageHeader>
-              <View>
-                <Text style={[styles.projectionTitle, { color: theme.text }]}>
-                  Your {formattedAmount} could have been...
-                </Text>
-              </View>
-              <Text style={[styles.projectionSubtitle, { color: theme.textSecondary }]}>
-                If invested {formattedYearsLabel} ago
-              </Text>
-            </PageHeader>
-
-            <YearSelector
-              options={[...PERIOD_OPTIONS]}
-              value={selectedYears}
-              onChange={setSelectedYears}
+            <ProjectionCarouselSection
+              title={`Your ${formattedAmount} could have been...`}
+              subtitle={`If invested ${formattedYearsLabel} ago`}
+              periodValue={selectedYears}
+              onPeriodChange={setSelectedYears}
               compact={isSmallPhone}
-              style={{ marginBottom: isSmallPhone ? spacing.xl : spacing.xl + spacing.sm }}
-            />
-
-            <View style={styles.carouselHeader}>
-              <Text style={[styles.carouselTitle, { color: theme.text }]}>Investment Outlook</Text>
-              <Text style={[styles.carouselSubtitle, { color: theme.textSecondary }]}>
-                Swipe to explore different stocks
-              </Text>
-            </View>
-
-            <Carousel
+              carouselTitle="Investment Outlook"
+              carouselSubtitle="Swipe to explore different stocks"
               data={investmentOptions}
               keyExtractor={(item: any) => item.ticker}
-              snapInterval={snapInterval}
-              contentContainerStyle={styles.carousel}
               renderItem={({ item, index }) =>
                 renderStockCard(item, index === investmentOptions.length - 1, selectedYears, 'past')
               }
+              snapInterval={snapInterval}
             />
 
             <View style={[styles.sectionSpacing, { height: sectionVerticalSpacing }]} />
 
-            <PageHeader>
-              <View>
-                <Text style={[styles.futureTitle, { color: theme.text }]}>
-                  Your {formattedAmount} could become...
-                </Text>
-              </View>
-              <Text style={[styles.futureSubtitle, { color: theme.textSecondary }]}>
-                If invested today for {formattedFutureYearsLabel}
-              </Text>
-            </PageHeader>
-
-            <YearSelector
-              options={[...PERIOD_OPTIONS]}
-              value={selectedFutureYears}
-              onChange={setSelectedFutureYears}
+            <ProjectionCarouselSection
+              title={`Your ${formattedAmount} could become...`}
+              subtitle={`If invested today for ${formattedFutureYearsLabel}`}
+              periodValue={selectedFutureYears}
+              onPeriodChange={setSelectedFutureYears}
               compact={isSmallPhone}
-              style={{ marginBottom: isSmallPhone ? spacing.xl : spacing.xl + spacing.sm }}
-            />
-
-            <View style={styles.carouselHeader}>
-              <Text style={[styles.carouselTitle, { color: theme.text }]}>Potential Growth</Text>
-              <Text style={[styles.carouselSubtitle, { color: theme.textSecondary }]}>
-                LSTM badge = model's predicted direction + confidence (5 trading days)
-              </Text>
-            </View>
-
-            <Carousel
+              carouselTitle="Potential Growth"
+              carouselSubtitle="LSTM badge = model's predicted direction + confidence (5 trading days)"
               data={futureInvestmentOptions}
               keyExtractor={(item: any) => `future-${item.ticker}`}
-              snapInterval={snapInterval}
-              contentContainerStyle={styles.carousel}
               renderItem={({ item, index }) =>
                 renderStockCard(
                   item,
@@ -904,6 +793,7 @@ export default function ReceiptDetailsScreen() {
                   'future',
                 )
               }
+              snapInterval={snapInterval}
             />
           </>
         </ResponsiveContainer>
@@ -986,271 +876,58 @@ export default function ReceiptDetailsScreen() {
         </View>
       </ScrollView>
 
-      <Modal
+      <DepositModal
         visible={depositModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setDepositModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.modalTitle2, { color: theme.text }]}>
-              Deposit {formattedAmount} into…
-            </Text>
+        formattedAmount={formattedAmount}
+        portfolios={portfolioList}
+        loading={portfoliosLoading}
+        depositingPid={depositingPid}
+        onSelectPortfolio={handleSelectPortfolio}
+        onClose={() => setDepositModalVisible(false)}
+      />
 
-            {portfoliosLoading ? (
-              <View style={styles.modalLoading}>
-                <ActivityIndicator size="large" color={theme.primary} />
-              </View>
-            ) : portfolioList.length === 0 ? (
-              <View style={styles.modalLoading}>
-                <Text style={[{ color: theme.textSecondary }]}>
-                  No portfolios yet. Create one first.
-                </Text>
-              </View>
-            ) : (
-              <FlatList
-                data={portfolioList}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => {
-                  const isProcessing = depositingPid === item.id;
-                  return (
-                    <TouchableOpacity
-                      style={[styles.modalPortfolioItem, { backgroundColor: theme.background }]}
-                      onPress={() => handleSelectPortfolio(item.id)}
-                      disabled={depositingPid !== null}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.modalPortfolioName, { color: theme.text }]}>
-                        {item.name}
-                      </Text>
-                      {isProcessing ? (
-                        <ActivityIndicator size="small" color={theme.primary} />
-                      ) : (
-                        <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
-                      )}
-                    </TouchableOpacity>
-                  );
-                }}
-              />
-            )}
-
-            <TouchableOpacity
-              style={[styles.modalCloseBtn, { backgroundColor: 'transparent' }]}
-              onPress={() => setDepositModalVisible(false)}
-            >
-              <Text style={[styles.modalCloseText, { color: theme.textSecondary }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
+      <CategoryPickerModal
         visible={categoryModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setCategoryModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.modalTitle2, { color: theme.text }]}>Select category</Text>
+        categories={categories}
+        selectedCategoryId={receipt?.category_id ?? null}
+        saving={categorySaving}
+        onSelectCategory={handleSelectCategory}
+        onClose={() => setCategoryModalVisible(false)}
+      />
 
-            {categorySaving ? (
-              <View style={styles.modalLoading}>
-                <ActivityIndicator size="large" color={theme.primary} />
-              </View>
-            ) : (
-              <FlatList
-                data={categories}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={[styles.modalPortfolioItem, { backgroundColor: theme.background }]}
-                    onPress={() => handleSelectCategory(item.id)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.modalPortfolioName, { color: theme.text }]}>
-                      {item.name}
-                    </Text>
-                    {item.id === (receipt?.category_id ?? null) && (
-                      <Ionicons name="checkmark" size={18} color={theme.primary} />
-                    )}
-                  </TouchableOpacity>
-                )}
-              />
-            )}
-
-            <TouchableOpacity
-              style={[styles.modalCloseBtn, { backgroundColor: 'transparent' }]}
-              onPress={() => setCategoryModalVisible(false)}
-            >
-              <Text style={[styles.modalCloseText, { color: theme.textSecondary }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
+      <EditValueModal
         visible={merchantModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setMerchantModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.modalTitle2, { color: theme.text }]}>Edit merchant name</Text>
+        title="Edit merchant name"
+        value={merchantEditValue}
+        onChangeText={setMerchantEditValue}
+        onSave={handleUpdateMerchant}
+        onClose={() => setMerchantModalVisible(false)}
+        saving={merchantSaving}
+        placeholder="Enter merchant name"
+      />
 
-            {merchantSaving ? (
-              <View style={styles.modalLoading}>
-                <ActivityIndicator size="large" color={theme.primary} />
-              </View>
-            ) : (
-              <>
-                <TextInput
-                  style={[
-                    styles.merchantInput,
-                    {
-                      backgroundColor: theme.background,
-                      color: theme.text,
-                      borderColor: theme.textSecondary + '40',
-                    },
-                  ]}
-                  value={merchantEditValue}
-                  onChangeText={setMerchantEditValue}
-                  placeholder="Enter merchant name"
-                  placeholderTextColor={theme.textSecondary}
-                  autoFocus
-                />
-                <TouchableOpacity
-                  style={[styles.modalSaveBtn, { backgroundColor: theme.primary }]}
-                  onPress={handleUpdateMerchant}
-                  activeOpacity={0.8}
-                >
-                  <Text style={{ color: '#fff', ...typography.button, textAlign: 'center' }}>
-                    Save
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
-
-            <TouchableOpacity
-              style={[styles.modalCloseBtn, { backgroundColor: 'transparent' }]}
-              onPress={() => setMerchantModalVisible(false)}
-            >
-              <Text style={[styles.modalCloseText, { color: theme.textSecondary }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Total Amount edit modal */}
-      <Modal
+      <EditValueModal
         visible={amountModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setAmountModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.modalTitle2, { color: theme.text }]}>Edit total amount</Text>
+        title="Edit total amount"
+        value={amountEditValue}
+        onChangeText={setAmountEditValue}
+        onSave={handleUpdateAmount}
+        onClose={() => setAmountModalVisible(false)}
+        saving={amountSaving}
+        placeholder="0.00"
+        keyboardType="decimal-pad"
+      />
 
-            {amountSaving ? (
-              <View style={styles.modalLoading}>
-                <ActivityIndicator size="large" color={theme.primary} />
-              </View>
-            ) : (
-              <>
-                <TextInput
-                  style={[
-                    styles.merchantInput,
-                    {
-                      backgroundColor: theme.background,
-                      color: theme.text,
-                      borderColor: theme.textSecondary + '40',
-                    },
-                  ]}
-                  value={amountEditValue}
-                  onChangeText={setAmountEditValue}
-                  placeholder="0.00"
-                  placeholderTextColor={theme.textSecondary}
-                  keyboardType="decimal-pad"
-                  autoFocus
-                />
-                <TouchableOpacity
-                  style={[styles.modalSaveBtn, { backgroundColor: theme.primary }]}
-                  onPress={handleUpdateAmount}
-                  activeOpacity={0.8}
-                >
-                  <Text style={{ color: '#fff', ...typography.button, textAlign: 'center' }}>
-                    Save
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
-
-            <TouchableOpacity
-              style={[styles.modalCloseBtn, { backgroundColor: 'transparent' }]}
-              onPress={() => setAmountModalVisible(false)}
-            >
-              <Text style={[styles.modalCloseText, { color: theme.textSecondary }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Date edit modal */}
-      <Modal
+      <EditValueModal
         visible={dateModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setDateModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.modalTitle2, { color: theme.text }]}>Edit transaction date</Text>
-
-            {dateSaving ? (
-              <View style={styles.modalLoading}>
-                <ActivityIndicator size="large" color={theme.primary} />
-              </View>
-            ) : (
-              <>
-                <TextInput
-                  style={[
-                    styles.merchantInput,
-                    {
-                      backgroundColor: theme.background,
-                      color: theme.text,
-                      borderColor: theme.textSecondary + '40',
-                    },
-                  ]}
-                  value={dateEditValue}
-                  onChangeText={setDateEditValue}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={theme.textSecondary}
-                  autoFocus
-                />
-                <TouchableOpacity
-                  style={[styles.modalSaveBtn, { backgroundColor: theme.primary }]}
-                  onPress={handleUpdateDate}
-                  activeOpacity={0.8}
-                >
-                  <Text style={{ color: '#fff', ...typography.button, textAlign: 'center' }}>
-                    Save
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
-
-            <TouchableOpacity
-              style={[styles.modalCloseBtn, { backgroundColor: 'transparent' }]}
-              onPress={() => setDateModalVisible(false)}
-            >
-              <Text style={[styles.modalCloseText, { color: theme.textSecondary }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+        title="Edit transaction date"
+        value={dateEditValue}
+        onChangeText={setDateEditValue}
+        onSave={handleUpdateDate}
+        onClose={() => setDateModalVisible(false)}
+        saving={dateSaving}
+        placeholder="YYYY-MM-DD"
+      />
     </ScreenContainer>
   );
 }
@@ -1261,44 +938,11 @@ type Styles = {
   contentCompact: ViewStyle;
   headerRow: ViewStyle;
   headerRowCompact: ViewStyle;
-  projectionTitle: TextStyle;
-  projectionSubtitle: TextStyle;
-  carouselHeader: ViewStyle;
-  carouselTitle: TextStyle;
-  carouselSubtitle: TextStyle;
-  carousel: ViewStyle;
   sectionSpacing: ViewStyle;
-  futureTitle: TextStyle;
-  futureSubtitle: TextStyle;
-  stockCardLast: ViewStyle;
-  stockCardHeader: ViewStyle;
-  stockName: TextStyle;
-  stockTicker: TextStyle;
-  stockValueContainer: ViewStyle;
-  stockValue: TextStyle;
-  stockValueCaption: TextStyle;
-  divider: ViewStyle;
-  stockFooter: ViewStyle;
-  stockFooterItem: ViewStyle;
-  footerLabel: TextStyle;
-  footerValue: TextStyle;
-  verticalDivider: ViewStyle;
   warningBox: ViewStyle;
   warningBoxCompact: ViewStyle;
   cascadePanel: ViewStyle;
   cascadeTitle: TextStyle;
-  metaPanel: ViewStyle;
-  metaLabel: TextStyle;
-  metaValue: TextStyle;
-  categoryValueTouch: ViewStyle;
-  itemsPanel: ViewStyle;
-  itemRow: ViewStyle;
-  itemName: TextStyle;
-  itemPrice: TextStyle;
-  itemHeaderRow: ViewStyle;
-  itemSubtotal: TextStyle;
-  totalMismatchBox: ViewStyle;
-  totalMismatchText: TextStyle;
   cascadeRow: ViewStyle;
   cascadeLabel: TextStyle;
   cascadeValue: TextStyle;
@@ -1311,16 +955,6 @@ type Styles = {
   warningIcon: ViewStyle;
   warningText: TextStyle;
   depositButton: ViewStyle;
-  modalOverlay: ViewStyle;
-  modalCard: ViewStyle;
-  modalTitle2: TextStyle;
-  modalPortfolioItem: ViewStyle;
-  modalPortfolioName: TextStyle;
-  modalLoading: ViewStyle;
-  modalCloseBtn: ViewStyle;
-  modalCloseText: TextStyle;
-  merchantInput: TextStyle;
-  modalSaveBtn: ViewStyle;
 };
 
 // Stylesheet
@@ -1343,88 +977,8 @@ const styles = StyleSheet.create<Styles>({
     marginTop: spacing.sm,
     marginBottom: spacing.md,
   },
-  projectionTitle: {
-    ...typography.sectionTitle,
-    marginBottom: spacing.sm,
-  },
-  projectionSubtitle: {
-    ...typography.body,
-    opacity: 0.7,
-  },
-  carouselHeader: {
-    marginBottom: spacing.md,
-  },
-  carouselTitle: {
-    ...typography.bodyStrong,
-  },
-  carouselSubtitle: {
-    ...typography.caption,
-    marginTop: spacing.xs,
-  },
-  carousel: {
-    paddingBottom: spacing.md,
-  },
   sectionSpacing: {
     height: spacing.xxl,
-  },
-  futureTitle: {
-    ...typography.sectionTitle,
-    marginBottom: spacing.sm,
-  },
-  futureSubtitle: {
-    ...typography.body,
-    opacity: 0.7,
-  },
-  stockCardLast: {
-    marginRight: 0,
-  },
-  stockCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  stockName: {
-    ...typography.bodyStrong,
-  },
-  stockTicker: {
-    ...typography.captionStrong,
-    color: brandColors.blue,
-  },
-  stockValueContainer: {
-    alignItems: 'flex-start',
-    marginBottom: spacing.md,
-  },
-  stockValue: {
-    ...typography.sectionTitle,
-  },
-  stockValueCaption: {
-    ...typography.caption,
-    marginTop: spacing.xs,
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    marginBottom: spacing.md,
-  },
-  stockFooter: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    justifyContent: 'space-between',
-  },
-  stockFooterItem: {
-    flex: 1,
-  },
-  footerLabel: {
-    ...typography.overline,
-    marginBottom: spacing.sm,
-  },
-  footerValue: {
-    ...typography.metricSm,
-    color: brandColors.green,
-  },
-  verticalDivider: {
-    width: 1,
-    marginHorizontal: spacing.md,
   },
   cascadePanel: {
     borderRadius: radii.md,
@@ -1434,68 +988,6 @@ const styles = StyleSheet.create<Styles>({
   cascadeTitle: {
     ...typography.sectionTitle,
     marginBottom: spacing.md,
-  },
-  metaPanel: {
-    borderRadius: radii.md,
-    padding: spacing.md,
-    marginTop: spacing.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  metaLabel: {
-    ...typography.body,
-  },
-  metaValue: {
-    ...typography.bodyStrong,
-  },
-  categoryValueTouch: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  itemsPanel: {
-    borderRadius: radii.md,
-    padding: spacing.md,
-    marginTop: spacing.md,
-  },
-  itemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(0,0,0,0.08)',
-  },
-  itemName: {
-    ...typography.body,
-    flex: 1,
-    marginRight: spacing.sm,
-  },
-  itemPrice: {
-    ...typography.bodyStrong,
-  },
-  itemHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  itemSubtotal: {
-    ...typography.bodyStrong,
-  },
-  totalMismatchBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-    padding: spacing.sm,
-    borderRadius: radii.sm,
-  },
-  totalMismatchText: {
-    ...typography.caption,
-    flex: 1,
-    lineHeight: 18,
   },
   cascadeRow: {
     flexDirection: 'row',
@@ -1564,58 +1056,5 @@ const styles = StyleSheet.create<Styles>({
     borderRadius: radii.md,
     paddingVertical: spacing.md + 2,
     marginTop: spacing.xl,
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: spacing.lg,
-  },
-  modalCard: {
-    borderRadius: radii.lg,
-    padding: spacing.lg,
-    maxHeight: '60%',
-  },
-  modalTitle2: {
-    ...typography.sectionTitle,
-    marginBottom: spacing.lg,
-    textAlign: 'center',
-  },
-  modalPortfolioItem: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-    borderRadius: radii.md,
-    marginBottom: spacing.sm,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  modalPortfolioName: {
-    ...typography.bodyStrong,
-  },
-  modalLoading: {
-    paddingVertical: spacing.xl,
-    alignItems: 'center',
-  },
-  modalCloseBtn: {
-    alignSelf: 'center',
-    marginTop: spacing.lg,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xl,
-  },
-  modalCloseText: {
-    ...typography.button,
-  },
-  merchantInput: {
-    borderWidth: 1,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    fontSize: 16,
-    marginBottom: spacing.md,
-  },
-  modalSaveBtn: {
-    borderRadius: radii.md,
-    paddingVertical: spacing.md + 2,
-    marginBottom: spacing.sm,
   },
 });
