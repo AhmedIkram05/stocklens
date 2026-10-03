@@ -227,6 +227,34 @@ jobs:
             exit "$PYTEST_EXIT"
           fi
 
+  airflow:
+    name: Airflow DAG Tests
+    runs-on: ubuntu-latest
+    # No services: the DAG suite parses the DAG and stubs the postgres
+    # connection, so it needs neither postgres nor redis. Airflow and its
+    # providers are too heavy for the backend venv (which is uv-synced from
+    # backend/pyproject.toml), hence a separate job rather than a new extra.
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Set up virtual environment
+        run: |
+          python -m venv venv
+          ./venv/bin/python -m pip install --upgrade pip
+      - name: DAG tests
+        env:
+          VIRTUAL_ENV: ${{ github.workspace }}/venv
+          UV_LINK_MODE: copy
+        run: |
+          uv pip install -r airflow/requirements.txt pytest
+          ./venv/bin/python -m pytest airflow/dags/test_dag.py -v
+
   docker:
     name: Docker Validation
     runs-on: ubuntu-latest
