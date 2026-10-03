@@ -1,0 +1,16 @@
+# Coverage config for the Airflow DAG suite.
+#
+# Selected via COVERAGE_RCFILE=airflow/coverage.rc in the CI airflow job,
+# because coverage.py only reads config from the working directory and that job
+# runs from the repo root. Kept to [run] only -- thresholds live in the other
+# coverage configs, and this job has no numeric gate.
+#
+# The omit rules mirror backend/pyproject.toml and frontend/jest.config.js:
+# test files never count toward reported coverage. Without them test_dag.py
+# (50 statements, 100% covered) would report 47% for a DAG that is really at
+# 28%, and the number would barely move as real DAG coverage improves.
+[run]
+source = airflow/dags
+omit =
+    airflow/dags/test_*.py
+    airflow/dags/conftest.py

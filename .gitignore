@@ -37,6 +37,7 @@ ios/.xcode.env.local
 
 # ─── Testing & Coverage ──────────────────────────────────────────────────────
 coverage/
+.coverage
 .nyc_output/
 *.lcov
 
