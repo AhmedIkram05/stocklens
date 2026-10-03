@@ -64,11 +64,14 @@ jobs:
           test_exit=$?
           set -e
           echo "FE_TEST_EXIT=$test_exit" >> "$GITHUB_ENV"
+      - name: Verify frontend coverage report exists
+        run: test -f frontend/coverage/lcov.info
       - uses: codecov/codecov-action@v7
         if: always()
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage/lcov.info
+          files: ./frontend/coverage/lcov.info
+          flags: frontend
           fail_ci_if_error: true
       - name: Check frontend test status
         if: always()
@@ -252,8 +255,20 @@ jobs:
           VIRTUAL_ENV: ${{ github.workspace }}/venv
           UV_LINK_MODE: copy
         run: |
-          uv pip install -r airflow/requirements.txt pytest
-          ./venv/bin/python -m pytest airflow/dags/test_dag.py -v
+          uv pip install -r airflow/requirements.txt pytest pytest-cov
+          COVERAGE_RCFILE=airflow/coverage.rc \
+            ./venv/bin/python -m pytest airflow/dags/test_dag.py -v \
+            --cov=airflow/dags \
+            --cov-report=lcov:${{ github.workspace }}/airflow/coverage/lcov.info
+      - name: Verify airflow coverage report exists
+        run: test -f airflow/coverage/lcov.info
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./airflow/coverage/lcov.info
+          flags: airflow
+          fail_ci_if_error: true
 
   docker:
     name: Docker Validation
