@@ -63,7 +63,7 @@ def _pg_dsn() -> str:
     """Asyncpg DSN for the stocklens DB from the postgres_default connection."""
     pg_conn = _pg_conn()
     return (
-        f"postgresql://{pg_conn.login}:{pg_conn.password}"
+        f"postgresql://{pg_conn.login}:{pg_conn.password or ''}"
         f"@{pg_conn.host}:{pg_conn.port}/{pg_conn.schema or 'stocklens'}"
     )
 

@@ -14,9 +14,3 @@ Key modules:
     - service.py: AgentService singleton with two-tier persistence
     - router.py: FastAPI endpoints (Round 3)
 """
-
-from __future__ import annotations
-
-from src.agent.service import agent_service
-
-__all__ = ["agent_service"]

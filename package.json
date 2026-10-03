@@ -16,8 +16,8 @@
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
     "@react-navigation/bottom-tabs": "^7.19.2",
-    "@react-navigation/native": "^7.4.1",
     "@react-navigation/stack": "^7.12.0",
+    "@react-navigation/stack": "^7.11.2",
     "expo": "~54.0.37",
     "expo-blur": "~15.0.7",
     "expo-camera": "~17.0.8",
@@ -45,7 +45,7 @@
   "devDependencies": {
     "@graphql-codegen/cli": "^7.4.3",
     "@graphql-codegen/typescript": "^6.1.0",
-    "@graphql-codegen/typescript-operations": "^6.1.8",
+    "@graphql-codegen/typescript-operations": "^6.1.9",
     "@testing-library/jest-native": "^5.4.3",
     "@testing-library/react-native": "^14.0.1",
     "@types/jest": "29.5.14",
