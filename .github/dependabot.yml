@@ -1,15 +1,22 @@
 # DependabotConfig
 #
-# Automated dependency updates for npm packages and GitHub Actions.
+# Unified Monday-morning dependency updates: weekly, Monday 09:00
+# Europe/London. Minor/patch bumps are grouped into one PR per ecosystem;
+# majors stay individual PRs for review.
 version: 2
 updates:
   - package-ecosystem: 'npm'
     directory: '/'
     schedule:
       interval: 'weekly'
-    open-pull-requests-limit: 10
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Europe/London'
+    target-branch: 'main'
+    open-pull-requests-limit: 5
     labels:
       - 'dependencies'
+      - 'javascript'
     commit-message:
       prefix: 'chore'
       prefix-development: 'chore'
@@ -72,13 +79,211 @@ updates:
         update-types: ['version-update:semver-major']
       - dependency-name: 'eslint'
         update-types: ['version-update:semver-major']
+    groups:
+      minor-patch:
+        update-types: ['minor', 'patch']
 
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
       interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Europe/London'
+    target-branch: 'main'
     open-pull-requests-limit: 5
     labels:
       - 'dependencies'
+      - 'ci'
     commit-message:
       prefix: 'chore'
+    groups:
+      minor-patch:
+        update-types: ['minor', 'patch']
+
+  # Python — backend service (uv project).
+  - package-ecosystem: 'uv'
+    directory: '/backend'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Europe/London'
+    target-branch: 'main'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'python'
+    commit-message:
+      prefix: 'chore'
+    groups:
+      minor-patch:
+        update-types: ['minor', 'patch']
+
+  # Python — ML package (uv project).
+  - package-ecosystem: 'uv'
+    directory: '/backend/ml'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Europe/London'
+    target-branch: 'main'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'python'
+    commit-message:
+      prefix: 'chore'
+    groups:
+      minor-patch:
+        update-types: ['minor', 'patch']
+
+  # Python — feature engineering engine (uv project).
+  - package-ecosystem: 'uv'
+    directory: '/backend/ml/features-engine'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Europe/London'
+    target-branch: 'main'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'python'
+    commit-message:
+      prefix: 'chore'
+    groups:
+      minor-patch:
+        update-types: ['minor', 'patch']
+
+  # Rust — feature engineering engine crate.
+  - package-ecosystem: 'cargo'
+    directory: '/backend/ml/features-engine'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Europe/London'
+    target-branch: 'main'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'rust'
+    commit-message:
+      prefix: 'chore'
+    groups:
+      minor-patch:
+        update-types: ['minor', 'patch']
+
+  # Python — Airflow orchestration stack (pip requirements.txt).
+  - package-ecosystem: 'pip'
+    directory: '/airflow'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Europe/London'
+    target-branch: 'main'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'python'
+    commit-message:
+      prefix: 'chore'
+    groups:
+      minor-patch:
+        update-types: ['minor', 'patch']
+
+  # Docker base images.
+  - package-ecosystem: 'docker'
+    directory: '/backend'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Europe/London'
+    target-branch: 'main'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'docker'
+    commit-message:
+      prefix: 'chore'
+    groups:
+      docker-all:
+        patterns: ['*']
+
+  - package-ecosystem: 'docker'
+    directory: '/backend/ml'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Europe/London'
+    target-branch: 'main'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'docker'
+    commit-message:
+      prefix: 'chore'
+    groups:
+      docker-all:
+        patterns: ['*']
+
+  - package-ecosystem: 'docker'
+    directory: '/airflow'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Europe/London'
+    target-branch: 'main'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'docker'
+    commit-message:
+      prefix: 'chore'
+    groups:
+      docker-all:
+        patterns: ['*']
+
+  - package-ecosystem: 'docker'
+    directory: '/mlflow'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Europe/London'
+    target-branch: 'main'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'docker'
+    commit-message:
+      prefix: 'chore'
+    groups:
+      docker-all:
+        patterns: ['*']
+
+  # Terraform providers.
+  - package-ecosystem: 'terraform'
+    directory: '/terraform'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Europe/London'
+    target-branch: 'main'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'terraform'
+    commit-message:
+      prefix: 'chore'
+    groups:
+      minor-patch:
+        update-types: ['minor', 'patch']
