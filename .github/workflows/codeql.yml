@@ -1,8 +1,10 @@
 # CodeQL
 #
-# Security analysis — scans for vulnerabilities and code-quality issues
-# on every push/PR to main, plus a weekly full scan.
-name: CodeQL
+# Unified Monday-morning security sweep: weekly cron Mondays 10:00 UTC (after
+# Dependabot opens its Monday 09:00 Europe/London PRs), plus every push/PR to
+# main. The full security-extended suite runs on the cron only; PR/push runs
+# stay on the default suite to keep feedback fast.
+name: CodeQL Security Analysis
 
 on:
   push:
@@ -10,34 +12,50 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: '0 0 * * 0'
+    - cron: '0 10 * * 1' # Mondays 10:00 UTC — after Dependabot opens its PRs
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: codeql-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   analyze:
-    name: Analyze
+    name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-      actions: read
-      contents: read
-
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        language: ['javascript-typescript']
+        include:
+          - language: javascript-typescript
+            build-mode: none
+          - language: python
+            build-mode: none
+          - language: rust
+            build-mode: none
+          - language: actions
+            build-mode: none
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # Full security-extended suite only on the weekly cron — heavy.
+          # PRs and pushes run the default query set to stay fast.
+          queries: ${{ github.event_name == 'schedule' && 'security-extended' || '' }}
 
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          category: '/language:${{ matrix.language }}'
