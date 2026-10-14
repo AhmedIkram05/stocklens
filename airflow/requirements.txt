@@ -7,6 +7,6 @@ apache-airflow-providers-amazon>=9.0.0
 psycopg2-binary>=2.9.0
 alembic>=1.15.0
 evidently>=0.7
-boto3>=1.43.0
+boto3>=1.43.111
 pandas>=2.3.0
 numpy>=2.1.0
