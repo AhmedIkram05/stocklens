@@ -43,11 +43,11 @@ mod tests {
 
     #[test]
     fn test_macd_output_shape() {
-        use rand::Rng;
+        use rand::RngExt;
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut prices = vec![100.0];
         for _ in 1..252 {
-            let ret = (rng.gen::<f64>() - 0.5) * 0.06;
+            let ret = (rng.random::<f64>() - 0.5) * 0.06;
             prices.push(prices.last().unwrap() * (1.0 + ret));
         }
         Python::initialize();
