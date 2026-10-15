@@ -5,7 +5,7 @@
 # produces a cp311-tagged wheel — uninstallable on Python 3.12.
 # Cross-compilation is unnecessary: buildx QEMU emulation makes ARM64 look
 # native, so the default Rust target is aarch64-unknown-linux-gnu.
-FROM python:3.12-slim AS rust-builder
+FROM python:3.14-slim AS rust-builder
 
 # Build toolchain: C compiler for pyo3/numpy link, pkg-config/libssl for pyo3,
 # curl for rustup.
@@ -59,7 +59,7 @@ FROM rust-builder AS wheel-source
 # on every build. We deliberately DROP UV_COMPILE_BYTECODE here — bytecode
 # compilation of 15k files took 13m on ARM64 QEMU. .pyc is generated lazily
 # on first import instead; runtime cost is negligible vs build cost.
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 ENV UV_COMPILE_BYTECODE=0
@@ -78,7 +78,7 @@ RUN uv pip install --python /app/.venv/bin/python --no-deps /wheels/features_eng
 
 
 # Stage 2: Runtime image — uses .venv pre-built by builder stage.
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 # apt cache mount reuses downloaded lists between pipeline runs.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
