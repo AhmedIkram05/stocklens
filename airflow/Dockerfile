@@ -5,7 +5,7 @@
 # Multi-stage: rust-builder compiles features_engine (PyO3), final installs wheel.
 
 # Stage 0: Rust native module builder (features_engine)
-FROM python:3.12-slim AS rust-builder
+FROM python:3.14-slim AS rust-builder
 
 # Build toolchain: pkg-config for pyo3/numpy link, libssl for pyo3,
 # ca-certificates/curl for rustup. Mirrors the backend Dockerfile's
@@ -35,7 +35,7 @@ FROM rust-builder AS wheel-source
 
 
 # Stage 1: Final Airflow image
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 ENV AIRFLOW_HOME=/opt/airflow
 ENV PYTHONDONTWRITEBYTECODE=1
