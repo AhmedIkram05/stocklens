@@ -135,6 +135,12 @@ updates:
       - 'python'
     commit-message:
       prefix: 'chore'
+    # numpy is served from the PyTorch CPU index (tool.uv.index in this
+    # project). uv's default first-index-wins strategy cannot see the newer
+    # numpy there, so Dependabot's uv resolver errors on it. Skip numpy version
+    # bumps here; Dependabot security alerts still fire for numpy.
+    ignore:
+      - dependency-name: 'numpy'
     groups:
       minor-patch:
         update-types: ['minor', 'patch']
