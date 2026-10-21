@@ -180,8 +180,17 @@ updates:
     commit-message:
       prefix: 'chore'
     groups:
-      minor-patch:
-        update-types: ['minor', 'patch']
+      # Cargo resolves the whole graph as one unit, so the manifest must be
+      # updated as one unit too. numpy 0.30 requires pyo3 ^0.30: bumping
+      # either alone leaves the graph unresolvable ("failed to select a
+      # version for pyo3"), which is why #286 and #287 both failed.
+      #
+      # The old `minor-patch` group never caught these: in Cargo
+      # `version = "0.29"` means `^0.29`, so 0.29 -> 0.30 breaks the
+      # requirement and Dependabot classified it as a major, sending it out
+      # as its own PR. Group every cargo update into one PR instead.
+      cargo-all:
+        patterns: ['*']
 
   # Python — Airflow orchestration stack (pip requirements.txt).
   - package-ecosystem: 'pip'

@@ -21,13 +21,13 @@ WORKDIR /src
 
 # Layer 1: Fetch dependencies (only invalidated when Cargo.toml/lock changes).
 # Cache mounts persist .cargo/git and .cargo/registry across docker rebuilds.
-COPY features-engine/Cargo.toml features-engine/pyproject.toml /src/
+COPY features-engine/Cargo.toml features-engine/Cargo.lock features-engine/pyproject.toml /src/
 # Cargo validates the lib path exists during manifest parsing, even for fetch.
 # Dummy placeholder — real src/ overwritten below.
 RUN mkdir -p /src/src && touch /src/src/lib.rs
 RUN --mount=type=cache,target=/root/.cargo/git \
     --mount=type=cache,target=/root/.cargo/registry \
-    cargo fetch --manifest-path /src/Cargo.toml
+    cargo fetch --locked --manifest-path /src/Cargo.toml
 
 # Layer 2: Build with real source (only recompiles our crate on src changes).
 # target/ mount preserves incremental compilation artifacts.
@@ -35,7 +35,7 @@ COPY features-engine/src /src/src/
 RUN --mount=type=cache,target=/src/target,sharing=locked \
     --mount=type=cache,target=/root/.cargo/git \
     --mount=type=cache,target=/root/.cargo/registry \
-    maturin build --release --features extension --out /wheels
+    maturin build --release --locked --features extension --out /wheels
 
 
 # Stage 2: Build Python dependencies with uv

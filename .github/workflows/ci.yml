@@ -113,9 +113,9 @@ jobs:
           python-version: '3.13'
       - run: pip install numpy
       - name: Clippy
-        run: cargo clippy --all-features -- -D warnings
+        run: cargo clippy --locked --all-features -- -D warnings
       - name: Tests
-        run: cargo test
+        run: cargo test --locked
 
   python:
     name: Backend Tests & Coverage
@@ -183,7 +183,7 @@ jobs:
         run: |
           uv pip install maturin
           cd backend/ml/features-engine
-          "${{ github.workspace }}/venv/bin/python" -m maturin build --release --out /tmp/wheels
+          "${{ github.workspace }}/venv/bin/python" -m maturin build --release --locked --out /tmp/wheels
       - name: Pytest
         run: |
           set -euo pipefail

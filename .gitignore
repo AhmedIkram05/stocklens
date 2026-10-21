@@ -92,6 +92,9 @@ target/
 *.so
 *.dylib
 Cargo.lock
+# ...except the features-engine crate: it ships as a wheel built from this
+# lock, so CI and the Docker image must resolve the same dependency graph.
+!backend/ml/features-engine/Cargo.lock
 
 # ─── Backend local data ────────────────────────────────────────────────────────
 # Receipt images stored locally during development
