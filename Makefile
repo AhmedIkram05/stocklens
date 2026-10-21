@@ -3,7 +3,20 @@
 # Development commands for the FastAPI backend.
 # All Docker Compose operations assume docker-compose.yml at repo root.
 
-.PHONY: up down rebuild test logs migrate alembic-autogenerate backend-ml train train-all seed hpo hpo-phase2
+.PHONY: up down rebuild test logs migrate alembic-autogenerate backend-ml train train-all seed hpo hpo-phase2 rust-test
+
+# Interpreter used for the Rust crate's tests. It must have numpy importable —
+# the numpy crate loads numpy's C API capsule at runtime, so `cargo test`
+# fails with "Failed to access NumPy array API capsule" otherwise.
+FE_PYTHON ?= python3
+
+rust-test: ## Run the features-engine Rust test suite (needs numpy in $(FE_PYTHON))
+	@$(FE_PYTHON) -c 'import numpy' 2>/dev/null || \
+		{ echo "$(FE_PYTHON) has no numpy — pip install numpy into it, or run: make rust-test FE_PYTHON=/path/to/python"; exit 1; }
+	cd backend/ml/features-engine && \
+	PYO3_PYTHON="$$($(FE_PYTHON) -c 'import sys; print(sys.executable)')" \
+	PYTHONPATH="$$($(FE_PYTHON) -c 'import site; print(site.getsitepackages()[0])')" \
+	cargo test --locked
 
 up: ## Build & start all services (backend, ml, postgres, redis, mlflow, test DB, airflow)
 	docker compose up -d
