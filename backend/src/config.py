@@ -71,8 +71,6 @@ class Settings(BaseSettings):
     AGENT_MODEL_ID: str = "amazon.nova-lite-v1:0"
     # GLM-4.7 Flash: $0.07/$0.40 — 93% cheaper input, 88% cheaper output than GLM-5
     AGENT_JUDGE_MODEL_ID: str = "zai.glm-4.7-flash"
-    # NLP pipeline — Nova Lite: 300K context, $0.06/$0.24
-    NLP_MODEL_ID: str = "amazon.nova-lite-v1:0"
     # Nova Lite optimal max; 8K is fine since it doesn't do deep chain-of-thought
     AGENT_MAX_TOKENS: int = 8192
     AGENT_TEMPERATURE: float = 0.1
