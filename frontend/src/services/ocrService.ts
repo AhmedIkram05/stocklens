@@ -110,9 +110,7 @@ export async function recognizeImageWithOCRSpace(
   formData.append('OCREngine', '2');
   formData.append('language', 'eng');
   formData.append('isOverlayRequired', 'false');
-  try {
-    formData.append('apikey', apiKey as any);
-  } catch (e) {}
+  formData.append('apikey', apiKey);
   return doOcrForm(formData, apiKey);
 }
 

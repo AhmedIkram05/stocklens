@@ -61,21 +61,16 @@ class Settings(BaseSettings):
 
     # Prediction Logging / Drift
     PREDICTION_LOG_ENABLED: bool = True
-    PREDICTION_LOG_RETENTION_DAYS: int = 90
     DRIFT_ALERT_PSI_THRESHOLD: float = Field(default=0.25, ge=0)
     DRIFT_ALERT_KS_THRESHOLD: float = Field(default=0.3, ge=0)
     DRIFT_ALERT_JS_THRESHOLD: float = Field(default=0.3, ge=0)
-    DRIFT_MONITORED_TICKERS: str = ""  # comma-separated, empty = portfolio-only
     DRIFT_REPORT_S3_BUCKET: str = "stocklens-drift-reports-dev"
-    DRIFT_REPORT_S3_PREFIX: str = "drift_reports/"
 
     # Agent
     # Nova Lite: 300K context, tool-use capable, $0.06/$0.24 per 1M tokens
     AGENT_MODEL_ID: str = "amazon.nova-lite-v1:0"
     # GLM-4.7 Flash: $0.07/$0.40 — 93% cheaper input, 88% cheaper output than GLM-5
     AGENT_JUDGE_MODEL_ID: str = "zai.glm-4.7-flash"
-    # NLP pipeline — Nova Lite: 300K context, $0.06/$0.24
-    NLP_MODEL_ID: str = "amazon.nova-lite-v1:0"
     # Nova Lite optimal max; 8K is fine since it doesn't do deep chain-of-thought
     AGENT_MAX_TOKENS: int = 8192
     AGENT_TEMPERATURE: float = 0.1
@@ -105,9 +100,7 @@ class Settings(BaseSettings):
     # ponytail: HS256 reuses JWT infra; RS256+JWKS is the next rung.
     MCP_ENABLED: bool = True
     MCP_SERVER_NAME: str = "stocklens"
-    MCP_RATE_LIMIT: str = "60/minute"
     OAUTH_ISSUER: str = ""  # empty → derived from request.base_url
-    OAUTH_CODE_TTL_SECONDS: int = Field(default=600, gt=0)
     OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, gt=0)  # mirrors JWT
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
