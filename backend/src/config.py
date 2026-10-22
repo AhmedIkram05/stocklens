@@ -100,7 +100,6 @@ class Settings(BaseSettings):
     # ponytail: HS256 reuses JWT infra; RS256+JWKS is the next rung.
     MCP_ENABLED: bool = True
     MCP_SERVER_NAME: str = "stocklens"
-    MCP_RATE_LIMIT: str = "60/minute"
     OAUTH_ISSUER: str = ""  # empty → derived from request.base_url
     OAUTH_CODE_TTL_SECONDS: int = Field(default=600, gt=0)
     OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, gt=0)  # mirrors JWT
