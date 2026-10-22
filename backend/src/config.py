@@ -61,7 +61,6 @@ class Settings(BaseSettings):
 
     # Prediction Logging / Drift
     PREDICTION_LOG_ENABLED: bool = True
-    PREDICTION_LOG_RETENTION_DAYS: int = 90
     DRIFT_ALERT_PSI_THRESHOLD: float = Field(default=0.25, ge=0)
     DRIFT_ALERT_KS_THRESHOLD: float = Field(default=0.3, ge=0)
     DRIFT_ALERT_JS_THRESHOLD: float = Field(default=0.3, ge=0)
