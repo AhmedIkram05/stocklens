@@ -65,7 +65,6 @@ class Settings(BaseSettings):
     DRIFT_ALERT_KS_THRESHOLD: float = Field(default=0.3, ge=0)
     DRIFT_ALERT_JS_THRESHOLD: float = Field(default=0.3, ge=0)
     DRIFT_REPORT_S3_BUCKET: str = "stocklens-drift-reports-dev"
-    DRIFT_REPORT_S3_PREFIX: str = "drift_reports/"
 
     # Agent
     # Nova Lite: 300K context, tool-use capable, $0.06/$0.24 per 1M tokens
