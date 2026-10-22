@@ -120,7 +120,7 @@ def fetch(ticker: str, years: int) -> list[dict]:
 
     rows = []
     for i, ts in enumerate(timestamps):
-        dt = datetime.utcfromtimestamp(ts).date()
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc).date()
         rows.append(
             {
                 "ticker": ticker,
