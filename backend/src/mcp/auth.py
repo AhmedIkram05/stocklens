@@ -280,6 +280,33 @@ def _is_cimd_client_id(client_id: str) -> bool:
     return client_id.startswith("https://")
 
 
+# POST /oauth/register hands out one static public client and the DCR stub
+# persists nothing, so the first-party allowlist is hardcoded: the register
+# defaults (loopback wildcard, claude.ai) plus the RFC 8252 §7.3 loopback
+# redirect pattern with any port.
+_FIRST_PARTY_HTTPS_HOSTS = frozenset({"claude.ai"})
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def _is_first_party_redirect(uri: str) -> bool:
+    """Allowlist for non-CIMD (first-party) client redirect URIs.
+
+    OAuth 2.1 requires per-client redirect_uri matching — for the static
+    public client every URI must be either a loopback redirect (any port,
+    RFC 8252 §7.3) or a registered default host. Accepting anything else
+    lets an attacker 302 the authorization code (bound to their own PKCE
+    challenge) to a redirect they control → account takeover.
+    """
+    try:
+        parts = urllib.parse.urlsplit(uri)
+    except ValueError:
+        return False
+    host = (parts.hostname or "").lower()
+    if parts.scheme == "http" and host in _LOOPBACK_HOSTS:
+        return True
+    return parts.scheme == "https" and host in _FIRST_PARTY_HTTPS_HOSTS
+
+
 def _cimd_host_blocked(host: str) -> bool:
     """SSRF guard — refuse to fetch documents from non-public hosts.
 
@@ -536,6 +563,11 @@ async def oauth_authorize_post(body: AuthorizeRequest, request: Request):
             )
         client_name = doc.get("client_name") or "external-client"
         logger.info("cimd_client_resolved", client_id=body.client_id[:64], client_name=client_name)
+    elif not _is_first_party_redirect(body.redirect_uri):
+        # First-party/static client (and any non-https client_id): the auth
+        # code must only reach a registered or loopback redirect — honouring
+        # a client-chosen redirect_uri is a code-injection account takeover.
+        raise HTTPException(status_code=400, detail="redirect_uri not allowed for this client")
 
     user = await _authenticate_user(body.email, body.password)
     if user is None:
@@ -616,16 +648,15 @@ async def oauth_token(request: Request):
         if stored is None:
             raise HTTPException(status_code=400, detail="Invalid or expired authorization code")
 
-        # Validate redirect_uri matches
-        if redirect_uri and stored.get("redirect_uri") != redirect_uri:
+        # OAuth 2.1: redirect_uri is mandatory at exchange and must match the
+        # authorize request exactly; client_id must match the authorized one.
+        if not redirect_uri:
+            raise HTTPException(status_code=400, detail="redirect_uri required")
+        if stored.get("redirect_uri") != redirect_uri:
             raise HTTPException(status_code=400, detail="redirect_uri mismatch")
 
-        # Validate client_id if present
         if client_id and stored.get("client_id") != client_id:
-            # ponytail: first-party clients share single ID — log but don't hard-fail
-            logger.warning(
-                "oauth_client_id_mismatch", expected=stored.get("client_id"), got=client_id
-            )
+            raise HTTPException(status_code=400, detail="client_id mismatch")
 
         # PKCE verify
         challenge = stored.get("code_challenge", "")

@@ -8,7 +8,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import secrets
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -358,3 +358,226 @@ async def test_default_client_name_stored_without_cimd(client, auth_headers):
         await client.post("/oauth/authorize", json=_authorize_body())
     payload = next(iter(stored.values()))
     assert payload["client_name"] == "StockLens MCP"
+
+
+# ── First-party redirect_uri allowlist + strict token exchange ─────────
+
+
+def _fake_oauth_request():
+    return type("R", (), {"base_url": "http://localhost:8000/"})()
+
+
+def test_first_party_redirect_allowlist():
+    from src.mcp.auth import _is_first_party_redirect
+
+    # RFC 8252 §7.3 loopback — any port, IPv4 / IPv6 / localhost
+    assert _is_first_party_redirect("http://127.0.0.1:6274/callback") is True
+    assert _is_first_party_redirect("http://localhost:6274/callback") is True
+    assert _is_first_party_redirect("http://[::1]:9000/callback") is True
+    assert _is_first_party_redirect("http://127.0.0.1") is True
+    # Registered default host from POST /oauth/register
+    assert _is_first_party_redirect("https://claude.ai/callback") is True
+    # Hostile / unregistered
+    assert _is_first_party_redirect("https://evil.example/cb") is False
+    # userinfo tricks never mask the real host (WHATWG: host = after last '@')
+    assert _is_first_party_redirect("http://127.0.0.1@evil.example/cb") is False
+    assert _is_first_party_redirect("https://claude.ai.evil.example/cb") is False
+    assert _is_first_party_redirect("http://127.0.0.1.evil.example/cb") is False
+    # Unparsable
+    assert _is_first_party_redirect("not a uri") is False
+    assert _is_first_party_redirect("http://[::1/cb") is False
+
+
+async def test_authorize_public_client_rejects_hostile_redirect_uri():
+    from fastapi import HTTPException
+
+    from src.mcp.auth import AuthorizeRequest, oauth_authorize_post
+
+    body = AuthorizeRequest(**_authorize_body(redirect_uri="https://evil.example/cb"))
+    with (
+        patch(
+            "src.mcp.auth._authenticate_user",
+            new_callable=AsyncMock,
+            return_value={"id": "u1"},
+        ),
+        patch("src.mcp.auth._store_code", new_callable=AsyncMock) as store,
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await oauth_authorize_post(body, _fake_oauth_request())
+    assert exc.value.status_code == 400
+    assert "redirect_uri" in exc.value.detail
+    store.assert_not_called()  # no code is ever minted for a hostile redirect
+
+
+async def test_authorize_non_https_client_id_rejects_hostile_redirect_uri():
+    from fastapi import HTTPException
+
+    from src.mcp.auth import AuthorizeRequest, oauth_authorize_post
+
+    body = AuthorizeRequest(
+        **_authorize_body(client_id="custom-native-client", redirect_uri="https://evil.example/cb")
+    )
+    with (
+        patch(
+            "src.mcp.auth._authenticate_user",
+            new_callable=AsyncMock,
+            return_value={"id": "u1"},
+        ),
+        patch("src.mcp.auth._store_code", new_callable=AsyncMock),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await oauth_authorize_post(body, _fake_oauth_request())
+    assert exc.value.status_code == 400
+
+
+async def test_authorize_public_client_accepts_loopback_any_port():
+    from fastapi.responses import RedirectResponse
+
+    from src.mcp.auth import AuthorizeRequest, oauth_authorize_post
+
+    with (
+        patch(
+            "src.mcp.auth._authenticate_user",
+            new_callable=AsyncMock,
+            return_value={"id": "u1"},
+        ),
+        patch("src.mcp.auth._store_code", new_callable=AsyncMock),
+    ):
+        # IPv4 loopback / localhost → JSON code response (existing behaviour)
+        body = AuthorizeRequest(**_authorize_body(redirect_uri="http://127.0.0.1:8765/cb"))
+        r = await oauth_authorize_post(body, _fake_oauth_request())
+        assert r["code"]
+        assert r["iss"] == "http://localhost:8000"
+
+        # IPv6 loopback → 302 carrying the code (presentation branch is
+        # IPv4-prefix based; the security allowlist accepts [::1] too)
+        body6 = AuthorizeRequest(**_authorize_body(redirect_uri="http://[::1]:9000/cb"))
+        r6 = await oauth_authorize_post(body6, _fake_oauth_request())
+        assert isinstance(r6, RedirectResponse)
+        assert r6.status_code == 302
+        assert "code=" in r6.headers["location"]
+
+
+async def test_authorize_public_client_accepts_registered_https_redirect():
+    from fastapi.responses import RedirectResponse
+
+    from src.mcp.auth import AuthorizeRequest, oauth_authorize_post
+
+    body = AuthorizeRequest(**_authorize_body(redirect_uri="https://claude.ai/callback"))
+    with (
+        patch(
+            "src.mcp.auth._authenticate_user",
+            new_callable=AsyncMock,
+            return_value={"id": "u1"},
+        ),
+        patch("src.mcp.auth._store_code", new_callable=AsyncMock),
+    ):
+        r = await oauth_authorize_post(body, _fake_oauth_request())
+    assert isinstance(r, RedirectResponse)
+    assert r.status_code == 302
+    assert "code=" in r.headers["location"]
+
+
+class _FakeTokenRequest:
+    """Minimal Request stand-in for oauth_token (JSON content-type)."""
+
+    def __init__(self, data: dict):
+        self.headers = {"content-type": "application/json"}
+        self._data = data
+
+    async def json(self):
+        return self._data
+
+
+def _stored_code_data() -> dict:
+    return {
+        "user_id": "u1",
+        "client_id": "stocklens-mcp-public",
+        "client_name": "StockLens MCP",
+        "redirect_uri": "http://localhost:6274/callback",
+        "code_challenge": _code_challenge_s256("v" * 43),
+        "code_challenge_method": "S256",
+        "scope": "mcp:tools",
+        "created_at": 0,
+    }
+
+
+def _exchange_conn_ctx_mock():
+    """connection_ctx stand-in for the refresh-token INSERT at exchange."""
+    mock_conn = AsyncMock()
+    mock_conn.execute = AsyncMock(return_value="INSERT 0 1")
+    ctx = MagicMock()
+    ctx.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
+    ctx.return_value.__aexit__ = AsyncMock(return_value=None)
+    return ctx
+
+
+async def _run_token_exchange(data: dict, stored: dict):
+    from src.mcp.auth import oauth_token
+
+    with (
+        patch("src.mcp.auth._consume_code", new_callable=AsyncMock, return_value=stored),
+        patch("src.mcp.auth.connection_ctx", _exchange_conn_ctx_mock()),
+    ):
+        return await oauth_token(_FakeTokenRequest(data))
+
+
+async def test_token_exchange_missing_redirect_uri_rejected():
+    from fastapi import HTTPException
+
+    data = {
+        "grant_type": "authorization_code",
+        "code": "c1",
+        "code_verifier": "v" * 43,
+        "client_id": "stocklens-mcp-public",
+    }
+    with pytest.raises(HTTPException) as exc:
+        await _run_token_exchange(data, _stored_code_data())
+    assert exc.value.status_code == 400
+    assert "redirect_uri" in exc.value.detail
+
+
+async def test_token_exchange_mismatched_redirect_uri_rejected():
+    from fastapi import HTTPException
+
+    data = {
+        "grant_type": "authorization_code",
+        "code": "c1",
+        "code_verifier": "v" * 43,
+        "redirect_uri": "http://localhost:9999/other",
+        "client_id": "stocklens-mcp-public",
+    }
+    with pytest.raises(HTTPException) as exc:
+        await _run_token_exchange(data, _stored_code_data())
+    assert exc.value.status_code == 400
+    assert "redirect_uri" in exc.value.detail
+
+
+async def test_token_exchange_mismatched_client_id_rejected():
+    from fastapi import HTTPException
+
+    data = {
+        "grant_type": "authorization_code",
+        "code": "c1",
+        "code_verifier": "v" * 43,
+        "redirect_uri": "http://localhost:6274/callback",
+        "client_id": "other-client",
+    }
+    with pytest.raises(HTTPException) as exc:
+        await _run_token_exchange(data, _stored_code_data())
+    assert exc.value.status_code == 400
+    assert "client_id" in exc.value.detail
+
+
+async def test_token_exchange_matching_params_issues_tokens():
+    data = {
+        "grant_type": "authorization_code",
+        "code": "c1",
+        "code_verifier": "v" * 43,
+        "redirect_uri": "http://localhost:6274/callback",
+        "client_id": "stocklens-mcp-public",
+    }
+    result = await _run_token_exchange(data, _stored_code_data())
+    assert "access_token" in result
+    assert "refresh_token" in result
+    assert result["token_type"] == "Bearer"
