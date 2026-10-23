@@ -386,6 +386,62 @@ describe('apiService.upload()', () => {
   });
 });
 
+describe('concurrent refresh dedup (shared settled promise)', () => {
+  beforeEach(async () => {
+    fetchMock.resetMocks();
+    await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+    await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+  });
+
+  it('shares one in-flight refresh across concurrent requests — late joiners never re-refresh', async () => {
+    setExpiredToken();
+    setRefreshToken();
+
+    let refreshCalls = 0;
+    let releaseRefresh!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/auth/refresh')) {
+        refreshCalls += 1;
+        return gate.then(
+          () =>
+            ({
+              ok: true,
+              status: 200,
+              json: async () => ({ access_token: 'new-access', refresh_token: 'new-refresh' }),
+            }) as Response,
+        );
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true }),
+      } as Response);
+    });
+
+    // Four concurrent requests on an expired access token — the first starts
+    // the refresh, the rest must join the same in-flight promise instead of
+    // racing a second refresh with the just-rotated token.
+    const requests = [api('/a'), api('/b'), api('/c'), api('/d')];
+
+    // Let every caller reach the shared refresh await while it is pending.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(refreshCalls).toBe(1);
+
+    releaseRefresh();
+    const results = await Promise.all(requests);
+
+    expect(results).toEqual([{ ok: true }, { ok: true }, { ok: true }, { ok: true }]);
+    // Settling the shared promise must not have triggered a second refresh.
+    expect(refreshCalls).toBe(1);
+    expect(await SecureStore.getItemAsync(ACCESS_TOKEN_KEY)).toBe('new-access');
+    expect(await SecureStore.getItemAsync(REFRESH_TOKEN_KEY)).toBe('new-refresh');
+  });
+});
+
 describe('ensureValidAccessToken', () => {
   beforeEach(async () => {
     fetchMock.resetMocks();

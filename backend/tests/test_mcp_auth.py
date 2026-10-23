@@ -581,3 +581,114 @@ async def test_token_exchange_matching_params_issues_tokens():
     assert "access_token" in result
     assert "refresh_token" in result
     assert result["token_type"] == "Bearer"
+
+
+# ── Refresh rotation: atomic single-use claim ───────────────────────────
+
+
+class _FakeRefreshConn:
+    """In-memory refresh_tokens emulating the atomic claim statement.
+
+    The check-and-set inside ``fetchval`` is synchronous, i.e. atomic within
+    one event-loop turn — exactly the guarantee the conditional UPDATE gives
+    against two concurrent refreshes.
+    """
+
+    def __init__(self):
+        self.tokens: dict[str, bool] = {}  # token_hash -> revoked
+        self.claim_queries: list[str] = []
+        self.new_inserts: list[tuple] = []
+        self.revoked_all_for: list[str] = []
+
+    def seed(self, token_hash: str) -> None:
+        self.tokens[token_hash] = False
+
+    async def fetchval(self, query, *args):
+        if "UPDATE refresh_tokens" in query:
+            self.claim_queries.append(query)
+            assert "AND revoked = false" in query, "claim must be a conditional UPDATE"
+            (token_hash,) = args
+            if token_hash not in self.tokens or self.tokens[token_hash]:
+                return None  # rowcount 0 → reuse path
+            self.tokens[token_hash] = True
+            return True  # rowcount 1 → mint path
+        raise AssertionError(f"unexpected fetchval: {query[:60]}")
+
+    async def fetchrow(self, query, *args):
+        if "SELECT revoked FROM refresh_tokens" in query:
+            (token_hash,) = args
+            if token_hash not in self.tokens:
+                return None
+            return {"revoked": self.tokens[token_hash]}
+        raise AssertionError(f"unexpected fetchrow: {query[:60]}")
+
+    async def execute(self, query, *args):
+        if "UPDATE refresh_tokens SET revoked = true WHERE user_id" in query:
+            self.revoked_all_for.append(args[0])
+            return "UPDATE 0"
+        if "INSERT INTO refresh_tokens" in query:
+            self.new_inserts.append(args)
+            return "INSERT 0 1"
+        raise AssertionError(f"unexpected execute: {query[:60]}")
+
+
+class _FakeRefreshCtx:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def __call__(self):
+        return self
+
+    async def __aenter__(self):
+        return self._conn
+
+    async def __aexit__(self, *args):
+        return False
+
+
+async def _call_refresh(conn, jti="jti-race", user="user-race"):
+    from src.auth.schemas import TokenPayload
+    from src.mcp.auth import oauth_token
+
+    payload = TokenPayload(sub=user, jti=jti, exp=2_000_000_000, iat=1_000_000_000, type="refresh")
+    request = _FakeTokenRequest({"grant_type": "refresh_token", "refresh_token": "rt"})
+    with (
+        patch("src.mcp.auth.connection_ctx", _FakeRefreshCtx(conn)),
+        patch("src.mcp.auth.is_token_blacklisted", new_callable=AsyncMock, return_value=False),
+        patch("src.cache.redis.blacklist_token", new_callable=AsyncMock),
+        patch("src.mcp.auth._decode_mcp_token", return_value=payload),
+    ):
+        return await oauth_token(request)
+
+
+async def test_double_refresh_same_jti_second_takes_reuse_path():
+    import asyncio
+
+    from fastapi import HTTPException
+
+    from src.auth.utils import hash_token
+
+    conn = _FakeRefreshConn()
+    token_hash = hash_token("jti-race", "user-race")
+    conn.seed(token_hash)
+
+    results = await asyncio.gather(
+        _call_refresh(conn),
+        _call_refresh(conn),
+        return_exceptions=True,
+    )
+
+    http_errors = [r for r in results if isinstance(r, HTTPException)]
+    successes = [r for r in results if isinstance(r, dict)]
+    assert len(successes) == 1, "only one refresh may mint a new pair"
+    assert len(http_errors) == 1
+    # The loser takes the stolen-token reuse path, not a plain not-found.
+    assert http_errors[0].status_code == 401
+    assert "re-login required" in http_errors[0].detail
+    assert conn.revoked_all_for == ["user-race"]
+    # Exactly one new refresh token was minted across both requests.
+    assert len(conn.new_inserts) == 1
+    # The claim is a single conditional UPDATE (no check-then-act SELECT first).
+    assert conn.claim_queries
+    for q in conn.claim_queries:
+        assert "AND revoked = false" in q

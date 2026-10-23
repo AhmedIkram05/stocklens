@@ -717,13 +717,27 @@ async def oauth_token(request: Request):
             raise HTTPException(status_code=401, detail="Refresh token revoked")
 
         token_hash = hash_token(payload.jti, payload.sub)
+        # Atomic single-statement rotation claim: the conditional UPDATE is the
+        # concurrency gate. Two concurrent refreshes of the same token can no
+        # longer both pass a check-then-act window and double-mint — the loser
+        # sees rowcount 0 and lands in the stolen-token path below.
         async with connection_ctx() as conn:
-            row = await conn.fetchrow(
-                "SELECT revoked FROM refresh_tokens WHERE token_hash = $1", token_hash
+            claimed = await conn.fetchval(
+                "UPDATE refresh_tokens SET revoked = true "
+                "WHERE token_hash = $1 AND revoked = false "
+                "RETURNING true",
+                token_hash,
             )
-        if row is None:
-            raise HTTPException(status_code=401, detail="Refresh token not found")
-        if row["revoked"]:
+        if claimed is None:
+            # Distinguish unknown token (plain 401) from already-revoked
+            # replay (stolen-token revoke-all) — read-only after the atomic
+            # decision, so no race window remains.
+            async with connection_ctx() as conn:
+                row = await conn.fetchrow(
+                    "SELECT revoked FROM refresh_tokens WHERE token_hash = $1", token_hash
+                )
+            if row is None:
+                raise HTTPException(status_code=401, detail="Refresh token not found")
             # Stolen-token: revoke all
             async with connection_ctx() as conn:
                 await conn.execute(
@@ -736,10 +750,6 @@ async def oauth_token(request: Request):
         from src.cache.redis import blacklist_token
 
         await blacklist_token(payload.jti, 86400)
-        async with connection_ctx() as conn:
-            await conn.execute(
-                "UPDATE refresh_tokens SET revoked = true WHERE token_hash = $1", token_hash
-            )
 
         new_access, _, new_exp = _mcp_create_access_token(payload.sub)
         new_refresh, new_rjti = _mcp_create_refresh_token(payload.sub)
