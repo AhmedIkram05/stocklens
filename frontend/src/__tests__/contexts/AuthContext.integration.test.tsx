@@ -199,15 +199,16 @@ describe('AuthContext', () => {
   });
 
   /**
-   * Test: Initial auth with invalid token
-   * Lines covered: 147-150
+   * Test: Initial auth with a definitively dead session
+   * getProfile returns null only when a 401 survived a refresh attempt —
+   * that is the only startup case where tokens may be cleared.
    */
-  it('clears tokens when stored token is invalid', async () => {
+  it('clears tokens when the session is definitively invalid (401 after refresh)', async () => {
     const { authService } = require('@/services/auth');
     const { apiService } = require('@/services/api');
 
     apiService.getAccessToken.mockResolvedValue('bad-token');
-    authService.getProfile.mockRejectedValue(new Error('Invalid token'));
+    authService.getProfile.mockResolvedValue(null);
 
     const { result } = await renderHook(() => useAuth(), {
       wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
@@ -216,6 +217,29 @@ describe('AuthContext', () => {
     await act(async () => {});
 
     expect(apiService.clearTokens).toHaveBeenCalled();
+    expect(result.current.user).toBeNull();
+    expect(result.current.loading).toBe(false);
+  });
+
+  /**
+   * Test: Initial auth with a transient (network/5xx) failure
+   * A startup network error must NOT wipe the 7-day refresh token — tokens
+   * stay so a later refreshUser()/launch can recover the session.
+   */
+  it('keeps tokens when profile fetch fails with a transient error', async () => {
+    const { authService } = require('@/services/auth');
+    const { apiService } = require('@/services/api');
+
+    apiService.getAccessToken.mockResolvedValue('valid-token');
+    authService.getProfile.mockRejectedValue(new Error('Network request failed'));
+
+    const { result } = await renderHook(() => useAuth(), {
+      wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
+    });
+
+    await act(async () => {});
+
+    expect(apiService.clearTokens).not.toHaveBeenCalled();
     expect(result.current.user).toBeNull();
     expect(result.current.loading).toBe(false);
   });
