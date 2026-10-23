@@ -167,11 +167,20 @@ async def get_ohlcv_batch(
         params.append(end_date)
         idx += 1
 
+    # Per-ticker cap: the row limit applies to EACH ticker's most recent
+    # rows (ROW_NUMBER window), not globally. A single global LIMIT ordered
+    # ticker ASC silently dropped the newest rows of the alphabetically-last
+    # tickers once the total exceeded the cap — holdings then vanished from
+    # every portfolio number while still being counted.
     query = (
         "SELECT ticker, date, open, high, low, close, adjusted_close, volume "
-        f"FROM ohlcv_prices WHERE {' AND '.join(conditions)} "
+        "FROM ("
+        "SELECT ticker, date, open, high, low, close, adjusted_close, volume, "
+        "ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY date DESC) AS rn "
+        f"FROM ohlcv_prices WHERE {' AND '.join(conditions)}"
+        ") ranked "
+        f"WHERE rn <= ${idx} "
         "ORDER BY ticker, date ASC"
-        f" LIMIT ${idx}"
     )
     params.append(limit)
 

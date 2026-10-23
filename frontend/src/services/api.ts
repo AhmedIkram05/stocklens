@@ -53,6 +53,24 @@ function isTokenExpired(token: string): boolean {
  */
 let refreshPromise: Promise<boolean> | null = null;
 
+/**
+ * Start (or join) the in-flight token refresh.
+ *
+ * The singleton reset is attached ONCE at creation via `.finally()`, so the
+ * promise is nulled exactly when it settles — by the promise itself, not by
+ * whichever waiter resumes first. Per-awaiter `refreshPromise = null` let a
+ * late 401 start a second refresh with the just-rotated token, whose failure
+ * branch deleted the fresh tokens (forced logout on a burst of 401s).
+ */
+function beginRefresh(): Promise<boolean> {
+  if (!refreshPromise) {
+    refreshPromise = refreshTokens().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
 async function refreshTokens(): Promise<boolean> {
   try {
     const refreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
@@ -157,11 +175,7 @@ export async function api<T = unknown>(endpoint: string, options: ApiOptions = {
 
     if (accessToken && isTokenExpired(accessToken)) {
       // Deduplicate concurrent refresh attempts
-      if (!refreshPromise) {
-        refreshPromise = refreshTokens();
-      }
-      const refreshed = await refreshPromise;
-      refreshPromise = null;
+      const refreshed = await beginRefresh();
 
       if (refreshed) {
         accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
@@ -184,11 +198,7 @@ export async function api<T = unknown>(endpoint: string, options: ApiOptions = {
 
   // ── 401 → refresh → retry ──
   if (response.status === 401 && !skipAuth) {
-    if (!refreshPromise) {
-      refreshPromise = refreshTokens();
-    }
-    const refreshed = await refreshPromise;
-    refreshPromise = null;
+    const refreshed = await beginRefresh();
 
     if (refreshed) {
       const newToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
@@ -258,9 +268,7 @@ export const apiService = {
     if (!options?.skipAuth) {
       let accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
       if (accessToken && isTokenExpired(accessToken)) {
-        if (!refreshPromise) refreshPromise = refreshTokens();
-        const refreshed = await refreshPromise;
-        refreshPromise = null;
+        const refreshed = await beginRefresh();
         if (refreshed) {
           accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
         } else {
@@ -280,11 +288,7 @@ export const apiService = {
 
     // ── 401 → refresh → retry (mirrors api()) ──
     if (response.status === 401 && !options?.skipAuth) {
-      if (!refreshPromise) {
-        refreshPromise = refreshTokens();
-      }
-      const refreshed = await refreshPromise;
-      refreshPromise = null;
+      const refreshed = await beginRefresh();
 
       if (refreshed) {
         const newToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
@@ -327,11 +331,7 @@ export const apiService = {
   ensureValidAccessToken: async (): Promise<string | null> => {
     let accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
     if (accessToken && isTokenExpired(accessToken)) {
-      if (!refreshPromise) {
-        refreshPromise = refreshTokens();
-      }
-      const refreshed = await refreshPromise;
-      refreshPromise = null;
+      const refreshed = await beginRefresh();
       if (refreshed) {
         accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
       } else {

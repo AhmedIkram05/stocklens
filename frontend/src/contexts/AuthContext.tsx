@@ -140,13 +140,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (!cancelled) {
           if (profile) {
             setUser(_buildProfile(profile));
+          } else {
+            // getProfile returns null only when a 401 survived a refresh
+            // attempt — the session is definitively dead, so clear tokens.
+            await apiService.clearTokens();
           }
           setLoading(false);
         }
       } catch {
+        // Network/5xx at startup: keep the tokens. Clearing here wiped the
+        // 7-day refresh token on an offline launch; tokens persist so the
+        // next refreshUser() call or app launch can recover the session.
         if (!cancelled) {
-          // Token present but invalid — clear silently
-          await apiService.clearTokens();
           setLoading(false);
         }
       }

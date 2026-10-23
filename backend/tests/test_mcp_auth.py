@@ -8,7 +8,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import secrets
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -149,7 +149,7 @@ async def test_authorize_redirect_includes_iss_param(client, auth_headers):
     with _in_memory_store():
         r = await client.post(
             "/oauth/authorize",
-            json=_authorize_body(redirect_uri="https://client.example/cb"),
+            json=_authorize_body(redirect_uri="https://claude.ai/callback"),
         )
     assert r.status_code == 302
     assert "iss=" in r.headers["location"]
@@ -358,3 +358,337 @@ async def test_default_client_name_stored_without_cimd(client, auth_headers):
         await client.post("/oauth/authorize", json=_authorize_body())
     payload = next(iter(stored.values()))
     assert payload["client_name"] == "StockLens MCP"
+
+
+# ── First-party redirect_uri allowlist + strict token exchange ─────────
+
+
+def _fake_oauth_request():
+    return type("R", (), {"base_url": "http://localhost:8000/"})()
+
+
+def test_first_party_redirect_allowlist():
+    from src.mcp.auth import _is_first_party_redirect
+
+    # RFC 8252 §7.3 loopback — any port, IPv4 / IPv6 / localhost
+    assert _is_first_party_redirect("http://127.0.0.1:6274/callback") is True
+    assert _is_first_party_redirect("http://localhost:6274/callback") is True
+    assert _is_first_party_redirect("http://[::1]:9000/callback") is True
+    assert _is_first_party_redirect("http://127.0.0.1") is True
+    # Registered default host from POST /oauth/register
+    assert _is_first_party_redirect("https://claude.ai/callback") is True
+    # Hostile / unregistered
+    assert _is_first_party_redirect("https://evil.example/cb") is False
+    # userinfo tricks never mask the real host (WHATWG: host = after last '@')
+    assert _is_first_party_redirect("http://127.0.0.1@evil.example/cb") is False
+    assert _is_first_party_redirect("https://claude.ai.evil.example/cb") is False
+    assert _is_first_party_redirect("http://127.0.0.1.evil.example/cb") is False
+    # Unparsable
+    assert _is_first_party_redirect("not a uri") is False
+    assert _is_first_party_redirect("http://[::1/cb") is False
+
+
+async def test_authorize_public_client_rejects_hostile_redirect_uri():
+    from fastapi import HTTPException
+
+    from src.mcp.auth import AuthorizeRequest, oauth_authorize_post
+
+    body = AuthorizeRequest(**_authorize_body(redirect_uri="https://evil.example/cb"))
+    with (
+        patch(
+            "src.mcp.auth._authenticate_user",
+            new_callable=AsyncMock,
+            return_value={"id": "u1"},
+        ),
+        patch("src.mcp.auth._store_code", new_callable=AsyncMock) as store,
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await oauth_authorize_post(body, _fake_oauth_request())
+    assert exc.value.status_code == 400
+    assert "redirect_uri" in exc.value.detail
+    store.assert_not_called()  # no code is ever minted for a hostile redirect
+
+
+async def test_authorize_non_https_client_id_rejects_hostile_redirect_uri():
+    from fastapi import HTTPException
+
+    from src.mcp.auth import AuthorizeRequest, oauth_authorize_post
+
+    body = AuthorizeRequest(
+        **_authorize_body(client_id="custom-native-client", redirect_uri="https://evil.example/cb")
+    )
+    with (
+        patch(
+            "src.mcp.auth._authenticate_user",
+            new_callable=AsyncMock,
+            return_value={"id": "u1"},
+        ),
+        patch("src.mcp.auth._store_code", new_callable=AsyncMock),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await oauth_authorize_post(body, _fake_oauth_request())
+    assert exc.value.status_code == 400
+
+
+async def test_authorize_public_client_accepts_loopback_any_port():
+    from fastapi.responses import RedirectResponse
+
+    from src.mcp.auth import AuthorizeRequest, oauth_authorize_post
+
+    with (
+        patch(
+            "src.mcp.auth._authenticate_user",
+            new_callable=AsyncMock,
+            return_value={"id": "u1"},
+        ),
+        patch("src.mcp.auth._store_code", new_callable=AsyncMock),
+    ):
+        # IPv4 loopback / localhost → JSON code response (existing behaviour)
+        body = AuthorizeRequest(**_authorize_body(redirect_uri="http://127.0.0.1:8765/cb"))
+        r = await oauth_authorize_post(body, _fake_oauth_request())
+        assert r["code"]
+        assert r["iss"] == "http://localhost:8000"
+
+        # IPv6 loopback → 302 carrying the code (presentation branch is
+        # IPv4-prefix based; the security allowlist accepts [::1] too)
+        body6 = AuthorizeRequest(**_authorize_body(redirect_uri="http://[::1]:9000/cb"))
+        r6 = await oauth_authorize_post(body6, _fake_oauth_request())
+        assert isinstance(r6, RedirectResponse)
+        assert r6.status_code == 302
+        assert "code=" in r6.headers["location"]
+
+
+async def test_authorize_public_client_accepts_registered_https_redirect():
+    from fastapi.responses import RedirectResponse
+
+    from src.mcp.auth import AuthorizeRequest, oauth_authorize_post
+
+    body = AuthorizeRequest(**_authorize_body(redirect_uri="https://claude.ai/callback"))
+    with (
+        patch(
+            "src.mcp.auth._authenticate_user",
+            new_callable=AsyncMock,
+            return_value={"id": "u1"},
+        ),
+        patch("src.mcp.auth._store_code", new_callable=AsyncMock),
+    ):
+        r = await oauth_authorize_post(body, _fake_oauth_request())
+    assert isinstance(r, RedirectResponse)
+    assert r.status_code == 302
+    assert "code=" in r.headers["location"]
+
+
+class _FakeTokenRequest:
+    """Minimal Request stand-in for oauth_token (JSON content-type)."""
+
+    def __init__(self, data: dict):
+        self.headers = {"content-type": "application/json"}
+        self._data = data
+
+    async def json(self):
+        return self._data
+
+
+def _stored_code_data() -> dict:
+    return {
+        "user_id": "u1",
+        "client_id": "stocklens-mcp-public",
+        "client_name": "StockLens MCP",
+        "redirect_uri": "http://localhost:6274/callback",
+        "code_challenge": _code_challenge_s256("v" * 43),
+        "code_challenge_method": "S256",
+        "scope": "mcp:tools",
+        "created_at": 0,
+    }
+
+
+def _exchange_conn_ctx_mock():
+    """connection_ctx stand-in for the refresh-token INSERT at exchange."""
+    mock_conn = AsyncMock()
+    mock_conn.execute = AsyncMock(return_value="INSERT 0 1")
+    ctx = MagicMock()
+    ctx.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
+    ctx.return_value.__aexit__ = AsyncMock(return_value=None)
+    return ctx
+
+
+async def _run_token_exchange(data: dict, stored: dict):
+    from src.mcp.auth import oauth_token
+
+    with (
+        patch("src.mcp.auth._consume_code", new_callable=AsyncMock, return_value=stored),
+        patch("src.mcp.auth.connection_ctx", _exchange_conn_ctx_mock()),
+    ):
+        return await oauth_token(_FakeTokenRequest(data))
+
+
+async def test_token_exchange_missing_redirect_uri_rejected():
+    from fastapi import HTTPException
+
+    data = {
+        "grant_type": "authorization_code",
+        "code": "c1",
+        "code_verifier": "v" * 43,
+        "client_id": "stocklens-mcp-public",
+    }
+    with pytest.raises(HTTPException) as exc:
+        await _run_token_exchange(data, _stored_code_data())
+    assert exc.value.status_code == 400
+    assert "redirect_uri" in exc.value.detail
+
+
+async def test_token_exchange_mismatched_redirect_uri_rejected():
+    from fastapi import HTTPException
+
+    data = {
+        "grant_type": "authorization_code",
+        "code": "c1",
+        "code_verifier": "v" * 43,
+        "redirect_uri": "http://localhost:9999/other",
+        "client_id": "stocklens-mcp-public",
+    }
+    with pytest.raises(HTTPException) as exc:
+        await _run_token_exchange(data, _stored_code_data())
+    assert exc.value.status_code == 400
+    assert "redirect_uri" in exc.value.detail
+
+
+async def test_token_exchange_mismatched_client_id_rejected():
+    from fastapi import HTTPException
+
+    data = {
+        "grant_type": "authorization_code",
+        "code": "c1",
+        "code_verifier": "v" * 43,
+        "redirect_uri": "http://localhost:6274/callback",
+        "client_id": "other-client",
+    }
+    with pytest.raises(HTTPException) as exc:
+        await _run_token_exchange(data, _stored_code_data())
+    assert exc.value.status_code == 400
+    assert "client_id" in exc.value.detail
+
+
+async def test_token_exchange_matching_params_issues_tokens():
+    data = {
+        "grant_type": "authorization_code",
+        "code": "c1",
+        "code_verifier": "v" * 43,
+        "redirect_uri": "http://localhost:6274/callback",
+        "client_id": "stocklens-mcp-public",
+    }
+    result = await _run_token_exchange(data, _stored_code_data())
+    assert "access_token" in result
+    assert "refresh_token" in result
+    assert result["token_type"] == "Bearer"
+
+
+# ── Refresh rotation: atomic single-use claim ───────────────────────────
+
+
+class _FakeRefreshConn:
+    """In-memory refresh_tokens emulating the atomic claim statement.
+
+    The check-and-set inside ``fetchval`` is synchronous, i.e. atomic within
+    one event-loop turn — exactly the guarantee the conditional UPDATE gives
+    against two concurrent refreshes.
+    """
+
+    def __init__(self):
+        self.tokens: dict[str, bool] = {}  # token_hash -> revoked
+        self.claim_queries: list[str] = []
+        self.new_inserts: list[tuple] = []
+        self.revoked_all_for: list[str] = []
+
+    def seed(self, token_hash: str) -> None:
+        self.tokens[token_hash] = False
+
+    async def fetchval(self, query, *args):
+        if "UPDATE refresh_tokens" in query:
+            self.claim_queries.append(query)
+            assert "AND revoked = false" in query, "claim must be a conditional UPDATE"
+            (token_hash,) = args
+            if token_hash not in self.tokens or self.tokens[token_hash]:
+                return None  # rowcount 0 → reuse path
+            self.tokens[token_hash] = True
+            return True  # rowcount 1 → mint path
+        raise AssertionError(f"unexpected fetchval: {query[:60]}")
+
+    async def fetchrow(self, query, *args):
+        if "SELECT revoked FROM refresh_tokens" in query:
+            (token_hash,) = args
+            if token_hash not in self.tokens:
+                return None
+            return {"revoked": self.tokens[token_hash]}
+        raise AssertionError(f"unexpected fetchrow: {query[:60]}")
+
+    async def execute(self, query, *args):
+        if "UPDATE refresh_tokens SET revoked = true WHERE user_id" in query:
+            self.revoked_all_for.append(args[0])
+            return "UPDATE 0"
+        if "INSERT INTO refresh_tokens" in query:
+            self.new_inserts.append(args)
+            return "INSERT 0 1"
+        raise AssertionError(f"unexpected execute: {query[:60]}")
+
+
+class _FakeRefreshCtx:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def __call__(self):
+        return self
+
+    async def __aenter__(self):
+        return self._conn
+
+    async def __aexit__(self, *args):
+        return False
+
+
+async def _call_refresh(conn, jti="jti-race", user="user-race"):
+    from src.auth.schemas import TokenPayload
+    from src.mcp.auth import oauth_token
+
+    payload = TokenPayload(sub=user, jti=jti, exp=2_000_000_000, iat=1_000_000_000, type="refresh")
+    request = _FakeTokenRequest({"grant_type": "refresh_token", "refresh_token": "rt"})
+    with (
+        patch("src.mcp.auth.connection_ctx", _FakeRefreshCtx(conn)),
+        patch("src.mcp.auth.is_token_blacklisted", new_callable=AsyncMock, return_value=False),
+        patch("src.cache.redis.blacklist_token", new_callable=AsyncMock),
+        patch("src.mcp.auth._decode_mcp_token", return_value=payload),
+    ):
+        return await oauth_token(request)
+
+
+async def test_double_refresh_same_jti_second_takes_reuse_path():
+    import asyncio
+
+    from fastapi import HTTPException
+
+    from src.auth.utils import hash_token
+
+    conn = _FakeRefreshConn()
+    token_hash = hash_token("jti-race", "user-race")
+    conn.seed(token_hash)
+
+    results = await asyncio.gather(
+        _call_refresh(conn),
+        _call_refresh(conn),
+        return_exceptions=True,
+    )
+
+    http_errors = [r for r in results if isinstance(r, HTTPException)]
+    successes = [r for r in results if isinstance(r, dict)]
+    assert len(successes) == 1, "only one refresh may mint a new pair"
+    assert len(http_errors) == 1
+    # The loser takes the stolen-token reuse path, not a plain not-found.
+    assert http_errors[0].status_code == 401
+    assert "re-login required" in http_errors[0].detail
+    assert conn.revoked_all_for == ["user-race"]
+    # Exactly one new refresh token was minted across both requests.
+    assert len(conn.new_inserts) == 1
+    # The claim is a single conditional UPDATE (no check-then-act SELECT first).
+    assert conn.claim_queries
+    for q in conn.claim_queries:
+        assert "AND revoked = false" in q

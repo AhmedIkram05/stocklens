@@ -130,49 +130,72 @@ def _row_to_response(row: dict) -> TransactionResponse:
     )
 
 
+async def _assert_buy_affordable(conn, portfolio_id, total_amount_gbp) -> None:
+    """Server-side affordability guard for BUY.
+
+    Free cash = deposits - net invested (all GBP). MUST run inside the same
+    transaction that inserts the transaction row, under the per-portfolio
+    advisory lock — read on autocommit statements, two concurrent buys both
+    pass on the same free-cash snapshot and drive the balance negative.
+    """
+    total_deposits = await conn.fetchval(
+        "SELECT COALESCE(SUM(amount), 0) FROM cash_flows WHERE portfolio_id = $1::uuid",
+        portfolio_id,
+    )
+    net_invested_gbp = await conn.fetchval(
+        "SELECT COALESCE(SUM(CASE WHEN type = 'BUY' THEN total_amount_gbp "
+        "WHEN type = 'SELL' THEN -total_amount_gbp ELSE 0 END), 0) "
+        "FROM transactions WHERE portfolio_id = $1::uuid",
+        portfolio_id,
+    )
+    free_cash = Decimal(str(total_deposits)) - Decimal(str(net_invested_gbp))
+    if total_amount_gbp > free_cash:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Insufficient funds: this purchase costs "
+                f"{total_amount_gbp} GBP but only {free_cash} GBP is available."
+            ),
+        )
+
+
 async def _apply_buy_to_holdings(
     conn, portfolio_id, ticker, shares, price, currency, fx_rate_to_gbp
 ) -> None:
     """Insert a new holding or update an existing one with a weighted-average cost basis.
 
+    Single atomic upsert against the unique (portfolio_id, ticker) index —
+    the shares add and weighted-average recompute happen inside the row
+    lock taken by ON CONFLICT DO UPDATE, so concurrent buys of the same
+    ticker can no longer compute from the same stale snapshot (lost update).
+
     Stores the native ``average_cost_basis`` plus its GBP-normalised parallel
     ``average_cost_basis_gbp`` (native × today's ``fx_rate_to_gbp``).
     """
-    existing = await conn.fetchrow(
-        "SELECT shares, average_cost_basis FROM holdings "
-        "WHERE portfolio_id = $1::uuid AND ticker = $2",
-        portfolio_id,
-        ticker,
-    )
-    if existing is None:
-        await conn.execute(
-            "INSERT INTO holdings "
-            "(portfolio_id, ticker, shares, average_cost_basis, currency, "
-            " fx_rate_to_gbp, average_cost_basis_gbp) "
-            "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7)",
-            portfolio_id,
-            ticker,
-            shares,
-            price,
-            currency,
-            fx_rate_to_gbp,
-            price * fx_rate_to_gbp,
-        )
-        return
-    new_shares = existing["shares"] + shares
-    new_cost = (existing["shares"] * existing["average_cost_basis"] + shares * price) / new_shares
     await conn.execute(
-        "UPDATE holdings SET shares = $3, average_cost_basis = $4, "
-        "currency = $5, fx_rate_to_gbp = $6, average_cost_basis_gbp = $7, "
-        "updated_at = now() "
-        "WHERE portfolio_id = $1::uuid AND ticker = $2",
+        "INSERT INTO holdings "
+        "(portfolio_id, ticker, shares, average_cost_basis, currency, "
+        " fx_rate_to_gbp, average_cost_basis_gbp) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7) "
+        "ON CONFLICT (portfolio_id, ticker) DO UPDATE SET "
+        "shares = holdings.shares + EXCLUDED.shares, "
+        "average_cost_basis = (holdings.shares * holdings.average_cost_basis "
+        "                      + EXCLUDED.shares * EXCLUDED.average_cost_basis) "
+        "                     / (holdings.shares + EXCLUDED.shares), "
+        "currency = EXCLUDED.currency, "
+        "fx_rate_to_gbp = EXCLUDED.fx_rate_to_gbp, "
+        "average_cost_basis_gbp = (holdings.shares * holdings.average_cost_basis "
+        "                          + EXCLUDED.shares * EXCLUDED.average_cost_basis) "
+        "                         / (holdings.shares + EXCLUDED.shares) "
+        "                         * EXCLUDED.fx_rate_to_gbp, "
+        "updated_at = now()",
         portfolio_id,
         ticker,
-        new_shares,
-        new_cost,
+        shares,
+        price,
         currency,
         fx_rate_to_gbp,
-        new_cost * fx_rate_to_gbp,
+        price * fx_rate_to_gbp,
     )
 
 
@@ -229,32 +252,20 @@ async def create_transaction(
     total_amount_gbp = total_amount * fx_rate_to_gbp
 
     async with connection_ctx() as conn:
-        # Server-side affordability guard for BUY (free cash = deposits - net invested, all GBP)
-        if body.type == "BUY":
-            total_deposits = await conn.fetchval(
-                "SELECT COALESCE(SUM(amount), 0) FROM cash_flows WHERE portfolio_id = $1::uuid",
-                portfolio_id,
-            )
-            net_invested_gbp = await conn.fetchval(
-                "SELECT COALESCE(SUM(CASE WHEN type = 'BUY' THEN total_amount_gbp "
-                "WHEN type = 'SELL' THEN -total_amount_gbp ELSE 0 END), 0) "
-                "FROM transactions WHERE portfolio_id = $1::uuid",
-                portfolio_id,
-            )
-            free_cash = Decimal(str(total_deposits)) - Decimal(str(net_invested_gbp))
-            if total_amount_gbp > free_cash:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=(
-                        f"Insufficient funds: this purchase costs "
-                        f"{total_amount_gbp} GBP but only {free_cash} GBP is available."
-                    ),
-                )
-
-        # Atomic: transaction row + holdings update commit together.
-        # Check is_in_transaction() to avoid nested tx error in tests
-        # (tests wrap each test in BEGIN/ROLLBACK).
+        # Atomic + serialized: affordability check, transaction row and
+        # holdings update commit together. The transaction-scoped advisory
+        # lock pipelines concurrent transactions for one portfolio — the
+        # free-cash aggregates and the holdings read are not row-lockable,
+        # so without it two concurrent buys both pass on the same snapshot
+        # (free cash negative, holdings lost update).
+        lock_stmt = "SELECT pg_advisory_xact_lock(hashtext($1))"
         if conn.is_in_transaction():
+            # Tests already run inside BEGIN/ROLLBACK — the xact-scoped lock
+            # binds to the outer transaction.
+            await conn.execute(lock_stmt, str(portfolio_id))
+            if body.type == "BUY":
+                await _assert_buy_affordable(conn, portfolio_id, total_amount_gbp)
+
             row = await conn.fetchrow(
                 "INSERT INTO transactions "
                 "(portfolio_id, ticker, type, shares, price_per_share, "
@@ -292,6 +303,10 @@ async def create_transaction(
                 await _apply_sell_to_holdings(conn, portfolio_id, body.ticker, body.shares)
         else:
             async with conn.transaction():
+                await conn.execute(lock_stmt, str(portfolio_id))
+                if body.type == "BUY":
+                    await _assert_buy_affordable(conn, portfolio_id, total_amount_gbp)
+
                 row = await conn.fetchrow(
                     "INSERT INTO transactions "
                     "(portfolio_id, ticker, type, shares, price_per_share, "
