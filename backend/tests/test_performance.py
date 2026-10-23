@@ -477,7 +477,12 @@ class TestTWR:
         assert twr < Decimal("0.01")
 
     def test_sell_transaction(self):
-        """SELL transaction (partial exit) is handled."""
+        """Partial SELL is a flow, not a loss: TWR reflects price moves only.
+
+        Regression for the flow-contamination bug (phase-2 audit C1): the
+        sub-period containing the SELL used to book (5×180 − 10×150)/1500 as a
+        −40% return, giving TWR ≈ −36.7% instead of the true +26.7%.
+        """
         from src.performance.calculations import _compute_twr
 
         twr, ann = _compute_twr(
@@ -514,7 +519,92 @@ class TestTWR:
             start_date=date(2024, 1, 1),
             end_date=date(2024, 12, 31),
         )
-        assert twr is not None
+        # Sub-periods: 150→180 (+20%) on 10 shares, then 180→190 (+5.56%) on
+        # the remaining 5. Linked: 1.2 × (950/900) − 1 = 0.2667. The SELL must
+        # not appear as a loss. 4dp tolerance: the linked value is exactly
+        # 0.2666…, and it cleanly separates from the buggy −0.3667.
+        assert twr == pytest.approx(Decimal("0.266667"), abs=Decimal("0.0001"))
+
+    def test_addon_buy_flat_prices(self):
+        """Add-on BUY at unchanged prices is a flow: TWR must stay 0.
+
+        Regression for phase-2 audit C1: the second BUY's cost used to book as
+        a +100% gain on the £1,000 base.
+        """
+        from src.performance.calculations import _compute_twr
+
+        twr, ann = _compute_twr(
+            transactions=[
+                {
+                    "type": "BUY",
+                    "ticker": "AAPL",
+                    "shares": Decimal("10"),
+                    "total_amount": Decimal("1000.00"),
+                    "date": date(2024, 1, 2),
+                },
+                {
+                    "type": "BUY",
+                    "ticker": "AAPL",
+                    "shares": Decimal("10"),
+                    "total_amount": Decimal("1000.00"),
+                    "date": date(2024, 6, 30),
+                },
+            ],
+            cash_flows=[
+                {"amount": Decimal("1000.00"), "created_at": datetime(2024, 1, 2)},
+                {"amount": Decimal("1000.00"), "created_at": datetime(2024, 6, 30)},
+            ],
+            price_map={
+                "AAPL": {
+                    date(2024, 1, 1): Decimal("100.00"),
+                    date(2024, 6, 30): Decimal("100.00"),
+                    date(2024, 12, 31): Decimal("100.00"),
+                },
+            },
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 12, 31),
+        )
+        assert twr == pytest.approx(Decimal("0"), abs=Decimal("1e-9"))
+
+    def test_full_liquidation_flat_prices(self):
+        """Selling everything at unchanged prices is a flow: TWR must stay 0.
+
+        Regression for phase-2 audit C1: the empty post-SELL valuation used to
+        book a −100% sub-period return.
+        """
+        from src.performance.calculations import _compute_twr
+
+        twr, ann = _compute_twr(
+            transactions=[
+                {
+                    "type": "BUY",
+                    "ticker": "AAPL",
+                    "shares": Decimal("10"),
+                    "total_amount": Decimal("1000.00"),
+                    "date": date(2024, 1, 2),
+                },
+                {
+                    "type": "SELL",
+                    "ticker": "AAPL",
+                    "shares": Decimal("10"),
+                    "total_amount": Decimal("1000.00"),
+                    "date": date(2024, 6, 30),
+                },
+            ],
+            cash_flows=[
+                {"amount": Decimal("1000.00"), "created_at": datetime(2024, 1, 2)},
+            ],
+            price_map={
+                "AAPL": {
+                    date(2024, 1, 1): Decimal("100.00"),
+                    date(2024, 6, 30): Decimal("100.00"),
+                    date(2024, 12, 31): Decimal("100.00"),
+                },
+            },
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 12, 31),
+        )
+        assert twr == pytest.approx(Decimal("0"), abs=Decimal("1e-9"))
 
     def test_multiple_tickers(self):
         """Multiple tickers in same portfolio."""
