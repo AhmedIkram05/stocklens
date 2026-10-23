@@ -338,7 +338,14 @@ def _compute_twr(
         # 1. BMV before sub_end transactions
         bmv = _portfolio_value(current_holdings, price_map, sub_start, fx_rates=fx_rates)
 
-        # 2. Apply sub_end transactions (update holdings)
+        # 2. EMV on the pre-trade holdings at sub_end. Trades on sub_end are
+        # flows into/out of the measured portfolio, not P&L: valuing them
+        # post-trade books a SELL as a loss and a BUY as a gain, so the
+        # sub-period return must be computed before they are applied.
+        emv = _portfolio_value(current_holdings, price_map, sub_end, fx_rates=fx_rates)
+
+        # 3. Apply sub_end transactions (update holdings for the next sub-period;
+        # its BMV is the post-flow portfolio value)
         for txn in txns_by_date.get(sub_end, []):
             ticker = txn["ticker"]
             if txn["type"] == "BUY":
@@ -347,9 +354,6 @@ def _compute_twr(
                 current_holdings[ticker] = current_holdings.get(ticker, Decimal(0)) - txn["shares"]
                 if current_holdings[ticker] <= 0:
                     del current_holdings[ticker]
-
-        # 3. EMV after sub_end
-        emv = _portfolio_value(current_holdings, price_map, sub_end, fx_rates=fx_rates)
 
         # Holdings-only valuation: external cash flows sit in cash and never
         # enter holdings, so they must not appear here. TWR already strips the
