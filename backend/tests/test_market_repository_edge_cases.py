@@ -211,17 +211,25 @@ class TestGetOHLCVBatch:
         assert len(result["MSFT"]) == 1
         assert result["MSFT"][0]["date"] == date(2024, 1, 5)
 
-    async def test_limit_applies_to_total(self):
+    async def test_limit_caps_rows_per_ticker_not_globally(self):
         rows = [
             {"date": date(2024, 1, i), "close": Decimal(str(180 + i)), **NULL_OHLCV}
-            for i in range(2, 7)
+            for i in range(2, 7)  # 5 rows
         ]
         await upsert_ohlcv("AAPL", rows)
         await upsert_ohlcv("MSFT", rows)
 
         result = await get_ohlcv_batch(["AAPL", "MSFT"], limit=3)
-        total = sum(len(v) for v in result.values())
-        assert total <= 3
+        # Per-ticker cap: BOTH tickers keep their 3 most recent rows. The old
+        # global LIMIT (ordered ticker ASC) starved the alphabetically-last
+        # ticker once the combined row count exceeded the cap.
+        assert len(result["AAPL"]) == 3
+        assert len(result["MSFT"]) == 3
+        assert [r["date"] for r in result["MSFT"]] == [
+            date(2024, 1, 4),
+            date(2024, 1, 5),
+            date(2024, 1, 6),
+        ]
 
 
 class TestConcurrencyEdgeCases:
