@@ -1551,12 +1551,14 @@ class TestComputePortfolioDailyReturns:
         assert len(dates) == 3
         assert dates == [date(2024, 6, 1), date(2024, 6, 2), date(2024, 6, 3)]
         assert len(returns) == 2
-        # Day 1: BUY 10 AAPL → current={"AAPL": 10}, value=10*100=1000, i=0 skip.
-        # Day 2: BUY 5 AAPL  → current={"AAPL": 15}, value=15*110=1650
-        #        return = (1650-1000)/1000 = 0.65
-        # Day 3:              current={"AAPL": 15}, value=15*120=1800
+        # Day 1: BUY 10 AAPL applied after valuation → post-trade value 10*100
+        #        = 1000, i=0 skip.
+        # Day 2: pre-trade value = 10*110 = 1100 → return (1100-1000)/1000 = 0.1
+        #        (price move only); the BUY 5 is a flow applied after valuation,
+        #        post-trade value 15*110 = 1650.
+        # Day 3: value = 15*120 = 1800
         #        return = (1800-1650)/1650 ≈ 0.0909
-        assert float(returns[0]) == pytest.approx(0.65, rel=1e-9)
+        assert float(returns[0]) == pytest.approx(0.1, rel=1e-9)
         assert float(returns[1]) == pytest.approx(0.090909, rel=1e-5)
 
     def test_with_sell_transaction_removes_ticker(self):
@@ -1596,10 +1598,10 @@ class TestComputePortfolioDailyReturns:
         )
         assert dates == [date(2024, 6, 1), date(2024, 6, 2)]
         assert len(returns) == 1
-        # After sell: only AAPL at 10 shares * 110 = 1100
-        # Prev: AAPL 10*100 + MSFT 5*200 = 2000
-        # Return: (1100 - 2000) / 2000 = -0.45
-        assert float(returns[0]) == pytest.approx(-0.45, rel=1e-9)
+        # Day 2 pre-trade value: AAPL 10*110 + MSFT 5*210 = 2150; prev = 2000.
+        # Return = (2150 - 2000) / 2000 = 0.075 (price move only — the SELL is
+        # a flow applied after valuation, so no fake −45% loss).
+        assert float(returns[0]) == pytest.approx(0.075, rel=1e-9)
 
     def test_zero_previous_value(self):
         """Zero previous value → return 0 for that day."""
@@ -1642,6 +1644,65 @@ class TestComputePortfolioDailyReturns:
         assert len(returns) == 1
         # 10*110*0.8 - 10*100*0.8 / 10*100*0.8 = 0.1 (same % return)
         assert float(returns[0]) == pytest.approx(0.1, rel=1e-9)
+
+    def test_buy_day_no_return_spike(self):
+        """A BUY on a flat-price day must not register as a daily gain.
+
+        Regression for phase-2 audit C2: the day's trades were applied before
+        valuation, so a £5,000 buy on a £5,000 portfolio showed as +100%.
+        """
+        from src.performance.queries import compute_portfolio_daily_returns
+
+        pm = {
+            "AAPL": {
+                date(2024, 6, 1): Decimal("100"),
+                date(2024, 6, 2): Decimal("100"),
+                date(2024, 6, 3): Decimal("100"),
+            },
+        }
+        txns = [
+            {"ticker": "AAPL", "type": "BUY", "shares": Decimal("50"), "date": date(2024, 6, 1)},
+            {"ticker": "AAPL", "type": "BUY", "shares": Decimal("50"), "date": date(2024, 6, 2)},
+        ]
+        dates, returns = compute_portfolio_daily_returns(
+            holdings=[{"ticker": "AAPL", "shares": 100}],
+            transactions=txns,
+            price_map=pm,
+            start_date=date(2024, 6, 1),
+            end_date=date(2024, 6, 3),
+        )
+        assert dates == [date(2024, 6, 1), date(2024, 6, 2), date(2024, 6, 3)]
+        assert len(returns) == 2
+        # Day 2 (the £5,000 add-on buy): pre-trade 50 sh @100 vs prev 50 sh
+        # @100 → 0, not 1.0. Day 3 likewise.
+        assert float(returns[0]) == pytest.approx(0, abs=1e-12)
+        assert float(returns[1]) == pytest.approx(0, abs=1e-12)
+
+    def test_trade_days_no_spikes_flat_prices(self):
+        """Several BUYs/SELLs at flat prices → every daily return is ~0."""
+        from src.performance.queries import compute_portfolio_daily_returns
+
+        flat = Decimal("100")
+        pm = {"AAPL": {date(2024, 6, d): flat for d in range(1, 6)}}
+        txns = [
+            {"ticker": "AAPL", "type": "BUY", "shares": Decimal("10"), "date": date(2024, 6, 1)},
+            {"ticker": "AAPL", "type": "BUY", "shares": Decimal("5"), "date": date(2024, 6, 2)},
+            {"ticker": "AAPL", "type": "SELL", "shares": Decimal("3"), "date": date(2024, 6, 3)},
+            {"ticker": "AAPL", "type": "SELL", "shares": Decimal("12"), "date": date(2024, 6, 4)},
+        ]
+        dates, returns = compute_portfolio_daily_returns(
+            holdings=[{"ticker": "AAPL", "shares": 0}],
+            transactions=txns,
+            price_map=pm,
+            start_date=date(2024, 6, 1),
+            end_date=date(2024, 6, 5),
+        )
+        assert dates == [date(2024, 6, d) for d in range(1, 6)]
+        assert len(returns) == 4
+        # Trades are flows: no +50% on the add-on buy, no −100% on the
+        # full liquidation — every day is a flat price day, so all returns 0.
+        for r in returns:
+            assert float(r) == pytest.approx(0, abs=1e-12)
 
 
 class TestBenchmarkExceptionHandler:

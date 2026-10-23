@@ -562,26 +562,26 @@ def compute_portfolio_daily_returns(
     for t in transactions:
         txns_by_date[t["date"]].append(t)
 
+    def _value_at(day_: date) -> Decimal:
+        """Market value of the current holdings at ``day_``'s prices (GBP)."""
+        total = Decimal(0)
+        for ticker, shares in current.items():
+            ticker_prices = price_map.get(ticker, {})
+            if day_ in ticker_prices and ticker_prices[day_] is not None:
+                fx = (fx_rates or {}).get(ticker, Decimal(1))
+                total += shares * ticker_prices[day_] * fx
+        return total
+
     daily_returns: list[Decimal] = []
     current: dict[str, Decimal] = {}
     previous_value = Decimal(0)
 
     for i, day in enumerate(trading_days):
-        for txn in txns_by_date.get(day, []):
-            ticker = txn["ticker"]
-            if txn["type"] == "BUY":
-                current[ticker] = current.get(ticker, Decimal(0)) + txn["shares"]
-            else:
-                current[ticker] = current.get(ticker, Decimal(0)) - txn["shares"]
-                if current[ticker] <= 0:
-                    del current[ticker]
-
-        value = Decimal(0)
-        for ticker, shares in current.items():
-            ticker_prices = price_map.get(ticker, {})
-            if day in ticker_prices and ticker_prices[day] is not None:
-                fx = (fx_rates or {}).get(ticker, Decimal(1))
-                value += shares * ticker_prices[day] * fx
+        # Value the pre-trade position at today's prices: the day's return is
+        # price movement on what was held entering the day. Trades are flows,
+        # not P&L — applying them first booked every BUY as a gain and every
+        # SELL as a loss, spiking every trade day.
+        value = _value_at(day)
 
         if i > 0:
             prev = previous_value
@@ -591,6 +591,18 @@ def compute_portfolio_daily_returns(
             else:
                 daily_returns.append(Decimal(0))
 
-        previous_value = value
+        # Apply the day's transactions for the next day's position; the
+        # post-trade valuation becomes the next day's base, so a trade's cash
+        # value cancels out of the return series.
+        for txn in txns_by_date.get(day, []):
+            ticker = txn["ticker"]
+            if txn["type"] == "BUY":
+                current[ticker] = current.get(ticker, Decimal(0)) + txn["shares"]
+            else:
+                current[ticker] = current.get(ticker, Decimal(0)) - txn["shares"]
+                if current[ticker] <= 0:
+                    del current[ticker]
+
+        previous_value = _value_at(day)
 
     return trading_days, daily_returns
