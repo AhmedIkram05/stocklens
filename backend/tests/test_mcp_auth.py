@@ -149,7 +149,7 @@ async def test_authorize_redirect_includes_iss_param(client, auth_headers):
     with _in_memory_store():
         r = await client.post(
             "/oauth/authorize",
-            json=_authorize_body(redirect_uri="https://client.example/cb"),
+            json=_authorize_body(redirect_uri="https://claude.ai/callback"),
         )
     assert r.status_code == 302
     assert "iss=" in r.headers["location"]
