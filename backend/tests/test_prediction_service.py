@@ -518,3 +518,118 @@ class TestSageMakerPredict:
             result = service.predict("AAPL", ohlcv_rows)
 
         assert result is None
+
+
+# ── SPY cross-sectional date alignment ─────────────────────────────────────────
+
+
+@pytest.fixture
+def structlog_caplog():
+    """Route structlog through stdlib logging so caplog can capture events."""
+    import structlog
+
+    saved = structlog.get_config()
+    structlog.configure(logger_factory=structlog.stdlib.LoggerFactory())
+    yield
+    structlog.configure(**saved)
+
+
+class TestSpyDateAlignment:
+    """Cross-sectional SPY features must align by DATE (train-path semantics),
+    not by position — see compute_cross_sectional_features' reindex contract."""
+
+    @staticmethod
+    def _spy_rows(dates, base_price=400.0):
+        rows = []
+        for i, d in enumerate(dates):
+            price = base_price * (1.0 + 0.001 * (i + 1))
+            rows.append(
+                {
+                    "date": d,
+                    "adjusted_close": price,
+                    "high": price * 1.01,
+                    "low": price * 0.99,
+                    "volume": 50_000_000,
+                    "open": price * 0.995,
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _expected_excess_1d(ticker_rows, spy_rows):
+        """Per-row expected excess_ret_1d (rows whose DATE is absent from SPY
+        → NaN → 0 filled; warmup row 0 → 0). Both sides compute returns over
+        their own adjacent rows, mirroring the feature engine — a SPY gap
+        yields a gap-spanning benchmark return at the row after it (same as
+        the train path's reindex semantics)."""
+        t = np.array([r["adjusted_close"] for r in ticker_rows])
+        spy_dates = [r["date"] for r in spy_rows]
+        spy_prices = [r["adjusted_close"] for r in spy_rows]
+        spy_ret_by_date = {
+            spy_dates[j]: np.log(spy_prices[j]) - np.log(spy_prices[j - 1])
+            for j in range(1, len(spy_rows))
+        }
+        expected = np.zeros(len(t))
+        t_dates = [r["date"] for r in ticker_rows]
+        for i in range(1, len(t)):
+            spy_ret = spy_ret_by_date.get(t_dates[i])
+            if spy_ret is not None:
+                expected[i] = (np.log(t[i]) - np.log(t[i - 1])) - spy_ret
+        return expected
+
+    def test_missing_spy_date_zero_filled_with_correct_pairing(self, service, ohlcv_rows):
+        dates = [r["date"] for r in ohlcv_rows]
+        spy_rows = [r for r in self._spy_rows(dates) if r["date"] != dates[75]]
+
+        result = service._compute_features(ohlcv_rows, spy_rows)
+        assert result is not None
+        excess = result[1][:, -3:]
+
+        expected = self._expected_excess_1d(ohlcv_rows, spy_rows)
+        # Present dates: exact date-keyed pairing (positional alignment shifts
+        # every pairing when SPY is shorter, so this fails under the old code)
+        np.testing.assert_allclose(excess[:, 0], expected, atol=1e-6)
+        # The absent SPY date itself is NaN → 0 in all three excess columns
+        assert excess[75, 0] == 0.0
+        assert np.all(excess[75, :] == 0.0)
+
+    def test_ticker_gap_pairs_by_date_not_position(self, service, ohlcv_rows):
+        # Ticker suspended for 3 days while SPY covers every day
+        dates = [r["date"] for r in ohlcv_rows]
+        kept = [r for r in ohlcv_rows if r["date"] not in set(dates[40:43])]
+        spy_rows = self._spy_rows(dates)
+
+        result = service._compute_features(kept, spy_rows)
+        assert result is not None
+        excess = result[1][:, -3:]
+
+        expected = self._expected_excess_1d(kept, spy_rows)
+        np.testing.assert_allclose(excess[:, 0], expected, atol=1e-6)
+
+    def test_identical_coverage_exact_values(self, service, ohlcv_rows):
+        # Same date coverage → identical output under old (positional) and new
+        # (date-keyed) alignment; assert the true per-date values exactly.
+        dates = [r["date"] for r in ohlcv_rows]
+        spy_rows = self._spy_rows(dates)
+
+        result = service._compute_features(ohlcv_rows, spy_rows)
+        assert result is not None
+        excess = result[1][:, -3:]
+
+        expected = self._expected_excess_1d(ohlcv_rows, spy_rows)
+        np.testing.assert_allclose(excess[:, 0], expected, atol=1e-6)
+        assert np.abs(excess[1:, 0]).max() > 0  # real signals, not all-zero
+
+    def test_unusable_spy_degrades_loudly(self, service, ohlcv_rows, structlog_caplog, caplog):
+        import logging
+
+        bad_spy = [{"close": 1.0}] * 100  # no "date" column → sort_values raises
+        with caplog.at_level(logging.WARNING):
+            result = service._compute_features(ohlcv_rows, bad_spy)
+
+        assert result is not None  # prediction path survives
+        assert np.all(result[1][:, -3:] == 0.0)  # excess block zero-padded
+        assert any(
+            "cross_sectional_features_failed_using_zero_padded_excess" in r.getMessage()
+            for r in caplog.records
+        )
