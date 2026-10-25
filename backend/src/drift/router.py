@@ -176,6 +176,7 @@ async def trigger_drift_run(
         overall_drift_verdict=drift_result["overall_verdict"],
         report_url=report_url,
         metrics=response_metrics,
+        data_quality=drift_result.get("data_quality"),
         created_at=datetime.now(timezone.utc),
     )
 

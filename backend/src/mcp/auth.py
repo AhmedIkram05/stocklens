@@ -292,7 +292,25 @@ async def _consume_code(code: str) -> dict[str, Any] | None:
 # ── CIMD (OAuth Client ID Metadata Documents, draft-ietf-oauth-client-id-metadata-document) ──
 
 _CIMD_TTL = 300  # seconds
+_CIMD_MAX_CACHE_ENTRIES = 128
+_CIMD_MAX_BYTES = 256 * 1024  # response size cap — hostile hosts must not OOM the worker
 _CIMD_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+class _RefuseRedirectsHandler(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects on CIMD fetches.
+
+    The SSRF guard validates only the initial host — following a redirect
+    would let an approved public host 302 the fetch to link-local metadata
+    services or internal endpoints. Refusing turns every 3xx into an
+    HTTPError, which the fetch treats as a failed lookup.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_CIMD_OPENER = urllib.request.build_opener(_RefuseRedirectsHandler())
 
 
 def _is_cimd_client_id(client_id: str) -> bool:
@@ -379,14 +397,23 @@ def _fetch_cimd_document(client_id: str) -> dict[str, Any] | None:
             client_id,
             headers={"Accept": "application/json", "User-Agent": "stocklens-mcp/0.1.0"},
         )
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            doc = json.loads(resp.read().decode("utf-8"))
+        with _CIMD_OPENER.open(req, timeout=5) as resp:
+            # Stream-read with a hard cap so a hostile host streaming
+            # gigabytes cannot pin the to_thread worker or exhaust memory.
+            raw = resp.read(_CIMD_MAX_BYTES + 1)
+        if len(raw) > _CIMD_MAX_BYTES:
+            logger.warning("cimd_document_too_large", client_id=client_id)
+            return None
+        doc = json.loads(raw.decode("utf-8"))
     except Exception as exc:
         logger.warning("cimd_fetch_failed", client_id=client_id, reason=str(exc))
         return None
 
     if not isinstance(doc, dict) or not isinstance(doc.get("redirect_uris"), list):
         return None
+    # Bound the cache — TTL checks alone never evicted stale entries.
+    while len(_CIMD_CACHE) >= _CIMD_MAX_CACHE_ENTRIES:
+        _CIMD_CACHE.pop(next(iter(_CIMD_CACHE)))
     _CIMD_CACHE[client_id] = (now, doc)
     return doc
 

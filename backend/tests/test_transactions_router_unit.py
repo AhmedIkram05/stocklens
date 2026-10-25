@@ -49,7 +49,7 @@ async def test_apply_buy_to_holdings_is_atomic_upsert():
     conn = _StubConn([])
     conn.execute = AsyncMock(return_value="INSERT 0 1")
     await _apply_buy_to_holdings(
-        conn, "p1", "AAPL", Decimal("10"), Decimal("150"), "USD", Decimal("0.8")
+        conn, "p1", "AAPL", Decimal("10"), Decimal("150"), "USD", Decimal("0.8"), Decimal("120")
     )
 
     call = conn.execute.call_args
@@ -61,6 +61,12 @@ async def test_apply_buy_to_holdings_is_atomic_upsert():
     # the conflict row lock (no lost update between concurrent buys).
     assert "holdings.shares + EXCLUDED.shares" in query
     assert "holdings.shares * holdings.average_cost_basis" in query
+    # M12: the GBP basis is accumulated per buy from total_amount_gbp
+    # (each buy weighted at its own historical FX), not today's rate
+    # times the native average.
+    assert "holdings.average_cost_basis_gbp," in query
+    assert "+ $7)" in query
+    assert "* EXCLUDED.fx_rate_to_gbp" not in query
     assert "updated_at = now()" in query
 
     args = call[0][1:]
@@ -68,5 +74,6 @@ async def test_apply_buy_to_holdings_is_atomic_upsert():
     assert args[1] == "AAPL"
     assert args[2] == Decimal("10")
     assert args[3] == Decimal("150")
-    # GBP basis seeded on the insert path as price × fx rate.
-    assert args[6] == Decimal("150") * Decimal("0.8")
+    # $7 is the buy's GBP amount — the per-buy GBP basis ($7/$3 = £12/share)
+    # seeds the insert path.
+    assert args[6] == Decimal("120")

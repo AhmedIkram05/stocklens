@@ -17,8 +17,12 @@ class DriftRunRequest(BaseModel):
     lookback_days: int = Field(
         30,
         ge=1,
-        le=365,
-        description="Days of prediction logs to compare against reference.",
+        le=90,
+        description=(
+            "Days of prediction logs to compare against reference. Capped at 90 "
+            "to match prediction_log retention — longer windows would silently "
+            "operate on truncated data."
+        ),
     )
     generate_report: bool = Field(
         False,
@@ -51,6 +55,7 @@ class DriftRunResponse(BaseModel):
     overall_drift_verdict: str
     report_url: str | None = None
     metrics: list[DriftMetricResponse]
+    data_quality: dict | None = None
     created_at: datetime
 
 

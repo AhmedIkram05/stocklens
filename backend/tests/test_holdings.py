@@ -309,3 +309,67 @@ class TestDeleteHolding:
         other_headers = {"Authorization": f"Bearer {resp2.json()['tokens']['access_token']}"}
         response = await client.delete(f"/holdings/{hid}", headers=other_headers)
         assert response.status_code == 404
+
+
+class TestTransactionBackedHoldingsGuard:
+    """M11 regression: DELETE/PUT must refuse holdings backed by transactions.
+
+    Deleting a transaction-backed holding makes its money vanish (cost basis
+    £0, market value £0, free cash still debited); an arbitrary PUT
+    desynchronises the holding from its recorded buys.
+    """
+
+    async def _transaction_backed_holding(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str], ticker: str
+    ) -> tuple[dict, dict]:
+        """Create a portfolio + deposit + BUY, return the auto-created holding."""
+        p = await _create_portfolio(client, auth_headers)
+        deposit = await client.post(
+            f"/portfolios/{p['id']}/cash-flows",
+            json={"amount": 10000.0, "source": "deposit", "notes": "fund"},
+            headers=auth_headers,
+        )
+        assert deposit.status_code == 201
+        txn = await client.post(
+            f"/portfolios/{p['id']}/transactions",
+            json={
+                "ticker": ticker,
+                "type": "BUY",
+                "shares": "10.0",
+                "price_per_share": "150.50",
+                "transaction_date": "2026-06-01",
+            },
+            headers=auth_headers,
+        )
+        assert txn.status_code == 201
+        listed = await client.get(f"/portfolios/{p['id']}/holdings", headers=auth_headers)
+        assert listed.status_code == 200
+        holding = next(h for h in listed.json()["holdings"] if h["ticker"] == ticker)
+        return p, holding
+
+    async def test_delete_backed_by_transaction_rejected(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        p, holding = await self._transaction_backed_holding(client, auth_headers, "MSFT")
+        response = await client.delete(f"/holdings/{holding['id']}", headers=auth_headers)
+        assert response.status_code == 409
+
+    async def test_put_backed_by_transaction_rejected(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        p, holding = await self._transaction_backed_holding(client, auth_headers, "TSLA")
+        response = await client.put(
+            f"/holdings/{holding['id']}",
+            json={"shares": "999.0"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 409
+
+    async def test_delete_nested_backed_by_transaction_rejected(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        p, holding = await self._transaction_backed_holding(client, auth_headers, "NVDA")
+        response = await client.delete(
+            f"/portfolios/{p['id']}/holdings/{holding['id']}", headers=auth_headers
+        )
+        assert response.status_code == 409

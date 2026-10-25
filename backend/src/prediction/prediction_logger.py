@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
@@ -46,13 +47,46 @@ FEATURE_NAMES = [
 # Thread pool for fire-and-forget logging — max_workers=2 limits DB connection pressure
 _logger_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="pred_log")
 
-# Capture the running event loop at import time so thread-pool callbacks can
-# schedule coroutines on it via run_coroutine_threadsafe.  Without this the
-# asyncpg pool cannot be shared across event loops and logs fail silently.
-try:
-    _main_loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
-except RuntimeError:
-    _main_loop = None
+# The event loop that owns the asyncpg pool. Captured from the app lifespan
+# via set_main_loop() — NOT at import time, which ran before any loop existed
+# under pytest/scripts/gunicorn-preload and silently lost every log to a
+# foreign-loop RuntimeError.
+_main_loop: asyncio.AbstractEventLoop | None = None
+
+
+def set_main_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """Record the running event loop so worker threads can schedule DB writes on it.
+
+    Called from the FastAPI lifespan (startup), where the loop that owns the
+    asyncpg connection pool is running.
+    """
+    global _main_loop
+    _main_loop = loop
+
+
+# Bound the fire-and-forget backlog: a DB slowdown must not grow the executor
+# queue without limit (and shutdown would drop everything pending anyway).
+_MAX_PENDING_LOGS = 1000
+_pending_slots = threading.BoundedSemaphore(_MAX_PENDING_LOGS)
+
+
+def submit_prediction_log(*args: Any) -> None:
+    """Queue log_prediction_sync on the logger executor, dropping when saturated."""
+    if not _pending_slots.acquire(blocking=False):
+        logger.warning("prediction_log_dropped", reason="pending_queue_full")
+        return
+
+    def _run() -> None:
+        try:
+            log_prediction_sync(*args)
+        finally:
+            _pending_slots.release()
+
+    try:
+        _logger_executor.submit(_run)
+    except RuntimeError:
+        _pending_slots.release()
+        logger.warning("prediction_log_dropped", reason="executor_shutdown")
 
 
 def _is_nan(val: float) -> bool:
@@ -93,6 +127,14 @@ def log_prediction_sync(
                 _main_loop,
             )
         else:
+            # No lifespan-captured loop (pytest, scripts, gunicorn preload) —
+            # the asyncpg pool belongs to a different loop, so this path
+            # usually fails and the log is lost. Make the loss visible.
+            logger.warning(
+                "prediction_log_no_main_loop",
+                ticker=ticker,
+                hint="call set_main_loop() from the app lifespan",
+            )
             asyncio.run(
                 _log_prediction(
                     ticker=ticker,

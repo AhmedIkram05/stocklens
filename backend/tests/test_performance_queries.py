@@ -69,3 +69,37 @@ class TestGetBenchmarkComparison:
         """Ticker validation fires before any network refresh."""
         with pytest.raises(HTTPException, match="Benchmark must be SPY or QQQ"):
             await queries.get_benchmark_comparison(PID_1, "XXX", None, None, USER_ID)
+
+
+class TestFetchLiveQuotes:
+    """M10 regression: bounded concurrency + per-quote timeout."""
+
+    async def test_concurrency_capped(self, monkeypatch):
+        import asyncio
+
+        active = 0
+        peak = 0
+
+        async def fake_get_quote(ticker: str):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return {"price": 1, "previous_close": 1}
+
+        monkeypatch.setattr(queries, "get_quote", fake_get_quote)
+        quotes = await queries.fetch_live_quotes([f"T{i}" for i in range(20)])
+        assert len(quotes) == 20
+        assert peak <= queries._LIVE_QUOTE_CONCURRENCY
+
+    async def test_timeout_skips_slow_quote(self, monkeypatch):
+        import asyncio
+
+        async def slow_quote(ticker: str):
+            await asyncio.sleep(5)
+
+        monkeypatch.setattr(queries, "get_quote", slow_quote)
+        monkeypatch.setattr(queries, "_LIVE_QUOTE_TIMEOUT", 0.05)
+        quotes = await queries.fetch_live_quotes(["SLOW"])
+        assert quotes == {}

@@ -6,6 +6,7 @@ No DB access — all data is passed in as arguments for testability.
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -205,11 +206,13 @@ def compute_portfolio_performance(
             total_day_change += hp.day_change
             day_change_computed += 1
     if day_change_computed > 0:
-        # Weighted by start-of-day value
+        # Weighted by start-of-day value. Decimal("0") is falsy, so a truthiness
+        # check here would drop flat holdings from the denominator entirely and
+        # double the weighted average — use explicit None checks instead.
         weights = {
             hp.ticker: (
                 hp.market_value / (Decimal(1) + hp.day_change_pct / Decimal(100))
-                if hp.market_value and hp.day_change_pct
+                if hp.market_value is not None and hp.day_change_pct is not None
                 else Decimal(0)
             )
             for hp in holdings_perf
@@ -330,19 +333,24 @@ def _compute_twr(
 
     cumulative_return = Decimal(1)
     sub_period_count = 0
+    price_dates = _sorted_price_dates(price_map)
 
     for i in range(len(all_dates) - 1):
         sub_start = all_dates[i]
         sub_end = all_dates[i + 1]
 
         # 1. BMV before sub_end transactions
-        bmv = _portfolio_value(current_holdings, price_map, sub_start, fx_rates=fx_rates)
+        bmv = _portfolio_value(
+            current_holdings, price_map, sub_start, fx_rates=fx_rates, sorted_dates=price_dates
+        )
 
         # 2. EMV on the pre-trade holdings at sub_end. Trades on sub_end are
         # flows into/out of the measured portfolio, not P&L: valuing them
         # post-trade books a SELL as a loss and a BUY as a gain, so the
         # sub-period return must be computed before they are applied.
-        emv = _portfolio_value(current_holdings, price_map, sub_end, fx_rates=fx_rates)
+        emv = _portfolio_value(
+            current_holdings, price_map, sub_end, fx_rates=fx_rates, sorted_dates=price_dates
+        )
 
         # 3. Apply sub_end transactions (update holdings for the next sub-period;
         # its BMV is the post-flow portfolio value)
@@ -384,11 +392,17 @@ def _compute_twr(
     return twr, twr_annualised
 
 
+def _sorted_price_dates(price_map: dict[str, dict[date, Decimal]]) -> dict[str, list[date]]:
+    """Pre-sort each ticker's price dates once for O(log T) closest-price lookups."""
+    return {ticker: sorted(ticker_prices) for ticker, ticker_prices in price_map.items()}
+
+
 def _portfolio_value(
     holdings: dict[str, Decimal],
     price_map: dict[str, dict[date, Decimal]],
     valuation_date: date,
     fx_rates: Optional[dict[str, Decimal]] = None,
+    sorted_dates: Optional[dict[str, list[date]]] = None,
 ) -> Decimal:
     """Compute total market value of holdings at a given date.
 
@@ -398,7 +412,7 @@ def _portfolio_value(
     """
     total = Decimal(0)
     for ticker, shares in holdings.items():
-        price = _get_closest_price(price_map, ticker, valuation_date)
+        price = _get_closest_price(price_map, ticker, valuation_date, sorted_dates)
         if price is not None:
             fx = (fx_rates or {}).get(ticker, Decimal(1))
             total += shares * price * fx
@@ -409,18 +423,25 @@ def _get_closest_price(
     price_map: dict[str, dict[date, Decimal]],
     ticker: str,
     target_date: date,
+    sorted_dates: Optional[dict[str, list[date]]] = None,
 ) -> Optional[Decimal]:
-    """Get the closest available adjusted_close for a ticker at/before *target_date*."""
+    """Get the closest available adjusted_close for a ticker at/before *target_date*.
+
+    ``sorted_dates`` is the pre-sorted per-ticker date index from
+    ``_sorted_price_dates``; when omitted the dates are sorted on the fly.
+    """
     ticker_prices = price_map.get(ticker)
     if not ticker_prices:
         return None
 
-    available_dates = [d for d in ticker_prices if d <= target_date]
-    if not available_dates:
+    if sorted_dates is not None:
+        dates = sorted_dates.get(ticker) or sorted(ticker_prices)
+    else:
+        dates = sorted(ticker_prices)
+    idx = bisect_right(dates, target_date) - 1
+    if idx < 0:
         return None
-
-    closest = max(available_dates)
-    return ticker_prices[closest]
+    return ticker_prices[dates[idx]]
 
 
 def compute_benchmark_comparison(
@@ -492,4 +513,28 @@ def compute_benchmark_comparison(
         period_end=period_end,
         daily_returns_count=daily_returns_count,
         calculated_at=datetime.now(timezone.utc),
+    )
+
+
+def align_daily_return_series(
+    portfolio_dates: list[date],
+    portfolio_daily_returns: list[Decimal],
+    benchmark_dates: list[date],
+    benchmark_daily_returns: list[Decimal],
+) -> tuple[list[date], list[Decimal], list[Decimal]]:
+    """Join portfolio and benchmark daily returns on their common dates.
+
+    Each series pairs ``returns[i]`` with the trading day ``dates[i + 1]``
+    (the return realised from ``dates[i]`` to ``dates[i + 1]``). The two
+    calendars differ whenever any ticker or the benchmark is missing a day,
+    so pairing the lists by position differences different days — the series
+    must be joined on the date index before being differenced.
+    """
+    portfolio_by_date = dict(zip(portfolio_dates[1:], portfolio_daily_returns))
+    benchmark_by_date = dict(zip(benchmark_dates[1:], benchmark_daily_returns))
+    common_dates = sorted(set(portfolio_by_date) & set(benchmark_by_date))
+    return (
+        common_dates,
+        [portfolio_by_date[d] for d in common_dates],
+        [benchmark_by_date[d] for d in common_dates],
     )

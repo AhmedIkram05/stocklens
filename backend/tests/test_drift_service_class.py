@@ -287,6 +287,7 @@ class TestDriftDetector:
 
     @pytest.mark.asyncio
     async def test_single_prediction_log(self):
+        """A single-sample window is below the 2-sample minimum — no feature metrics."""
         from src.drift.service import DriftDetector
 
         reference_dist = {"feature_histograms": {"log_ret_1d": {"values": [0.0] * 10}}}
@@ -304,7 +305,61 @@ class TestDriftDetector:
             current_period="2024-01-01_2024-01-07",
         )
 
-        assert result["metrics"]
+        # Thin window: skipped with a data-quality marker instead of a 0.0 score.
+        assert result["metrics"] == []
+        assert result["data_quality"]["insufficient_windows"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_empty_prediction_window_not_fabricated(self):
+        """M4 regression: a ticker with zero logs must not produce a uniform
+        distribution compared against the reference (fake drift alerts)."""
+        detector = DriftDetector(js_threshold=0.1)
+        # Extreme reference: 100% UP. JS(uniform, ref) ≈ 0.46 > 0.1 — the old
+        # code alerted for a ticker that made no predictions.
+        reference_dist = {"prediction_proportions": {"UP": 1.0, "DOWN": 0.0, "FLAT": 0.0}}
+        prediction_logs = {"AAPL": []}
+
+        result = await detector.compute_drift(
+            tickers=["AAPL"],
+            reference_dist=reference_dist,
+            prediction_logs=prediction_logs,
+            model_version="v1",
+            drift_run_id="run-1",
+            current_period="2024-01-01_2024-01-07",
+        )
+
+        assert result["alerts_triggered"] == 0
+        assert result["overall_verdict"] == "stable"
+        assert result["metrics"] == []
+        assert result["data_quality"]["tickers_without_predictions"] == ["AAPL"]
+        assert result["data_quality"]["insufficient_windows"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_unknown_reference_feature_skipped_not_crash(self):
+        """M7 regression: a reference feature outside FEATURE_NAMES must be
+        skipped with a warning, not raise ValueError mid-run."""
+        ref_histograms = {
+            "log_ret_1d": {"values": [0.0] * 10},
+            "brand_new_feature": {"values": [0.0] * 10},  # not in FEATURE_NAMES
+        }
+        prediction_logs = {
+            "AAPL": [{"features": {"stats": {"means": [0.1] + [0.0] * (len(FEATURE_NAMES) - 1)}}}]
+            * 5,
+        }
+
+        detector = DriftDetector()
+        result = await detector.compute_drift(
+            tickers=["AAPL"],
+            reference_dist={"feature_histograms": ref_histograms},
+            prediction_logs=prediction_logs,
+            model_version="v1",
+            drift_run_id="run-1",
+            current_period="2024-01-01_2024-01-07",
+        )
+
+        known = {m["feature_name"] for m in result["metrics"]}
+        assert "log_ret_1d" in known
+        assert "brand_new_feature" not in known
 
     @pytest.mark.asyncio
     async def test_missing_features_handled_gracefully(self):

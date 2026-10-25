@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     # Rate Limiting
     RATE_LIMIT_LOGIN: str = "20/minute"
     RATE_LIMIT_DEFAULT: str = "100/minute"
+    RATE_LIMIT_MCP: str = "120/minute"  # authenticated POST /mcp JSON-RPC calls
 
     # CORS — comma-separated list of allowed origins
     CORS_ORIGINS: str = "http://localhost:8081,http://localhost:19006,exp://127.0.0.1:19000"

@@ -28,6 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.config import settings
+from src.limiter import limiter
 from src.mcp.auth import router as oauth_router
 from src.mcp.auth import verify_mcp_token
 from src.mcp.tools_adapter import (
@@ -47,6 +48,10 @@ logger = structlog.get_logger(__name__)
 SUPPORTED_VERSIONS = ["2026-07-28", "2025-06-18"]
 _LEGACY_VERSION = "2025-06-18"
 _PROTO_META_KEY = "io.modelcontextprotocol/protocolVersion"
+
+# Upper bound on JSON-RPC messages per batch request — one POST must not be
+# able to enqueue thousands of serial DB-backed tool calls.
+_MAX_MCP_BATCH_SIZE = 50
 
 
 def _request_version(params: dict) -> str | None:
@@ -128,6 +133,7 @@ async def mcp_sse(request: Request, payload=Depends(verify_mcp_token)):
 
 
 @mcp_router.post("/mcp")
+@limiter.limit(settings.RATE_LIMIT_MCP)
 async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
     """MCP JSON-RPC over Streamable HTTP — stateless 2026-07-28 core with dual-version.
 
@@ -144,6 +150,12 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
     # Batch support
     is_batch = isinstance(body, list)
     messages = body if is_batch else [body]
+    if is_batch and len(messages) > _MAX_MCP_BATCH_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Batch too large: {len(messages)} messages exceeds the "
+            f"{_MAX_MCP_BATCH_SIZE}-message limit",
+        )
     responses: list[dict] = []
 
     for msg in messages:
@@ -270,14 +282,23 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
                 )
             except KeyError as e:
                 responses.append(_error(-32602, str(e), msg_id))
-            except Exception as e:
+            except Exception:
                 logger.exception("mcp_tool_error", tool=tool_name, call_id=call_id)
+                # Opaque to the client — raw exception text leaks DB constraint
+                # names and internal paths; details live in the server log.
                 responses.append(
                     {
                         "jsonrpc": "2.0",
                         "id": msg_id,
                         "result": {
-                            "content": [{"type": "text", "text": json.dumps({"error": str(e)})}],
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": json.dumps(
+                                        {"error": "Internal error processing tool call"}
+                                    ),
+                                }
+                            ],
                             "isError": True,
                         },
                     }
@@ -313,8 +334,9 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
                 )
             except KeyError as e:
                 responses.append(_error(-32602, str(e), msg_id))
-            except Exception as e:
+            except Exception:
                 logger.exception("mcp_resource_error", uri=uri)
+                # Opaque to the client — details are in the server log above.
                 responses.append(
                     {
                         "jsonrpc": "2.0",
@@ -324,7 +346,9 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
                                 {
                                     "uri": uri,
                                     "mimeType": "text/plain",
-                                    "text": json.dumps({"error": str(e)}),
+                                    "text": json.dumps(
+                                        {"error": "Internal error reading resource"}
+                                    ),
                                 }
                             ]
                         },

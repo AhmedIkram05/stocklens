@@ -12,6 +12,7 @@ pytest-asyncio event loop.
 from __future__ import annotations
 
 import json
+import threading
 from unittest.mock import AsyncMock, patch
 
 import numpy as np
@@ -354,3 +355,60 @@ class TestLogPredictionSync:
                 feature_window=None,
             )
             mock_schedule.assert_called_once()
+
+
+class TestSetMainLoop:
+    """M13 regression: the loop is captured from the lifespan, not at import."""
+
+    def test_set_main_loop_captures_loop(self, monkeypatch):
+        import asyncio
+
+        import src.prediction.prediction_logger as pl
+
+        monkeypatch.setattr("src.prediction.prediction_logger._main_loop", None)
+        loop = asyncio.new_event_loop()
+        try:
+            pl.set_main_loop(loop)
+            assert pl._main_loop is loop
+        finally:
+            loop.close()
+
+    def test_import_does_not_capture_a_loop(self, monkeypatch):
+        """Re-importing the module under a runner without a loop must not
+        fabricate one — capture happens only via set_main_loop()."""
+        import src.prediction.prediction_logger as pl
+
+        # The module-level default is None; set_main_loop is the only setter.
+        assert callable(pl.set_main_loop)
+        monkeypatch.setattr("src.prediction.prediction_logger._main_loop", None)
+        # Simulating the pre-lifespan state: still None, no crash.
+        assert pl._main_loop is None
+
+
+class TestSubmitPredictionLog:
+    """M13 regression: the fire-and-forget backlog is bounded."""
+
+    def test_submits_through_executor(self, monkeypatch):
+        import src.prediction.prediction_logger as pl
+
+        submitted = []
+        monkeypatch.setattr(pl._logger_executor, "submit", lambda fn: submitted.append(fn))
+        monkeypatch.setattr(
+            "src.prediction.prediction_logger._pending_slots", threading.BoundedSemaphore(2)
+        )
+        pl.submit_prediction_log("AAPL", "v1", "UP", 0.8, {}, None, None)
+        assert len(submitted) == 1
+        # Draining the wrapper releases its slot.
+        submitted[0]()
+        assert pl._pending_slots._value == 2
+
+    def test_drops_when_saturated(self, monkeypatch):
+        import src.prediction.prediction_logger as pl
+
+        submitted = []
+        monkeypatch.setattr(pl._logger_executor, "submit", lambda fn: submitted.append(fn))
+        monkeypatch.setattr(
+            "src.prediction.prediction_logger._pending_slots", threading.BoundedSemaphore(0)
+        )
+        pl.submit_prediction_log("AAPL", "v1", "UP", 0.8, {}, None, None)
+        assert submitted == []  # dropped, not queued

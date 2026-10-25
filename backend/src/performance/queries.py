@@ -26,6 +26,7 @@ from src.market.quotes import get_quote
 from src.market.repository import get_earliest_ohlcv_date, get_ohlcv_batch, upsert_ohlcv
 from src.market.router import refresh_ohlcv_if_stale
 from src.performance.calculations import (
+    align_daily_return_series,
     compute_benchmark_comparison,
     compute_portfolio_performance,
 )
@@ -134,6 +135,13 @@ async def build_price_map(
     return price_map
 
 
+# Cap concurrent live-quote fetches (each cache-miss offloads to the default
+# executor) and bound each fetch so a stalled provider cannot pin worker
+# threads and hang the performance endpoint.
+_LIVE_QUOTE_CONCURRENCY = 8
+_LIVE_QUOTE_TIMEOUT = 10.0  # seconds per quote fetch
+
+
 async def fetch_live_quotes(
     tickers: list[str],
 ) -> dict[str, tuple[Decimal, Decimal]]:
@@ -142,8 +150,15 @@ async def fetch_live_quotes(
     Failures are logged and silently skipped — the caller falls back to OHLCV data.
     """
 
-    tasks = [get_quote(t) for t in tickers]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    semaphore = asyncio.Semaphore(_LIVE_QUOTE_CONCURRENCY)
+
+    async def _get_quote(ticker: str):
+        async with semaphore:
+            return await asyncio.wait_for(get_quote(ticker), timeout=_LIVE_QUOTE_TIMEOUT)
+
+    results: list[Any] = await asyncio.gather(
+        *(_get_quote(t) for t in tickers), return_exceptions=True
+    )
 
     quotes: dict[str, tuple[Decimal, Decimal]] = {}
     for ticker, result in zip(tickers, results):
@@ -510,7 +525,15 @@ async def get_benchmark_comparison(
         fx_rates=fx_rates,
     )
 
-    # Build cumulative return series for charting
+    # Join both return series on their common dates: the portfolio calendar
+    # (union of all ticker dates) and the benchmark calendar differ whenever
+    # either side has a gap, and pairing the lists by position would
+    # difference returns from different days.
+    common_dates, portfolio_aligned, benchmark_aligned = align_daily_return_series(
+        portfolio_dates, portfolio_daily_returns, benchmark_dates, benchmark_daily_returns
+    )
+
+    # Build cumulative return series for charting (shared x-axis)
     def _cumulative_series(dates: list[date], returns: list[Decimal]) -> list[dict[str, Any]]:
         cum = Decimal(1)
         series: list[dict[str, Any]] = []
@@ -519,15 +542,15 @@ async def get_benchmark_comparison(
             series.append({"date": str(dates[i + 1]), "value": float(cum - 1)})
         return series
 
-    portfolio_cum = _cumulative_series(portfolio_dates, portfolio_daily_returns)
-    benchmark_cum = _cumulative_series(benchmark_dates, benchmark_daily_returns)
+    portfolio_cum = _cumulative_series(common_dates, portfolio_aligned)
+    benchmark_cum = _cumulative_series(common_dates, benchmark_aligned)
 
     comparison = compute_benchmark_comparison(
         portfolio_id=str(portfolio_id),
         portfolio_twr=perf_response.twr,
         benchmark_ticker=benchmark,
-        benchmark_daily_returns=benchmark_daily_returns,
-        portfolio_daily_returns=portfolio_daily_returns,
+        benchmark_daily_returns=benchmark_aligned,
+        portfolio_daily_returns=portfolio_aligned,
         period_start=start_date,
         period_end=end_date,
     )

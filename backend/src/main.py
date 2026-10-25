@@ -4,6 +4,7 @@ StockLens FastAPI Application.
 Phase 1: Backend Foundation + Auth + OCR Migration.
 """
 
+import asyncio
 import logging
 import sys
 import traceback
@@ -109,6 +110,12 @@ async def lifespan(app: FastAPI):
             logger.info("prediction_model_loaded", path=settings.PREDICTION_MODEL_PATH)
         else:
             print("LIFESPAN: no champion model, continuing", file=sys.stderr, flush=True)
+
+        # Capture the running loop for the prediction logger — worker threads
+        # schedule DB writes on the loop that owns the asyncpg pool.
+        from src.prediction.prediction_logger import set_main_loop
+
+        set_main_loop(asyncio.get_running_loop())
 
         # Initialize agent service (warm LangGraph agent — sync compile)
         from src.agent.service import agent_service

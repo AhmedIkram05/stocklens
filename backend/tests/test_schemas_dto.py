@@ -440,14 +440,16 @@ class TestDriftRunRequest:
     def test_lookback_days_max(self):
         from src.drift.schemas import DriftRunRequest
 
+        # Capped at prediction_log retention (90 days) — longer windows would
+        # silently operate on pruned data.
         with pytest.raises(ValidationError):
-            DriftRunRequest(lookback_days=366)
+            DriftRunRequest(lookback_days=91)
 
     def test_lookback_days_boundary(self):
         from src.drift.schemas import DriftRunRequest
 
-        obj = DriftRunRequest(lookback_days=365)
-        assert obj.lookback_days == 365
+        obj = DriftRunRequest(lookback_days=90)
+        assert obj.lookback_days == 90
 
         obj2 = DriftRunRequest(lookback_days=1)
         assert obj2.lookback_days == 1

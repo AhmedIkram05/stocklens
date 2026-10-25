@@ -246,8 +246,8 @@ class _FakeUrlopenResp:
     def __exit__(self, *args):
         return False
 
-    def read(self) -> bytes:
-        return self._raw
+    def read(self, size: int = -1) -> bytes:
+        return self._raw if size < 0 else self._raw[:size]
 
 
 def _fetch_with_mock(
@@ -260,8 +260,8 @@ def _fetch_with_mock(
 
     mcp_auth._CIMD_CACHE.clear()
     if exc is not None:
-        return patch("urllib.request.urlopen", side_effect=exc)
-    return patch("urllib.request.urlopen", return_value=_FakeUrlopenResp(raw or b""))
+        return patch("src.mcp.auth._CIMD_OPENER.open", side_effect=exc)
+    return patch("src.mcp.auth._CIMD_OPENER.open", return_value=_FakeUrlopenResp(raw or b""))
 
 
 def test_fetch_cimd_document_success_and_cached():
@@ -276,13 +276,13 @@ def test_fetch_cimd_document_success_and_cached():
     # client.example has no DNS record — pin getaddrinfo to a public IP for the SSRF check
     with (
         patch("socket.getaddrinfo", return_value=[(0, 0, 0, "", ("93.184.216.34", 443))]),
-        patch("urllib.request.urlopen", return_value=payload) as urlopen,
+        patch("src.mcp.auth._CIMD_OPENER.open", return_value=payload) as opener_open,
     ):
         doc = mcp_auth._fetch_cimd_document("https://client.example/cimd.json")
         assert doc == {"client_name": "C", "redirect_uris": ["https://c.example/cb"]}
-        # second call served from cache — urlopen only used once
+        # second call served from cache — the opener only used once
         assert mcp_auth._fetch_cimd_document("https://client.example/cimd.json") == doc
-    assert urlopen.call_count == 1
+    assert opener_open.call_count == 1
 
 
 def test_fetch_cimd_document_invalid_json_returns_none():
@@ -323,6 +323,48 @@ def test_fetch_cimd_document_urlopen_error_returns_none():
 
     with _fetch_with_mock(exc=OSError("connection refused")):
         assert mcp_auth._fetch_cimd_document("https://client.example/cimd.json") is None
+
+
+def test_cimd_redirects_refused():
+    """M3 regression: the fetch must not follow redirects — an approved host
+    302ing to link-local metadata services would bypass the SSRF guard."""
+    from src.mcp.auth import _RefuseRedirectsHandler
+
+    handler = _RefuseRedirectsHandler()
+    assert handler.redirect_request(None, None, 302, "Found", {}, "http://169.254.169.254/") is None
+
+
+def test_fetch_cimd_document_oversize_response_rejected():
+    """M3 regression: responses above the byte cap are rejected, not slurped."""
+    import src.mcp.auth as mcp_auth
+
+    mcp_auth._CIMD_CACHE.clear()
+    big = b'{"redirect_uris": ["https://c.example/cb"]}' + b" " * 64
+    with (
+        patch("socket.getaddrinfo", return_value=[(0, 0, 0, "", ("93.184.216.34", 443))]),
+        patch("src.mcp.auth._CIMD_OPENER.open", return_value=_FakeUrlopenResp(big)),
+        patch.object(mcp_auth, "_CIMD_MAX_BYTES", 32),
+    ):
+        assert mcp_auth._fetch_cimd_document("https://client.example/cimd.json") is None
+
+
+def test_cimd_cache_bounded():
+    """M3 regression: the CIMD cache must evict instead of growing forever."""
+    import src.mcp.auth as mcp_auth
+
+    mcp_auth._CIMD_CACHE.clear()
+    payload = _FakeUrlopenResp(b'{"redirect_uris": ["https://c.example/cb"]}')
+    with (
+        patch("socket.getaddrinfo", return_value=[(0, 0, 0, "", ("93.184.216.34", 443))]),
+        patch("src.mcp.auth._CIMD_OPENER.open", return_value=payload),
+        patch.object(mcp_auth, "_CIMD_MAX_CACHE_ENTRIES", 2),
+    ):
+        for n in (1, 2, 3):
+            mcp_auth._fetch_cimd_document(f"https://client{n}.example/cimd.json")
+        assert len(mcp_auth._CIMD_CACHE) <= 2
+        # The oldest entry was evicted, the newest retained.
+        assert "https://client1.example/cimd.json" not in mcp_auth._CIMD_CACHE
+        assert "https://client3.example/cimd.json" in mcp_auth._CIMD_CACHE
 
 
 async def test_cimd_client_name_stored_on_authorize(client, auth_headers):

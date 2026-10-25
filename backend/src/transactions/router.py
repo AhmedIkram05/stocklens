@@ -160,7 +160,7 @@ async def _assert_buy_affordable(conn, portfolio_id, total_amount_gbp) -> None:
 
 
 async def _apply_buy_to_holdings(
-    conn, portfolio_id, ticker, shares, price, currency, fx_rate_to_gbp
+    conn, portfolio_id, ticker, shares, price, currency, fx_rate_to_gbp, total_amount_gbp
 ) -> None:
     """Insert a new holding or update an existing one with a weighted-average cost basis.
 
@@ -169,14 +169,17 @@ async def _apply_buy_to_holdings(
     lock taken by ON CONFLICT DO UPDATE, so concurrent buys of the same
     ticker can no longer compute from the same stale snapshot (lost update).
 
-    Stores the native ``average_cost_basis`` plus its GBP-normalised parallel
-    ``average_cost_basis_gbp`` (native × today's ``fx_rate_to_gbp``).
+    Stores the native ``average_cost_basis`` plus the GBP-normalised parallel
+    ``average_cost_basis_gbp``. The GBP column is accumulated per buy as
+    ``total_amount_gbp / shares`` — weighting each buy at its own historical
+    FX rate — not the native average times today's rate, which would rewrite
+    the whole position's GBP cost whenever the FX rate moves.
     """
     await conn.execute(
         "INSERT INTO holdings "
         "(portfolio_id, ticker, shares, average_cost_basis, currency, "
         " fx_rate_to_gbp, average_cost_basis_gbp) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7 / $3) "
         "ON CONFLICT (portfolio_id, ticker) DO UPDATE SET "
         "shares = holdings.shares + EXCLUDED.shares, "
         "average_cost_basis = (holdings.shares * holdings.average_cost_basis "
@@ -184,10 +187,12 @@ async def _apply_buy_to_holdings(
         "                     / (holdings.shares + EXCLUDED.shares), "
         "currency = EXCLUDED.currency, "
         "fx_rate_to_gbp = EXCLUDED.fx_rate_to_gbp, "
-        "average_cost_basis_gbp = (holdings.shares * holdings.average_cost_basis "
-        "                          + EXCLUDED.shares * EXCLUDED.average_cost_basis) "
-        "                         / (holdings.shares + EXCLUDED.shares) "
-        "                         * EXCLUDED.fx_rate_to_gbp, "
+        "average_cost_basis_gbp = (holdings.shares "
+        "                          * COALESCE(holdings.average_cost_basis_gbp, "
+        "                                     holdings.average_cost_basis "
+        "                                     * holdings.fx_rate_to_gbp) "
+        "                          + $7) "
+        "                         / (holdings.shares + EXCLUDED.shares), "
         "updated_at = now()",
         portfolio_id,
         ticker,
@@ -298,6 +303,7 @@ async def create_transaction(
                     body.price_per_share,
                     currency,
                     fx_rate_to_gbp,
+                    total_amount_gbp,
                 )
             elif body.type == "SELL":
                 await _apply_sell_to_holdings(conn, portfolio_id, body.ticker, body.shares)
@@ -339,6 +345,7 @@ async def create_transaction(
                         body.price_per_share,
                         currency,
                         fx_rate_to_gbp,
+                        total_amount_gbp,
                     )
                 elif body.type == "SELL":
                     await _apply_sell_to_holdings(conn, portfolio_id, body.ticker, body.shares)

@@ -46,6 +46,7 @@ export interface ReceiptUpdate {
   line_items?: Record<string, unknown>;
   receipt_image_s3_key?: string;
   transaction_date?: string;
+  notes?: string;
 }
 
 export interface ReceiptListResponse {
