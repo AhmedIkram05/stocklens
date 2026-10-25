@@ -692,3 +692,128 @@ async def test_double_refresh_same_jti_second_takes_reuse_path():
     assert conn.claim_queries
     for q in conn.claim_queries:
         assert "AND revoked = false" in q
+
+
+# ── RS256 configured-key path (JWT_PRIVATE_KEY) ────────────────────────────────
+
+_RSA_TEST_PEM: str | None = None
+
+
+def _test_rsa_pem() -> str:
+    """Generate a test RSA PEM once per session (keygen is ~100ms)."""
+    global _RSA_TEST_PEM
+    if _RSA_TEST_PEM is None:
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa as rsa_mod
+
+        key = rsa_mod.generate_private_key(public_exponent=65537, key_size=2048)
+        _RSA_TEST_PEM = key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ).decode()
+    return _RSA_TEST_PEM
+
+
+@pytest.fixture
+def fresh_keypair():
+    """Reset the cached RSA keypair state; restore whatever was cached."""
+    from src.mcp import auth as auth_mod
+
+    old_pair, old_kid = auth_mod._RSA_KEYPAIR, auth_mod._CONFIGURED_KID
+    auth_mod._RSA_KEYPAIR = None
+    auth_mod._CONFIGURED_KID = None
+    yield
+    auth_mod._RSA_KEYPAIR, auth_mod._CONFIGURED_KID = old_pair, old_kid
+
+
+@pytest.fixture
+def structlog_caplog():
+    """Route structlog through stdlib logging so caplog can capture events."""
+    import structlog
+
+    saved = structlog.get_config()
+    structlog.configure(logger_factory=structlog.stdlib.LoggerFactory())
+    yield
+    structlog.configure(**saved)
+
+
+class TestRS256ConfiguredKey:
+    """JWT_PRIVATE_KEY path — persistent key, stable kid, loud fallback."""
+
+    def test_configured_pem_produces_stable_jwks_across_instantiations(
+        self, fresh_keypair, monkeypatch
+    ):
+        from src.config import settings
+        from src.mcp import auth as auth_mod
+
+        pem = _test_rsa_pem()
+        monkeypatch.setattr(settings, "JWT_PRIVATE_KEY", pem)
+
+        auth_mod._get_rsa_keypair()
+        jwks1 = auth_mod._jwks()
+
+        # Simulate a second process: fresh keypair state, same configured key
+        auth_mod._RSA_KEYPAIR = None
+        auth_mod._CONFIGURED_KID = None
+        jwks2 = auth_mod._jwks()
+
+        assert jwks1["keys"] == jwks2["keys"], "configured key must not rotate per process"
+
+        # kid is the fingerprint of the configured public key, not the legacy kid
+        from cryptography.hazmat.primitives import serialization
+
+        key = serialization.load_pem_private_key(pem.encode(), password=None)
+        der = key.public_key().public_bytes(
+            serialization.Encoding.DER, serialization.PublicFormat.PKCS1
+        )
+        expected_kid = hashlib.sha256(der).hexdigest()[:16]
+        assert jwks1["keys"][0]["kid"] == expected_kid
+        assert jwks1["keys"][0]["kid"] != "stocklens-mcp-1"
+
+    def test_ephemeral_fallback_warns_when_unconfigured(
+        self, fresh_keypair, monkeypatch, structlog_caplog, caplog
+    ):
+        import logging
+
+        from src.config import settings
+        from src.mcp import auth as auth_mod
+
+        monkeypatch.setattr(settings, "JWT_PRIVATE_KEY", "")
+        with caplog.at_level(logging.WARNING):
+            pair = auth_mod._get_rsa_keypair()
+
+        assert pair is not None  # ephemeral path still works
+        assert any(
+            "jwt_private_key_not_configured_ephemeral_keys_in_use" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_invalid_pem_falls_back_loudly(
+        self, fresh_keypair, monkeypatch, structlog_caplog, caplog
+    ):
+        import logging
+
+        from src.config import settings
+        from src.mcp import auth as auth_mod
+
+        monkeypatch.setattr(settings, "JWT_PRIVATE_KEY", "not-a-pem")
+        with caplog.at_level(logging.ERROR):
+            pair = auth_mod._get_rsa_keypair()
+
+        assert pair is not None  # degraded to ephemeral, not dead
+        assert any(
+            "jwt_private_key_unusable_falling_back_to_ephemeral" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_sign_verify_roundtrip_with_configured_key(self, fresh_keypair, monkeypatch):
+        from src.config import settings
+        from src.mcp.auth import _decode_mcp_token, _mcp_create_access_token
+
+        monkeypatch.setattr(settings, "JWT_PRIVATE_KEY", _test_rsa_pem())
+
+        tok, _jti, _exp = _mcp_create_access_token("user-123")
+        payload = _decode_mcp_token(tok)
+        assert payload.sub == "user-123"
+        assert payload.type == "access"

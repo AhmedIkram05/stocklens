@@ -108,27 +108,47 @@ def _verify_pkce(verifier: str, challenge: str, method: str = "S256") -> bool:
 # ponytail: generate once per process, expose via JWKS, KID rotation = new key + new KID
 
 _RSA_KEYPAIR: tuple[Any, Any] | None = None
-_KID = "stocklens-mcp-1"
+_KID = "stocklens-mcp-1"  # legacy kid for the ephemeral fallback key
+_CONFIGURED_KID: str | None = None
+
+
+def _kid() -> str:
+    """kid of the active signing key — fingerprint-derived when a PEM is configured."""
+    return _CONFIGURED_KID or _KID
 
 
 def _get_rsa_keypair():
-    global _RSA_KEYPAIR
+    global _RSA_KEYPAIR, _CONFIGURED_KID
     if _RSA_KEYPAIR is not None:
         return _RSA_KEYPAIR
-    # Prefer env-provided PEM if set (Settings.JWT_PRIVATE_KEY), else generate ephemeral
-    pem = getattr(settings, "JWT_PRIVATE_KEY", "") or ""
-    if pem and _CRYPTO_AVAILABLE and "BEGIN" in pem:
+    # Persistent key from Settings.JWT_PRIVATE_KEY when set; else ephemeral.
+    pem = settings.JWT_PRIVATE_KEY or ""
+    if pem and _CRYPTO_AVAILABLE:
         try:
             priv = serialization.load_pem_private_key(pem.encode(), password=None)
+            if not isinstance(priv, rsa.RSAPrivateKey):
+                raise ValueError("JWT_PRIVATE_KEY must be an RSA private key")
             pub = priv.public_key()
+            # kid = SHA-256 fingerprint of the public key (SPKI DER) — stable
+            # across restarts and workers, so JWKS-caching clients never trust
+            # a stale kid for the same key.
+            der = pub.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.PKCS1)
+            _CONFIGURED_KID = hashlib.sha256(der).hexdigest()[:16]
             _RSA_KEYPAIR = (priv, pub)
+            logger.info("jwt_private_key_loaded", kid=_CONFIGURED_KID)
             return _RSA_KEYPAIR
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error("jwt_private_key_unusable_falling_back_to_ephemeral", error=str(exc))
+    elif pem:
+        logger.error("jwt_private_key_set_but_cryptography_unavailable")
     if not _CRYPTO_AVAILABLE:
         return None
+    logger.warning(
+        "jwt_private_key_not_configured_ephemeral_keys_in_use",
+        impact="RS256 tokens invalid across restarts and multi-worker deployments",
+        fix="set JWT_PRIVATE_KEY to a persistent RSA PEM (e.g. from Secrets Manager)",
+    )
     # Ephemeral 2048-bit for dev/test
-    # — in prod mount via Settings.JWT_PRIVATE_KEY or Secrets Manager
     priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     pub = priv.public_key()
     _RSA_KEYPAIR = (priv, pub)
@@ -140,7 +160,7 @@ def _b64url_uint(n: int) -> str:
     return base64.urlsafe_b64encode(b).decode().rstrip("=")
 
 
-def _public_jwk(kid: str = _KID) -> dict[str, Any] | None:
+def _public_jwk() -> dict[str, Any] | None:
     pair = _get_rsa_keypair()
     if pair is None:
         return None
@@ -148,7 +168,7 @@ def _public_jwk(kid: str = _KID) -> dict[str, Any] | None:
     numbers = pub.public_numbers()
     return {
         "kty": "RSA",
-        "kid": kid,
+        "kid": _kid(),
         "use": "sig",
         "alg": "RS256",
         "n": _b64url_uint(numbers.n),
@@ -190,7 +210,7 @@ def _try_rs256_encode(payload: dict[str, Any]) -> str | None:
     if pem is None:
         return None
     try:
-        return pyjwt.encode(payload, pem, algorithm="RS256", headers={"kid": _KID})
+        return pyjwt.encode(payload, pem, algorithm="RS256", headers={"kid": _kid()})
     except Exception:
         return None
 

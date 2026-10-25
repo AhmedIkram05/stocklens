@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, gt=0)
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     BCRYPT_ROUNDS: int = Field(default=12, gt=0)
+    # MCP RS256 signing key (PEM). Empty → per-process ephemeral RSA keypair,
+    # which rotates on every restart and breaks multi-worker deployments
+    # (workers reject each other's RS256 tokens). Prod must set this.
+    JWT_PRIVATE_KEY: str = ""
 
     # AWS
     AWS_REGION: str = "eu-west-2"

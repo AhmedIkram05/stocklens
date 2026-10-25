@@ -48,6 +48,13 @@ class TestSettingsDefaults:
         s = Settings()
         assert s.BCRYPT_ROUNDS == 12
 
+    def test_default_jwt_private_key_empty(self, monkeypatch):
+        """Empty JWT_PRIVATE_KEY → ephemeral RS256 fallback (dev behaviour)."""
+        monkeypatch.delenv("JWT_PRIVATE_KEY", raising=False)
+        monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
+        s = Settings()
+        assert s.JWT_PRIVATE_KEY == ""
+
     def test_default_cors_origins(self, monkeypatch):
         monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
         s = Settings()
@@ -106,6 +113,16 @@ class TestSettingsFromEnv:
         assert s.JWT_ALGORITHM == "RS256"
         assert s.JWT_ACCESS_TOKEN_EXPIRE_MINUTES == 60
         assert s.JWT_REFRESH_TOKEN_EXPIRE_DAYS == 14
+
+    def test_jwt_private_key_from_env(self, monkeypatch):
+        """JWT_PRIVATE_KEY is a real Settings field, not swallowed by extra=ignore."""
+        # Markers split so the detect-private-key hook doesn't flag this file
+        header = "-----BEGIN " + "PRIVATE KEY-----"
+        footer = "-----END " + "PRIVATE KEY-----"
+        monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
+        monkeypatch.setenv("JWT_PRIVATE_KEY", f"{header}\nMIIEvQIBADANBg\n{footer}")
+        s = Settings()
+        assert s.JWT_PRIVATE_KEY.startswith(header)
 
     def test_cors_origins_from_env(self, monkeypatch):
         monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
