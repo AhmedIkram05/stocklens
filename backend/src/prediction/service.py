@@ -111,6 +111,9 @@ class PredictionService:
         features_df = compute_all_features(feature_df)
         # Drop ticker column if present
         named = features_df.drop(columns=["ticker"], errors="ignore")
+        # Date index — the cross-sectional helper aligns benchmark data by
+        # pandas index matching (same as the training pipeline).
+        named.index = df["date"]
         return named, len(named)
 
     def _compute_vol_pct(self, close_series: pd.Series) -> np.ndarray:
@@ -163,7 +166,7 @@ class PredictionService:
         close_series = df["adjusted_close"].astype(float)
 
         # 1. Compute V1 features
-        ticker_features, n_dates = self._compute_padded_features(df)
+        ticker_features, _ = self._compute_padded_features(df)
 
         # 2. Compute vol_pct
         vol_pct = self._compute_vol_pct(close_series)  # (T, 1)
@@ -174,15 +177,19 @@ class PredictionService:
             try:
                 spy_df = pd.DataFrame(spy_ohlcv_rows).sort_values("date")
                 spy_named, _ = self._compute_padded_features(spy_df)
-                # Align by date — take the last n_dates rows from SPY
-                spy_aligned = spy_named.iloc[-n_dates:]
-                spy_aligned.index = ticker_features.index[-len(spy_aligned) :]
+                # Align by DATE (train-path semantics) — missing benchmark dates
+                # become NaN, zero-filled below per the helper contract.
+                spy_aligned = spy_named.reindex(ticker_features.index)
                 excess = compute_cross_sectional_features(ticker_features, spy_aligned)
                 excess_values = excess.values.astype(np.float32)
                 excess_values = np.nan_to_num(excess_values, nan=0.0)
                 spy_features = excess_values
             except Exception as exc:
-                logger.warning("cross_sectional_features_failed", error=str(exc))
+                logger.warning(
+                    "cross_sectional_features_failed_using_zero_padded_excess",
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
 
         # 4. Concatenate features — ALWAYS produce 17 features (13 V1 + vol_pct + 3 excess)
         if spy_features is not None:
