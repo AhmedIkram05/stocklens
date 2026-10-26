@@ -192,12 +192,16 @@ jobs:
           # mlflow-skinny pins requests==2.28.1, conflicts with yfinance>=2.31.
           UV_LINK_MODE=copy uv sync --frozen --package stocklens-backend --all-extras --index-strategy unsafe-best-match
           uv pip install /tmp/wheels/features_engine-*.whl
+          # DIAGNOSTIC (temporary, diag/hang-probe only): pytest-timeout turns a
+          # hung test into a loud failure with a thread stack dump, instead of
+          # stalling the job until the 6h cap.
+          uv pip install pytest-timeout
           # Run migrations once before xdist workers start — the
           # _migrate_db fixture detects already-applied and becomes a no-op.
           PYTHONPATH=. uv run alembic upgrade head
           # Capture exit code so coverage upload still runs on failure
           set +e
-          uv run pytest -q \
+          uv run pytest -v --timeout=90 --timeout-method=thread \
             -n auto --dist loadfile --durations=10 \
             --cov=src \
             --cov-report=lcov:${{ github.workspace }}/coverage/lcov.info \
