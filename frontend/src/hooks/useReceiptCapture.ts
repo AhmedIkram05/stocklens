@@ -115,12 +115,16 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
 
         setOcrRaw(rawText);
 
-        // App is GBP-only: reject receipts denominated in $ / €.
+        // App is GBP-only: reject receipts denominated in $ / €. The draft is
+        // kept (marked rejected via notes) — deleting it on a heuristic false
+        // positive destroyed good receipts with no way back.
         if (hasForeignCurrency(rawText ?? '')) {
           try {
-            await discardDraft(result?.id);
+            await receiptService.update(result.id, {
+              notes: 'Rejected: not in GBP (£) — foreign currency detected',
+            });
           } catch {
-            // best-effort cleanup; ignore if draft already gone
+            // best-effort marking; the draft stays visible either way
           }
           resetWorkflowState();
           onResetCamera?.();
@@ -172,6 +176,9 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
           },
           onEnterManually: () => handleManualEntry(amount),
           onRescan: async () => {
+            // The draft being replaced has a bad amount — discard it so the
+            // rescan doesn't leave a polluting orphan receipt behind.
+            await discardDraft(result?.id);
             resetWorkflowState();
             onResetCamera?.();
           },

@@ -172,8 +172,12 @@ describe('useReceiptCapture', () => {
       return result.current.state.processing === false;
     });
 
-    // Verify draft was discarded
-    expect(mockedReceiptService.delete).toHaveBeenCalledWith('scan-foreign');
+    // M8: the draft is NOT deleted on rejection (a heuristic false positive
+    // must not destroy the receipt) — it is marked rejected via notes instead.
+    expect(mockedReceiptService.delete).not.toHaveBeenCalled();
+    expect(mockedReceiptService.update).toHaveBeenCalledWith('scan-foreign', {
+      notes: 'Rejected: not in GBP (£) — foreign currency detected',
+    });
     hasForeignCurrencyMock.mockRestore();
 
     // Verify alert was shown
@@ -181,6 +185,43 @@ describe('useReceiptCapture', () => {
       'Receipt not in £',
       'Receipts must be entered in GBP (£). Please re-enter the amount in pounds.',
     );
+  });
+
+  it('discards the draft when the user rescans', async () => {
+    const { result } = await createHookResult();
+    const photoUri = 'rescan-photo.jpg';
+
+    const mockScanResponse = {
+      id: 'scan-rescan',
+      extraction: {
+        total: 10.0,
+        currency: 'GBP',
+        merchant_name: 'Test Store',
+        date: '2025-01-15',
+        items: [],
+      },
+      raw_text: 'TOTAL £10.00',
+      source: 'regex',
+      confidence: 90,
+      processing_time_ms: 0,
+    };
+    mockedReceiptService.scan.mockResolvedValue(mockScanResponse);
+
+    // Capture the confirmation callbacks and trigger onRescan
+    mockedShowConfirmationPrompt.mockImplementation((_amount, callbacks) => {
+      callbacks.onRescan();
+    });
+
+    await act(async () => {
+      result.current.actions.processReceipt({ photoUri });
+    });
+
+    await waitFor(() => {
+      return result.current.state.processing === false;
+    });
+
+    // M8: the replaced draft is discarded so it cannot pollute analytics.
+    expect(mockedReceiptService.delete).toHaveBeenCalledWith('scan-rescan');
   });
 
   it('handles scan error gracefully', async () => {

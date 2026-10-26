@@ -143,6 +143,10 @@ FEATURE_NAMES: tuple[str, ...] = (
     "excess_ret_21d",
 )
 
+# O(1) name → position lookup; a champion model from a different schema
+# version may reference features outside FEATURE_NAMES (handled per-window).
+_FEATURE_INDEX: dict[str, int] = {name: i for i, name in enumerate(FEATURE_NAMES)}
+
 
 # ── DriftDetector ─────────────────────────────────────────────────────────────
 
@@ -197,21 +201,40 @@ class DriftDetector:
         n_alerts = 0
         max_psi = 0.0
         max_js = 0.0
+        skipped_tickers: list[str] = []
+        skipped_windows = 0
 
         for ticker in tickers:
             logs = prediction_logs.get(ticker, [])
+            if not logs:
+                skipped_tickers.append(ticker)
 
             # --- feature-level drift ---
             for feature_name, ref_array in ref_feature_arrays.items():
+                idx = _FEATURE_INDEX.get(feature_name)
+                if idx is None:
+                    # The champion's stored reference may pre/post-date the
+                    # hardcoded feature tuple (schema evolution). Skip the
+                    # feature instead of crashing the whole run.
+                    logger.warning("drift_unknown_reference_feature", feature_name=feature_name)
+                    skipped_windows += 1
+                    continue
                 cur_values = []
                 for entry in logs:
                     stats = (entry.get("features") or {}).get("stats")
                     if stats and "means" in stats:
-                        idx = FEATURE_NAMES.index(feature_name)
                         cur_values.append(float(stats["means"][idx]))
                 cur_array = np.array(cur_values, dtype=np.float64)
 
-                psi = compute_psi(ref_array, cur_array) if len(cur_array) >= 2 else 0.0
+                # Below two samples PSI/KS/JS are uninterpretable — the old
+                # code recorded 0.0 ("perfectly stable"), which made drift
+                # impossible to fire for low-volume tickers. Skip the window
+                # and record the data-quality gap instead.
+                if len(cur_array) < 2:
+                    skipped_windows += 1
+                    continue
+
+                psi = compute_psi(ref_array, cur_array)
                 ks = compute_ks_statistic(ref_array, cur_array)
                 # JS via histogram binning (same percentile edges as PSI)
                 if len(ref_array) >= 2 and len(cur_array) >= 2:
@@ -269,34 +292,35 @@ class DriftDetector:
 
             # --- prediction-distribution drift ---
             if ref_prediction_dist is not None:
-                cur_pred_dists = [
-                    compute_prediction_distribution(
-                        [e.get("prediction", "FLAT") for e in logs],
-                    ),
-                ]
-                if cur_pred_dists:
-                    cur_pred_dist = cur_pred_dists[0]
+                if not logs:
+                    # No real predictions: comparing a fabricated uniform
+                    # distribution against the reference manufactured drift
+                    # alerts for tickers that made no predictions. Skip and
+                    # record the data-quality gap instead.
+                    skipped_windows += 1
                 else:
-                    cur_pred_dist = np.array([1 / 3, 1 / 3, 1 / 3])
+                    cur_pred_dist = compute_prediction_distribution(
+                        [e.get("prediction", "FLAT") for e in logs],
+                    )
 
-                js_pred = compute_js_divergence(ref_prediction_dist, cur_pred_dist)
-                max_js = max(max_js, js_pred)
+                    js_pred = compute_js_divergence(ref_prediction_dist, cur_pred_dist)
+                    max_js = max(max_js, js_pred)
 
-                metrics.append(
-                    {
-                        "ticker": ticker,
-                        "model_version": model_version,
-                        "metric_type": "prediction_js",
-                        "feature_name": "prediction_distribution",
-                        "drift_score": js_pred,
-                        "alert_triggered": js_pred >= self.js_threshold,
-                        "reference_period": "training",
-                        "current_period": current_period,
-                        "details": None,
-                    }
-                )
-                if js_pred >= self.js_threshold:
-                    n_alerts += 1
+                    metrics.append(
+                        {
+                            "ticker": ticker,
+                            "model_version": model_version,
+                            "metric_type": "prediction_js",
+                            "feature_name": "prediction_distribution",
+                            "drift_score": js_pred,
+                            "alert_triggered": js_pred >= self.js_threshold,
+                            "reference_period": "training",
+                            "current_period": current_period,
+                            "details": None,
+                        }
+                    )
+                    if js_pred >= self.js_threshold:
+                        n_alerts += 1
 
         return {
             "metrics": metrics,
@@ -304,4 +328,8 @@ class DriftDetector:
             "max_psi": max_psi,
             "max_js_divergence": max_js,
             "overall_verdict": "drifted" if n_alerts > 0 else "stable",
+            "data_quality": {
+                "insufficient_windows": skipped_windows,
+                "tickers_without_predictions": skipped_tickers,
+            },
         }

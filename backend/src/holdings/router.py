@@ -29,6 +29,7 @@ from src.holdings.schemas import (
     HoldingUpdate,
 )
 from src.limiter import limiter
+from src.locks import lock_portfolio, portfolio_write
 from src.market.fx import get_fx_rate_to_gbp, resolve_instrument
 
 logger = structlog.get_logger()
@@ -64,6 +65,30 @@ async def _verify_holding_in_portfolio(
             user_id,
         )
     return dict(row) if row else None
+
+
+async def _assert_no_linked_transactions(conn, portfolio_id: str, ticker: str) -> None:
+    """409 when transactions back this holding.
+
+    Holdings rows created by BUY transactions are owned by the transactions
+    API — editing or deleting them here breaks the holdings↔transactions
+    invariant: a DELETE leaves the purchase's cash outflow invested nowhere
+    (cost basis £0, market value £0, free cash still debited) and an
+    arbitrary PUT desynchronises shares/cost basis from the recorded buys.
+    """
+    count = await conn.fetchval(
+        "SELECT COUNT(*) FROM transactions WHERE portfolio_id = $1::uuid AND ticker = $2",
+        portfolio_id,
+        ticker,
+    )
+    if count:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Holding {ticker} is backed by {count} transaction(s); "
+                "manage it through the transactions endpoints instead."
+            ),
+        )
 
 
 async def _fetch_holdings_from_db(portfolio_id: str, user_id: str) -> list[dict]:
@@ -247,23 +272,35 @@ async def update_holding(
 
     set_clauses.append("updated_at = now()")
     params.append(holding_id)
-    params.append(current_user.id)
 
     query = (
         "UPDATE holdings SET "
         + ", ".join(set_clauses)
-        + " FROM portfolios p"
-        + f" WHERE holdings.id = ${idx}::uuid"
-        + " AND p.id = holdings.portfolio_id"
-        + f" AND p.user_id = ${idx + 1}::uuid"
-        + " RETURNING holdings.id, holdings.portfolio_id, holdings.ticker,"
-        + " holdings.shares, holdings.average_cost_basis, holdings.currency,"
-        + " holdings.fx_rate_to_gbp, holdings.average_cost_basis_gbp,"
-        + " holdings.created_at, holdings.updated_at"
+        + f" WHERE id = ${idx}::uuid"
+        + " RETURNING id, portfolio_id, ticker, shares, average_cost_basis, currency,"
+        + " fx_rate_to_gbp, average_cost_basis_gbp, created_at, updated_at"
     )
 
     async with connection_ctx() as conn:
-        row = await conn.fetchrow(query, *params)
+        # Serialize against concurrent transactions for this portfolio (the
+        # same xact-scoped advisory lock the transactions write path takes),
+        # so the no-linked-transactions guard cannot be raced by a BUY.
+        async with portfolio_write(conn):
+            row = await conn.fetchrow(
+                "SELECT h.id, h.portfolio_id, h.ticker FROM holdings h "
+                "JOIN portfolios p ON p.id = h.portfolio_id "
+                "WHERE h.id = $1::uuid AND p.user_id = $2::uuid",
+                holding_id,
+                current_user.id,
+            )
+            if row is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Holding not found",
+                )
+            await lock_portfolio(conn, row["portfolio_id"])
+            await _assert_no_linked_transactions(conn, str(row["portfolio_id"]), row["ticker"])
+            row = await conn.fetchrow(query, *params)
 
     if row is None:
         raise HTTPException(
@@ -288,21 +325,26 @@ async def delete_holding(
 ) -> None:
     """Delete a holding (verified through portfolio ownership)."""
     async with connection_ctx() as conn:
-        result = await conn.execute(
-            "DELETE FROM holdings h "
-            "USING portfolios p "
-            "WHERE h.id = $1::uuid "
-            "AND p.id = h.portfolio_id "
-            "AND p.user_id = $2::uuid",
-            holding_id,
-            current_user.id,
-        )
-
-    if result == "DELETE 0":
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Holding not found",
-        )
+        # Serialize against concurrent transactions for this portfolio, then
+        # refuse transaction-backed holdings — deleting one would leave its
+        # purchase's cash outflow invested nowhere (cost basis £0, market
+        # value £0, free cash still debited).
+        async with portfolio_write(conn):
+            row = await conn.fetchrow(
+                "SELECT h.id, h.portfolio_id, h.ticker FROM holdings h "
+                "JOIN portfolios p ON p.id = h.portfolio_id "
+                "WHERE h.id = $1::uuid AND p.user_id = $2::uuid",
+                holding_id,
+                current_user.id,
+            )
+            if row is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Holding not found",
+                )
+            await lock_portfolio(conn, row["portfolio_id"])
+            await _assert_no_linked_transactions(conn, str(row["portfolio_id"]), row["ticker"])
+            await conn.execute("DELETE FROM holdings WHERE id = $1::uuid", holding_id)
 
     logger.info(
         "holding_deleted",
@@ -391,7 +433,12 @@ async def update_portfolio_holding(
     )
 
     async with connection_ctx() as conn:
-        row = await conn.fetchrow(query, *params)
+        # Same invariant guard as the top-level PUT: serialize against
+        # concurrent transactions, then refuse transaction-backed holdings.
+        async with portfolio_write(conn):
+            await lock_portfolio(conn, portfolio_id)
+            await _assert_no_linked_transactions(conn, str(portfolio_id), existing["ticker"])
+            row = await conn.fetchrow(query, *params)
 
     logger.info(
         "holding_updated",
@@ -413,24 +460,19 @@ async def delete_portfolio_holding(
     current_user: UserInDB = Depends(get_current_user),
 ) -> None:
     """Delete a holding nested under a portfolio (spec-compliant path)."""
-    async with connection_ctx() as conn:
-        result = await conn.execute(
-            "DELETE FROM holdings h "
-            "USING portfolios p "
-            "WHERE h.id = $1::uuid "
-            "AND h.portfolio_id = $2::uuid "
-            "AND p.id = h.portfolio_id "
-            "AND p.user_id = $3::uuid",
-            holding_id,
-            portfolio_id,
-            current_user.id,
-        )
-
-    if result == "DELETE 0":
+    existing = await _verify_holding_in_portfolio(portfolio_id, holding_id, current_user.id)
+    if existing is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Holding not found",
         )
+
+    async with connection_ctx() as conn:
+        # Same invariant guard as the top-level DELETE.
+        async with portfolio_write(conn):
+            await lock_portfolio(conn, portfolio_id)
+            await _assert_no_linked_transactions(conn, str(portfolio_id), existing["ticker"])
+            await conn.execute("DELETE FROM holdings WHERE id = $1::uuid", holding_id)
 
     logger.info(
         "holding_deleted",

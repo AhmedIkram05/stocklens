@@ -6,7 +6,6 @@ Loaded once at FastAPI startup via lifespan and reused across requests.
 
 from __future__ import annotations
 
-import concurrent.futures
 import json
 import warnings
 from pathlib import Path
@@ -27,9 +26,6 @@ from ml.model import GlobalLSTM
 from src.config import settings
 
 logger = structlog.get_logger()
-
-# Thread pool executor for fire-and-forget prediction logging
-_logger_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
 CLASS_NAMES = ("DOWN", "FLAT", "UP")
 
@@ -318,10 +314,9 @@ class PredictionService:
                 return None
 
             # Fire-and-forget: log prediction for drift monitoring
-            from src.prediction.prediction_logger import _logger_executor, log_prediction_sync
+            from src.prediction.prediction_logger import submit_prediction_log
 
-            _logger_executor.submit(
-                log_prediction_sync,
+            submit_prediction_log(
                 ticker,
                 sm_result.get("model_version", "sagemaker"),
                 sm_result["direction"],
@@ -372,10 +367,9 @@ class PredictionService:
         probabilities = {CLASS_NAMES[i]: float(probs[i]) for i in range(len(CLASS_NAMES))}
 
         # Fire-and-forget: log prediction for drift monitoring
-        from src.prediction.prediction_logger import _logger_executor, log_prediction_sync
+        from src.prediction.prediction_logger import submit_prediction_log
 
-        _logger_executor.submit(
-            log_prediction_sync,
+        submit_prediction_log(
             ticker,
             self.model_version,
             CLASS_NAMES[pred_class],

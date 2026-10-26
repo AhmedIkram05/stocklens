@@ -16,6 +16,9 @@ from src.performance.calculations import (
     BenchmarkComparisonResponse,
     HoldingPerformance,
     PortfolioPerformanceResponse,
+    _get_closest_price,
+    _sorted_price_dates,
+    align_daily_return_series,
     compute_benchmark_comparison,
     compute_holding_performance,
     compute_portfolio_performance,
@@ -299,3 +302,103 @@ class TestComputeBenchmarkComparison:
         assert result.tracking_error is None
         assert result.information_ratio is None
         assert result.daily_returns_count == 0
+
+
+class TestFlatHoldingDayChange:
+    """M1 regression: a 0% day change is a real weight, not a falsy Decimal."""
+
+    def test_flat_holding_dilutes_weighted_average(self):
+        # Two equal start-of-day holdings: A +2%, B flat. The weighted average
+        # must be 1.0% — the pre-fix truthiness check dropped B (Decimal(0) is
+        # falsy) and returned 2.0%.
+        price_map = {
+            "AAPL": {date(2024, 5, 1): Decimal("100"), date(2024, 5, 2): Decimal("102")},
+            "MSFT": {date(2024, 5, 1): Decimal("100"), date(2024, 5, 2): Decimal("100")},
+        }
+        holdings = [
+            {"ticker": "AAPL", "shares": Decimal("100"), "average_cost_basis": Decimal("90")},
+            {"ticker": "MSFT", "shares": Decimal("100"), "average_cost_basis": Decimal("90")},
+        ]
+        result = compute_portfolio_performance(
+            portfolio_id="p1",
+            portfolio_name="P",
+            holdings_data=holdings,
+            transactions=[],
+            cash_flows=[],
+            price_map=price_map,
+            start_date=date(2024, 5, 1),
+            end_date=date(2024, 5, 2),
+        )
+        assert result.day_change_pct == pytest.approx(Decimal("1.0"), abs=Decimal("1e-9"))
+
+
+class TestAlignDailyReturnSeries:
+    """M2 regression: portfolio and benchmark returns must pair by date, not index."""
+
+    def test_pairs_on_common_dates_only(self):
+        # Portfolio calendar has an extra ticker-only day (2024-01-03) and the
+        # benchmark is missing 2024-01-04. Positional pairing would difference
+        # different days; the date join must drop non-common days.
+        portfolio_dates = [
+            date(2024, 1, 1),
+            date(2024, 1, 2),
+            date(2024, 1, 3),
+            date(2024, 1, 4),
+            date(2024, 1, 5),
+        ]
+        portfolio_returns = [Decimal("0.01"), Decimal("0.02"), Decimal("0.03"), Decimal("0.04")]
+        benchmark_dates = [
+            date(2024, 1, 1),
+            date(2024, 1, 2),
+            date(2024, 1, 4),
+            date(2024, 1, 5),
+        ]
+        benchmark_returns = [Decimal("0.005"), Decimal("0.007"), Decimal("0.009")]
+
+        common, p_aligned, b_aligned = align_daily_return_series(
+            portfolio_dates, portfolio_returns, benchmark_dates, benchmark_returns
+        )
+        # returns[i] belongs to dates[i+1]; common end-dates are 01-02, 01-04, 01-05
+        assert common == [date(2024, 1, 2), date(2024, 1, 4), date(2024, 1, 5)]
+        assert p_aligned == [Decimal("0.01"), Decimal("0.03"), Decimal("0.04")]
+        assert b_aligned == [Decimal("0.005"), Decimal("0.007"), Decimal("0.009")]
+
+
+class TestGetClosestPriceBisect:
+    """M9 regression: bisect lookup must equal the naive all-dates scan."""
+
+    @staticmethod
+    def _naive(price_map, ticker, target):
+        ticker_prices = price_map[ticker]
+        available = [d for d in ticker_prices if d <= target]
+        return ticker_prices[max(available)] if available else None
+
+    def test_matches_naive_scan(self):
+        # Unsorted insertion order on purpose — the index must sort it.
+        price_map = {
+            "AAPL": {date(2024, 1, d): Decimal(d) for d in (15, 3, 20, 7, 1, 11, 28, 5, 23, 9)}
+        }
+        sorted_dates = _sorted_price_dates(price_map)
+        for target in (
+            date(2023, 12, 31),
+            date(2024, 1, 1),
+            date(2024, 1, 10),
+            date(2024, 1, 16),
+            date(2024, 1, 28),
+            date(2025, 6, 1),
+        ):
+            assert _get_closest_price(price_map, "AAPL", target, sorted_dates) == self._naive(
+                price_map, "AAPL", target
+            )
+            # Default (no pre-sorted index) path must also match.
+            assert _get_closest_price(price_map, "AAPL", target) == self._naive(
+                price_map, "AAPL", target
+            )
+
+    def test_before_first_date_returns_none(self):
+        price_map = {"AAPL": {date(2024, 1, 5): Decimal("100")}}
+        sorted_dates = _sorted_price_dates(price_map)
+        assert _get_closest_price(price_map, "AAPL", date(2024, 1, 4), sorted_dates) is None
+
+    def test_unknown_ticker_returns_none(self):
+        assert _get_closest_price({}, "AAPL", date(2024, 1, 5)) is None
