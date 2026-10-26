@@ -180,7 +180,8 @@ async def _apply_buy_to_holdings(
         "INSERT INTO holdings "
         "(portfolio_id, ticker, shares, average_cost_basis, currency, "
         " fx_rate_to_gbp, average_cost_basis_gbp) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7 / $3) "
+        "VALUES ($1::uuid, $2, $3::numeric, $4::numeric, $5, $6, "
+        "$7::numeric / $3::numeric) "
         "ON CONFLICT (portfolio_id, ticker) DO UPDATE SET "
         "shares = holdings.shares + EXCLUDED.shares, "
         "average_cost_basis = (holdings.shares * holdings.average_cost_basis "
@@ -192,7 +193,7 @@ async def _apply_buy_to_holdings(
         "                          * COALESCE(holdings.average_cost_basis_gbp, "
         "                                     holdings.average_cost_basis "
         "                                     * holdings.fx_rate_to_gbp) "
-        "                          + $7) "
+        "                          + $7::numeric) "
         "                         / (holdings.shares + EXCLUDED.shares), "
         "updated_at = now()",
         portfolio_id,

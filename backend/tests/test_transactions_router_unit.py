@@ -65,7 +65,11 @@ async def test_apply_buy_to_holdings_is_atomic_upsert():
     # (each buy weighted at its own historical FX), not today's rate
     # times the native average.
     assert "holdings.average_cost_basis_gbp," in query
-    assert "+ $7)" in query
+    assert "+ $7::numeric)" in query
+    # asyncpg sends params untyped, so `$7 / $3` is `unknown / unknown` to
+    # PostgreSQL (AmbiguousFunctionError) — the numeric casts are required.
+    assert "$3::numeric" in query
+    assert "$7::numeric / $3::numeric" in query
     assert "* EXCLUDED.fx_rate_to_gbp" not in query
     assert "updated_at = now()" in query
 
