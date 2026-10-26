@@ -29,6 +29,7 @@ from src.holdings.schemas import (
     HoldingUpdate,
 )
 from src.limiter import limiter
+from src.locks import lock_portfolio, portfolio_write
 from src.market.fx import get_fx_rate_to_gbp, resolve_instrument
 
 logger = structlog.get_logger()
@@ -284,7 +285,7 @@ async def update_holding(
         # Serialize against concurrent transactions for this portfolio (the
         # same xact-scoped advisory lock the transactions write path takes),
         # so the no-linked-transactions guard cannot be raced by a BUY.
-        async with conn.transaction():
+        async with portfolio_write(conn):
             row = await conn.fetchrow(
                 "SELECT h.id, h.portfolio_id, h.ticker FROM holdings h "
                 "JOIN portfolios p ON p.id = h.portfolio_id "
@@ -297,9 +298,7 @@ async def update_holding(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Holding not found",
                 )
-            await conn.execute(
-                "SELECT pg_advisory_xact_lock(hashtext($1))", str(row["portfolio_id"])
-            )
+            await lock_portfolio(conn, row["portfolio_id"])
             await _assert_no_linked_transactions(conn, str(row["portfolio_id"]), row["ticker"])
             row = await conn.fetchrow(query, *params)
 
@@ -330,7 +329,7 @@ async def delete_holding(
         # refuse transaction-backed holdings — deleting one would leave its
         # purchase's cash outflow invested nowhere (cost basis £0, market
         # value £0, free cash still debited).
-        async with conn.transaction():
+        async with portfolio_write(conn):
             row = await conn.fetchrow(
                 "SELECT h.id, h.portfolio_id, h.ticker FROM holdings h "
                 "JOIN portfolios p ON p.id = h.portfolio_id "
@@ -343,9 +342,7 @@ async def delete_holding(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Holding not found",
                 )
-            await conn.execute(
-                "SELECT pg_advisory_xact_lock(hashtext($1))", str(row["portfolio_id"])
-            )
+            await lock_portfolio(conn, row["portfolio_id"])
             await _assert_no_linked_transactions(conn, str(row["portfolio_id"]), row["ticker"])
             await conn.execute("DELETE FROM holdings WHERE id = $1::uuid", holding_id)
 
@@ -438,8 +435,8 @@ async def update_portfolio_holding(
     async with connection_ctx() as conn:
         # Same invariant guard as the top-level PUT: serialize against
         # concurrent transactions, then refuse transaction-backed holdings.
-        async with conn.transaction():
-            await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", str(portfolio_id))
+        async with portfolio_write(conn):
+            await lock_portfolio(conn, portfolio_id)
             await _assert_no_linked_transactions(conn, str(portfolio_id), existing["ticker"])
             row = await conn.fetchrow(query, *params)
 
@@ -472,8 +469,8 @@ async def delete_portfolio_holding(
 
     async with connection_ctx() as conn:
         # Same invariant guard as the top-level DELETE.
-        async with conn.transaction():
-            await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", str(portfolio_id))
+        async with portfolio_write(conn):
+            await lock_portfolio(conn, portfolio_id)
             await _assert_no_linked_transactions(conn, str(portfolio_id), existing["ticker"])
             await conn.execute("DELETE FROM holdings WHERE id = $1::uuid", holding_id)
 

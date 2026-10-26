@@ -20,6 +20,7 @@ from src.auth.schemas import UserInDB
 from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
+from src.locks import lock_portfolio, portfolio_write
 from src.market.fx import get_fx_rate_to_gbp, resolve_instrument
 from src.transactions.schemas import (
     TransactionCreate,
@@ -263,11 +264,8 @@ async def create_transaction(
         # free-cash aggregates and the holdings read are not row-lockable,
         # so without it two concurrent buys both pass on the same snapshot
         # (free cash negative, holdings lost update).
-        lock_stmt = "SELECT pg_advisory_xact_lock(hashtext($1))"
-        if conn.is_in_transaction():
-            # Tests already run inside BEGIN/ROLLBACK — the xact-scoped lock
-            # binds to the outer transaction.
-            await conn.execute(lock_stmt, str(portfolio_id))
+        async with portfolio_write(conn):
+            await lock_portfolio(conn, portfolio_id)
             if body.type == "BUY":
                 await _assert_buy_affordable(conn, portfolio_id, total_amount_gbp)
 
@@ -307,48 +305,6 @@ async def create_transaction(
                 )
             elif body.type == "SELL":
                 await _apply_sell_to_holdings(conn, portfolio_id, body.ticker, body.shares)
-        else:
-            async with conn.transaction():
-                await conn.execute(lock_stmt, str(portfolio_id))
-                if body.type == "BUY":
-                    await _assert_buy_affordable(conn, portfolio_id, total_amount_gbp)
-
-                row = await conn.fetchrow(
-                    "INSERT INTO transactions "
-                    "(portfolio_id, ticker, type, shares, price_per_share, "
-                    " total_amount, currency, fx_rate_to_gbp, total_amount_gbp, "
-                    " transaction_date, notes) "
-                    "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) "
-                    "RETURNING id, portfolio_id, ticker, type, shares, price_per_share, "
-                    "total_amount, currency, fx_rate_to_gbp, total_amount_gbp, "
-                    "transaction_date, notes, created_at",
-                    portfolio_id,
-                    body.ticker,
-                    body.type,
-                    body.shares,
-                    body.price_per_share,
-                    total_amount,
-                    currency,
-                    fx_rate_to_gbp,
-                    total_amount_gbp,
-                    body.transaction_date,
-                    body.notes,
-                )
-
-                # Keep holdings in sync with transactions
-                if body.type == "BUY":
-                    await _apply_buy_to_holdings(
-                        conn,
-                        portfolio_id,
-                        body.ticker,
-                        body.shares,
-                        body.price_per_share,
-                        currency,
-                        fx_rate_to_gbp,
-                        total_amount_gbp,
-                    )
-                elif body.type == "SELL":
-                    await _apply_sell_to_holdings(conn, portfolio_id, body.ticker, body.shares)
 
     result = _row_to_response(dict(row))
 
