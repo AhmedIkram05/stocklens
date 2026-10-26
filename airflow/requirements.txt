@@ -8,5 +8,5 @@ psycopg2-binary>=2.9.13
 evidently>=0.7.23
 alembic>=1.20.1
 boto3>=1.43.114
-pandas>=3.0.6
+pandas>=3.1.0
 numpy>=2.5.4
