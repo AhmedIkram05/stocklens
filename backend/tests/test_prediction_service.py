@@ -255,9 +255,9 @@ class TestPredict:
         assert result is None
 
     @patch("src.prediction.service.compute_all_features")
-    @patch("src.prediction.prediction_logger._logger_executor")
+    @patch("src.prediction.prediction_logger.submit_prediction_log")
     def test_returns_prediction_dict(
-        self, mock_executor, mock_compute_features, service, ohlcv_rows, mock_global_lstm
+        self, mock_submit, mock_compute_features, service, ohlcv_rows, mock_global_lstm
     ):
         service.model = mock_global_lstm
         service.model_version = mock_global_lstm._model_version
@@ -280,9 +280,9 @@ class TestPredict:
         assert result["model_version"] == "test-v1"
 
     @patch("src.prediction.service.compute_all_features")
-    @patch("src.prediction.prediction_logger._logger_executor")
+    @patch("src.prediction.prediction_logger.submit_prediction_log")
     def test_logs_prediction_async(
-        self, mock_executor, mock_compute_features, service, ohlcv_rows, mock_global_lstm
+        self, mock_submit, mock_compute_features, service, ohlcv_rows, mock_global_lstm
     ):
         service.model = mock_global_lstm
         df = pd.DataFrame(ohlcv_rows)
@@ -298,12 +298,12 @@ class TestPredict:
 
         assert result is not None
         # Verify logging was submitted (fire-and-forget)
-        mock_executor.submit.assert_called_once()
+        mock_submit.assert_called_once()
 
     @patch("src.prediction.service.compute_all_features")
-    @patch("src.prediction.prediction_logger._logger_executor")
+    @patch("src.prediction.prediction_logger.submit_prediction_log")
     def test_uses_unk_idx_for_unknown_ticker(
-        self, mock_executor, mock_compute_features, service, ohlcv_rows, mock_global_lstm
+        self, mock_submit, mock_compute_features, service, ohlcv_rows, mock_global_lstm
     ):
         service.model = mock_global_lstm
         df = pd.DataFrame(ohlcv_rows)
@@ -440,12 +440,12 @@ class TestSageMakerPredict:
         assert result is None
 
     @patch("src.prediction.service.compute_all_features")
-    @patch("src.prediction.prediction_logger._logger_executor")
+    @patch("src.prediction.prediction_logger.submit_prediction_log")
     @patch("src.prediction.service.settings")
     def test_predict_sagemaker_path(
         self,
         mock_settings,
-        mock_executor,
+        mock_submit,
         mock_compute_features,
         service,
         ohlcv_rows,
@@ -490,7 +490,7 @@ class TestSageMakerPredict:
         assert result["model_version"] == "sagemaker"
 
         # Fire-and-forget logging submitted
-        mock_executor.submit.assert_called_once()
+        mock_submit.assert_called_once()
 
     @patch("src.prediction.service.compute_all_features")
     @patch("src.prediction.service.settings")

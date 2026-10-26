@@ -5,15 +5,16 @@ All tests run inside a transaction that is rolled back on teardown
 (see conftest.py ``_test_db`` fixture).
 
 Integration tests call ``_log_prediction`` directly (not via the sync wrapper
-``log_prediction_sync``) to avoid ``asyncio.run()`` conflicts with the
-pytest-asyncio event loop.
+``log_prediction_sync``): with no lifespan-captured loop the wrapper drops the
+write, so tests exercise the coroutine directly.
 """
 
 from __future__ import annotations
 
 import json
 import threading
-from unittest.mock import AsyncMock, patch
+from concurrent.futures import Future
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -282,17 +283,20 @@ class TestIsNan:
 class TestLogPredictionSync:
     """Tests for log_prediction_sync — the thread-pool entry point."""
 
-    def test_log_prediction_sync_without_main_loop(self, monkeypatch):
-        """When no main loop is captured, asyncio.run is used."""
+    def test_drops_when_no_main_loop(self, monkeypatch):
+        """No captured loop: drop with a warning instead of running the write on
+        a throwaway loop. A foreign-loop write cannot succeed and, run inline on
+        the executor thread, blocks it until the interpreter hangs."""
 
         calls = []
 
         async def fake_log(**kwargs):
             calls.append(kwargs)
-            return None
 
+        mock_logger = MagicMock()
         monkeypatch.setattr("src.prediction.prediction_logger._main_loop", None)
         monkeypatch.setattr("src.prediction.prediction_logger._log_prediction", fake_log)
+        monkeypatch.setattr("src.prediction.prediction_logger.logger", mock_logger)
 
         log_prediction_sync(
             ticker="AAPL",
@@ -304,44 +308,44 @@ class TestLogPredictionSync:
             feature_window=None,
         )
 
-        assert len(calls) == 1
-        assert calls[0]["ticker"] == "AAPL"
+        assert calls == []  # the coroutine is never executed
+        mock_logger.warning.assert_called_once()
+        assert mock_logger.warning.call_args.args[0] == "prediction_log_dropped"
+        assert mock_logger.warning.call_args.kwargs["reason"] == "no_main_loop"
 
-    def test_log_prediction_sync_exception_logged(self, monkeypatch):
-        """When the coroutine raises, the exception is caught."""
-        import warnings
-
-        monkeypatch.setattr("src.prediction.prediction_logger._main_loop", None)
-
-        async def failing_log(**kwargs):
-            raise RuntimeError("DB unavailable")
-
-        monkeypatch.setattr("src.prediction.prediction_logger._log_prediction", failing_log)
-
-        # Should not raise
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            log_prediction_sync(
-                ticker="AAPL",
-                model_version="v1",
-                prediction="UP",
-                confidence=0.8,
-                probabilities={"UP": 0.8, "DOWN": 0.1, "FLAT": 0.1},
-                feature_values=None,
-                feature_window=None,
-            )
-
-    def test_log_prediction_sync_with_main_loop(self, monkeypatch):
-        """When a running main loop is captured, run_coroutine_threadsafe is used."""
-        from unittest.mock import MagicMock
-
+    def test_main_loop_schedule_error_is_logged(self, monkeypatch):
+        """An error scheduling on the main loop is caught, never raised."""
+        mock_logger = MagicMock()
         main_loop = MagicMock()
         main_loop.is_running.return_value = True
         monkeypatch.setattr("src.prediction.prediction_logger._main_loop", main_loop)
+        monkeypatch.setattr("src.prediction.prediction_logger._log_prediction", MagicMock())
+        monkeypatch.setattr("src.prediction.prediction_logger.logger", mock_logger)
         monkeypatch.setattr(
-            "src.prediction.prediction_logger._log_prediction",
-            AsyncMock(return_value=None),
+            "src.prediction.prediction_logger.asyncio.run_coroutine_threadsafe",
+            MagicMock(side_effect=RuntimeError("event loop is closed")),
         )
+
+        # Should not raise
+        log_prediction_sync(
+            ticker="AAPL",
+            model_version="v1",
+            prediction="UP",
+            confidence=0.8,
+            probabilities={"UP": 0.8, "DOWN": 0.1, "FLAT": 0.1},
+            feature_values=None,
+            feature_window=None,
+        )
+
+        mock_logger.warning.assert_called_once()
+        assert mock_logger.warning.call_args.args[0] == "prediction_log_sync_failed"
+
+    def test_log_prediction_sync_with_main_loop(self, monkeypatch):
+        """When a running main loop is captured, run_coroutine_threadsafe is used."""
+        main_loop = MagicMock()
+        main_loop.is_running.return_value = True
+        monkeypatch.setattr("src.prediction.prediction_logger._main_loop", main_loop)
+        monkeypatch.setattr("src.prediction.prediction_logger._log_prediction", MagicMock())
         with patch(
             "src.prediction.prediction_logger.asyncio.run_coroutine_threadsafe"
         ) as mock_schedule:
@@ -385,30 +389,72 @@ class TestSetMainLoop:
         assert pl._main_loop is None
 
 
+class _RecordingExecutor:
+    """Stand-in for ThreadPoolExecutor.submit that runs the task synchronously
+    and returns a completed Future, so the done-callback behaves like production."""
+
+    def __init__(self) -> None:
+        self.submitted = 0
+
+    def submit(self, fn, *args, **kwargs) -> Future:
+        self.submitted += 1
+        future: Future = Future()
+        try:
+            fn(*args, **kwargs)
+        except BaseException as exc:  # pragma: no cover - defensive
+            future.set_exception(exc)
+        else:
+            future.set_result(None)
+        return future
+
+
 class TestSubmitPredictionLog:
-    """M13 regression: the fire-and-forget backlog is bounded."""
+    """M13 regression: the fire-and-forget backlog is bounded and never leaks."""
 
     def test_submits_through_executor(self, monkeypatch):
         import src.prediction.prediction_logger as pl
 
-        submitted = []
-        monkeypatch.setattr(pl._logger_executor, "submit", lambda fn: submitted.append(fn))
-        monkeypatch.setattr(
-            "src.prediction.prediction_logger._pending_slots", threading.BoundedSemaphore(2)
-        )
+        executor = _RecordingExecutor()
+        monkeypatch.setattr(pl, "_logger_executor", executor)
+        monkeypatch.setattr(pl, "_pending_slots", threading.BoundedSemaphore(2))
+        monkeypatch.setattr(pl, "_main_loop", None)
+
         pl.submit_prediction_log("AAPL", "v1", "UP", 0.8, {}, None, None)
-        assert len(submitted) == 1
-        # Draining the wrapper releases its slot.
-        submitted[0]()
+
+        assert executor.submitted == 1
+        # Permit released by the future's done-callback, not the task body.
         assert pl._pending_slots._value == 2
 
     def test_drops_when_saturated(self, monkeypatch):
         import src.prediction.prediction_logger as pl
 
         submitted = []
-        monkeypatch.setattr(pl._logger_executor, "submit", lambda fn: submitted.append(fn))
-        monkeypatch.setattr(
-            "src.prediction.prediction_logger._pending_slots", threading.BoundedSemaphore(0)
-        )
+        executor = MagicMock()
+        executor.submit.side_effect = lambda *a: submitted.append(a)
+        monkeypatch.setattr(pl, "_logger_executor", executor)
+        monkeypatch.setattr(pl, "_pending_slots", threading.BoundedSemaphore(0))
+
         pl.submit_prediction_log("AAPL", "v1", "UP", 0.8, {}, None, None)
+
         assert submitted == []  # dropped, not queued
+        assert pl._pending_slots._value == 0  # and nothing leaked
+
+    def test_cancelled_task_releases_slot(self, monkeypatch):
+        """A task cancelled before it runs (executor shutdown with cancel_futures)
+        must still release its permit — the body never executes, so the
+        done-callback is the only release path."""
+        import src.prediction.prediction_logger as pl
+
+        def _submit(fn, *args, **kwargs):
+            future: Future = Future()
+            future.cancel()  # never runs fn
+            return future
+
+        executor = MagicMock()
+        executor.submit.side_effect = _submit
+        monkeypatch.setattr(pl, "_logger_executor", executor)
+        monkeypatch.setattr(pl, "_pending_slots", threading.BoundedSemaphore(2))
+
+        pl.submit_prediction_log("AAPL", "v1", "UP", 0.8, {}, None, None)
+
+        assert pl._pending_slots._value == 2  # released despite never running
