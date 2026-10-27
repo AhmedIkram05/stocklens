@@ -11,6 +11,10 @@ import features_engine as _rust
 import numpy as np
 import pandas as pd
 
+# The Rust get_slice panics on non-contiguous input and PyO3 surfaces panics
+# as PanicException — a BaseException that escapes `except Exception` — so
+# every array crossing into features_engine is forced C-contiguous below.
+
 
 def _arr_to_series(arr: np.ndarray, index: pd.Index) -> pd.Series:
     return pd.Series(arr, index=index)
@@ -27,7 +31,7 @@ def compute_log_returns(close: pd.Series, periods: list[int] | None = None) -> p
     if periods is None:
         periods = [1, 5, 21]
     return _dict_to_df(
-        _rust.compute_log_returns(close.to_numpy(dtype=np.float64), periods),
+        _rust.compute_log_returns(np.ascontiguousarray(close.to_numpy(dtype=np.float64)), periods),
         close.index,
     )
 
@@ -36,14 +40,16 @@ def compute_moving_averages(close: pd.Series, windows: list[int] | None = None) 
     if windows is None:
         windows = [5, 10, 20, 50]
     return _dict_to_df(
-        _rust.compute_moving_averages(close.to_numpy(dtype=np.float64), windows),
+        _rust.compute_moving_averages(
+            np.ascontiguousarray(close.to_numpy(dtype=np.float64)), windows
+        ),
         close.index,
     )
 
 
 def compute_rsi(close: pd.Series, period: int = 14) -> pd.Series:
     return _arr_to_series(
-        _rust.compute_rsi(close.to_numpy(dtype=np.float64), period),
+        _rust.compute_rsi(np.ascontiguousarray(close.to_numpy(dtype=np.float64)), period),
         close.index,
     )
 
@@ -55,21 +61,27 @@ def compute_macd(
     signal: int = 9,
 ) -> pd.DataFrame:
     return _dict_to_df(
-        _rust.compute_macd(close.to_numpy(dtype=np.float64), fast, slow, signal),
+        _rust.compute_macd(
+            np.ascontiguousarray(close.to_numpy(dtype=np.float64)), fast, slow, signal
+        ),
         close.index,
     )
 
 
 def compute_rolling_volatility(close: pd.Series, period: int = 30) -> pd.Series:
     return _arr_to_series(
-        _rust.compute_rolling_volatility(close.to_numpy(dtype=np.float64), period),
+        _rust.compute_rolling_volatility(
+            np.ascontiguousarray(close.to_numpy(dtype=np.float64)), period
+        ),
         close.index,
     )
 
 
 def compute_volatility_rank(close: pd.Series, period: int = 252) -> pd.Series:
     return _arr_to_series(
-        _rust.compute_volatility_rank(close.to_numpy(dtype=np.float64), period),
+        _rust.compute_volatility_rank(
+            np.ascontiguousarray(close.to_numpy(dtype=np.float64)), period
+        ),
         close.index,
     )
 
@@ -135,7 +147,15 @@ def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
     high = _safe_array(df, "high")
     low = _safe_array(df, "low")
     volume = _safe_array(df, "volume")
-    result = _dict_to_df(_rust.compute_all_features(close, high, low, volume), df.index)
+    result = _dict_to_df(
+        _rust.compute_all_features(
+            np.ascontiguousarray(close),
+            np.ascontiguousarray(high),
+            np.ascontiguousarray(low),
+            np.ascontiguousarray(volume),
+        ),
+        df.index,
+    )
     result = result[feature_cols]
 
     close_safe = np.where(close > 0, close, np.nan)

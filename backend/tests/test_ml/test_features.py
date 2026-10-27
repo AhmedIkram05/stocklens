@@ -394,3 +394,36 @@ class TestFeaturesShim:
         result = self.mod.compute_all_features(df)
         assert "ticker" in result.columns
         assert (result["ticker"] == "TEST").all()
+
+    def test_strided_input_does_not_panic(self) -> None:
+        """Negative-stride views must not panic the Rust get_slice.
+
+        A reversed frame (OHLCV rows fetched newest-first, then flipped)
+        yields non-contiguous columns; the engine's unwrap surfaces a
+        PanicException (a BaseException) that escapes `except Exception`,
+        so the shim must hand it contiguous arrays.
+        """
+        forward = pd.DataFrame(
+            {
+                "adjusted_close": np.linspace(100, 130, 60),
+                "high": np.linspace(101, 131, 60),
+                "low": np.linspace(99, 129, 60),
+                "volume": np.linspace(1e6, 2e6, 60),
+            }
+        )
+        reversed_view = forward.iloc[::-1]
+        assert not reversed_view["adjusted_close"].to_numpy(dtype=np.float64).flags["C_CONTIGUOUS"]
+
+        result = self.mod.compute_all_features(reversed_view)
+        assert list(result.columns) == list(self.mod.compute_all_features(forward).columns)
+
+        strided_close = reversed_view["adjusted_close"]
+        contiguous_twin = pd.Series(
+            np.ascontiguousarray(strided_close.to_numpy(dtype=np.float64)),
+            index=strided_close.index,
+            name="adjusted_close",
+        )
+        pd.testing.assert_series_equal(
+            self.mod.compute_rsi(strided_close),
+            self.mod.compute_rsi(contiguous_twin),
+        )
