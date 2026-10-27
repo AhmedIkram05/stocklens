@@ -432,4 +432,70 @@ describe('PortfolioDetailScreen', () => {
     await unmount();
     cleanups.forEach((c) => expect(c).toHaveBeenCalled());
   });
+
+  it('refetch merges accumulated quote ticks instead of wiping them', async () => {
+    const { getByText, queryByText, root } = await renderWithProviders(<PortfolioDetailScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
+
+    await waitFor(() => expect(getByText('Test Portfolio')).toBeTruthy());
+
+    const aaplCall = mockedSubscribe.mock.calls.find((c) => c[0] === 'AAPL');
+    const onNext = aaplCall![1] as (q: unknown) => void;
+    await act(async () => {
+      onNext({ ticker: 'AAPL', price: 190, previousClose: 179 });
+    });
+    await waitFor(() => expect(getByText('£190.00')).toBeTruthy());
+
+    // Refetch returns the same stale server snapshot (AAPL @ 180).
+    const sv = root?.queryAll((el) => 'refreshControl' in el.props)[0];
+    await act(async () => {
+      sv!.props.refreshControl.props.onRefresh();
+    });
+    await waitFor(() => expect(mockedGraphqlRequest).toHaveBeenCalledTimes(2));
+
+    // The tick must survive the completed fetch, not be replaced by it.
+    expect(getByText('£190.00')).toBeTruthy();
+    expect(queryByText('£180.00')).toBeNull();
+  });
+
+  it('ignores out-of-order fetch responses', async () => {
+    const { getByText, queryByText, root } = await renderWithProviders(<PortfolioDetailScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
+
+    await waitFor(() => expect(getByText('Test Portfolio')).toBeTruthy());
+
+    // Fetch A starts (slow, stale); fetch B starts after and lands first.
+    let resolveA: (value: unknown) => void = () => {};
+    const slowA = new Promise((resolve) => {
+      resolveA = resolve;
+    });
+    mockedGraphqlRequest.mockImplementationOnce(() => slowA);
+    mockedGraphqlRequest.mockResolvedValueOnce(mockGqlResponse);
+
+    const sv = root?.queryAll((el) => 'refreshControl' in el.props)[0];
+    await act(async () => {
+      sv!.props.refreshControl.props.onRefresh(); // fetch A
+    });
+    await act(async () => {
+      sv!.props.refreshControl.props.onRefresh(); // fetch B
+    });
+
+    await waitFor(() => expect(mockedGraphqlRequest).toHaveBeenCalledTimes(3));
+
+    // A lands last with different data — it must not win.
+    resolveA({
+      portfolio: {
+        ...mockGqlResponse.portfolio,
+        performance: { ...mockGqlPerformance, totalMarketValue: 99999 },
+      },
+    });
+    await act(async () => {
+      await slowA;
+    });
+
+    expect(getByText('£15,000.00')).toBeTruthy();
+    expect(queryByText('£99,999.00')).toBeNull();
+  });
 });

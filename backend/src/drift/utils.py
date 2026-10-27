@@ -63,7 +63,8 @@ def generate_presigned_url(s3_key: str, expires_in: int = 604800) -> str | None:
 def build_s3_key(drift_run_id: str, filename: str) -> str:
     """Build an S3 object key for a drift report.
 
-    Format: drift_reports/YYYY-MM-DD/filename
+    Format: drift_reports/YYYY-MM-DD/<drift_run_id>/filename — the run id
+    segment keeps same-day runs from overwriting each other's reports.
     """
     date_prefix = datetime.now(UTC).strftime("%Y-%m-%d")
-    return f"drift_reports/{date_prefix}/{filename}"
+    return f"drift_reports/{date_prefix}/{drift_run_id}/{filename}"

@@ -81,3 +81,74 @@ async def test_apply_buy_to_holdings_is_atomic_upsert():
     # $7 is the buy's GBP amount — the per-buy GBP basis ($7/$3 = £12/share)
     # seeds the insert path.
     assert args[6] == Decimal("120")
+
+
+async def test_list_transactions_clamps_limit_to_valid_range(monkeypatch):
+    """N8: a negative limit reaches Postgres as LIMIT -1 = unlimited; zero
+    returns nothing. Both must clamp to the 1..100 range."""
+    # src.transactions.__init__ rebinds the name `router` to the APIRouter
+    # instance, so `import src.transactions.router as ...` would return that
+    # object — import_module always yields the module itself.
+    import importlib
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from uuid import UUID
+
+    from starlette.requests import Request as StarletteRequest
+
+    router_mod = importlib.import_module("src.transactions.router")
+
+    captured: dict[str, int] = {}
+    monkeypatch.setattr(
+        router_mod,
+        "_fetch_portfolio_from_db",
+        AsyncMock(return_value={"user_id": "user-1"}),
+    )
+    monkeypatch.setattr(router_mod, "_count_transactions_in_portfolio", AsyncMock(return_value=0))
+
+    async def fake_fetch(portfolio_id, limit, offset, ticker=None):
+        captured["limit"] = limit
+        return []
+
+    monkeypatch.setattr(router_mod, "_fetch_transactions_from_db", fake_fetch)
+
+    # A real Request (not a mock): slowapi's limiter validates its type.
+    request = StarletteRequest(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [],
+            "query_string": b"",
+            "client": ("127.0.0.1", 12345),
+            "server": ("testserver", 80),
+            "scheme": "http",
+        }
+    )
+    user = SimpleNamespace(id="user-1")
+    portfolio_id = UUID(int=1)
+
+    for bad_limit in (-1, -50, 0):
+        response = await router_mod.list_transactions(
+            request,
+            portfolio_id,
+            limit=bad_limit,
+            offset=0,
+            ticker=None,
+            current_user=user,
+        )
+        assert captured["limit"] == 1
+        assert response.page_size == 1
+        assert response.page == 1
+
+    response = await router_mod.list_transactions(
+        request, portfolio_id, limit=500, offset=0, ticker=None, current_user=user
+    )
+    assert captured["limit"] == 100
+    assert response.page_size == 100
+
+    response = await router_mod.list_transactions(
+        request, portfolio_id, limit=50, offset=50, ticker=None, current_user=user
+    )
+    assert captured["limit"] == 50
+    assert response.page == 2

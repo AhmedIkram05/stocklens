@@ -9,9 +9,15 @@
 
 import type { PortfolioPerformance } from '../services/portfolios';
 
+export type QuoteTick = {
+  ticker: string;
+  price?: number | null;
+  previousClose?: number | null;
+};
+
 export function applyQuoteToPerformance(
   performance: PortfolioPerformance,
-  quote: { ticker: string; price?: number | null; previousClose?: number | null },
+  quote: QuoteTick,
 ): PortfolioPerformance {
   if (quote.price == null || quote.price === 0) return performance; // null/0 price -> no-op
   const holdings = performance.holdings.map((h) => {
@@ -65,4 +71,23 @@ export function applyQuoteToPerformance(
     day_change_pct,
     holdings: weighted,
   };
+}
+
+/**
+ * Fold accumulated live-quote ticks onto a freshly fetched snapshot.
+ *
+ * The server snapshot is computed from stored prices and cannot see
+ * websocket ticks, so a completed fetch must re-apply them instead of
+ * replacing the overlay (N10). Later ticks win — call with ticks in
+ * arrival order.
+ */
+export function applyQuotesToPerformance(
+  performance: PortfolioPerformance,
+  quotes: QuoteTick[],
+): PortfolioPerformance {
+  let merged = performance;
+  for (const quote of quotes) {
+    merged = applyQuoteToPerformance(merged, quote);
+  }
+  return merged;
 }

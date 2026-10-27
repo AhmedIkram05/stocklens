@@ -346,7 +346,8 @@ async def list_transactions(
             detail="Portfolio not found",
         )
 
-    limit = min(limit, 100)  # max 100
+    # Clamp to 1..100 — Postgres treats a negative LIMIT as unlimited.
+    limit = max(1, min(limit, 100))
     total = await _count_transactions_in_portfolio(portfolio_id, ticker)
     rows = await _fetch_transactions_from_db(portfolio_id, limit, offset, ticker)
     transactions = [_row_to_response(r) for r in rows]

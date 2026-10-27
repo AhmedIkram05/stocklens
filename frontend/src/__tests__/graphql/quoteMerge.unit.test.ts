@@ -7,7 +7,7 @@
  * Weight = mv / total × 100.
  */
 
-import { applyQuoteToPerformance } from '@/graphql/quoteMerge';
+import { applyQuoteToPerformance, applyQuotesToPerformance } from '@/graphql/quoteMerge';
 import type { PortfolioPerformance, HoldingPerformance } from '@/services/portfolios';
 
 function holding(overrides: Partial<HoldingPerformance> = {}): HoldingPerformance {
@@ -136,5 +136,52 @@ describe('applyQuoteToPerformance', () => {
 
     expect(out.holdings[0].day_change).toBe(150);
     expect(out.holdings[0].day_change_pct).toBeCloseTo((15 / 195) * 100, 10);
+  });
+});
+
+describe('applyQuotesToPerformance', () => {
+  it('folds ticks in order — later ticks win per ticker', () => {
+    const out = applyQuotesToPerformance(perf([holding()]), [
+      { ticker: 'AAPL', price: 210, previousClose: 205 },
+      { ticker: 'AAPL', price: 220, previousClose: 205 },
+    ]);
+
+    expect(out.holdings[0].current_price).toBe(220);
+    expect(out.holdings[0].market_value).toBe(2200);
+    expect(out.day_change).toBe(150); // 10 × (220 − 205)
+    expect(out.total_market_value).toBe(2200);
+  });
+
+  it('applies ticks across multiple tickers and recomputes totals', () => {
+    const msft = holding({
+      ticker: 'MSFT',
+      shares: 5,
+      average_cost_basis: 300,
+      current_price: 400,
+      market_value: 2000,
+      cost_basis: 1500,
+      unrealised_pl: 500,
+      unrealised_pl_pct: (500 / 1500) * 100,
+      day_change: 0,
+      day_change_pct: 0,
+      portfolio_weight_pct: 50,
+      currency: 'USD',
+    });
+    const out = applyQuotesToPerformance(perf([holding(), msft]), [
+      { ticker: 'AAPL', price: 210, previousClose: 205 },
+      { ticker: 'MSFT', price: 420, previousClose: 410 },
+    ]);
+
+    expect(out.holdings[0].current_price).toBe(210);
+    expect(out.holdings[1].current_price).toBe(420);
+    // Totals: mv 2100 + 2100; pl 600 + 600; day 50 + 50
+    expect(out.total_market_value).toBe(4200);
+    expect(out.total_unrealised_pl).toBe(1200);
+    expect(out.day_change).toBe(100);
+  });
+
+  it('returns the input unchanged for an empty tick list', () => {
+    const before = perf([holding()]);
+    expect(applyQuotesToPerformance(before, [])).toBe(before);
   });
 });

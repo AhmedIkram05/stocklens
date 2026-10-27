@@ -199,13 +199,13 @@ class TestDecodeToken:
         monkeypatch.setattr("src.auth.utils.settings.JWT_SECRET_KEY", "test-secret")
         monkeypatch.setattr("src.auth.utils.settings.JWT_ALGORITHM", "HS256")
 
-        # Create a token that expired 1 second ago
+        # Create a token that expired 60s ago — beyond the 10s decode leeway.
 
         expired = jwt.encode(
             {
                 "sub": "user-x",
                 "jti": "expired-jti",
-                "exp": int(datetime.now(timezone.utc).timestamp()) - 1,
+                "exp": int(datetime.now(timezone.utc).timestamp()) - 60,
                 "iat": int(datetime.now(timezone.utc).timestamp()) - 3600,
                 "type": "access",
             },
@@ -215,6 +215,28 @@ class TestDecodeToken:
 
         with pytest.raises(jwt.ExpiredSignatureError):
             decode_token(expired)
+
+    def test_accepts_token_expired_within_leeway(self, monkeypatch):
+        """N12: a token a few seconds past expiry still verifies — clock skew
+        between issuer and verifier must not produce intermittent 401s."""
+        monkeypatch.setattr("src.auth.utils.settings.JWT_SECRET_KEY", "test-secret")
+        monkeypatch.setattr("src.auth.utils.settings.JWT_ALGORITHM", "HS256")
+
+        recently_expired = jwt.encode(
+            {
+                "sub": "user-x",
+                "jti": "skewed-jti",
+                "exp": int(datetime.now(timezone.utc).timestamp()) - 5,
+                "iat": int(datetime.now(timezone.utc).timestamp()) - 3600,
+                "type": "access",
+            },
+            "test-secret",
+            algorithm="HS256",
+        )
+
+        payload = decode_token(recently_expired)
+        assert payload.sub == "user-x"
+        assert payload.jti == "skewed-jti"
 
     def test_raises_on_invalid_signature(self, monkeypatch):
         monkeypatch.setattr("src.auth.utils.settings.JWT_SECRET_KEY", "test-secret")

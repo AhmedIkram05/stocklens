@@ -64,14 +64,15 @@ class TestGetCurrentUser:
         monkeypatch.setattr("src.auth.utils.settings.JWT_ALGORITHM", "HS256")
         monkeypatch.setattr("src.auth.utils.settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES", 30)
 
-        # Create an expired token directly
+        # Create an expired token directly — 60s past expiry, beyond the
+        # 10s decode leeway (a 1s-skewed token must still verify).
         from datetime import datetime, timezone
 
         expired_token = pyjwt.encode(
             {
                 "sub": "u1",
                 "jti": "expired",
-                "exp": int(datetime.now(timezone.utc).timestamp()) - 1,
+                "exp": int(datetime.now(timezone.utc).timestamp()) - 60,
                 "iat": int(datetime.now(timezone.utc).timestamp()) - 3600,
                 "type": "access",
             },
