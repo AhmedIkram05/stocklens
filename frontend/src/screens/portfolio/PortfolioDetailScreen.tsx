@@ -23,8 +23,8 @@ import {
   toPortfolioPerformance,
 } from '../../graphql/client';
 import type { PortfolioDetailQuery } from '../../graphql/generated';
-import { subscribeMarketQuote } from '../../graphql/subscriptionClient';
-import { applyQuoteToPerformance } from '../../graphql/quoteMerge';
+import { subscribeMarketQuote, type MarketQuotePayload } from '../../graphql/subscriptionClient';
+import { applyQuoteToPerformance, applyQuotesToPerformance } from '../../graphql/quoteMerge';
 import { formatCurrency } from '../../utils/formatters';
 
 type PortfolioDetailRouteProp = RouteProp<PortfolioStackParamList, 'PortfolioDetail'>;
@@ -90,9 +90,14 @@ export default function PortfolioDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [lastTickAt, setLastTickAt] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  // Latest tick per ticker — a completed fetch cannot see websocket ticks,
+  // so they are folded back onto each fresh snapshot (N10).
+  const quotesRef = useRef(new Map<string, MarketQuotePayload>());
+  const fetchSeqRef = useRef(0);
 
   const fetchPerformance = useCallback(
     async (isRefresh = false, silent = false) => {
+      const seq = ++fetchSeqRef.current;
       try {
         if (!silent) {
           if (isRefresh) {
@@ -105,10 +110,15 @@ export default function PortfolioDetailScreen() {
         const data = await graphqlRequest<PortfolioDetailQuery>(PORTFOLIO_DETAIL_QUERY, {
           id: portfolioId,
         });
-        if (mountedRef.current)
-          setPerformance(
-            data.portfolio ? toPortfolioPerformance(data.portfolio.performance) : null,
-          );
+        if (mountedRef.current && seq === fetchSeqRef.current)
+          setPerformance((prev) => {
+            const fresh = data.portfolio
+              ? toPortfolioPerformance(data.portfolio.performance)
+              : null;
+            if (!fresh) return null;
+            if (!prev) return fresh;
+            return applyQuotesToPerformance(fresh, [...quotesRef.current.values()]);
+          });
       } catch (err: any) {
         if (!silent) setError(err?.message || 'Failed to load portfolio performance');
       } finally {
@@ -142,6 +152,7 @@ export default function PortfolioDetailScreen() {
     const unsubs = tickerKey.split('|').map((t) =>
       subscribeMarketQuote(t, (quote) => {
         if (quote.timestamp) setLastTickAt(quote.timestamp);
+        quotesRef.current.set(t, quote);
         setPerformance((prev) => (prev ? applyQuoteToPerformance(prev, quote) : prev));
       }),
     );
