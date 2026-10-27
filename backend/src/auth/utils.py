@@ -114,6 +114,7 @@ def decode_token(token: str) -> TokenPayload:
         token,
         settings.JWT_SECRET_KEY,
         algorithms=[settings.JWT_ALGORITHM],
+        leeway=10,  # tolerate clock skew between the token issuer and verifier
     )
     return TokenPayload(**payload)
 
