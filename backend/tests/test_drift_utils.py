@@ -97,14 +97,17 @@ class TestGeneratePresignedUrl:
 class TestBuildS3Key:
     """build_s3_key — pure function, no mocking needed."""
 
-    def test_builds_key_with_date_prefix(self):
-        """Key format: drift_reports/YYYY-MM-DD/filename."""
+    def test_builds_key_with_date_prefix_and_run_id(self):
+        """Key format: drift_reports/YYYY-MM-DD/<drift_run_id>/filename."""
         result = build_s3_key("run-123", "drift_report.html")
         date_prefix = datetime.now(UTC).strftime("%Y-%m-%d")
-        assert result == f"drift_reports/{date_prefix}/drift_report.html"
+        assert result == f"drift_reports/{date_prefix}/run-123/drift_report.html"
 
-    def test_includes_run_id_in_key(self):
-        """Filename in result contains the original filename."""
-        result = build_s3_key("my-run", "my-report.html")
-        assert "my-report.html" in result
-        assert "drift_reports/" in result
+    def test_distinct_run_ids_produce_distinct_keys(self):
+        """Same-day runs must not overwrite each other's report keys."""
+        date_prefix = datetime.now(UTC).strftime("%Y-%m-%d")
+        key_a = build_s3_key("run-a", "drift_report_1.html")
+        key_b = build_s3_key("run-b", "drift_report_1.html")
+        assert key_a == f"drift_reports/{date_prefix}/run-a/drift_report_1.html"
+        assert key_b == f"drift_reports/{date_prefix}/run-b/drift_report_1.html"
+        assert key_a != key_b
