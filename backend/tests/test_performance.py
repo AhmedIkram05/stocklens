@@ -1079,7 +1079,7 @@ class TestBulkPerformanceSchema:
 class TestBatchHelpers:
     """Tests for batch database helper functions used by the bulk endpoint."""
 
-    async def testbatch_verify_ownership_found(self):
+    async def test_batch_verify_ownership_found(self):
         """All requested portfolios belong to the user."""
         from src.performance.queries import batch_verify_ownership
 
@@ -1094,7 +1094,7 @@ class TestBatchHelpers:
         assert result["11111111-1111-1111-1111-111111111111"] == "Test Portfolio"
         assert result["22222222-2222-2222-2222-222222222222"] == "Other Portfolio"
 
-    async def testbatch_verify_ownership_partial_match(self):
+    async def test_batch_verify_ownership_partial_match(self):
         """Only some IDs belong to the user — partial result."""
         from src.performance.queries import batch_verify_ownership
 
@@ -1108,7 +1108,7 @@ class TestBatchHelpers:
         assert len(result) == 1
         assert "11111111-1111-1111-1111-111111111111" in result
 
-    async def testbatch_verify_ownership_wrong_user(self):
+    async def test_batch_verify_ownership_wrong_user(self):
         """None of the IDs belong to the specified user."""
         from src.performance.queries import batch_verify_ownership
 
@@ -1118,7 +1118,7 @@ class TestBatchHelpers:
         )
         assert len(result) == 0
 
-    async def testbatch_get_holdings(self):
+    async def test_batch_get_holdings(self):
         """Holdings are returned grouped by portfolio_id."""
         from src.database.connection import connection_ctx
         from src.performance.queries import batch_get_holdings
@@ -1142,14 +1142,14 @@ class TestBatchHelpers:
         assert len(holdings) == 1
         assert holdings[0]["ticker"] == "AAPL"
 
-    async def testbatch_get_holdings_empty(self):
+    async def test_batch_get_holdings_empty(self):
         """No holdings for any portfolio → empty dict."""
         from src.performance.queries import batch_get_holdings
 
         result = await batch_get_holdings(["11111111-1111-1111-1111-111111111111"])
         assert result == {}
 
-    async def testbatch_get_holdings_multiple_portfolios(self):
+    async def test_batch_get_holdings_multiple_portfolios(self):
         """Holdings for different portfolios are separate."""
         from src.database.connection import connection_ctx
         from src.performance.queries import batch_get_holdings
@@ -1186,7 +1186,7 @@ class TestBatchHelpers:
         assert len(result["11111111-1111-1111-1111-111111111111"]) == 1
         assert len(result["22222222-2222-2222-2222-222222222222"]) == 1
 
-    async def testbatch_get_transactions(self):
+    async def test_batch_get_transactions(self):
         """Transactions are returned grouped by portfolio_id."""
         from src.database.connection import connection_ctx
         from src.performance.queries import batch_get_transactions
@@ -1214,14 +1214,14 @@ class TestBatchHelpers:
         assert txns[0]["type"] == "BUY"
         assert "date" in txns[0]  # transaction_date renamed to date
 
-    async def testbatch_get_transactions_empty(self):
+    async def test_batch_get_transactions_empty(self):
         """No transactions → empty dict."""
         from src.performance.queries import batch_get_transactions
 
         result = await batch_get_transactions(["11111111-1111-1111-1111-111111111111"])
         assert result == {}
 
-    async def testbatch_get_cash_flows(self):
+    async def test_batch_get_cash_flows(self):
         """Cash flows are returned grouped by portfolio_id."""
         from src.database.connection import connection_ctx
         from src.performance.queries import batch_get_cash_flows
@@ -1241,7 +1241,7 @@ class TestBatchHelpers:
         assert len(cfs) == 1
         assert cfs[0]["amount"] == 5000
 
-    async def testbatch_get_cash_flows_empty(self):
+    async def test_batch_get_cash_flows_empty(self):
         """No cash flows → empty dict."""
         from src.performance.queries import batch_get_cash_flows
 
