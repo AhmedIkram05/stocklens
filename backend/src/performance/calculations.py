@@ -236,10 +236,8 @@ def compute_portfolio_performance(
     # Both sides in GBP: deposits are GBP; net invested uses the GBP-normalised
     # transaction amounts so mixed-currency holdings don't corrupt the sum.
     total_deposits = sum(cf["amount"] for cf in cash_flows)
-    net_invested = sum(
-        t.get("total_amount_gbp", t["total_amount"]) for t in transactions if t["type"] == "BUY"
-    ) - sum(
-        t.get("total_amount_gbp", t["total_amount"]) for t in transactions if t["type"] == "SELL"
+    net_invested = sum(t["total_amount_gbp"] for t in transactions if t["type"] == "BUY") - sum(
+        t["total_amount_gbp"] for t in transactions if t["type"] == "SELL"
     )
     free_cash_balance = total_deposits - net_invested
 

@@ -175,6 +175,7 @@ class TestPortfolioPerformance:
                     "ticker": "AAPL",
                     "shares": Decimal("10"),
                     "total_amount": Decimal("1500.00"),
+                    "total_amount_gbp": Decimal("1500.00"),
                     "date": date(2024, 6, 15),
                 },
             ],
