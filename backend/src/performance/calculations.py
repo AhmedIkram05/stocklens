@@ -12,11 +12,15 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Optional
 
+import structlog
+
 from src.performance.schemas import (
     BenchmarkComparisonResponse,
     HoldingPerformance,
     PortfolioPerformanceResponse,
 )
+
+logger = structlog.get_logger()
 
 
 def compute_holding_performance(
@@ -386,8 +390,18 @@ def _compute_twr(
             base = Decimal(1) + twr
             if base > 0:
                 twr_annualised = base ** (Decimal(365) / Decimal(days)) - Decimal(1)
-        except Exception:
-            pass  # ponytail: negative base to fractional power
+            else:
+                # Total return at or below -100% — annualisation is undefined
+                # (negative base to a fractional power). Log so a None TWR
+                # annualisation is explainable instead of silent.
+                logger.debug(
+                    "twr_annualisation_skipped",
+                    twr=str(twr),
+                    days=days,
+                    reason="total return at or below -100%",
+                )
+        except Exception as exc:
+            logger.debug("twr_annualisation_failed", twr=str(twr), days=days, error=str(exc))
 
     return twr, twr_annualised
 
