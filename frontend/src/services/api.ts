@@ -132,20 +132,24 @@ export interface ApiOptions {
  * Handles FastAPI's `{detail: ...}` and generic JSON error shapes.
  */
 async function parseError(response: Response): Promise<string> {
+  let text = '';
   try {
-    const body = await response.json();
+    // Read the body once as text. Calling json() first and text() in the
+    // fallback fails in React Native: the body stream is already consumed.
+    text = await response.text();
+  } catch {
+    return response.statusText || 'Unknown error';
+  }
+  if (!text) return response.statusText || 'Unknown error';
+  try {
+    const body = JSON.parse(text);
     if (typeof body.detail === 'string') return body.detail;
     if (typeof body.message === 'string') return body.message;
     return JSON.stringify(body);
   } catch {
     // Non-JSON error body (e.g. plain-text 500). Surface the raw text so the
     // user never sees a generic "Unknown error".
-    try {
-      const text = await response.text();
-      return text || response.statusText || 'Unknown error';
-    } catch {
-      return response.statusText || 'Unknown error';
-    }
+    return text;
   }
 }
 

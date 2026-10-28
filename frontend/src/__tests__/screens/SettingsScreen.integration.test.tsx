@@ -36,7 +36,7 @@ describe('SettingsScreen', () => {
     (deviceAuth.isDeviceAuthAvailable as jest.Mock).mockResolvedValue(true);
     (deviceAuth.isDeviceEnabled as jest.Mock).mockResolvedValue(false);
     (deviceAuth.authenticateDevice as jest.Mock).mockResolvedValue({ success: true } as any);
-    mockedReceiptService.deleteAll.mockResolvedValue();
+    mockedReceiptService.deleteAll.mockResolvedValue(0);
   });
 
   const renderScreen = (overrides?: Parameters<typeof renderWithProviders>[1]) =>

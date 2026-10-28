@@ -141,12 +141,25 @@ export const receiptService = {
   /**
    * Delete all receipts for the authenticated user.
    *
-   * Note: This is a convenience method that fetches all receipts and deletes them one by one.
-   * The backend doesn't have a bulk delete endpoint, so this may be slow for large datasets.
+   * The backend has no bulk delete endpoint, so this deletes in small batches
+   * (bounded concurrency instead of one Promise.all burst) and keeps re-listing
+   * until the account is empty, rather than silently stopping at 1,000.
+   *
+   * @returns Number of receipts actually deleted.
    */
-  async deleteAll(): Promise<void> {
-    const receipts = await this.list(1000, 0); // Fetch up to 1000 receipts
-    await Promise.all(receipts.map((r) => this.delete(r.id)));
+  async deleteAll(): Promise<number> {
+    const BATCH_SIZE = 10;
+    let deleted = 0;
+    let receipts = await this.list(1000, 0);
+    while (receipts.length > 0) {
+      for (let i = 0; i < receipts.length; i += BATCH_SIZE) {
+        const batch = receipts.slice(i, i + BATCH_SIZE);
+        await Promise.all(batch.map((r) => this.delete(r.id)));
+        deleted += batch.length;
+      }
+      receipts = await this.list(1000, 0);
+    }
+    return deleted;
   },
 
   /**

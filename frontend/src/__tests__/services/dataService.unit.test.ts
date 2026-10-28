@@ -98,7 +98,7 @@ describe('receiptService (API)', () => {
     );
   });
 
-  it('deleteAll fetches all then deletes each', async () => {
+  it('deleteAll deletes each receipt and repeats until the list is empty', async () => {
     const receipts = [
       { id: '1', total_amount: 10 },
       { id: '2', total_amount: 20 },
@@ -107,11 +107,13 @@ describe('receiptService (API)', () => {
       [JSON.stringify({ receipts, total: 2, limit: 1000, offset: 0 }), { status: 200 }],
       ['', { status: 204 }],
       ['', { status: 204 }],
+      [JSON.stringify({ receipts: [], total: 0, limit: 1000, offset: 0 }), { status: 200 }],
     );
 
-    await receiptService.deleteAll();
+    const deleted = await receiptService.deleteAll();
 
-    // Should have fetched list and then deleted each
+    expect(deleted).toBe(2);
+    // Should have listed, deleted each, then re-listed to confirm empty
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       expect.stringMatching(/\/receipts\?limit=1000&offset=0/),
@@ -127,5 +129,59 @@ describe('receiptService (API)', () => {
       expect.stringMatching(/\/receipts\/2$/),
       expect.objectContaining({ method: 'DELETE' }),
     );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      expect.stringMatching(/\/receipts\?limit=1000&offset=0/),
+      expect.any(Object),
+    );
+  });
+
+  it('deleteAll keeps paging when the backend returns partial pages', async () => {
+    fetchMock.mockResponses(
+      [
+        JSON.stringify({ receipts: [{ id: '1' }, { id: '2' }], total: 3, limit: 2, offset: 0 }),
+        { status: 200 },
+      ],
+      ['', { status: 204 }],
+      ['', { status: 204 }],
+      [JSON.stringify({ receipts: [{ id: '3' }], total: 3, limit: 2, offset: 2 }), { status: 200 }],
+      ['', { status: 204 }],
+      [JSON.stringify({ receipts: [], total: 3, limit: 2, offset: 3 }), { status: 200 }],
+    );
+
+    const deleted = await receiptService.deleteAll();
+
+    expect(deleted).toBe(3);
+    expect(
+      fetchMock.mock.calls.filter((call: unknown[]) => String(call[0]).includes('/receipts?'))
+        .length,
+    ).toBe(3);
+  });
+
+  it('deleteAll never exceeds 10 concurrent deletes', async () => {
+    const ids = Array.from({ length: 25 }, (_, i) => ({ id: `${i + 1}`, total_amount: 1 }));
+    fetchMock.mockResponses(
+      [JSON.stringify({ receipts: ids, total: 25, limit: 1000, offset: 0 }), { status: 200 }],
+      ...ids.map(() => ['', { status: 204 }] as Parameters<typeof fetchMock.mockResponseOnce>),
+      [JSON.stringify({ receipts: [], total: 0, limit: 1000, offset: 0 }), { status: 200 }],
+    );
+    const originalDelete = receiptService.delete.bind(receiptService);
+    let inFlight = 0;
+    let peak = 0;
+    jest.spyOn(receiptService, 'delete').mockImplementation(async (id: string) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      try {
+        await originalDelete(id);
+      } finally {
+        inFlight -= 1;
+      }
+    });
+
+    const deleted = await receiptService.deleteAll();
+
+    expect(deleted).toBe(25);
+    expect(peak).toBeLessThanOrEqual(10);
+    expect(peak).toBeGreaterThan(1);
   });
 });

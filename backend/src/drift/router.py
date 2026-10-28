@@ -63,7 +63,6 @@ async def trigger_drift_run(
     if not specified in the request.
     """
     drift_run_id = generate_drift_run_id()
-    current_period = datetime.now(timezone.utc).strftime("%Y-%m-%d_%Y-%m-%d")
 
     # 1. Determine tickers to monitor
     tickers = request.tickers
@@ -93,7 +92,11 @@ async def trigger_drift_run(
     )
 
     # 3. Fetch prediction logs for monitored tickers
-    lookback_start = datetime.now(timezone.utc) - timedelta(days=request.lookback_days)
+    now = datetime.now(timezone.utc)
+    lookback_start = now - timedelta(days=request.lookback_days)
+    # Label the evaluated window honestly (lookback start .. run date) instead
+    # of the same date joined with itself, which carried no information.
+    current_period = f"{lookback_start:%Y-%m-%d}_{now:%Y-%m-%d}"
     prediction_logs: dict[str, list[dict]] = {t: [] for t in tickers}
 
     async with connection_ctx() as conn:

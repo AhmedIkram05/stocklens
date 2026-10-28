@@ -311,18 +311,10 @@ async def get_bulk_portfolio_performance(
                 Decimal(0),
             )
             net_invested = sum(
-                (
-                    Decimal(str(t.get("total_amount_gbp", t["total_amount"])))
-                    for t in transactions
-                    if t["type"] == "BUY"
-                ),
+                (Decimal(str(t["total_amount_gbp"])) for t in transactions if t["type"] == "BUY"),
                 Decimal(0),
             ) - sum(
-                (
-                    Decimal(str(t.get("total_amount_gbp", t["total_amount"])))
-                    for t in transactions
-                    if t["type"] == "SELL"
-                ),
+                (Decimal(str(t["total_amount_gbp"])) for t in transactions if t["type"] == "SELL"),
                 Decimal(0),
             )
             results[pid] = PortfolioPerformanceResponse(
