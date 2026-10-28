@@ -153,13 +153,16 @@ describe('api()', () => {
     expect(err).toMatchObject({ status: 404, message: 'Not found' });
   });
 
-  it('throws ApiError with statusText when response body is not JSON', async () => {
+  it('throws ApiError with raw text when response body is not JSON', async () => {
     setValidToken();
-    fetchMock.mockResponseOnce('not json', { status: 500, statusText: 'Internal Server Error' });
+    fetchMock.mockResponseOnce('Database connection timed out', {
+      status: 500,
+      statusText: 'Internal Server Error',
+    });
 
     const err = await api('/boom').catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
-    expect(err).toMatchObject({ status: 500 });
+    expect(err).toMatchObject({ status: 500, message: 'Database connection timed out' });
   });
 
   it('merges custom headers with defaults', async () => {
