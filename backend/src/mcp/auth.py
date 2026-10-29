@@ -66,6 +66,7 @@ from src.auth.utils import (
 from src.cache.redis import get_redis, is_token_blacklisted
 from src.config import settings
 from src.database.connection import connection_ctx
+from src.limiter import limiter
 
 logger = structlog.get_logger(__name__)
 
@@ -586,11 +587,15 @@ async def oauth_authorize_get(
 
 
 @router.post("/oauth/authorize")
+@limiter.limit(settings.RATE_LIMIT_OAUTH_AUTHORIZE)
 async def oauth_authorize_post(body: AuthorizeRequest, request: Request):
     """Programmatic authorize — validates user + PKCE, returns code.
 
     If redirect_uri is http loopback, returns JSON {code, state}.
     Otherwise 302 to redirect_uri?code=&state= (spec-compliant).
+
+    Rate limited: this endpoint verifies a password, so unthrottled it is a
+    credential-stuffing / brute-force oracle.
     """
     if not body.code_challenge:
         raise HTTPException(status_code=400, detail="code_challenge required")

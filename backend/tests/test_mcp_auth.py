@@ -406,7 +406,30 @@ async def test_default_client_name_stored_without_cimd(client, auth_headers):
 
 
 def _fake_oauth_request():
-    return type("R", (), {"base_url": "http://localhost:8000/"})()
+    """Request stub for direct endpoint calls.
+
+    A real ``starlette.requests.Request`` (slowapi asserts the type) scoped
+    to the local issuer, carrying a fresh in-memory limiter so direct calls
+    pass the decorator without touching shared counters.
+    """
+    from slowapi import Limiter
+    from slowapi.util import get_remote_address
+    from starlette.requests import Request as _StarletteRequest
+
+    app = type("A", (), {"state": type("S", (), {})()})()
+    app.state.limiter = Limiter(key_func=get_remote_address, storage_uri="memory://")
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/oauth/authorize",
+        "scheme": "http",
+        "headers": [],
+        "query_string": b"",
+        "server": ("localhost", 8000),
+        "client": ("testclient", 50000),
+        "app": app,
+    }
+    return _StarletteRequest(scope)
 
 
 def test_first_party_redirect_allowlist():
@@ -859,3 +882,47 @@ class TestRS256ConfiguredKey:
         payload = _decode_mcp_token(tok)
         assert payload.sub == "user-123"
         assert payload.type == "access"
+
+
+# ── POST /oauth/authorize rate limit ─────────────────────────────────────
+
+
+def test_oauth_authorize_post_is_rate_limited(monkeypatch):
+    """POST /oauth/authorize verifies a password — bursting past its limit 429s.
+
+    Hermetic: the decorator closes over the shared limiter singleton, so the
+    test swaps that singleton's backing storage for an in-memory one instead
+    of touching the Redis-backed counters other tests share (``app.state``
+    only feeds response-header injection). Failed logins count too — the
+    check runs before the handler.
+    """
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from limits.storage import MemoryStorage
+    from limits.strategies import FixedWindowRateLimiter
+    from slowapi import _rate_limit_exceeded_handler
+
+    from src.limiter import limiter
+    from src.mcp.auth import router as mcp_auth_router
+
+    storage = MemoryStorage()
+    monkeypatch.setattr(limiter, "_storage", storage)
+    monkeypatch.setattr(limiter, "_limiter", FixedWindowRateLimiter(storage))
+    monkeypatch.setattr(limiter, "_storage_dead", False)
+
+    app = FastAPI()
+    app.state.limiter = limiter
+    app.add_exception_handler(429, _rate_limit_exceeded_handler)
+    app.include_router(mcp_auth_router)
+
+    async def _no_user(email, password):
+        return None  # skip the DB — 401s must still count against the limit
+
+    monkeypatch.setattr("src.mcp.auth._authenticate_user", _no_user)
+
+    client = TestClient(app)
+    body = _authorize_body()
+    codes = [client.post("/oauth/authorize", json=body).status_code for _ in range(21)]
+
+    assert codes[:20] == [401] * 20, f"expected 401 until the limit trips, got {codes}"
+    assert codes[20] == 429, "the 21st burst request must be rate limited"
