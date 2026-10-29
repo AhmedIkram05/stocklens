@@ -138,6 +138,86 @@ class TestComputePortfolioPerformance:
         assert result.total_cost_basis == Decimal("0")
         assert result.holdings == []
         assert result.data_quality == "complete"  # 0/0 holdings with prices = complete
+        assert result.fx_unknown_tickers == []
+
+    def test_fx_unknown_holdings_surfaced(self):
+        """Non-GBP holdings valued at rate 1 must surface as a data-quality signal.
+
+        A USD holding whose FX lookup failed (or was defaulted to the column
+        value 1.0) is silently summed as if USD = GBP — the response now names
+        the affected tickers instead of hiding the degrade.
+        """
+        holdings = [
+            {
+                "ticker": "AAPL",
+                "shares": Decimal("10"),
+                "average_cost_basis": Decimal("100"),
+                "currency": "USD",
+                "fx_rate_to_gbp": Decimal("1.0"),
+            },
+            {
+                "ticker": "VOD",
+                "shares": Decimal("10"),
+                "average_cost_basis": Decimal("100"),
+                "currency": "GBP",
+                "fx_rate_to_gbp": Decimal("1.0"),
+            },
+            {
+                "ticker": "SAP",
+                "shares": Decimal("10"),
+                "average_cost_basis": Decimal("100"),
+                "currency": "EUR",
+                "fx_rate_to_gbp": Decimal("0.85"),
+            },
+            {
+                "ticker": "MSFT",
+                "shares": Decimal("10"),
+                "average_cost_basis": Decimal("100"),
+                "currency": "USD",
+                "fx_rate_to_gbp": Decimal("1.0"),
+            },
+        ]
+        price_map = {
+            t: {date(2024, 12, 31): Decimal("120")} for t in ("AAPL", "VOD", "SAP", "MSFT")
+        }
+        # fx_rates omits MSFT entirely (the queries.py `or Decimal(1)` default fires)
+        fx_rates = {"AAPL": Decimal("1.0"), "VOD": Decimal("1.0"), "SAP": Decimal("0.85")}
+        result = compute_portfolio_performance(
+            portfolio_id="p1",
+            portfolio_name="FX",
+            holdings_data=holdings,
+            transactions=[],
+            cash_flows=[],
+            price_map=price_map,
+            enable_twr=False,
+            fx_rates=fx_rates,
+        )
+        assert result.fx_unknown_tickers == ["AAPL", "MSFT"], (
+            "USD holdings valued at rate 1 must be flagged; GBP at 1 and EUR at 0.85 must not"
+        )
+
+    def test_fx_unknown_absent_when_all_rates_real(self):
+        holdings = [
+            {
+                "ticker": "SAP",
+                "shares": Decimal("10"),
+                "average_cost_basis": Decimal("100"),
+                "currency": "EUR",
+                "fx_rate_to_gbp": Decimal("0.85"),
+            },
+        ]
+        price_map = {"SAP": {date(2024, 12, 31): Decimal("120")}}
+        result = compute_portfolio_performance(
+            portfolio_id="p1",
+            portfolio_name="FX-clean",
+            holdings_data=holdings,
+            transactions=[],
+            cash_flows=[],
+            price_map=price_map,
+            enable_twr=False,
+            fx_rates={"SAP": Decimal("0.85")},
+        )
+        assert result.fx_unknown_tickers == []
 
     def test_single_holding_with_profit(self):
         holdings = [

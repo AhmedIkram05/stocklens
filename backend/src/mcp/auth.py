@@ -66,6 +66,7 @@ from src.auth.utils import (
 from src.cache.redis import get_redis, is_token_blacklisted
 from src.config import settings
 from src.database.connection import connection_ctx
+from src.limiter import limiter
 
 logger = structlog.get_logger(__name__)
 
@@ -110,6 +111,21 @@ def _verify_pkce(verifier: str, challenge: str, method: str = "S256") -> bool:
 _RSA_KEYPAIR: tuple[Any, Any] | None = None
 _KID = "stocklens-mcp-1"  # legacy kid for the ephemeral fallback key
 _CONFIGURED_KID: str | None = None
+_KEY_SOURCE: str | None = None  # fingerprint of the PEM the cached keypair came from
+_RETIRED_JWKS: list[tuple[dict[str, Any], float]] = []  # (public JWK, rotated_at epoch)
+
+_JWKS_RETENTION_SLACK_SECONDS = 300  # clock skew + client JWKS-refresh latency
+
+
+def _jwks_retention_seconds() -> float:
+    """How long a retired public key stays published after rotation.
+
+    Must cover the access-token lifetime plus slack: a client that cached
+    the JWKS just before the rotation still holds in-flight tokens signed
+    with the retired key.
+    """
+    minutes = float(getattr(settings, "OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+    return minutes * 60.0 + _JWKS_RETENTION_SLACK_SECONDS
 
 
 def _kid() -> str:
@@ -117,12 +133,33 @@ def _kid() -> str:
     return _CONFIGURED_KID or _KID
 
 
+def _jwk_for(pub: Any, kid: str) -> dict[str, Any]:
+    numbers = pub.public_numbers()
+    return {
+        "kty": "RSA",
+        "kid": kid,
+        "use": "sig",
+        "alg": "RS256",
+        "n": _b64url_uint(numbers.n),
+        "e": _b64url_uint(numbers.e),
+    }
+
+
 def _get_rsa_keypair():
-    global _RSA_KEYPAIR, _CONFIGURED_KID
-    if _RSA_KEYPAIR is not None:
-        return _RSA_KEYPAIR
-    # Persistent key from Settings.JWT_PRIVATE_KEY when set; else ephemeral.
+    global _RSA_KEYPAIR, _CONFIGURED_KID, _KEY_SOURCE
     pem = settings.JWT_PRIVATE_KEY or ""
+    fingerprint = hashlib.sha256(pem.encode()).hexdigest()[:16] if pem else None
+    if _RSA_KEYPAIR is not None:
+        if fingerprint == _KEY_SOURCE:
+            return _RSA_KEYPAIR
+        # In-process rotation: the configured key changed since the cached
+        # keypair was loaded. Retire the old public JWK so JWKS-caching
+        # clients can still verify in-flight tokens minted before the swap.
+        _RETIRED_JWKS.append((_jwk_for(_RSA_KEYPAIR[1], _kid()), time.time()))
+        _RSA_KEYPAIR = None
+        _CONFIGURED_KID = None
+    _KEY_SOURCE = fingerprint
+    # Persistent key from Settings.JWT_PRIVATE_KEY when set; else ephemeral.
     if pem and _CRYPTO_AVAILABLE:
         try:
             priv = serialization.load_pem_private_key(pem.encode(), password=None)
@@ -165,20 +202,34 @@ def _public_jwk() -> dict[str, Any] | None:
     if pair is None:
         return None
     _, pub = pair
-    numbers = pub.public_numbers()
-    return {
-        "kty": "RSA",
-        "kid": _kid(),
-        "use": "sig",
-        "alg": "RS256",
-        "n": _b64url_uint(numbers.n),
-        "e": _b64url_uint(numbers.e),
-    }
+    return _jwk_for(pub, _kid())
 
 
 def _jwks() -> dict[str, Any]:
-    jwk = _public_jwk()
-    return {"keys": [jwk] if jwk else []}
+    """Active JWK first, then retired keys still inside their retention window.
+
+    Retired keys let JWKS-caching clients verify tokens minted before a
+    rotation; each is dropped once its window elapses. History is in-memory
+    only — a process restart republishes just the new key, so a restart-keyed
+    rotation still asks clients to re-fetch (persistent history would need
+    retired PEMs stored alongside JWT_PRIVATE_KEY).
+    """
+    current = _public_jwk()
+    keys: list[dict[str, Any]] = []
+    seen_kids: set[str] = set()
+    if current is not None:
+        keys.append(current)
+        seen_kids.add(current["kid"])
+    now = time.time()
+    horizon = _jwks_retention_seconds()
+    kept: list[tuple[dict[str, Any], float]] = []
+    for jwk, rotated_at in _RETIRED_JWKS:
+        if now - rotated_at < horizon and jwk["kid"] not in seen_kids:
+            kept.append((jwk, rotated_at))
+            seen_kids.add(jwk["kid"])
+            keys.append(jwk)
+    _RETIRED_JWKS[:] = kept
+    return {"keys": keys}
 
 
 def _private_pem() -> bytes | None:
@@ -489,8 +540,9 @@ async def oauth_as_mcp_alias(request: Request):
 async def jwks_endpoint():
     """RFC 7517 JWKS — RS256 public keys for MCP token verification.
 
-    `kid` rotation: deploy new private PEM via Settings.JWT_PRIVATE_KEY,
-    bump `_KID`, keep old JWK for `exp` window (ponytail: single key for now).
+    The active signing key comes first; keys retired by an in-process
+    rotation stay published for the access-token lifetime plus slack so
+    JWKS-caching clients can still verify in-flight tokens.
     """
     return _jwks()
 
@@ -586,11 +638,15 @@ async def oauth_authorize_get(
 
 
 @router.post("/oauth/authorize")
+@limiter.limit(settings.RATE_LIMIT_OAUTH_AUTHORIZE)
 async def oauth_authorize_post(body: AuthorizeRequest, request: Request):
     """Programmatic authorize — validates user + PKCE, returns code.
 
     If redirect_uri is http loopback, returns JSON {code, state}.
     Otherwise 302 to redirect_uri?code=&state= (spec-compliant).
+
+    Rate limited: this endpoint verifies a password, so unthrottled it is a
+    credential-stuffing / brute-force oracle.
     """
     if not body.code_challenge:
         raise HTTPException(status_code=400, detail="code_challenge required")

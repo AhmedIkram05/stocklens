@@ -406,7 +406,30 @@ async def test_default_client_name_stored_without_cimd(client, auth_headers):
 
 
 def _fake_oauth_request():
-    return type("R", (), {"base_url": "http://localhost:8000/"})()
+    """Request stub for direct endpoint calls.
+
+    A real ``starlette.requests.Request`` (slowapi asserts the type) scoped
+    to the local issuer, carrying a fresh in-memory limiter so direct calls
+    pass the decorator without touching shared counters.
+    """
+    from slowapi import Limiter
+    from slowapi.util import get_remote_address
+    from starlette.requests import Request as _StarletteRequest
+
+    app = type("A", (), {"state": type("S", (), {})()})()
+    app.state.limiter = Limiter(key_func=get_remote_address, storage_uri="memory://")
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/oauth/authorize",
+        "scheme": "http",
+        "headers": [],
+        "query_string": b"",
+        "server": ("localhost", 8000),
+        "client": ("testclient", 50000),
+        "app": app,
+    }
+    return _StarletteRequest(scope)
 
 
 def test_first_party_redirect_allowlist():
@@ -762,11 +785,23 @@ def fresh_keypair():
     """Reset the cached RSA keypair state; restore whatever was cached."""
     from src.mcp import auth as auth_mod
 
-    old_pair, old_kid = auth_mod._RSA_KEYPAIR, auth_mod._CONFIGURED_KID
+    old_state = (
+        auth_mod._RSA_KEYPAIR,
+        auth_mod._CONFIGURED_KID,
+        auth_mod._KEY_SOURCE,
+        list(auth_mod._RETIRED_JWKS),
+    )
     auth_mod._RSA_KEYPAIR = None
     auth_mod._CONFIGURED_KID = None
+    auth_mod._KEY_SOURCE = None
+    auth_mod._RETIRED_JWKS.clear()
     yield
-    auth_mod._RSA_KEYPAIR, auth_mod._CONFIGURED_KID = old_pair, old_kid
+    (
+        auth_mod._RSA_KEYPAIR,
+        auth_mod._CONFIGURED_KID,
+        auth_mod._KEY_SOURCE,
+        auth_mod._RETIRED_JWKS,
+    ) = old_state
 
 
 @pytest.fixture
@@ -859,3 +894,107 @@ class TestRS256ConfiguredKey:
         payload = _decode_mcp_token(tok)
         assert payload.sub == "user-123"
         assert payload.type == "access"
+
+
+# ── POST /oauth/authorize rate limit ─────────────────────────────────────
+
+
+def test_oauth_authorize_post_is_rate_limited(monkeypatch):
+    """POST /oauth/authorize verifies a password — bursting past its limit 429s.
+
+    Hermetic: the decorator closes over the shared limiter singleton, so the
+    test swaps that singleton's backing storage for an in-memory one instead
+    of touching the Redis-backed counters other tests share (``app.state``
+    only feeds response-header injection). Failed logins count too — the
+    check runs before the handler.
+    """
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from limits.storage import MemoryStorage
+    from limits.strategies import FixedWindowRateLimiter
+    from slowapi import _rate_limit_exceeded_handler
+
+    from src.limiter import limiter
+    from src.mcp.auth import router as mcp_auth_router
+
+    storage = MemoryStorage()
+    monkeypatch.setattr(limiter, "_storage", storage)
+    monkeypatch.setattr(limiter, "_limiter", FixedWindowRateLimiter(storage))
+    monkeypatch.setattr(limiter, "_storage_dead", False)
+
+    app = FastAPI()
+    app.state.limiter = limiter
+    app.add_exception_handler(429, _rate_limit_exceeded_handler)
+    app.include_router(mcp_auth_router)
+
+    async def _no_user(email, password):
+        return None  # skip the DB — 401s must still count against the limit
+
+    monkeypatch.setattr("src.mcp.auth._authenticate_user", _no_user)
+
+    client = TestClient(app)
+    body = _authorize_body()
+    codes = [client.post("/oauth/authorize", json=body).status_code for _ in range(21)]
+
+    assert codes[:20] == [401] * 20, f"expected 401 until the limit trips, got {codes}"
+    assert codes[20] == 429, "the 21st burst request must be rate limited"
+
+    def test_rotation_keeps_previous_key_in_jwks_for_retention_window(
+        self, fresh_keypair, monkeypatch
+    ):
+        """Swapping JWT_PRIVATE_KEY in-process retires, not drops, the old JWK.
+
+        A client that cached the JWKS before the rotation can still verify a
+        token minted under the old key, until the retention window (access
+        token lifetime + slack) elapses.
+        """
+        import time as time_mod
+
+        import jwt as pyjwt
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa as rsa_mod
+
+        from src.config import settings
+        from src.mcp import auth as auth_mod
+
+        pem_a = _test_rsa_pem()
+        key_b = rsa_mod.generate_private_key(public_exponent=65537, key_size=2048)
+        pem_b = key_b.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ).decode()
+
+        # Key A active — mint a token that must survive the rotation.
+        monkeypatch.setattr(settings, "JWT_PRIVATE_KEY", pem_a)
+        jwks_a = auth_mod._jwks()
+        assert len(jwks_a["keys"]) == 1
+        kid_a = jwks_a["keys"][0]["kid"]
+        tok_a, _jti, _exp = auth_mod._mcp_create_access_token("user-rot")
+
+        # Rotate to key B: JWKS publishes B first, then retired A.
+        monkeypatch.setattr(settings, "JWT_PRIVATE_KEY", pem_b)
+        jwks_ab = auth_mod._jwks()
+        assert [k["kid"] for k in jwks_ab["keys"]] == [
+            jwks_ab["keys"][0]["kid"],
+            kid_a,
+        ], "retired key A must stay published after rotation"
+        assert jwks_ab["keys"][0]["kid"] != kid_a
+
+        # The in-flight token signed with A still verifies against A's public key.
+        key_a = serialization.load_pem_private_key(pem_a.encode(), password=None)
+        pub_pem_a = key_a.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        claims = pyjwt.decode(tok_a, pub_pem_a, algorithms=["RS256"])
+        assert claims["sub"] == "user-rot"
+
+        # Past the retention window the retired key is dropped.
+        real_time = time_mod.time
+        monkeypatch.setattr(
+            auth_mod.time, "time", lambda: real_time() + 10_000
+        )  # ~2.8h ≫ 30min + 5min slack
+        jwks_b = auth_mod._jwks()
+        assert [k["kid"] for k in jwks_b["keys"]] == [jwks_b["keys"][0]["kid"]]
+        assert kid_a not in [k["kid"] for k in jwks_b["keys"]]

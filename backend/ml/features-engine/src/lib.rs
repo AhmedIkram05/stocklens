@@ -129,17 +129,29 @@ fn compute_macd(
     signal: i64,
 ) -> PyResult<Py<PyDict>> {
     let close_slice = get_slice(&close);
-    Ok(macd::compute(&close_slice, fast as usize, slow as usize, signal as usize, py))
+    Ok(macd::compute(
+        &close_slice,
+        fast as usize,
+        slow as usize,
+        signal as usize,
+        py,
+    ))
 }
 
 #[pyfunction]
-fn compute_rolling_volatility(close: Bound<'_, PyArray1<f64>>, period: i64) -> PyResult<Py<PyArray1<f64>>> {
+fn compute_rolling_volatility(
+    close: Bound<'_, PyArray1<f64>>,
+    period: i64,
+) -> PyResult<Py<PyArray1<f64>>> {
     let close_slice = get_slice(&close);
     Ok(rolling_volatility::compute(&close_slice, period as usize))
 }
 
 #[pyfunction]
-fn compute_volatility_rank(close: Bound<'_, PyArray1<f64>>, period: i64) -> PyResult<Py<PyArray1<f64>>> {
+fn compute_volatility_rank(
+    close: Bound<'_, PyArray1<f64>>,
+    period: i64,
+) -> PyResult<Py<PyArray1<f64>>> {
     let close_slice = get_slice(&close);
     Ok(volatility_rank::compute(&close_slice, period as usize))
 }
@@ -152,7 +164,12 @@ fn compute_bollinger(
     num_std: f64,
 ) -> PyResult<Py<PyDict>> {
     let close_slice = get_slice(&close);
-    Ok(bollinger::compute(&close_slice, period as usize, num_std, py))
+    Ok(bollinger::compute(
+        &close_slice,
+        period as usize,
+        num_std,
+        py,
+    ))
 }
 
 #[pyfunction]
@@ -165,7 +182,12 @@ fn compute_atr(
     let high_slice = get_slice(&high);
     let low_slice = get_slice(&low);
     let close_slice = get_slice(&close);
-    Ok(atr::compute(&high_slice, &low_slice, &close_slice, period as usize))
+    Ok(atr::compute(
+        &high_slice,
+        &low_slice,
+        &close_slice,
+        period as usize,
+    ))
 }
 
 #[pyfunction]
@@ -188,14 +210,16 @@ fn compute_williams_r(
     let high_slice = get_slice(&high);
     let low_slice = get_slice(&low);
     let close_slice = get_slice(&close);
-    Ok(williams_r::compute(&high_slice, &low_slice, &close_slice, period as usize))
+    Ok(williams_r::compute(
+        &high_slice,
+        &low_slice,
+        &close_slice,
+        period as usize,
+    ))
 }
 
 #[pyfunction]
-fn compute_roc(
-    close: Bound<'_, PyArray1<f64>>,
-    period: i64,
-) -> PyResult<Py<PyArray1<f64>>> {
+fn compute_roc(close: Bound<'_, PyArray1<f64>>, period: i64) -> PyResult<Py<PyArray1<f64>>> {
     let close_slice = get_slice(&close);
     Ok(roc::compute(&close_slice, period as usize))
 }
@@ -204,13 +228,12 @@ fn compute_roc(
 fn compute_all_features(
     py: Python<'_>,
     close: Bound<'_, PyArray1<f64>>,
-    high: Bound<'_, PyArray1<f64>>,
-    low: Bound<'_, PyArray1<f64>>,
-    volume: Bound<'_, PyArray1<f64>>,
+    _high: Bound<'_, PyArray1<f64>>,
+    _low: Bound<'_, PyArray1<f64>>,
+    _volume: Bound<'_, PyArray1<f64>>,
 ) -> PyResult<Py<PyDict>> {
+    // The Python-visible signature keeps close/high/low/volume for API
+    // stability, but only close feeds the 13 model features.
     let close_slice = get_slice(&close);
-    let high_slice = get_slice(&high);
-    let low_slice = get_slice(&low);
-    let volume_slice = get_slice(&volume);
-    Ok(compute_all::compute(&close_slice, &high_slice, &low_slice, &volume_slice, py))
+    Ok(compute_all::compute(&close_slice, py))
 }

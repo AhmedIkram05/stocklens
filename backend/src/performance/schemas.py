@@ -70,6 +70,13 @@ class PortfolioPerformanceResponse(BaseModel):
         "complete",
         description="'complete' or 'partial' — partial means some holdings lack price data",
     )
+    fx_unknown_tickers: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Tickers whose currency is not GBP but which are valued at FX rate 1 "
+            "(no real GBP conversion known) — data-quality signal; empty when all rates are real"
+        ),
+    )
     calculated_at: datetime
 
 

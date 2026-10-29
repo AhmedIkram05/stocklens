@@ -257,6 +257,26 @@ def compute_portfolio_performance(
     # ── 7. Data quality ──
     data_quality = "complete" if holdings_with_prices == holdings_total else "partial"
 
+    # FX-unknown holdings: a non-GBP currency valued at GBP-per-unit 1 means no
+    # real conversion rate was ever resolved (failed lookup at buy time, or the
+    # column default) — the holding is silently summed as if 1 native unit =
+    # 1 GBP. Never hide that: warn and surface the tickers on the response.
+    fx_unknown_tickers = sorted(
+        {
+            h["ticker"]
+            for h in holdings_data
+            if (h.get("currency") or "").upper() not in ("", "GBP")
+            and (fx_rates or {}).get(h["ticker"], Decimal(1)) == Decimal(1)
+        }
+    )
+    if fx_unknown_tickers:
+        logger.warning(
+            "fx_unknown_holdings_valued_at_rate_1",
+            tickers=fx_unknown_tickers,
+            impact="non-GBP holdings summed as if 1 native unit = 1 GBP "
+            "until a real rate is stored",
+        )
+
     return PortfolioPerformanceResponse(
         portfolio_id=portfolio_id,
         portfolio_name=portfolio_name,
@@ -274,6 +294,7 @@ def compute_portfolio_performance(
         holdings=holdings_perf,
         total_holdings=holdings_total,
         data_quality=data_quality,
+        fx_unknown_tickers=fx_unknown_tickers,
         calculated_at=datetime.now(timezone.utc),
     )
 

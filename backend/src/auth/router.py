@@ -74,15 +74,6 @@ async def _store_refresh_token(user_id: str, jti: str, exp: int) -> None:
         )
 
 
-async def _revoke_refresh_token(token_hash: str) -> None:
-    """Mark a refresh token row as revoked."""
-    async with connection_ctx() as conn:
-        await conn.execute(
-            "UPDATE refresh_tokens SET revoked = true WHERE token_hash = $1",
-            token_hash,
-        )
-
-
 async def _fetch_user_by_email(email: str) -> dict | None:
     """Return a raw user row (or ``None``) for the given *email*."""
     async with connection_ctx() as conn:
@@ -255,30 +246,38 @@ async def refresh(request: Request, body: RefreshRequest) -> TokenPair:
             detail="Refresh token has been revoked",
         )
 
-    # Look up the token hash in the database
+    # Atomically claim the refresh token: the conditional UPDATE is the
+    # concurrency gate (same pattern as the MCP rotation fix in src/mcp/auth.py).
+    # Two concurrent refreshes of the same token can no longer both pass a
+    # check-then-act window and double-mint — the loser sees an empty result
+    # and lands in the replay path below.
     token_hash = hash_token(payload.jti, payload.sub)
     async with connection_ctx() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT id, user_id, token_hash, expires_at, revoked, created_at
-            FROM refresh_tokens
-            WHERE token_hash = $1
-            """,
+        claimed = await conn.fetchval(
+            "UPDATE refresh_tokens SET revoked = true "
+            "WHERE token_hash = $1 AND revoked = false "
+            "RETURNING true",
             token_hash,
         )
 
-    if row is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token has been revoked",
-        )
+    if claimed is None:
+        # Distinguish unknown token (plain 401) from already-revoked replay
+        # (stolen-token revoke-all) — read-only after the atomic decision, so
+        # no race window remains.
+        async with connection_ctx() as conn:
+            revoked = await conn.fetchval(
+                "SELECT revoked FROM refresh_tokens WHERE token_hash = $1", token_hash
+            )
+        if revoked is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token has been revoked",
+            )
 
-    user_id = str(row["user_id"])
-
-    # ── Stolen-token detection ──────────────────────────────────────────────
-    # If the refresh token was *already* revoked, someone is replaying an old
-    # token.  Revoke ALL refresh tokens for this user (force re-login).
-    if row["revoked"]:
+        # ── Stolen-token detection ──────────────────────────────────────────
+        # If the refresh token was *already* revoked, someone is replaying an
+        # old token.  Revoke ALL refresh tokens for this user (force re-login).
+        user_id = payload.sub
         logger.warning("stolen_token_detected", user_id=user_id)
         async with connection_ctx() as conn:
             await conn.execute(
@@ -290,8 +289,7 @@ async def refresh(request: Request, body: RefreshRequest) -> TokenPair:
             detail="Refresh token has been revoked",
         )
 
-    # Revoke old refresh token in DB
-    await _revoke_refresh_token(token_hash)
+    user_id = payload.sub
 
     # Blacklist old refresh JTI in Redis
     await blacklist_token(payload.jti, 86400)  # 24h TTL (well past token expiry)

@@ -116,10 +116,12 @@ def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
     V1 features: log_ret_1/5/21d, ma_5/10/20/50, rsi_14, macd/signal/hist,
     vol_30d, vol_rank.
 
-    The Rust backend produces 19 features total (13 V1 + 6 V2 extras).
-    V2 extras (bb_pctb, bb_width, atr_14, obv, williams_r_14, roc_10) are
-    dropped after compute — tested multiple times and each one hurts
-    performance (turns the model into a single-class predictor).
+    The Rust backend computes exactly these 13 — the 6 V2 extras
+    (bb_pctb, bb_width, atr_14, obv, williams_r_14, roc_10) were pruned from
+    the compute_all path: tested multiple times and each one hurts
+    performance (turns the model into a single-class predictor), so running
+    them per prediction was pure FFI waste. They remain available via their
+    dedicated FFI functions (compute_bollinger, compute_atr, ...).
 
     Scale-free transform: nominal prices drift across eras, so
     price-denominated indicators are re-expressed relative to the current
