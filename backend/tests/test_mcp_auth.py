@@ -785,11 +785,23 @@ def fresh_keypair():
     """Reset the cached RSA keypair state; restore whatever was cached."""
     from src.mcp import auth as auth_mod
 
-    old_pair, old_kid = auth_mod._RSA_KEYPAIR, auth_mod._CONFIGURED_KID
+    old_state = (
+        auth_mod._RSA_KEYPAIR,
+        auth_mod._CONFIGURED_KID,
+        auth_mod._KEY_SOURCE,
+        list(auth_mod._RETIRED_JWKS),
+    )
     auth_mod._RSA_KEYPAIR = None
     auth_mod._CONFIGURED_KID = None
+    auth_mod._KEY_SOURCE = None
+    auth_mod._RETIRED_JWKS.clear()
     yield
-    auth_mod._RSA_KEYPAIR, auth_mod._CONFIGURED_KID = old_pair, old_kid
+    (
+        auth_mod._RSA_KEYPAIR,
+        auth_mod._CONFIGURED_KID,
+        auth_mod._KEY_SOURCE,
+        auth_mod._RETIRED_JWKS,
+    ) = old_state
 
 
 @pytest.fixture
@@ -926,3 +938,63 @@ def test_oauth_authorize_post_is_rate_limited(monkeypatch):
 
     assert codes[:20] == [401] * 20, f"expected 401 until the limit trips, got {codes}"
     assert codes[20] == 429, "the 21st burst request must be rate limited"
+
+    def test_rotation_keeps_previous_key_in_jwks_for_retention_window(
+        self, fresh_keypair, monkeypatch
+    ):
+        """Swapping JWT_PRIVATE_KEY in-process retires, not drops, the old JWK.
+
+        A client that cached the JWKS before the rotation can still verify a
+        token minted under the old key, until the retention window (access
+        token lifetime + slack) elapses.
+        """
+        import time as time_mod
+
+        import jwt as pyjwt
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa as rsa_mod
+
+        from src.config import settings
+        from src.mcp import auth as auth_mod
+
+        pem_a = _test_rsa_pem()
+        key_b = rsa_mod.generate_private_key(public_exponent=65537, key_size=2048)
+        pem_b = key_b.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ).decode()
+
+        # Key A active — mint a token that must survive the rotation.
+        monkeypatch.setattr(settings, "JWT_PRIVATE_KEY", pem_a)
+        jwks_a = auth_mod._jwks()
+        assert len(jwks_a["keys"]) == 1
+        kid_a = jwks_a["keys"][0]["kid"]
+        tok_a, _jti, _exp = auth_mod._mcp_create_access_token("user-rot")
+
+        # Rotate to key B: JWKS publishes B first, then retired A.
+        monkeypatch.setattr(settings, "JWT_PRIVATE_KEY", pem_b)
+        jwks_ab = auth_mod._jwks()
+        assert [k["kid"] for k in jwks_ab["keys"]] == [
+            jwks_ab["keys"][0]["kid"],
+            kid_a,
+        ], "retired key A must stay published after rotation"
+        assert jwks_ab["keys"][0]["kid"] != kid_a
+
+        # The in-flight token signed with A still verifies against A's public key.
+        key_a = serialization.load_pem_private_key(pem_a.encode(), password=None)
+        pub_pem_a = key_a.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        claims = pyjwt.decode(tok_a, pub_pem_a, algorithms=["RS256"])
+        assert claims["sub"] == "user-rot"
+
+        # Past the retention window the retired key is dropped.
+        real_time = time_mod.time
+        monkeypatch.setattr(
+            auth_mod.time, "time", lambda: real_time() + 10_000
+        )  # ~2.8h ≫ 30min + 5min slack
+        jwks_b = auth_mod._jwks()
+        assert [k["kid"] for k in jwks_b["keys"]] == [jwks_b["keys"][0]["kid"]]
+        assert kid_a not in [k["kid"] for k in jwks_b["keys"]]
