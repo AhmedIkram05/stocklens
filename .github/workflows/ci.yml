@@ -303,7 +303,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Checkov
-        uses: bridgecrewio/checkov-action@v12.1347.0
+        uses: bridgecrewio/checkov-action@v12.3136.0
         with:
           directory: terraform/
       - name: tfsec
