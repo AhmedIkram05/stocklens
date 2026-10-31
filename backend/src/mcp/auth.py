@@ -31,12 +31,15 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import hmac
 import ipaddress
 import secrets
 import socket
 import time
 import urllib.parse
 import urllib.request
+import uuid
+from dataclasses import dataclass
 from typing import Any
 
 import jwt as pyjwt
@@ -57,7 +60,6 @@ except Exception:  # pragma: no cover
 
 from src.auth.schemas import TokenPayload
 from src.auth.utils import (
-    create_access_token,
     create_refresh_token,
     decode_token,
     hash_token,
@@ -78,14 +80,31 @@ _mcp_security = HTTPBearer(auto_error=False)
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
+# Environments where deriving the OAuth issuer from the request Host header is
+# acceptable. Deployed environments must set OAUTH_ISSUER: the Host header is
+# client-controlled, so deriving the issuer from it lets an attacker poison the
+# advertised issuer + metadata behind a misconfigured proxy.
+_DEV_ENVIRONMENTS = frozenset({"development", "dev", "test"})
+
+
 def _issuer(request: Request) -> str:
-    """Derive issuer from request or settings.
+    """Return the OAuth issuer — configured value, else request-derived (dev).
 
     Priority: OAUTH_ISSUER env → request.base_url (scheme+host).
-    Trailing slash stripped for RFC 8414 compliance.
+    Trailing slash stripped for RFC 8414 compliance. In a deployed environment
+    an unset OAUTH_ISSUER is a hard error instead of silently trusting the
+    client-supplied Host header.
     """
-    raw = getattr(settings, "OAUTH_ISSUER", "") or str(request.base_url).rstrip("/")
-    return raw.rstrip("/")
+    configured = getattr(settings, "OAUTH_ISSUER", "")
+    if configured:
+        return configured.rstrip("/")
+    if settings.ENVIRONMENT not in _DEV_ENVIRONMENTS:
+        logger.error("oauth_issuer_not_configured")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server OAuth issuer is not configured",
+        )
+    return str(request.base_url).rstrip("/")
 
 
 def _resource_url(request: Request) -> str:
@@ -99,10 +118,14 @@ def _code_challenge_s256(verifier: str) -> str:
 
 
 def _verify_pkce(verifier: str, challenge: str, method: str = "S256") -> bool:
-    if method == "plain":
-        return verifier == challenge
-    # Default S256
-    return _code_challenge_s256(verifier) == challenge
+    # OAuth 2.1 forbids `plain`: the challenge travels in the authorize URL, so
+    # anyone who can read it derives the verifier. Only S256 is accepted.
+    if method != "S256":
+        return False
+    try:
+        return hmac.compare_digest(_code_challenge_s256(verifier), challenge)
+    except (UnicodeEncodeError, TypeError):
+        return False
 
 
 # ── RS256 / JWKS (enterprise) ────────────────────────────────────────
@@ -266,9 +289,13 @@ def _try_rs256_encode(payload: dict[str, Any]) -> str | None:
         return None
 
 
-def _mcp_create_access_token(user_id: str):
-    """Create MCP access token — RS256 if available, else HS256 fallback."""
-    import uuid
+def _mcp_create_access_token(user_id: str, scope: str = "mcp:tools"):
+    """Create an MCP access token — RS256 if available, else HS256 fallback.
+
+    ``scope`` is embedded so the MCP layer can authorise tool/resource access.
+    The HS256 fallback encodes the same claim set directly (the REST helper has
+    no scope) while staying decodable by ``decode_token``.
+    """
     from datetime import datetime, timedelta, timezone
 
     jti = uuid.uuid4().hex
@@ -280,14 +307,14 @@ def _mcp_create_access_token(user_id: str):
         "iat": int(now.timestamp()),
         "exp": int(exp.timestamp()),
         "type": "access",
+        "scope": scope,
     }
     tok = _try_rs256_encode(payload)
     if tok:
         return tok, jti, int(exp.timestamp())
-    # fallback HS256 via existing helper (ensures decode_token still works)
-    tok, jti2 = create_access_token(user_id)
-    decoded = decode_token(tok)
-    return tok, jti2, decoded.exp
+    # Fallback HS256 via existing helper (ensures decode_token still works)
+    tok = pyjwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return tok, jti, int(exp.timestamp())
 
 
 def _mcp_create_refresh_token(user_id: str):
@@ -295,26 +322,42 @@ def _mcp_create_refresh_token(user_id: str):
     return create_refresh_token(user_id)
 
 
-def _decode_mcp_token(token: str) -> TokenPayload:
-    """Decode MCP token supporting both RS256 (kid) and HS256."""
+def _decode_mcp_claims(token: str) -> dict[str, Any]:
+    """Decode an MCP token (RS256 via the JWKS key, else HS256) to raw claims.
+
+    Returning raw claims (not TokenPayload) lets callers read claims the
+    TokenPayload schema does not model — notably the granted ``scope``.
+    """
     # Try RS256 first if header says RS256
     try:
         hdr = pyjwt.get_unverified_header(token)
         if hdr.get("alg") == "RS256":
             pem = _public_pem()
             if pem:
-                data = pyjwt.decode(token, pem, algorithms=["RS256"])
-                return TokenPayload(**data)
+                return pyjwt.decode(token, pem, algorithms=["RS256"])
     except Exception:
         pass
-    # Fallback HS256 via existing helper
-    return decode_token(token)
+    # Fallback HS256 via existing helper semantics (same secret/alg/leeway)
+    return pyjwt.decode(
+        token,
+        settings.JWT_SECRET_KEY,
+        algorithms=[settings.JWT_ALGORITHM],
+        leeway=10,
+    )
+
+
+def _decode_mcp_token(token: str) -> TokenPayload:
+    """Decode MCP token supporting both RS256 (kid) and HS256."""
+    return TokenPayload(**_decode_mcp_claims(token))
+
+
+_AUTH_CODE_TTL = 600
 
 
 async def _store_code(
     code: str,
     data: dict[str, Any],
-    ttl: int = 600,
+    ttl: int = _AUTH_CODE_TTL,
 ) -> None:
     r = await get_redis()
     import json
@@ -323,21 +366,68 @@ async def _store_code(
 
 
 async def _consume_code(code: str) -> dict[str, Any] | None:
-    """Fetch and delete (single-use) an auth code."""
+    """Atomically claim (single-use) an auth code.
+
+    GETDEL guarantees exactly one concurrent /oauth/token exchange wins the
+    code, so two simultaneous exchanges can no longer both pass PKCE and both
+    mint tokens. A replay of an already-consumed code finds the tombstone left
+    at first use, is answered by revoking the tokens issued for that code
+    (stolen-code response), and returns None so the caller raises 400.
+    """
     r = await get_redis()
     import json
 
-    raw = await r.get(f"oauth:code:{code}")
+    key = f"oauth:code:{code}"
+    try:
+        raw = await r.getdel(key)
+    except Exception:
+        # Redis < 6.2 has no GETDEL — degrade to the non-atomic get+delete.
+        logger.warning("oauth_code_getdel_unavailable")
+        raw = await r.get(key)
+        if raw is not None:
+            await r.delete(key)
     if raw is None:
+        # No live code: a replay if the first-use tombstone is still present.
+        if await r.get(f"oauth:code:used:{code}") is not None:
+            await _revoke_replayed_code(code)
         return None
-    # Redis returns bytes
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8")
-    await r.delete(f"oauth:code:{code}")
     try:
-        return json.loads(raw)
+        data = json.loads(raw)
     except Exception:
         return None
+    # Tombstone (same TTL) so a later exchange can recognise a replay.
+    await r.set(f"oauth:code:used:{code}", raw, ex=_AUTH_CODE_TTL)
+    return data
+
+
+async def _revoke_replayed_code(code: str) -> None:
+    """Revoke every refresh token for the user of a replayed auth code.
+
+    Mirrors the refresh-token reuse handler: a second exchange of an
+    already-used code is treated as evidence the code was stolen.
+    """
+    r = await get_redis()
+    import json
+
+    raw = await r.get(f"oauth:code:used:{code}")
+    if raw is None:
+        return
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8")
+    try:
+        user_id = json.loads(raw).get("user_id")
+    except Exception:
+        return
+    if not user_id:
+        return
+    logger.warning("oauth_code_replay_detected", user_id=str(user_id)[:8])
+    async with connection_ctx() as conn:
+        await conn.execute(
+            "UPDATE refresh_tokens SET revoked = true WHERE user_id = $1::uuid",
+            user_id,
+        )
 
 
 # ── CIMD (OAuth Client ID Metadata Documents, draft-ietf-oauth-client-id-metadata-document) ──
@@ -510,7 +600,7 @@ async def oauth_authorization_server_metadata(request: Request):
         "jwks_uri": f"{iss}/.well-known/jwks.json",
         "response_types_supported": ["code"],
         "grant_types_supported": ["authorization_code", "refresh_token"],
-        "code_challenge_methods_supported": ["S256", "plain"],
+        "code_challenge_methods_supported": ["S256"],
         "scopes_supported": ["mcp:tools", "portfolio:read", "market:read"],
         "token_endpoint_auth_methods_supported": ["none", "client_secret_post"],
         "id_token_signing_alg_values_supported": ["RS256", "HS256"],
@@ -650,6 +740,9 @@ async def oauth_authorize_post(body: AuthorizeRequest, request: Request):
     """
     if not body.code_challenge:
         raise HTTPException(status_code=400, detail="code_challenge required")
+    if body.code_challenge_method != "S256":
+        # OAuth 2.1: only S256 PKCE — reject plain up front rather than at exchange.
+        raise HTTPException(status_code=400, detail="code_challenge_method must be S256")
 
     # CIMD: URL-formatted client_id = fetch metadata document, enforce redirect_uri
     client_name: str | None = None
@@ -771,7 +864,7 @@ async def oauth_token(request: Request):
         scope = stored.get("scope", "mcp:tools")
 
         # Issue tokens — RS256 (JWKS) with HS256 fallback
-        access_token, _, exp_int = _mcp_create_access_token(user_id)
+        access_token, _, exp_int = _mcp_create_access_token(user_id, scope)
         refresh_token, rjti = _mcp_create_refresh_token(user_id)
         rdecoded = decode_token(refresh_token)
 
@@ -923,13 +1016,88 @@ async def oauth_revoke(request: Request):
     return {"revoked": True}
 
 
+# ── Scope → tool/resource authorization ────────────────────────────────
+# `mcp:tools` is the umbrella scope granting every MCP tool; the finer scopes
+# limit a client to portfolio or market data. A REST access token carries no
+# OAuth scope and therefore no longer reaches MCP tools.
+
+MCP_TOOLS_SCOPE = "mcp:tools"
+
+_PORTFOLIO_TOOLS = frozenset(
+    {
+        "get_portfolio_summary",
+        "get_portfolio_holdings",
+        "get_sector_exposure",
+        "get_portfolio_performance",
+        "get_portfolio_diversification_score",
+        "get_spending_analysis",
+        "get_recent_transactions",
+        "get_cash_flow_summary",
+    }
+)
+_MARKET_TOOLS = frozenset(
+    {
+        "compare_to_benchmark",
+        "compare_tickers_side_by_side",
+        "get_market_ohlcv",
+        "get_market_quote",
+        "get_ticker_info",
+        "get_market_news",
+        "get_lstm_forecast",
+        "get_dividend_insights",
+    }
+)
+_TOOL_SCOPE: dict[str, str] = {
+    **{name: "portfolio:read" for name in _PORTFOLIO_TOOLS},
+    **{name: "market:read" for name in _MARKET_TOOLS},
+}
+_RESOURCE_SCOPE: dict[str, str] = {
+    "portfolio://holdings": "portfolio:read",
+    "portfolio://summary": "portfolio:read",
+}
+_PROMPT_SCOPE: dict[str, str] = {"analyze-portfolio": "portfolio:read"}
+
+
+def granted_scopes(scope: str | None) -> frozenset[str]:
+    """Split a space-delimited OAuth scope string into a set."""
+    return frozenset((scope or "").split())
+
+
+def tool_scope(tool_name: str) -> str:
+    """Scope that authorises *tool_name* beyond the mcp:tools umbrella."""
+    return _TOOL_SCOPE.get(tool_name, MCP_TOOLS_SCOPE)
+
+
+def resource_scope(uri: str) -> str | None:
+    """Scope required for an MCP resource URI, or None if unknown."""
+    return _RESOURCE_SCOPE.get(uri)
+
+
+def prompt_scope(name: str) -> str | None:
+    """Scope required for an MCP prompt, or None if unknown."""
+    return _PROMPT_SCOPE.get(name)
+
+
+def scope_grants(granted: frozenset[str] | set[str], required: str) -> bool:
+    """True when *granted* covers *required* (mcp:tools grants everything)."""
+    return MCP_TOOLS_SCOPE in granted or required in granted
+
+
 # ── Verifier for MCP handlers ──────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class McpPrincipal:
+    """Verified MCP caller — user id plus the token's granted OAuth scopes."""
+
+    sub: str
+    scopes: frozenset[str]
 
 
 async def verify_mcp_token(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_mcp_security),
-) -> TokenPayload:
+) -> McpPrincipal:
     """FastAPI dependency — validates Bearer token for MCP endpoints.
 
     On failure raises 401 with WWW-Authenticate: Bearer + resource_metadata
@@ -938,7 +1106,7 @@ async def verify_mcp_token(
     iss = _issuer(request)
     resource_meta = f"{iss}/.well-known/oauth-protected-resource"
 
-    def _unauth(detail: str, scope: str = "mcp:tools") -> HTTPException:
+    def _unauth(detail: str, scope: str = MCP_TOOLS_SCOPE) -> HTTPException:
         return HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=detail,
@@ -953,7 +1121,8 @@ async def verify_mcp_token(
 
     token = credentials.credentials
     try:
-        payload = _decode_mcp_token(token)
+        claims = _decode_mcp_claims(token)
+        payload = TokenPayload(**claims)
     except pyjwt.ExpiredSignatureError:
         raise _unauth("Token has expired")
     except pyjwt.InvalidTokenError:
@@ -965,6 +1134,12 @@ async def verify_mcp_token(
     if await is_token_blacklisted(payload.jti):
         raise _unauth("Token has been revoked")
 
+    try:
+        uuid.UUID(payload.sub)
+    except (ValueError, TypeError, AttributeError):
+        # A non-UUID sub would surface as a 500 from the ::uuid cast below.
+        raise _unauth("Invalid token")
+
     # Ensure user still exists/active
     async with connection_ctx() as conn:
         row = await conn.fetchrow(
@@ -975,4 +1150,4 @@ async def verify_mcp_token(
     if not row["is_active"]:
         raise HTTPException(status_code=403, detail="Account is deactivated")
 
-    return payload
+    return McpPrincipal(sub=payload.sub, scopes=granted_scopes(claims.get("scope")))

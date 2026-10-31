@@ -53,6 +53,12 @@ class PredictionService:
         ``model.pt``) when present — predictions then average probabilities
         across seeds. Falls back to the single ``model.pt`` checkpoint.
 
+        A promoted ensemble always ships ``model.pt`` (the reference member
+        carrying the metadata and the expected member count) alongside its
+        seed siblings. Serving therefore refuses a short prefix — missing
+        reference or fewer members than the champion was promoted with — rather
+        than silently blending a different ensemble than the gate scored.
+
         Args:
             model_path: Path to the saved model .pt file.
 
@@ -64,9 +70,30 @@ class PredictionService:
         if not path.exists() and not seed_paths:
             logger.warning("no_champion_model_found", path=model_path)
             return False
+        if seed_paths and not path.exists():
+            logger.error(
+                "champion_ensemble_missing_reference",
+                path=model_path,
+                seeds=len(seed_paths),
+            )
+            return False
 
         try:
-            paths = seed_paths or [path]
+            if seed_paths:
+                # model.pt records the member count the champion was promoted
+                # with; a mismatch means the S3 prefix/bootstrap dropped seeds.
+                reference = GlobalLSTM.load(str(path), device=self.device)
+                expected = getattr(reference, "_ensemble_size", None)
+                if expected is not None and len(seed_paths) != expected:
+                    logger.error(
+                        "partial_champion_ensemble",
+                        expected=expected,
+                        found=len(seed_paths),
+                    )
+                    return False
+                paths = seed_paths
+            else:
+                paths = [path]
             self.ensemble = [GlobalLSTM.load(str(p), device=self.device) for p in paths]
             for m in self.ensemble:
                 m.to(self.device)

@@ -804,8 +804,9 @@ class TestPortfolioValue:
             "AAPL": {date(2024, 12, 31): Decimal("180.00")},
             "MSFT": {date(2024, 12, 31): Decimal("350.00")},
         }
-        value = _portfolio_value(holdings, price_map, date(2024, 12, 31))
+        value, complete = _portfolio_value(holdings, price_map, date(2024, 12, 31))
         assert value == Decimal("10") * Decimal("180") + Decimal("5") * Decimal("350")
+        assert complete is True
 
     def test_missing_ticker(self):
         from src.performance.calculations import _portfolio_value
@@ -814,13 +815,16 @@ class TestPortfolioValue:
         price_map = {
             "AAPL": {date(2024, 12, 31): Decimal("180.00")},
         }
-        value = _portfolio_value(holdings, price_map, date(2024, 12, 31))
+        value, complete = _portfolio_value(holdings, price_map, date(2024, 12, 31))
+        # MISSING is omitted from the total and flagged so the caller never
+        # treats the understated value as a real portfolio value.
         assert value == Decimal("1800.00")
+        assert complete is False
 
     def test_empty_holdings(self):
         from src.performance.calculations import _portfolio_value
 
-        assert _portfolio_value({}, {}, date(2024, 12, 31)) == Decimal("0")
+        assert _portfolio_value({}, {}, date(2024, 12, 31)) == (Decimal("0"), True)
 
 
 class TestGetClosestPrice:

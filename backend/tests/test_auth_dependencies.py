@@ -137,7 +137,8 @@ class TestGetCurrentUser:
         mock_cm.__aenter__.return_value = mock_conn
         mock_ctx.return_value = mock_cm
 
-        token, _ = create_access_token("nonexistent-user")
+        # sub must be a UUID or it 401s before the DB lookup
+        token, _ = create_access_token("00000000-0000-0000-0000-0000000000ff")
 
         app = _make_app(get_current_user)
         client = TestClient(app)
@@ -157,11 +158,12 @@ class TestGetCurrentUser:
         from datetime import datetime, timezone
 
         now = datetime.now(timezone.utc)
+        user_id = "00000000-0000-0000-0000-000000000001"
 
         class MockRow:
             def __getitem__(self, key):
                 return {
-                    "id": "u1",
+                    "id": user_id,
                     "email": "test@test.com",
                     "password_hash": "$2b$12$hash",
                     "display_name": "Test User",
@@ -176,16 +178,73 @@ class TestGetCurrentUser:
         mock_cm.__aenter__.return_value = mock_conn
         mock_ctx.return_value = mock_cm
 
-        token, _ = create_access_token("u1")
+        token, _ = create_access_token(user_id)
 
         app = _make_app(get_current_user)
         client = TestClient(app)
         resp = client.get("/me", headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 200
         data = resp.json()
-        assert data["id"] == "u1"
+        assert data["id"] == user_id
         assert data["email"] == "test@test.com"
         assert data["is_active"] is True
+
+    @patch("src.auth.dependencies.is_token_blacklisted", new_callable=AsyncMock)
+    @patch("src.auth.dependencies.connection_ctx")
+    def test_deactivated_user_returns_403(self, mock_ctx, mock_blacklist, monkeypatch):
+        """A deactivated user is rejected at get_current_user, not left valid
+        until token expiry."""
+        mock_blacklist.return_value = False
+        monkeypatch.setattr("src.auth.utils.settings.JWT_SECRET_KEY", "test-secret")
+        monkeypatch.setattr("src.auth.utils.settings.JWT_ALGORITHM", "HS256")
+        monkeypatch.setattr("src.auth.utils.settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES", 30)
+
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        user_id = "00000000-0000-0000-0000-000000000001"
+
+        class MockRow:
+            def __getitem__(self, key):
+                return {
+                    "id": user_id,
+                    "email": "test@test.com",
+                    "password_hash": "$2b$12$hash",
+                    "display_name": "Test User",
+                    "is_active": False,
+                    "created_at": now,
+                    "updated_at": now,
+                }[key]
+
+        mock_conn = AsyncMock()
+        mock_conn.fetchrow.return_value = MockRow()
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__.return_value = mock_conn
+        mock_ctx.return_value = mock_cm
+
+        token, _ = create_access_token(user_id)
+
+        app = _make_app(get_current_user)
+        client = TestClient(app)
+        resp = client.get("/me", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "Account is deactivated"
+
+    @patch("src.auth.dependencies.is_token_blacklisted", new_callable=AsyncMock)
+    def test_non_uuid_sub_returns_401(self, mock_blacklist, monkeypatch):
+        """A malformed sub must 401 (not 500 from the ::uuid cast)."""
+        mock_blacklist.return_value = False
+        monkeypatch.setattr("src.auth.utils.settings.JWT_SECRET_KEY", "test-secret")
+        monkeypatch.setattr("src.auth.utils.settings.JWT_ALGORITHM", "HS256")
+        monkeypatch.setattr("src.auth.utils.settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES", 30)
+
+        token, _ = create_access_token("not-a-uuid")
+
+        app = _make_app(get_current_user)
+        client = TestClient(app)
+        resp = client.get("/me", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 401
+        assert resp.json()["detail"] == "Invalid token"
 
 
 # ── get_current_user_id ────────────────────────────────────────────────────────

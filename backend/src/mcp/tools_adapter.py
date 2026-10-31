@@ -284,5 +284,7 @@ async def invoke_tool(
             result = json.dumps(result, default=str)
         return result
     except Exception as e:
+        # Log full detail server-side; return an opaque error to the client —
+        # raw exception text leaks DB constraint names and internal paths.
         logger.exception("mcp_tool_invoke_failed", tool=name, error=str(e))
-        return json.dumps({"error": f"Tool {name} failed: {e}"}, default=str)
+        return json.dumps({"error": "Internal error processing tool call"}, default=str)

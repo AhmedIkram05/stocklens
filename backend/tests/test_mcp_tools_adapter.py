@@ -115,8 +115,9 @@ async def test_invoke_tool_error_returns_json():
     with patch("src.mcp.tools_adapter._load_tools", return_value={"get_market_quote": mock_tool}):
         result = await invoke_tool("get_market_quote", {"ticker": "AAPL"}, user_id="u1")
         data = json.loads(result)
-        assert "error" in data
-        assert "yfinance down" in data["error"]
+        # Opaque to the client — raw exception text stays server-side.
+        assert data["error"] == "Internal error processing tool call"
+        assert "yfinance down" not in result
 
 
 def test_strip_injected_removes_required():

@@ -103,7 +103,9 @@ def _seed_script_path() -> str:
     """Locate backend/scripts/seed_ohlcv.py across dev mount, prod image, and repo checkout."""
     repo_candidate = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        "backend", "scripts", "seed_ohlcv.py",
+        "backend",
+        "scripts",
+        "seed_ohlcv.py",
     )
     for candidate in (
         "/app/backend/scripts/seed_ohlcv.py",
@@ -143,7 +145,10 @@ def _check_new_ohlcv_data(**context) -> str:
             trained_at = row["champion_trained_at"]
             tz = trained_at.tzinfo or timezone.utc
             max_date = datetime(
-                row["max_date"].year, row["max_date"].month, row["max_date"].day, tzinfo=tz,
+                row["max_date"].year,
+                row["max_date"].month,
+                row["max_date"].day,
+                tzinfo=tz,
             )
             advance = (max_date - trained_at).days
             print(
@@ -151,7 +156,9 @@ def _check_new_ohlcv_data(**context) -> str:
                 f"champion trained_at {trained_at}, advance {advance}d "
                 f"(threshold {STALENESS_DAYS}d)"
             )
-            return "train_challenger" if advance >= STALENESS_DAYS else "skip_retraining"
+            return (
+                "train_challenger" if advance >= STALENESS_DAYS else "skip_retraining"
+            )
         finally:
             await conn.close()
 
@@ -161,6 +168,7 @@ def _check_new_ohlcv_data(**context) -> str:
 # ── Variables helper (env-backed, see init_airflow_variables.sh) ──
 def v(key: str) -> str:
     from airflow.sdk import Variable
+
     return Variable.get(key)
 
 
@@ -192,6 +200,7 @@ def _detect_new_champion(**context) -> str:
 def _run_drift_detection(**context) -> None:
     """Run drift detection: PSI/KS/JS, Evidently report, S3 upload, DB persist."""
     import sys
+
     sys.path.insert(0, "/app")
 
     from drift.evidently_reporter import (
@@ -241,7 +250,8 @@ def _run_drift_detection(**context) -> None:
                    FROM prediction_log
                    WHERE ticker = ANY($1::varchar[]) AND created_at >= $2
                    ORDER BY created_at DESC""",
-                tickers, lookback,
+                tickers,
+                lookback,
             )
 
         prediction_logs: dict[str, list[dict]] = {t: [] for t in tickers}
@@ -295,14 +305,16 @@ def _cleanup(**context) -> None:
             # prediction_log > 90 days
             cutoff = datetime.now(tz=timezone.utc) - timedelta(days=90)
             result = await conn.execute(
-                "DELETE FROM prediction_log WHERE created_at < $1", cutoff,
+                "DELETE FROM prediction_log WHERE created_at < $1",
+                cutoff,
             )
             pl_count = int(result.split()[-1])
 
             # drift_metrics > 365 days
             dm_cutoff = datetime.now(tz=timezone.utc) - timedelta(days=365)
             result = await conn.execute(
-                "DELETE FROM drift_metrics WHERE created_at < $1", dm_cutoff,
+                "DELETE FROM drift_metrics WHERE created_at < $1",
+                dm_cutoff,
             )
             dm_count = int(result.split()[-1])
 
@@ -328,7 +340,6 @@ with DAG(
     dagrun_timeout=timedelta(hours=6),
     tags=["stocklens", "ml", "drift"],
 ) as dag:
-
     # ── Task 1: Ingest fresh OHLCV for the training universe (always) ──
     ingest_universe = PythonOperator(
         task_id="ingest_training_universe",
@@ -362,10 +373,19 @@ with DAG(
                     "name": "ml-training",
                     "environment": [
                         {"name": "DATABASE_URL", "value": v("database_url")},
-                        {"name": "MLFLOW_TRACKING_URI", "value": v("mlflow_tracking_uri")},
-                        {"name": "MODEL_ARTIFACT_DIR", "value": "/model_artifacts/champion"},
+                        {
+                            "name": "MLFLOW_TRACKING_URI",
+                            "value": v("mlflow_tracking_uri"),
+                        },
+                        {
+                            "name": "MODEL_ARTIFACT_DIR",
+                            "value": "/model_artifacts/champion",
+                        },
                         {"name": "MLFLOW_ARTIFACT_ROOT", "value": "/mlflow/artifacts"},
-                        {"name": "MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING", "value": "true"},
+                        {
+                            "name": "MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING",
+                            "value": "true",
+                        },
                         {"name": "ENVIRONMENT", "value": v("environment")},
                         {"name": "AWS_REGION", "value": v("aws_region")},
                         {"name": "CHAMPION_S3_URI", "value": v("champion_s3_uri")},

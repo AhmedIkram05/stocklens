@@ -294,3 +294,71 @@ def test_save_champion_to_disk_creates_file(mock_boto3: MagicMock) -> None:
 
     assert os.path.exists(path)
     os.unlink(path)
+
+
+@patch("ml.mlflow_manager.boto3")
+def test_save_champion_to_disk_prunes_stale_seeds(mock_boto3: MagicMock) -> None:
+    """Seed siblings not written by the current save are pruned.
+
+    A previous run with more seeds must not leave its model_seed{i}.pt behind
+    for serving/gate to blend into the promoted ensemble; members written by
+    this run are kept.
+    """
+    import os
+
+    from ml.mlflow_manager import MLflowManager
+
+    mgr = MLflowManager()
+    save_dir = mgr._resolve_save_dir()
+    stale = save_dir / "model_seed9.pt"
+    stale.write_bytes(b"stale")
+
+    members = [_make_model(), _make_model()]
+    path = mgr.save_champion_to_disk(_make_model(), ensemble_models=members)
+
+    assert (save_dir / "model_seed0.pt").exists()
+    assert (save_dir / "model_seed1.pt").exists()
+    assert not stale.exists()
+
+    # model.pt records the expected member count so serving can detect a
+    # truncated prefix (the previous run's 10-seed count must not survive).
+    assert GlobalLSTM.load(path)._ensemble_size == 2
+
+    for artifact in (path, save_dir / "model_seed0.pt", save_dir / "model_seed1.pt"):
+        os.unlink(artifact)
+
+
+@patch("ml.mlflow_manager.boto3")
+def test_save_champion_to_disk_publishes_full_ensemble(mock_boto3, monkeypatch) -> None:
+    """Every ensemble member reaches S3 — loose keys and the SageMaker bundle.
+
+    Publishing only model.pt would ship a seed-0 model while the gate scored
+    the N-seed average.
+    """
+    import os
+    import tarfile
+
+    from ml.mlflow_manager import MLflowManager
+
+    monkeypatch.setenv("CHAMPION_S3_URI", "s3://my-bucket/champion/")
+    s3 = MagicMock()
+    mock_boto3.client.return_value = s3
+
+    mgr = MLflowManager()
+    save_dir = mgr._resolve_save_dir()
+    members = [_make_model(), _make_model(), _make_model()]
+    mgr.save_champion_to_disk(_make_model(), ensemble_models=members)
+
+    expected_names = {"model.pt", "model_seed0.pt", "model_seed1.pt", "model_seed2.pt"}
+    uploaded_keys = {call.args[2] for call in s3.upload_file.call_args_list}
+    assert uploaded_keys == {f"champion/{name}" for name in expected_names}
+
+    tar_call = s3.upload_fileobj.call_args
+    assert tar_call.args[2] == "champion/model.tar.gz"
+    buffer = tar_call.args[0]
+    buffer.seek(0)
+    with tarfile.open(fileobj=buffer, mode="r:gz") as tar:
+        assert set(tar.getnames()) == expected_names
+
+    for artifact in save_dir.glob("model*.pt"):
+        os.unlink(artifact)

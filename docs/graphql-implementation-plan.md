@@ -129,8 +129,11 @@ Move verbatim from `backend/src/performance/router.py` (rename: drop `_`):
 ### 2.1 Create `backend/src/market/quotes.py` (new)
 
 ```python
-QUOTE_CACHE_TTL = 60  # seconds — glossary normative (was 30 in market/router.py; bug fix)
+QUOTE_CACHE_TTL = (
+    60  # seconds — glossary normative (was 30 in market/router.py; bug fix)
+)
 _quote_key = lambda ticker: f"quote:{ticker.upper()}"
+
 
 async def get_quote(ticker: str) -> dict[str, Any]:
     """Cached quote fetch: Redis GET quote:{ticker} → hit; miss → fetch_quote → SETEX 60s.
@@ -140,11 +143,13 @@ async def get_quote(ticker: str) -> dict[str, Any]:
         r = await get_redis()
         cached = await r.get(key)
         if cached is not None:
-            try: return json.loads(cached)
-            except (json.JSONDecodeError, TypeError): logger.warning("quote_cache_corrupt", ticker=ticker.upper())
+            try:
+                return json.loads(cached)
+            except (json.JSONDecodeError, TypeError):
+                logger.warning("quote_cache_corrupt", ticker=ticker.upper())
     except Exception:
         logger.warning("quote_cache_read_failed", ticker=ticker.upper(), exc_info=True)
-    quote = await fetch_quote(ticker)   # propagates on provider failure
+    quote = await fetch_quote(ticker)  # propagates on provider failure
     try:
         r = await get_redis()
         await r.setex(key, QUOTE_CACHE_TTL, json.dumps(quote, default=str))
@@ -307,25 +312,39 @@ Ceiling comments in code: `# ponytail: in-process refcount registry;multi-replic
 
 ```python
 @strawberry.subscription
-async def market_quote(self, info: strawberry.Info, ticker: str) -> AsyncGenerator[Quote, None]:
+async def market_quote(
+    self, info: strawberry.Info, ticker: str
+) -> AsyncGenerator[Quote, None]:
     ticker = ticker.upper()
-    if not re.fullmatch(r"[A-Z0-9.]{1,10}", ticker): raise GraphQLError(f"Invalid ticker: {ticker!r}")
+    if not re.fullmatch(r"[A-Z0-9.]{1,10}", ticker):
+        raise GraphQLError(f"Invalid ticker: {ticker!r}")
     """Near-real-time quote stream (~15-min-delayed Yahoo data, 60s poll) — never "live"."""
     params = info.context.get("connection_params") or {}
     token = (params.get("authToken") or "").removeprefix("Bearer ").strip()
-    _validate_ws_token(token)   # decode_token + type=="access" + is_token_blacklisted → raise GraphQLError("Forbidden" on fail (documented graphql-ws connection_init auth pattern — browser WS can't set headers)
+    _validate_ws_token(
+        token
+    )  # decode_token + type=="access" + is_token_blacklisted → raise GraphQLError("Forbidden" on fail (documented graphql-ws connection_init auth pattern — browser WS can't set headers)
 
     subscribe_symbol(ticker)
     channel = f"quote:stream:{ticker}"
     try:
-        redis = await get_redis(); pubsub = redis.pubsub(); await pubsub.subscribe(channel)  # subscribe FIRST — a tick published between the replay read and subscribe would otherwise be missed
-        yield _to_quote(await _fetch_with_timeout(ticker))   # last-value replay (fetch-if-miss;cache+setex → doubles as the replay store)
+        redis = await get_redis()
+        pubsub = redis.pubsub()
+        await pubsub.subscribe(
+            channel
+        )  # subscribe FIRST — a tick published between the replay read and subscribe would otherwise be missed
+        yield _to_quote(
+            await _fetch_with_timeout(ticker)
+        )  # last-value replay (fetch-if-miss;cache+setex → doubles as the replay store)
         async for message in pubsub.listen():
             if message.get("type") == "message":
                 yield _to_quote(json.loads(message["data"]))
     finally:
-        try: await pubsub.unsubscribe(channel); await pubsub.aclose()
-        except Exception: logger.warning("ws_pubsub_close_failed", symbol=ticker)
+        try:
+            await pubsub.unsubscribe(channel)
+            await pubsub.aclose()
+        except Exception:
+            logger.warning("ws_pubsub_close_failed", symbol=ticker)
         unsubscribe_symbol(ticker)
 ```
 

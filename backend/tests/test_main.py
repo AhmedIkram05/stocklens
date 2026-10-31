@@ -241,3 +241,12 @@ class TestHealthEndpoint:
         data = response.json()
         assert data["status"] == "ok"
         assert "environment" in data
+
+
+class TestDebugEndpoint:
+    """The debug DB surface is dev/test-only and requires authentication."""
+
+    def test_debug_db_requires_auth(self):
+        client = TestClient(app)
+        # No Bearer token → 401 before the environment/DB path is reached.
+        assert client.get("/debug/db").status_code == 401

@@ -7,6 +7,8 @@ and ``require_active_user`` for use in endpoint declarations.
 
 from __future__ import annotations
 
+import uuid
+
 import jwt as pyjwt
 import structlog
 from fastapi import Depends, HTTPException, Request, status
@@ -79,6 +81,15 @@ async def get_current_user(
         )
 
     # Step 4 — fetch user from DB
+    try:
+        uuid.UUID(payload.sub)
+    except (ValueError, TypeError, AttributeError):
+        # A non-UUID sub would otherwise surface as a 500 from the ::uuid cast.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        )
+
     async with connection_ctx() as conn:
         row = await conn.fetchrow(
             """
@@ -94,6 +105,14 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
+        )
+
+    # Deactivated accounts must not retain access until token expiry — enforce
+    # here so every get_current_user caller is covered, not just require_active_user.
+    if not row["is_active"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is deactivated",
         )
 
     return UserInDB(

@@ -32,9 +32,11 @@ def test_verify_pkce_s256():
     assert _verify_pkce("wrong", challenge, "S256") is False
 
 
-def test_verify_pkce_plain():
-    assert _verify_pkce("hello", "hello", "plain") is True
+def test_verify_pkce_plain_rejected():
+    # OAuth 2.1 forbids `plain` — the challenge is public in the authorize URL.
+    assert _verify_pkce("hello", "hello", "plain") is False
     assert _verify_pkce("hello", "bye", "plain") is False
+    assert _verify_pkce("hello", "hello", "S512") is False  # unknown method
 
 
 @pytest.mark.asyncio
@@ -72,11 +74,18 @@ async def test_store_and_consume_code_in_memory():
         async def get(self, k):
             return store.get(k)
 
+        async def getdel(self, k):
+            return store.pop(k, None)
+
         async def delete(self, k):
             store.pop(k, None)
 
     fake = FakeRedis()
-    with patch("src.mcp.auth.get_redis", new_callable=AsyncMock, return_value=fake):
+    with (
+        patch("src.mcp.auth.get_redis", new_callable=AsyncMock, return_value=fake),
+        # Second consume is a replay → revocation touches the DB.
+        patch("src.mcp.auth.connection_ctx", _exchange_conn_ctx_mock()),
+    ):
         from src.mcp.auth import _consume_code, _store_code
 
         await _store_code("code123", {"user_id": "u1", "scope": "mcp:tools"})
@@ -84,6 +93,57 @@ async def test_store_and_consume_code_in_memory():
         assert data["user_id"] == "u1"
         # single-use
         assert await _consume_code("code123") is None
+
+
+@pytest.mark.asyncio
+async def test_consume_code_replay_revokes_user_tokens():
+    """A second exchange of a consumed code revokes the user's refresh tokens."""
+    store: dict[str, str] = {}
+
+    class FakeRedis:
+        async def set(self, k, v, ex=None):
+            store[k] = v
+
+        async def get(self, k):
+            return store.get(k)
+
+        async def getdel(self, k):
+            return store.pop(k, None)
+
+        async def delete(self, k):
+            store.pop(k, None)
+
+    revoked_for: list[str] = []
+    mock_conn = AsyncMock()
+
+    async def _execute(query, *args):
+        if "UPDATE refresh_tokens SET revoked = true WHERE user_id" in query:
+            revoked_for.append(args[0])
+        return "UPDATE 0"
+
+    mock_conn.execute = AsyncMock(side_effect=_execute)
+    ctx = MagicMock()
+    ctx.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
+    ctx.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    with (
+        patch("src.mcp.auth.get_redis", new_callable=AsyncMock, return_value=FakeRedis()),
+        patch("src.mcp.auth.connection_ctx", ctx),
+    ):
+        from src.mcp.auth import _consume_code, _store_code
+
+        await _store_code("c1", {"user_id": "00000000-0000-0000-0000-000000000001"})
+        assert await _consume_code("c1") is not None  # winner
+        assert await _consume_code("c1") is None  # replay → denied + revoked
+
+    assert revoked_for == ["00000000-0000-0000-0000-000000000001"]
+
+
+@pytest.mark.asyncio
+async def test_metadata_does_not_advertise_plain_pkce(client):
+    r = await client.get("/.well-known/oauth-authorization-server")
+    assert r.status_code == 200
+    assert r.json()["code_challenge_methods_supported"] == ["S256"]
 
 
 @pytest.mark.asyncio
@@ -102,6 +162,19 @@ async def test_verify_mcp_token_401_cases(client):
     )
     assert r2.status_code == 401
     assert "scope=" in r2.headers["WWW-Authenticate"]
+
+
+async def test_verify_mcp_token_non_uuid_sub_401(client):
+    # A non-UUID sub must 401, not blow up the ::uuid cast as a 500.
+    from src.mcp.auth import _mcp_create_access_token
+
+    token, _jti, _exp = _mcp_create_access_token("not-a-uuid")
+    r = await client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 401
 
 
 # ── RFC 9207 issuer validation + CIMD (2026-07-28 auth hardening) ──────

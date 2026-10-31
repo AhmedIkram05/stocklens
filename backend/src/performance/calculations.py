@@ -22,6 +22,11 @@ from src.performance.schemas import (
 
 logger = structlog.get_logger()
 
+# A "day change" is only meaningful between consecutive sessions. If the two
+# latest closes are further apart than this (a weekend plus one holiday), the
+# feed has a hole and the move spans multiple days — fall back to no day change.
+_MAX_DAY_CHANGE_GAP_DAYS = 4
+
 
 def compute_holding_performance(
     ticker: str,
@@ -132,7 +137,7 @@ def compute_portfolio_performance(
         PortfolioPerformanceResponse with computed metrics.
     """
     if end_date is None:
-        end_date = date.today()
+        end_date = datetime.now(timezone.utc).date()
     if start_date is None:
         start_date = end_date - timedelta(days=365)
 
@@ -142,11 +147,26 @@ def compute_portfolio_performance(
     for h in holdings_data:
         ticker = h["ticker"]
         ticker_prices = price_map.get(ticker, {})
-        if ticker_prices:
-            sorted_dates = sorted(ticker_prices.keys())
-            latest_prices[ticker] = ticker_prices[sorted_dates[-1]]
-            if len(sorted_dates) >= 2:
-                previous_closes[ticker] = ticker_prices[sorted_dates[-2]]
+        # Only closes dated at/before the period end may be "today's" price.
+        sorted_dates = sorted(d for d in ticker_prices if d <= end_date)
+        if not sorted_dates:
+            continue
+        latest_date = sorted_dates[-1]
+        latest_prices[ticker] = ticker_prices[latest_date]
+        if len(sorted_dates) >= 2:
+            previous_date = sorted_dates[-2]
+            # A day change is only meaningful between consecutive sessions: a
+            # wider gap means the feed has a hole, so leave previous_close
+            # unset rather than report a multi-day move as a daily change.
+            if (latest_date - previous_date).days <= _MAX_DAY_CHANGE_GAP_DAYS:
+                previous_closes[ticker] = ticker_prices[previous_date]
+            else:
+                logger.warning(
+                    "previous_close_gap_too_large",
+                    ticker=ticker,
+                    latest=str(latest_date),
+                    previous=str(previous_date),
+                )
 
     # Override with live intraday quotes if available
     if live_quotes:
@@ -213,15 +233,25 @@ def compute_portfolio_performance(
         # Weighted by start-of-day value. Decimal("0") is falsy, so a truthiness
         # check here would drop flat holdings from the denominator entirely and
         # double the weighted average — use explicit None checks instead.
-        weights = {
-            hp.ticker: (
-                hp.market_value / (Decimal(1) + hp.day_change_pct / Decimal(100))
-                if hp.market_value is not None and hp.day_change_pct is not None
-                else Decimal(0)
-            )
-            for hp in holdings_perf
-            if hp.day_change is not None
-        }
+        weights: dict[str, Decimal] = {}
+        for hp in holdings_perf:
+            if hp.day_change is None:
+                continue
+            if hp.market_value is not None and hp.day_change_pct is not None:
+                # Start-of-day value = market_value / (1 + pct/100). A live
+                # quote priced at 0 against a positive previous close gives
+                # day_change_pct == -100 → a zero divisor, and the start-of-day
+                # value is unrecoverable, so drop the weight instead of 500-ing.
+                start_of_day = Decimal(1) + hp.day_change_pct / Decimal(100)
+                if start_of_day != 0:
+                    weights[hp.ticker] = hp.market_value / start_of_day
+                    continue
+                logger.warning(
+                    "day_change_weight_skipped",
+                    ticker=hp.ticker,
+                    reason="zero start-of-day value from -100% day change",
+                )
+            weights[hp.ticker] = Decimal(0)
         total_weight = sum(weights.values())
         if total_weight > 0:
             weighted_sum = sum(
@@ -363,7 +393,7 @@ def _compute_twr(
         sub_end = all_dates[i + 1]
 
         # 1. BMV before sub_end transactions
-        bmv = _portfolio_value(
+        bmv, bmv_complete = _portfolio_value(
             current_holdings, price_map, sub_start, fx_rates=fx_rates, sorted_dates=price_dates
         )
 
@@ -371,7 +401,7 @@ def _compute_twr(
         # flows into/out of the measured portfolio, not P&L: valuing them
         # post-trade books a SELL as a loss and a BUY as a gain, so the
         # sub-period return must be computed before they are applied.
-        emv = _portfolio_value(
+        emv, emv_complete = _portfolio_value(
             current_holdings, price_map, sub_end, fx_rates=fx_rates, sorted_dates=price_dates
         )
 
@@ -392,6 +422,16 @@ def _compute_twr(
         # losses when a large deposit sat uninvested against small holdings
         # (e.g. -841% instead of the real ~+5%).
         if bmv == 0:
+            continue
+        # A held-but-unpriced position would otherwise be valued at £0, faking
+        # a gain in this sub-period and a loss in the next. Skip the sub-period
+        # (never a silent zero) so the linked TWR only covers fully-priced spans.
+        if not bmv_complete or not emv_complete:
+            logger.warning(
+                "twr_subperiod_skipped_unpriced_holding",
+                sub_start=str(sub_start),
+                sub_end=str(sub_end),
+            )
             continue
         sub_return = (emv - bmv) / bmv
 
@@ -436,20 +476,27 @@ def _portfolio_value(
     valuation_date: date,
     fx_rates: Optional[dict[str, Decimal]] = None,
     sorted_dates: Optional[dict[str, list[date]]] = None,
-) -> Decimal:
+) -> tuple[Decimal, bool]:
     """Compute total market value of holdings at a given date.
 
     Uses the closest available price (last available before the valuation date).
     Prices are converted to GBP via ``fx_rates`` (GBP per 1 native unit)
     so mixed-currency holdings aggregate correctly.
+
+    Returns ``(total, complete)``. ``complete`` is False when a held ticker has
+    no price at/before ``valuation_date``: the total omits it, so callers must
+    not treat it as a real portfolio value.
     """
     total = Decimal(0)
+    complete = True
     for ticker, shares in holdings.items():
         price = _get_closest_price(price_map, ticker, valuation_date, sorted_dates)
-        if price is not None:
-            fx = (fx_rates or {}).get(ticker, Decimal(1))
-            total += shares * price * fx
-    return total
+        if price is None:
+            complete = False
+            continue
+        fx = (fx_rates or {}).get(ticker, Decimal(1))
+        total += shares * price * fx
+    return total, complete
 
 
 def _get_closest_price(

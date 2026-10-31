@@ -13,9 +13,12 @@ pub fn compute_raw(close: &[f64], period: usize) -> Vec<f64> {
         return result;
     }
 
-    let mut log_rets = vec![0.0; n];
+    // A non-positive close has no defined log return. Leave those entries NaN
+    // (never a substituted 0.0), so a bad window is dropped downstream instead
+    // of being trained on as a genuine low-volatility observation.
+    let mut log_rets = vec![f64::NAN; n];
     for i in 1..n {
-        if close[i - 1] > 0.0 {
+        if close[i - 1] > 0.0 && close[i] > 0.0 {
             log_rets[i] = (close[i] / close[i - 1]).ln();
         }
     }
@@ -24,25 +27,50 @@ pub fn compute_raw(close: &[f64], period: usize) -> Vec<f64> {
         return result;
     }
 
-    // Sample standard deviation (ddof=1, matching pandas rolling().std())
+    // Sample standard deviation (ddof=1, matching pandas rolling().std()).
+    // Track how many NaNs sit in the window so the running sums recover once
+    // the bad value leaves: a NaN can never be subtracted back out.
     let n_float = period as f64;
     let ddof = period as f64 - 1.0;
 
     let mut sum = 0.0;
     let mut sum_sq = 0.0;
+    let mut nan_count = 0usize;
     for i in 1..=period {
-        sum += log_rets[i];
-        sum_sq += log_rets[i] * log_rets[i];
+        let r = log_rets[i];
+        if r.is_nan() {
+            nan_count += 1;
+        } else {
+            sum += r;
+            sum_sq += r * r;
+        }
     }
 
-    let mean = sum / n_float;
-    let variance = ((sum_sq / n_float) - (mean * mean)) * n_float / ddof;
-    result[period] = if variance > 0.0 { variance.sqrt() } else { 0.0 };
+    if nan_count == 0 {
+        let mean = sum / n_float;
+        let variance = ((sum_sq / n_float) - (mean * mean)) * n_float / ddof;
+        result[period] = if variance > 0.0 { variance.sqrt() } else { 0.0 };
+    }
 
     for i in (period + 1)..n {
-        sum += log_rets[i] - log_rets[i - period];
-        sum_sq += log_rets[i] * log_rets[i] - log_rets[i - period] * log_rets[i - period];
+        let outgoing = log_rets[i - period];
+        if outgoing.is_nan() {
+            nan_count -= 1;
+        } else {
+            sum -= outgoing;
+            sum_sq -= outgoing * outgoing;
+        }
+        let incoming = log_rets[i];
+        if incoming.is_nan() {
+            nan_count += 1;
+        } else {
+            sum += incoming;
+            sum_sq += incoming * incoming;
+        }
 
+        if nan_count > 0 {
+            continue;
+        }
         let mean = sum / n_float;
         let variance = ((sum_sq / n_float) - (mean * mean)) * n_float / ddof;
         result[i] = if variance > 0.0 { variance.sqrt() } else { 0.0 };
@@ -84,5 +112,27 @@ mod tests {
         assert_eq!(raw.len(), 252);
         let nan_count = raw.iter().filter(|x| x.is_nan()).count();
         assert_eq!(nan_count, 30);
+    }
+
+    #[test]
+    fn test_volatility_nan_propagates_and_recovers() {
+        // A zero close must produce NaN log returns (never a substituted 0),
+        // so the bad window is dropped downstream instead of being trained on
+        // as fake low volatility.
+        let mut close = vec![100.0; 40];
+        close[20] = 0.0;
+        let raw = compute_raw(&close, 5);
+        // log returns at 20 and 21 are NaN → every output window that contains
+        // one of them (20..=25) must be NaN.
+        for i in 20..=25 {
+            assert!(raw[i].is_nan(), "raw[{}] must be NaN, got {}", i, raw[i]);
+        }
+        // The NaN leaves the 5-wide window after index 25; volatility recovers
+        // rather than staying NaN for the rest of the series.
+        assert!(
+            raw[26].is_finite(),
+            "volatility must recover after the NaN window"
+        );
+        assert!(raw[26].abs() < 1e-10);
     }
 }

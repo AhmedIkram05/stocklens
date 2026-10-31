@@ -176,8 +176,14 @@ backend/
      REDIS_HOST: str = os.getenv("REDIS_HOST", "redis")
      REDIS_PASSWORD: str | None = os.getenv("REDIS_PASSWORD")
      if os.getenv("ENVIRONMENT") == "production" and not REDIS_PASSWORD:
-         raise RuntimeError("REDIS_PASSWORD is required in production (ElastiCache enforces auth)")
-     REDIS_URL: str = f"rediss://:{REDIS_PASSWORD}@{REDIS_HOST}:6379/0" if REDIS_PASSWORD else f"redis://{REDIS_HOST}:6379/0"
+         raise RuntimeError(
+             "REDIS_PASSWORD is required in production (ElastiCache enforces auth)"
+         )
+     REDIS_URL: str = (
+         f"rediss://:{REDIS_PASSWORD}@{REDIS_HOST}:6379/0"
+         if REDIS_PASSWORD
+         else f"redis://{REDIS_HOST}:6379/0"
+     )
      ```
    - Line 68 `env_file=".env"` → guard so prod never reads a shipped `.env`:
      ```python
@@ -370,7 +376,7 @@ backend/
        found = False
        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
            for obj in page.get("Contents", []):
-               rel = obj["Key"][len(prefix):].lstrip("/")
+               rel = obj["Key"][len(prefix) :].lstrip("/")
                if not rel:
                    continue
                local = dest / rel

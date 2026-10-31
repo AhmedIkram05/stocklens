@@ -273,7 +273,7 @@ async def get_bulk_portfolio_performance(
         all_tickers.update(h["ticker"] for h in holdings)
 
     # Price data (batched across all tickers)
-    end_date = date.today()
+    end_date = datetime.now(timezone.utc).date()
     start_date = end_date - timedelta(days=365)
 
     if all_tickers:
@@ -369,7 +369,7 @@ async def get_portfolio_performance(
         )
 
     if end_date is None:
-        end_date = date.today()
+        end_date = datetime.now(timezone.utc).date()
     if start_date is None:
         start_date = end_date - timedelta(days=365)
 
@@ -436,7 +436,7 @@ async def get_benchmark_comparison(
         )
 
     if end_date is None:
-        end_date = date.today()
+        end_date = datetime.now(timezone.utc).date()
     if start_date is None:
         start_date = end_date - timedelta(days=365)
 

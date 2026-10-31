@@ -200,12 +200,14 @@ The `categorize_tool` and `get_spending_analysis` tool join `transactions` with 
 Add to the `transactions` Table definition (after `notes` column, before `created_at`):
 
 ```python
-Column(
-    "spending_category_id",
-    UUID(as_uuid=True),
-    ForeignKey("spending_categories.id", ondelete="SET NULL"),
-    nullable=True,
-),
+(
+    Column(
+        "spending_category_id",
+        UUID(as_uuid=True),
+        ForeignKey("spending_categories.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+)
 ```
 
 **Verification:** Query confirms column exists: `SELECT spending_category_id FROM transactions LIMIT 1`. Alembic autogenerate detects no drift.
@@ -226,12 +228,26 @@ The existing `agent_conversations` table is single-turn and never had data writt
 conversations = Table(
     "conversations",
     target_metadata,
-    Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
-    Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "id",
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    ),
+    Column(
+        "user_id",
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
     Column("title", Text(), nullable=True),  # auto-generated from first user message
     Column("message_count", Integer(), server_default=text("0"), nullable=False),
-    Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
-    Column("updated_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
+    Column(
+        "created_at", DateTime(timezone=True), server_default=func.now(), nullable=False
+    ),
+    Column(
+        "updated_at", DateTime(timezone=True), server_default=func.now(), nullable=False
+    ),
 )
 ```
 
@@ -242,13 +258,25 @@ agent_conversations = Table(
     "agent_conversations",
     target_metadata,
     Column("id", BigInteger(), primary_key=True, autoincrement=True),
-    Column("conversation_id", UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False),
-    Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "conversation_id",
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "user_id",
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
     Column("role", String(20), nullable=False),  # "user" | "assistant"
     Column("content", Text(), nullable=False),
     Column("tools_used", JSONB(), nullable=True),
     Column("reasoning_steps", JSONB(), nullable=True),
-    Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
+    Column(
+        "created_at", DateTime(timezone=True), server_default=func.now(), nullable=False
+    ),
 )
 ```
 
@@ -284,6 +312,7 @@ from sqlalchemy.dialects.postgresql import UUID
 revision = "0009"
 down_revision = "0008"
 
+
 def upgrade() -> None:
     op.add_column(
         "transactions",
@@ -299,6 +328,7 @@ def upgrade() -> None:
         "transactions",
         ["spending_category_id"],
     )
+
 
 def downgrade() -> None:
     op.drop_index("idx_transactions_spending_category", "transactions")
@@ -329,16 +359,39 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 revision = "0010"
 down_revision = "0009"
 
+
 def upgrade() -> None:
     # 1. Create conversations table (lightweight metadata)
     op.create_table(
         "conversations",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "id",
+            UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "user_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("title", sa.Text(), nullable=True),
-        sa.Column("message_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "message_count", sa.Integer(), server_default=sa.text("0"), nullable=False
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
     )
     op.create_index("idx_conversations_user", "conversations", ["user_id"])
 
@@ -349,15 +402,33 @@ def upgrade() -> None:
     op.create_table(
         "agent_conversations",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
-        sa.Column("conversation_id", UUID(as_uuid=True), sa.ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "conversation_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("conversations.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "user_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("role", sa.String(20), nullable=False),
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column("tools_used", JSONB(), nullable=True),
         sa.Column("reasoning_steps", JSONB(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
     )
-    op.create_index("idx_agent_conversations_cid", "agent_conversations", ["conversation_id"])
+    op.create_index(
+        "idx_agent_conversations_cid", "agent_conversations", ["conversation_id"]
+    )
+
 
 def downgrade() -> None:
     # Reverse: drop new, restore old
@@ -366,12 +437,22 @@ def downgrade() -> None:
     op.create_table(
         "agent_conversations",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
-        sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("message", sa.Text(), nullable=True),
         sa.Column("response", sa.Text(), nullable=True),
         sa.Column("tools_used", JSONB(), nullable=True),
         sa.Column("reasoning_steps", JSONB(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
     )
     op.drop_index("idx_conversations_user", "conversations")
     op.drop_table("conversations")
@@ -389,16 +470,18 @@ Add to `Settings` class:
 
 ```python
 # Agent
-AGENT_MODEL_ID: str = "deepseek.v3-v1:0"              # DeepSeek V3.1 — agent inference
-AGENT_JUDGE_MODEL_ID: str = "openai.gpt-5.4"           # GPT 5.4 — LLM-as-Judge
-NLP_MODEL_ID: str = "anthropic.claude-haiku-4-5-20251001-v1:0"  # Claude Haiku 4.5 — NLP pipeline
+AGENT_MODEL_ID: str = "deepseek.v3-v1:0"  # DeepSeek V3.1 — agent inference
+AGENT_JUDGE_MODEL_ID: str = "openai.gpt-5.4"  # GPT 5.4 — LLM-as-Judge
+NLP_MODEL_ID: str = (
+    "anthropic.claude-haiku-4-5-20251001-v1:0"  # Claude Haiku 4.5 — NLP pipeline
+)
 AGENT_MAX_TOKENS: int = 4096
 AGENT_TEMPERATURE: float = 0.1
 AGENT_EVAL_SAMPLE_RATE: float = 0.1
 AGENT_MAX_HISTORY_TURNS: int = 20
-AGENT_REDIS_TTL: int = 604800          # 7 days — active session state TTL
+AGENT_REDIS_TTL: int = 604800  # 7 days — active session state TTL
 AGENT_REDIS_KEY_PREFIX: str = "agent:session:"  # Redis key prefix
-RATE_LIMIT_AGENT: str = "30/minute"    # Rate limit for agent chat endpoint
+RATE_LIMIT_AGENT: str = "30/minute"  # Rate limit for agent chat endpoint
 ```
 
 **Also update existing `BEDROCK_MODEL_ID`** (used by the NLP prediction pipeline) from Claude 3 Haiku to Claude Haiku 4.5:
@@ -439,26 +522,32 @@ from datetime import datetime
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
+
 class ChatRequest(BaseModel):
     message: str
     conversation_id: UUID | None = None  # None = new conversation
+
 
 class ChatResponse(BaseModel):
     conversation_id: UUID
     message: str  # full response text
 
+
 class ToolCallEvent(BaseModel):
     tool_name: str
     input: dict
+
 
 class ToolResultEvent(BaseModel):
     tool_name: str
     output_summary: str
     success: bool
 
+
 class SSEEvent(BaseModel):
     event: str  # "token" | "tool_start" | "tool_end" | "done" | "error"
-    data: str   # JSON-encoded payload
+    data: str  # JSON-encoded payload
+
 
 class ConversationSummary(BaseModel):
     id: UUID
@@ -466,6 +555,7 @@ class ConversationSummary(BaseModel):
     message_count: int
     created_at: datetime
     updated_at: datetime
+
 
 class MessageResponse(BaseModel):
     role: str
@@ -533,6 +623,7 @@ from langchain_core.tools import tool
 from typing import Annotated
 from langgraph.prebuilt import InjectedToolArg
 
+
 @tool
 async def get_portfolio_holdings(
     portfolio_id: str,
@@ -583,6 +674,7 @@ from langchain_core.tools import tool
 from typing import Annotated
 from langgraph.prebuilt import InjectedToolArg
 
+
 @tool
 async def tool_name(
     user_provided_param1: str,
@@ -628,9 +720,11 @@ from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 from langchain_aws import ChatBedrockConverse
 from src.config import settings
 
+
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
     user_id: str
+
 
 def create_agent_graph(tools: list) -> StateGraph:
     """Build and return the compiled agent graph.
@@ -702,18 +796,23 @@ Rules:
 6. Keep responses concise and professional. Use bullet points for multiple data points.
 7. If the user asks about a ticker or portfolio you don't have access to, say so."""
 
+
 class AgentService:
     """Singleton agent service. Compiled graph + two-tier persistence reused across all conversations."""
 
     def __init__(self):
         self.graph = None  # No checkpointer — manual persistence
-        self._eval_tasks: set[asyncio.Task] = set()  # Strong refs to prevent GC of eval tasks
+        self._eval_tasks: set[asyncio.Task] = (
+            set()
+        )  # Strong refs to prevent GC of eval tasks
 
     def initialize(self):
         """Load tools and compile graph. Called at app startup."""
         tools = get_all_tools()
         graph = create_agent_graph(tools)
-        self.graph = graph.compile()  # No checkpointer arg — thread_id in config is vestigial
+        self.graph = (
+            graph.compile()
+        )  # No checkpointer arg — thread_id in config is vestigial
 
     async def _load_state(self, conversation_id: UUID, user_id: str) -> list:
         """Load conversation state — try Redis (hot), fall back to RDS (cold).
@@ -748,12 +847,15 @@ class AgentService:
         try:
             redis = await get_redis()
             serialized = [self._serialize_msg(m) for m in state]
-            await redis.hset(redis_key, mapping={
-                "state": json.dumps(serialized),
-                "user_id": str(user_id),
-                "message_count": len(rows),
-                "updated_at": "now",  # Overwritten on first refresh
-            })
+            await redis.hset(
+                redis_key,
+                mapping={
+                    "state": json.dumps(serialized),
+                    "user_id": str(user_id),
+                    "message_count": len(rows),
+                    "updated_at": "now",  # Overwritten on first refresh
+                },
+            )
             await redis.expire(redis_key, settings.AGENT_REDIS_TTL)
         except Exception:
             pass  # Non-critical — state works from RDS alone
@@ -788,9 +890,15 @@ class AgentService:
             # Extract final assistant response
             last_msg = final_state.get("messages", [None])[-1]
             if last_msg:
-                response_text = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
+                response_text = (
+                    last_msg.content if hasattr(last_msg, "content") else str(last_msg)
+                )
                 await agent_repo.add_message(
-                    conn, conversation_id, user_id, "assistant", response_text,
+                    conn,
+                    conversation_id,
+                    user_id,
+                    "assistant",
+                    response_text,
                     tools_used=tools_used,
                 )
 
@@ -813,11 +921,14 @@ class AgentService:
                     state.append(AIMessage(content=row["content"]))
 
             serialized = [self._serialize_msg(m) for m in state]
-            await redis.hset(redis_key, mapping={
-                "state": json.dumps(serialized),
-                "user_id": str(user_id),
-                "updated_at": "now",
-            })
+            await redis.hset(
+                redis_key,
+                mapping={
+                    "state": json.dumps(serialized),
+                    "user_id": str(user_id),
+                    "updated_at": "now",
+                },
+            )
             await redis.expire(redis_key, settings.AGENT_REDIS_TTL)
         except Exception:
             pass  # Redis miss is OK — next turn loads from RDS
@@ -832,7 +943,9 @@ class AgentService:
     ):
         """Fire-and-forget LLM-as-Judge evaluation. Holds strong ref in _eval_tasks to prevent GC."""
         task = asyncio.create_task(
-            run_evaluation(conversation_id, user_id, question, response_text, tools_used)
+            run_evaluation(
+                conversation_id, user_id, question, response_text, tools_used
+            )
         )
         self._eval_tasks.add(task)
         task.add_done_callback(self._eval_tasks.discard)
@@ -856,7 +969,9 @@ class AgentService:
 
         # Build graph input
         graph_input = {"messages": state, "user_id": user_id}
-        config = {"configurable": {"thread_id": str(conversation_id)}}  # thread_id is vestigial — no checkpointer
+        config = {
+            "configurable": {"thread_id": str(conversation_id)}
+        }  # thread_id is vestigial — no checkpointer
 
         # Track tool calls for persistence
         tools_used = []
@@ -889,10 +1004,15 @@ class AgentService:
                 # Fire-and-forget evaluation (with strong ref to prevent GC)
                 if random.random() < settings.AGENT_EVAL_SAMPLE_RATE:
                     await self._run_eval_background(
-                        conversation_id, user_id, message,
-                        final_state.get("messages", [None])[-1].content if final_state.get("messages") else "",
+                        conversation_id,
+                        user_id,
+                        message,
+                        final_state.get("messages", [None])[-1].content
+                        if final_state.get("messages")
+                        else "",
                         tools_used,
                     )
+
 
 # Module-level singleton — imported by router
 agent_service = AgentService()
@@ -915,6 +1035,7 @@ In the app lifespan, after prediction service loads:
 
 ```python
 from src.agent.service import agent_service  # Module-level singleton
+
 agent_service.initialize()  # Compiles graph once at startup
 ```
 
@@ -924,6 +1045,7 @@ Also register the agent router:
 
 ```python
 from src.agent.router import router as agent_router
+
 app.include_router(agent_router, prefix="/agent", tags=["agent"])
 ```
 
@@ -945,12 +1067,15 @@ from fastapi.responses import StreamingResponse
 from src.auth.dependencies import get_current_user
 from src.auth.schemas import UserInDB
 from src.limiter import limiter
-from src.agent.service import agent_service  # Module-level singleton (compiled at startup)
+from src.agent.service import (
+    agent_service,
+)  # Module-level singleton (compiled at startup)
 from src.agent.schemas import ChatRequest
 from src.agent import repository as agent_repo
 from src.database.connection import connection_ctx
 
 router = APIRouter()
+
 
 @router.post("/chat")
 @limiter.limit(settings.RATE_LIMIT_AGENT)  # "30/minute" — defined in config.py
@@ -970,16 +1095,22 @@ async def chat(
     conversation_id = body.conversation_id
     async with connection_ctx() as conn:
         if conversation_id:
-            conv = await agent_repo.get_conversation(conn, conversation_id, current_user.id)
+            conv = await agent_repo.get_conversation(
+                conn, conversation_id, current_user.id
+            )
             if not conv:
                 raise HTTPException(status_code=404, detail="Conversation not found")
         else:
-            conversation_id = await agent_repo.create_conversation(conn, current_user.id)
+            conversation_id = await agent_repo.create_conversation(
+                conn, current_user.id
+            )
 
     async def event_generator():
         try:
             full_response = ""
-            async for event in agent_service.process_message(conversation_id, current_user.id, body.message):
+            async for event in agent_service.process_message(
+                conversation_id, current_user.id, body.message
+            ):
                 if event["event"] == "token":
                     full_response += event["data"]
                 yield f"event: {event['event']}\ndata: {json.dumps(event['data'])}\n\n"
@@ -1023,8 +1154,11 @@ async def list_conversations(
 ):
     """List user's conversations (lightweight — no message bodies)."""
     async with connection_ctx() as conn:
-        conversations = await agent_repo.get_user_conversations(conn, current_user.id, limit, offset)
+        conversations = await agent_repo.get_user_conversations(
+            conn, current_user.id, limit, offset
+        )
     return {"conversations": conversations}
+
 
 @router.get("/conversations/{conversation_id}")
 async def get_conversation(
@@ -1039,6 +1173,7 @@ async def get_conversation(
             raise HTTPException(status_code=404, detail="Conversation not found")
         messages = await agent_repo.get_conversation_messages(conn, conversation_id)
     return {"conversation": conv, "messages": messages}
+
 
 @router.delete("/conversations/{conversation_id}", status_code=204)
 async def delete_conversation(
@@ -1222,6 +1357,7 @@ Runs one-time or via CI on dataset change. Uses `get_or_create_dataset` so re-ru
 Usage:
     python -m agent_eval.upload_dataset
 """
+
 import json
 from pathlib import Path
 
@@ -1272,6 +1408,7 @@ Usage:
 
 Requires LANGCHAIN_API_KEY, LANGCHAIN_TRACING_V2=true, LANGCHAIN_PROJECT set.
 """
+
 import asyncio
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -1331,7 +1468,9 @@ if __name__ == "__main__":
 `_run_eval_background` already exists (it imports the non-existent `src.agent.evaluator` and silently no-ops on `ImportError`). Replace its body to log a LangSmith feedback score against the current trace, and **delete the dangling `from src.agent import evaluator` import**. The composite-score / custom-evaluator logic is removed entirely — LangSmith stores scores natively.
 
 ```python
-async def _run_eval_background(self, conversation_id, user_id, question, response_text, tools_used):
+async def _run_eval_background(
+    self, conversation_id, user_id, question, response_text, tools_used
+):
     """Fire-and-forget eval logging to LangSmith for sampled conversations."""
     from langsmith import Client
 

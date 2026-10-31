@@ -35,6 +35,10 @@ cors_origins = [
   "https://api.stocklens.com",
 ]
 
+# ── OAuth issuer for MCP discovery (must be the public API origin) ────
+# Required in deployed environments: unset, MCP/OAuth endpoints fail closed.
+oauth_issuer = "https://api.stocklens.com"
+
 # ── Bedrock model IDs (defaults in config.py are fine for most cases) ──
 # bedrock_model_id = "amazon.nova-lite-v1:0"  # NLP pipeline (default in config.py)
 

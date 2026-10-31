@@ -50,7 +50,7 @@ from ml.mlflow_manager import MLflowManager
 from ml.model import GlobalLSTM
 from ml.promotion_stats import decide_promotion_paired, should_promote
 from ml.train import train
-from ml.utils import build_ticker_vocabulary, get_device, set_seed
+from ml.utils import UNK_IDX, build_ticker_vocabulary, get_device, set_seed
 
 logger = logging.getLogger(__name__)
 
@@ -259,7 +259,14 @@ def prepare_global_dataset(
         ).values.astype(np.float64)
 
         # 5. Sliding windows (NO normalization — raw features)
-        ticker_idx = vocab.get(ticker, 0)
+        # Fall back to the reserved UNK embedding slot (index 0), never a real
+        # ticker's index. The vocabulary is built from the same ticker list as
+        # this dataset, so a miss means the two were built from different
+        # lists — surface it rather than silently borrowing another entity's
+        # embedding.
+        ticker_idx = vocab.get(ticker, UNK_IDX)
+        if ticker_idx == UNK_IDX:
+            logger.warning("Ticker %s absent from vocabulary — using UNK embedding", ticker)
         dates = ohlcv_data[ticker]["date"]
 
         sequences, seq_labels, seq_ticker_idxs, seq_dates, seq_fwd_rets = create_sliding_windows(
@@ -372,16 +379,24 @@ async def _run_lstm_pipeline(
     """Train LSTM (multi-seed), sweep abstention margin on val, evaluate test.
 
     Trains ``ML_CONFIG.N_SEEDS`` model(s) (different init/data-order seeds),
-    selects the best by SMOOTHED validation directional accuracy (never by
-    test), sweeps the abstention margin on validation for every seed, and
-    evaluates each seed once on test. Across-seed mean/std of headline
-    metrics are logged for honest variance reporting.
+    sweeps the abstention margin on validation for every seed, and evaluates
+    each seed once on test. The champion is the probability ENSEMBLE over all
+    seeds (per-seed softmax probs averaged, per-seed margins averaged):
+    averaging removes the seed lottery that selecting one seed by val accuracy
+    suffers (highest val → lowest test). The same ensemble is what the
+    promotion gate scores, what the test metrics report, what the registry
+    records, and what S3 publishes and serving loads. ``model`` is the seed-0
+    reference member (carries vocab, means/stds and the ensemble margin); every
+    member is returned so the caller can register and publish the whole
+    ensemble. Across-seed mean/std of headline metrics are logged for honest
+    variance reporting.
 
     Returns:
-        ``(test_metrics, model_version, model, run_id, challenger_preds)``
-        for the selected seed; ``challenger_preds`` are the selected seed's
-        test-set class predictions under its margin rule (used by the paired
-        promotion gate). Does NOT gate promotion — ``run_pipeline()`` does.
+        ``(test_metrics, model_version, model, run_id, challenger_preds, seed_models)``
+        where ``test_metrics`` are the ensemble's; ``challenger_preds`` are the
+        ensemble's test-set class predictions under its margin rule (used by the
+        paired promotion gate); ``seed_models`` are all member models.
+        Does NOT gate promotion — ``run_pipeline()`` does.
     """
     # --- Datasets and DataLoaders ---
     # Last two tuple slots are (dates, fwd_rets) — pass as keywords because
@@ -549,9 +564,9 @@ async def _run_lstm_pipeline(
                 test_metrics["sharpe_long_short_0bps"] or 0.0,
             )
 
-        # Challenger = probability ENSEMBLE over all seeds. Averaging removes
-        # the seed lottery: picking one seed by val accuracy hit winner's
-        # curse in every multi-seed run (highest val → lowest test).
+        # Champion = probability ENSEMBLE over all seeds. Averaging removes the
+        # seed lottery: selecting one seed by val accuracy hits winner's curse
+        # (highest val → lowest test) in every multi-seed run.
         ens_probs = np.mean([r["probs"] for r in seed_results], axis=0)
         ens_margin = float(np.mean([r["margin"] for r in seed_results]))
         test_metrics = evaluate_from_probs(
@@ -562,10 +577,13 @@ async def _run_lstm_pipeline(
             dates=test_data[3],
             ticker_idxs=test_data[2],
         )
-        # Epoch metrics / registry artifact still come from the val-best seed.
-        best = max(seed_results, key=lambda r: r["history"]["best_dir_acc"])
-        model = seed_results[0]["model"]
-        history = best["history"]
+        # ``model.pt`` is the seed-0 reference member of the ensemble (carries
+        # vocab, means/stds and the ensemble margin); the remaining members are
+        # registered and published as ``model_seed{i}.pt`` siblings. Everything
+        # downstream — registry, S3 and serving — refers to this ensemble.
+        reference = seed_results[0]
+        model = reference["model"]
+        history = reference["history"]
         logger.info(
             "Seed-ensemble (%d seeds) — test dir acc %.4f, coverage %.2f, margin %.2f",
             len(seed_results),
@@ -574,7 +592,7 @@ async def _run_lstm_pipeline(
             ens_margin,
         )
 
-        # Log epoch-level metrics from the selected seed — includes
+        # Log epoch-level metrics from the seed-0 reference member — includes
         # val_directional_accuracy (the smoothed early-stopping signal)
         for epoch in range(len(history["train_losses"])):
             epoch_metrics = {
@@ -591,7 +609,7 @@ async def _run_lstm_pipeline(
                 ]
             mlflow_mgr.log_metrics(epoch_metrics, step=epoch + 1)
 
-        # --- Log test metrics (selected seed + across-seed aggregates) ---
+        # --- Log test metrics (ensemble + across-seed aggregates) ---
         sharpe_keys = (
             "sharpe_long_only_0bps",
             "sharpe_long_only_10bps",
@@ -628,7 +646,7 @@ async def _run_lstm_pipeline(
         # Margin sweep curve artifact (validation Sharpe vs margin)
         margin_curve_path = "/tmp/margin_curve.json"
         with open(margin_curve_path, "w") as f:
-            json.dump(best["margin_curve"], f, indent=2)
+            json.dump(reference["margin_curve"], f, indent=2)
         mlflow_mgr.log_artifact(margin_curve_path, artifact_path="evaluation")
 
         # Plot and log artifacts
@@ -659,8 +677,8 @@ async def _run_lstm_pipeline(
                 "margin": f"{test_metrics['margin']:.2f}",
                 "abstention_rule": "p_up_p_down_margin",
                 "embargo_days": str(ML_CONFIG.EMBARGO_DAYS),
-                "selected_seed": str(best["seed"]),
                 "ensemble_size": str(len(seed_results)),
+                "ensemble_seeds": ",".join(str(r["seed"]) for r in seed_results),
             }
         )
         mlflow_mgr.set_experiment_tags(

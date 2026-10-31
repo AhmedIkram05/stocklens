@@ -266,16 +266,32 @@ prediction_log = Table(
     Column("model_version", String(20), nullable=False),
     Column("prediction", String(4), nullable=False),  # UP/FLAT/DOWN
     Column("confidence", Float, nullable=False),
-    Column("probabilities", JSONB, nullable=True),      # {"DOWN": 0.1, "FLAT": 0.3, "UP": 0.6}
-    Column("features", JSONB, nullable=True),           # {"log_ret_1d": 0.01, ..., "excess_ret_21d": -0.005}
-    Column("feature_stats", JSONB, nullable=True),       # {"mean": 0.0, "std": ...} — pre-normalisation stats per feature
-    Column("raw_feature_names", JSONB, nullable=True),   # ["log_ret_1d", ..., "excess_ret_21d"]
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column(
+        "probabilities", JSONB, nullable=True
+    ),  # {"DOWN": 0.1, "FLAT": 0.3, "UP": 0.6}
+    Column(
+        "features", JSONB, nullable=True
+    ),  # {"log_ret_1d": 0.01, ..., "excess_ret_21d": -0.005}
+    Column(
+        "feature_stats", JSONB, nullable=True
+    ),  # {"mean": 0.0, "std": ...} — pre-normalisation stats per feature
+    Column(
+        "raw_feature_names", JSONB, nullable=True
+    ),  # ["log_ret_1d", ..., "excess_ret_21d"]
+    Column(
+        "created_at", DateTime(timezone=True), nullable=False, server_default=func.now()
+    ),
 )
 
-Index("idx_prediction_log_ticker_created", prediction_log.c.ticker, prediction_log.c.created_at)
+Index(
+    "idx_prediction_log_ticker_created",
+    prediction_log.c.ticker,
+    prediction_log.c.created_at,
+)
 Index("idx_prediction_log_model_version", prediction_log.c.model_version)
-Index("idx_prediction_log_created_at", prediction_log.c.created_at)  # For cleanup task (DELETE WHERE created_at < cutoff)
+Index(
+    "idx_prediction_log_created_at", prediction_log.c.created_at
+)  # For cleanup task (DELETE WHERE created_at < cutoff)
 
 
 # --- drift_metrics ---
@@ -283,18 +299,30 @@ drift_metrics = Table(
     "drift_metrics",
     metadata,
     Column("id", BigInteger, primary_key=True, autoincrement=True),
-    Column("drift_run_id", String(36), nullable=False),       # UUID for each drift run
+    Column("drift_run_id", String(36), nullable=False),  # UUID for each drift run
     Column("ticker", String(10), nullable=False),
     Column("model_version", String(20), nullable=False),
-    Column("metric_type", String(20), nullable=False),        # 'psi', 'ks_statistic', 'js_divergence'
-    Column("feature_name", String(50), nullable=False),       # 'log_ret_1d', 'prediction_distribution', etc.
-    Column("drift_score", Float, nullable=False),             # The numeric score (PSI, KS, JS)
+    Column(
+        "metric_type", String(20), nullable=False
+    ),  # 'psi', 'ks_statistic', 'js_divergence'
+    Column(
+        "feature_name", String(50), nullable=False
+    ),  # 'log_ret_1d', 'prediction_distribution', etc.
+    Column("drift_score", Float, nullable=False),  # The numeric score (PSI, KS, JS)
     Column("alert_triggered", Boolean, nullable=False, server_default=text("false")),
-    Column("reference_period", String(20), nullable=True),    # e.g. 'training_set_2026-06' or model_version
-    Column("current_period", String(20), nullable=True),      # e.g. '2026-07-01_2026-07-07'
-    Column("report_s3_key", String(500), nullable=True),      # S3 object key for the full Evidently report
-    Column("details", JSONB, nullable=True),                  # Extra context: bin counts, p_value, sample_sizes
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column(
+        "reference_period", String(20), nullable=True
+    ),  # e.g. 'training_set_2026-06' or model_version
+    Column("current_period", String(20), nullable=True),  # e.g. '2026-07-01_2026-07-07'
+    Column(
+        "report_s3_key", String(500), nullable=True
+    ),  # S3 object key for the full Evidently report
+    Column(
+        "details", JSONB, nullable=True
+    ),  # Extra context: bin counts, p_value, sample_sizes
+    Column(
+        "created_at", DateTime(timezone=True), nullable=False, server_default=func.now()
+    ),
 )
 
 Index("idx_drift_metrics_run", drift_metrics.c.drift_run_id)
@@ -302,7 +330,11 @@ Index("idx_drift_metrics_run", drift_metrics.c.drift_run_id)
 # drift_metrics.append_constraint(
 #     UniqueConstraint("drift_run_id", "ticker", "metric_type", "feature_name", name="uq_drift_metrics_run_ticker_metric_feature")
 # )
-Index("idx_drift_metrics_ticker_metric", drift_metrics.c.ticker, drift_metrics.c.metric_type)
+Index(
+    "idx_drift_metrics_ticker_metric",
+    drift_metrics.c.ticker,
+    drift_metrics.c.metric_type,
+)
 Index("idx_drift_metrics_alert", drift_metrics.c.alert_triggered)
 ```
 
@@ -361,7 +393,12 @@ def upgrade() -> None:
         sa.Column("features", JSONB(), nullable=True),
         sa.Column("feature_stats", JSONB(), nullable=True),
         sa.Column("raw_feature_names", JSONB(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -386,15 +423,27 @@ def upgrade() -> None:
         sa.Column("drift_run_id", sa.String(36), nullable=False),
         sa.Column("ticker", sa.String(10), nullable=False),
         sa.Column("model_version", sa.String(20), nullable=False),
-        sa.Column("metric_type", sa.String(20), nullable=False),  # 'psi', 'ks_statistic', 'js_divergence'
+        sa.Column(
+            "metric_type", sa.String(20), nullable=False
+        ),  # 'psi', 'ks_statistic', 'js_divergence'
         sa.Column("feature_name", sa.String(50), nullable=False),
         sa.Column("drift_score", sa.Float(), nullable=False),
-        sa.Column("alert_triggered", sa.Boolean(), server_default=sa.text("false"), nullable=False),
+        sa.Column(
+            "alert_triggered",
+            sa.Boolean(),
+            server_default=sa.text("false"),
+            nullable=False,
+        ),
         sa.Column("reference_period", sa.String(20), nullable=True),
         sa.Column("current_period", sa.String(20), nullable=True),
         sa.Column("report_s3_key", sa.String(500), nullable=True),
         sa.Column("details", JSONB(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_unique_constraint(
@@ -492,12 +541,23 @@ logger = structlog.get_logger()
 # Feature names — must match the order produced by prediction_service._compute_features
 # 17 features: 13 V1 + vol_pct + 3 cross-sectional
 FEATURE_NAMES = [
-    "log_ret_1d", "log_ret_5d", "log_ret_21d",
-    "ma_5", "ma_10", "ma_20", "ma_50",
-    "rsi_14", "macd", "macd_signal", "macd_hist",
-    "vol_30d", "vol_rank",
+    "log_ret_1d",
+    "log_ret_5d",
+    "log_ret_21d",
+    "ma_5",
+    "ma_10",
+    "ma_20",
+    "ma_50",
+    "rsi_14",
+    "macd",
+    "macd_signal",
+    "macd_hist",
+    "vol_30d",
+    "vol_rank",
     "vol_pct",
-    "excess_ret_1d", "excess_ret_5d", "excess_ret_21d",
+    "excess_ret_1d",
+    "excess_ret_5d",
+    "excess_ret_21d",
 ]
 
 
@@ -616,21 +676,24 @@ def compute_feature_stats(feature_values: np.ndarray | None) -> dict | None:
 In `predict()` method, add after line 244 (`return { ... }`) but before the return:
 
 ```python
-        # Fire-and-forget: log prediction for drift monitoring
-        # Runs in background to avoid blocking the response
-        if settings.PREDICTION_LOG_ENABLED:
-            import asyncio
-            asyncio.create_task(log_prediction(
-                ticker=ticker,
-                model_version=self.model_version,
-                prediction=CLASS_NAMES[pred_class],
-                confidence=confidence,
-                probabilities=probabilities,
-                feature_values=feature_values,  # Full (T, 17) pre-window matrix
-                feature_window=feature_window,  # (30, 17) actual model input
-            ))
+# Fire-and-forget: log prediction for drift monitoring
+# Runs in background to avoid blocking the response
+if settings.PREDICTION_LOG_ENABLED:
+    import asyncio
 
-        return { ... }
+    asyncio.create_task(
+        log_prediction(
+            ticker=ticker,
+            model_version=self.model_version,
+            prediction=CLASS_NAMES[pred_class],
+            confidence=confidence,
+            probabilities=probabilities,
+            feature_values=feature_values,  # Full (T, 17) pre-window matrix
+            feature_window=feature_window,  # (30, 17) actual model input
+        )
+    )
+
+return {...}
 ```
 
 But wait — `predict()` is a synchronous method (no `async`). We need to run the async logging in a separate thread. Use `asyncio.get_event_loop().run_in_executor()` or better, create the task from the running event loop.
@@ -657,15 +720,17 @@ def log_prediction_sync(
 ) -> None:
     """Synchronous wrapper for log_prediction. Runs the coroutine in a new event loop."""
     try:
-        asyncio.run(log_prediction(
-            ticker=ticker,
-            model_version=model_version,
-            prediction=prediction,
-            confidence=confidence,
-            probabilities=probabilities,
-            feature_values=feature_values,
-            feature_window=feature_window,
-        ))
+        asyncio.run(
+            log_prediction(
+                ticker=ticker,
+                model_version=model_version,
+                prediction=prediction,
+                confidence=confidence,
+                probabilities=probabilities,
+                feature_values=feature_values,
+                feature_window=feature_window,
+            )
+        )
     except Exception as exc:
         logger.warning("prediction_log_sync_failed", ticker=ticker, error=str(exc))
 ```
@@ -741,6 +806,7 @@ class DriftRunRequest(BaseModel):
 
     If tickers is empty, defaults to portfolio tickers + SPY.
     """
+
     tickers: list[str] = Field(default_factory=list, max_length=100)
     lookback_days: int = Field(default=7, ge=1, le=365)
     generate_report: bool = Field(default=True)
@@ -748,6 +814,7 @@ class DriftRunRequest(BaseModel):
 
 class DriftMetricResponse(BaseModel):
     """A single drift metric for one ticker, one feature, one metric type."""
+
     ticker: str
     model_version: str
     metric_type: str  # 'psi', 'ks_statistic', 'js_divergence'
@@ -760,6 +827,7 @@ class DriftMetricResponse(BaseModel):
 
 class DriftRunResponse(BaseModel):
     """Response from a drift detection run."""
+
     drift_run_id: str
     tickers_monitored: list[str]
     total_metrics: int
@@ -774,6 +842,7 @@ class DriftRunResponse(BaseModel):
 
 class DriftReportSummary(BaseModel):
     """Summary of the latest drift status for dashboard display."""
+
     overall_status: str  # 'healthy', 'warning', 'critical'
     drifted_features: int
     total_features_monitored: int
@@ -910,7 +979,9 @@ async def get_latest_drift_summary(
 
         alert_count = len(alerts)
         return {
-            "overall_status": "critical" if alert_count > 5 else ("warning" if alert_count > 0 else "healthy"),
+            "overall_status": "critical"
+            if alert_count > 5
+            else ("warning" if alert_count > 0 else "healthy"),
             "drifted_features": alert_count,
             "total_features_monitored": total,
             "latest_run_id": latest_run["drift_run_id"],
@@ -1210,14 +1281,16 @@ class DriftDetector:
         # Load reference distributions
         feature_histograms = reference_dist.get("feature_histograms", {})
         ref_prediction_dist = np.array(
-            reference_dist.get("prediction_distribution", [1/3, 1/3, 1/3]),
+            reference_dist.get("prediction_distribution", [1 / 3, 1 / 3, 1 / 3]),
             dtype=float,
         )
 
         for ticker in tickers:
             logs = prediction_logs.get(ticker, [])
             if len(logs) < 5:
-                logger.warning("insufficient_logs_for_drift", ticker=ticker, count=len(logs))
+                logger.warning(
+                    "insufficient_logs_for_drift", ticker=ticker, count=len(logs)
+                )
                 continue
 
             # Extract feature values from prediction_log
@@ -1240,12 +1313,16 @@ class DriftDetector:
                     # was unavailable at inference and only 14 features were computed
                     # (vs 17 in the reference distribution). Falls back to
                     # FEATURE_NAMES_REVERSED if raw_feature_names is missing.
-                    feature_names = log_entry.get("raw_feature_names") or FEATURE_NAMES_REVERSED
+                    feature_names = (
+                        log_entry.get("raw_feature_names") or FEATURE_NAMES_REVERSED
+                    )
                     for i, feature_name in enumerate(feature_names):
                         if i < len(stats["means"]):
                             if feature_name not in feature_values_by_field:
                                 feature_values_by_field[feature_name] = []
-                            feature_values_by_field[feature_name].append(stats["means"][i])
+                            feature_values_by_field[feature_name].append(
+                                stats["means"][i]
+                            )
 
             # For each feature, compute PSI and KS
             for feature_name, ref_hist in feature_histograms.items():
@@ -1265,17 +1342,22 @@ class DriftDetector:
                     alerts += 1
                 max_psi = max(max_psi, psi)
 
-                all_metrics.append({
-                    "ticker": ticker,
-                    "model_version": model_version,
-                    "metric_type": "psi",
-                    "feature_name": feature_name,
-                    "drift_score": psi,
-                    "alert_triggered": psi_alert,
-                    "reference_period": "training_set",
-                    "current_period": current_period,
-                    "details": {"n_reference": len(ref_values), "n_current": len(current_values)},
-                })
+                all_metrics.append(
+                    {
+                        "ticker": ticker,
+                        "model_version": model_version,
+                        "metric_type": "psi",
+                        "feature_name": feature_name,
+                        "drift_score": psi,
+                        "alert_triggered": psi_alert,
+                        "reference_period": "training_set",
+                        "current_period": current_period,
+                        "details": {
+                            "n_reference": len(ref_values),
+                            "n_current": len(current_values),
+                        },
+                    }
+                )
 
                 # KS
                 ks_result = compute_ks(ref_values, current_values)
@@ -1283,17 +1365,19 @@ class DriftDetector:
                 if ks_alert:
                     alerts += 1
 
-                all_metrics.append({
-                    "ticker": ticker,
-                    "model_version": model_version,
-                    "metric_type": "ks_statistic",
-                    "feature_name": feature_name,
-                    "drift_score": ks_result["statistic"],
-                    "alert_triggered": ks_alert,
-                    "reference_period": "training_set",
-                    "current_period": current_period,
-                    "details": {"p_value": ks_result["p_value"]},
-                })
+                all_metrics.append(
+                    {
+                        "ticker": ticker,
+                        "model_version": model_version,
+                        "metric_type": "ks_statistic",
+                        "feature_name": feature_name,
+                        "drift_score": ks_result["statistic"],
+                        "alert_triggered": ks_alert,
+                        "reference_period": "training_set",
+                        "current_period": current_period,
+                        "details": {"p_value": ks_result["p_value"]},
+                    }
+                )
 
             # Prediction distribution drift (JS divergence)
             if len(all_predictions) >= 5:
@@ -1304,20 +1388,22 @@ class DriftDetector:
                     alerts += 1
                 max_js = max(max_js, js)
 
-                all_metrics.append({
-                    "ticker": ticker,
-                    "model_version": model_version,
-                    "metric_type": "js_divergence",
-                    "feature_name": "prediction_distribution",
-                    "drift_score": js,
-                    "alert_triggered": js_alert,
-                    "reference_period": "training_set",
-                    "current_period": current_period,
-                    "details": {
-                        "ref_distribution": ref_prediction_dist.tolist(),
-                        "current_distribution": current_pred_dist.tolist(),
-                    },
-                })
+                all_metrics.append(
+                    {
+                        "ticker": ticker,
+                        "model_version": model_version,
+                        "metric_type": "js_divergence",
+                        "feature_name": "prediction_distribution",
+                        "drift_score": js,
+                        "alert_triggered": js_alert,
+                        "reference_period": "training_set",
+                        "current_period": current_period,
+                        "details": {
+                            "ref_distribution": ref_prediction_dist.tolist(),
+                            "current_distribution": current_pred_dist.tolist(),
+                        },
+                    }
+                )
 
         return {
             "drift_run_id": drift_run_id,
@@ -1331,12 +1417,23 @@ class DriftDetector:
 
 # Feature name list for indexing — reversed lookup from index to name
 FEATURE_NAMES_REVERSED: list[str] = [
-    "log_ret_1d", "log_ret_5d", "log_ret_21d",
-    "ma_5", "ma_10", "ma_20", "ma_50",
-    "rsi_14", "macd", "macd_signal", "macd_hist",
-    "vol_30d", "vol_rank",
+    "log_ret_1d",
+    "log_ret_5d",
+    "log_ret_21d",
+    "ma_5",
+    "ma_10",
+    "ma_20",
+    "ma_50",
+    "rsi_14",
+    "macd",
+    "macd_signal",
+    "macd_hist",
+    "vol_30d",
+    "vol_rank",
     "vol_pct",
-    "excess_ret_1d", "excess_ret_5d", "excess_ret_21d",
+    "excess_ret_1d",
+    "excess_ret_5d",
+    "excess_ret_21d",
 ]
 ```
 
@@ -1416,19 +1513,23 @@ class EvidentlyReporter:
         if column_mapping is None:
             # Auto-detect: treat all numeric columns as features
             column_mapping = ColumnMapping(
-                numerical_features=list(reference_df.select_dtypes(include=["number"]).columns),
+                numerical_features=list(
+                    reference_df.select_dtypes(include=["number"]).columns
+                ),
             )
 
         # Create Evidently report with DataDrift preset
-        report = Report(metrics=[
-            DataDriftPreset(
-                columns=column_mapping.numerical_features,
-                stattest="psi",  # Primary drift test: PSI
-                cat_stattest="psi",
-                num_stattest="psi",
-                confidence=0.95,
-            ),
-        ])
+        report = Report(
+            metrics=[
+                DataDriftPreset(
+                    columns=column_mapping.numerical_features,
+                    stattest="psi",  # Primary drift test: PSI
+                    cat_stattest="psi",
+                    num_stattest="psi",
+                    confidence=0.95,
+                ),
+            ]
+        )
 
         report.run(reference_data=reference_df, current_data=current_df)
 
@@ -1514,7 +1615,11 @@ def upload_report_to_s3(local_path: str, s3_key: str) -> bool:
             Key=s3_key,
             ExtraArgs={"ContentType": "text/html"},
         )
-        logger.info("drift_report_uploaded_to_s3", bucket=settings.DRIFT_REPORT_S3_BUCKET, key=s3_key)
+        logger.info(
+            "drift_report_uploaded_to_s3",
+            bucket=settings.DRIFT_REPORT_S3_BUCKET,
+            key=s3_key,
+        )
         return True
     except ClientError as exc:
         logger.error("drift_report_s3_upload_failed", error=str(exc))
@@ -1561,6 +1666,7 @@ def build_s3_key(drift_run_id: str, filename: str) -> str:
         S3 key like 'drift_reports/2026-07-06/drift_report_abc123.html'.
     """
     from datetime import datetime, timezone
+
     date_prefix = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return f"{settings.DRIFT_REPORT_S3_PREFIX.rstrip('/')}/{date_prefix}/{filename}"
 ```
@@ -1636,9 +1742,7 @@ async def trigger_drift_run(
     if not tickers:
         # Default: fetch portfolio tickers from DB
         async with connection_ctx() as conn:
-            rows = await conn.fetch(
-                "SELECT DISTINCT ticker FROM holdings"
-            )
+            rows = await conn.fetch("SELECT DISTINCT ticker FROM holdings")
             tickers = [r["ticker"] for r in rows] + ["SPY"]
 
     # 2. Fetch reference distribution from champion model
@@ -1649,10 +1753,17 @@ async def trigger_drift_run(
         )
 
     if not champion_row:
-        raise HTTPException(status_code=503, detail="No champion model found — cannot run drift detection")
+        raise HTTPException(
+            status_code=503,
+            detail="No champion model found — cannot run drift detection",
+        )
 
     model_version = champion_row["model_version"] or "unknown"
-    reference_dist = champion_row["metrics"].get("reference_distributions", {}) if champion_row["metrics"] else {}
+    reference_dist = (
+        champion_row["metrics"].get("reference_distributions", {})
+        if champion_row["metrics"]
+        else {}
+    )
 
     # 3. Fetch prediction logs for monitored tickers
     lookback_start = datetime.now(timezone.utc) - timedelta(days=request.lookback_days)
@@ -1703,7 +1814,9 @@ async def trigger_drift_run(
 
             if ref_df is not None and cur_df is not None:
                 report_path, report_id = reporter.generate_drift_report(ref_df, cur_df)
-                report_s3_key = build_s3_key(drift_run_id, f"drift_report_{report_id}.html")
+                report_s3_key = build_s3_key(
+                    drift_run_id, f"drift_report_{report_id}.html"
+                )
                 uploaded = upload_report_to_s3(report_path, report_s3_key)
                 if uploaded:
                     report_url = generate_presigned_url(report_s3_key)
@@ -1711,7 +1824,8 @@ async def trigger_drift_run(
                     async with connection_ctx() as conn:
                         await conn.execute(
                             "UPDATE drift_metrics SET report_s3_key = $1 WHERE drift_run_id = $2",
-                            report_s3_key, drift_run_id,
+                            report_s3_key,
+                            drift_run_id,
                         )
         except Exception as exc:
             logger.error("evidently_report_generation_failed", error=str(exc))
@@ -1727,9 +1841,7 @@ async def trigger_drift_run(
         )
 
     # Build response metrics
-    response_metrics = [
-        DriftMetricResponse(**m) for m in drift_result["metrics"]
-    ]
+    response_metrics = [DriftMetricResponse(**m) for m in drift_result["metrics"]]
 
     return DriftRunResponse(
         drift_run_id=drift_run_id,
@@ -1819,12 +1931,23 @@ def _build_current_dataframe(
                 row = {}
                 for i, value in enumerate(stats["means"]):
                     feature_name = (
-                        "log_ret_1d", "log_ret_5d", "log_ret_21d",
-                        "ma_5", "ma_10", "ma_20", "ma_50",
-                        "rsi_14", "macd", "macd_signal", "macd_hist",
-                        "vol_30d", "vol_rank",
+                        "log_ret_1d",
+                        "log_ret_5d",
+                        "log_ret_21d",
+                        "ma_5",
+                        "ma_10",
+                        "ma_20",
+                        "ma_50",
+                        "rsi_14",
+                        "macd",
+                        "macd_signal",
+                        "macd_hist",
+                        "vol_30d",
+                        "vol_rank",
                         "vol_pct",
-                        "excess_ret_1d", "excess_ret_5d", "excess_ret_21d",
+                        "excess_ret_1d",
+                        "excess_ret_5d",
+                        "excess_ret_21d",
                     )
                     if i < len(feature_name):
                         row[feature_name[i]] = value
@@ -1852,6 +1975,7 @@ def _build_current_dataframe(
 
 ```python
 from src.drift.router import router as drift_router
+
 app.include_router(drift_router)
 ```
 
@@ -1922,79 +2046,82 @@ async def read_champion_metrics(self) -> dict[str, Any] | None:
 Insert inside `run_pipeline()` AFTER `test_metrics = await _run_lstm_pipeline(...)` returns and BEFORE the promotion steps (`mlflow_mgr.set_champion_alias()`, `save_champion_to_disk()`). This is at the `run_pipeline()` level — NOT inside `_run_lstm_pipeline()` which should always train+eval without promotion logic.
 
 ```python
-    # --- Champion Comparison Gate ---
-    # Compare challenger vs champion before promoting
-    champion_metrics = await mlflow_mgr.read_champion_metrics()
-    champion_da = champion_metrics.get("directional_accuracy", 0.0) if champion_metrics else None
-    challenger_da = test_metrics.get("directional_accuracy", 0.0)
+# --- Champion Comparison Gate ---
+# Compare challenger vs champion before promoting
+champion_metrics = await mlflow_mgr.read_champion_metrics()
+champion_da = (
+    champion_metrics.get("directional_accuracy", 0.0) if champion_metrics else None
+)
+challenger_da = test_metrics.get("directional_accuracy", 0.0)
 
-    if champion_da is not None:
-        da_improvement = challenger_da - champion_da
+if champion_da is not None:
+    da_improvement = challenger_da - champion_da
+    logger.info(
+        "champion_comparison",
+        champion_da=champion_da,
+        challenger_da=challenger_da,
+        improvement_pp=da_improvement * 100,
+        threshold_pp=2.0,
+    )
+
+    if da_improvement < 0.02:  # 2pp threshold
         logger.info(
-            "champion_comparison",
+            "challenger_did_not_beat_champion_skipping_promotion",
             champion_da=champion_da,
             challenger_da=challenger_da,
             improvement_pp=da_improvement * 100,
-            threshold_pp=2.0,
         )
-
-        if da_improvement < 0.02:  # 2pp threshold
-            logger.info(
-                "challenger_did_not_beat_champion_skipping_promotion",
-                champion_da=champion_da,
-                challenger_da=challenger_da,
-                improvement_pp=da_improvement * 100,
-            )
-            # Record challenger without promoting — useful for tracking regression
-            await _record_challenger_in_db(run_id, model_version, test_metrics)
-            promote = False
-        else:
-            logger.info(
-                "challenger_beat_champion_promoting",
-                improvement_pp=da_improvement * 100,
-            )
-            promote = True
+        # Record challenger without promoting — useful for tracking regression
+        await _record_challenger_in_db(run_id, model_version, test_metrics)
+        promote = False
     else:
-        # No existing champion — first training, always promote
-        logger.info("no_existing_champion_first_training_promoting")
+        logger.info(
+            "challenger_beat_champion_promoting",
+            improvement_pp=da_improvement * 100,
+        )
         promote = True
+else:
+    # No existing champion — first training, always promote
+    logger.info("no_existing_champion_first_training_promoting")
+    promote = True
 ```
 
 Then gate the promotion steps:
 
 ```python
-    if promote:
-        # 11. Log model and register
-        _, model_version = mlflow_mgr.log_model(model)
-        mlflow_mgr.set_champion_alias(version=model_version)
+if promote:
+    # 11. Log model and register
+    _, model_version = mlflow_mgr.log_model(model)
+    mlflow_mgr.set_champion_alias(version=model_version)
 
-        # 12. Save champion to shared volume for backend inference
-        mlflow_mgr.save_champion_to_disk(model)
+    # 12. Save champion to shared volume for backend inference
+    mlflow_mgr.save_champion_to_disk(model)
 
-        # 13. Record champion in model_registry DB
-        await _record_in_db(run_id, model_version, test_metrics)
+    # 13. Record champion in model_registry DB
+    await _record_in_db(run_id, model_version, test_metrics)
 
-        # 14. Compute and store reference distributions for drift detection
-        # IMPORTANT: Pass raw (pre-normalization) feature values.
-        # The existing pipeline normalizes global_sequences via fit_normalize_splits()
-        # before reaching this point. We must capture the RAW features because:
-        #   - prediction_log stores unnormalized features
-        #   - reference vs current comparison must use the same scale
-        # Save the raw copy BEFORE fit_normalize_splits() at the start of run_pipeline().
-        # In the actual pipeline.py, add after feature computation:
-        #   raw_global_sequences = global_sequences.copy()
-        # and pass raw_global_sequences here.
-        from ml.reference_distributions import compute_and_store_reference_distributions
-        await compute_and_store_reference_distributions(
-            conn=conn,  # reuse the DB connection
-            global_sequences=raw_global_sequences,  # RAW (pre-normalization) features
-            global_labels=global_labels,
-            test_metrics=test_metrics,
-            model_version=model_version,
-        )
-    else:
-        # Record challenger metrics only (no promotion)
-        await _record_challenger_in_db(run_id, model_version, test_metrics)
+    # 14. Compute and store reference distributions for drift detection
+    # IMPORTANT: Pass raw (pre-normalization) feature values.
+    # The existing pipeline normalizes global_sequences via fit_normalize_splits()
+    # before reaching this point. We must capture the RAW features because:
+    #   - prediction_log stores unnormalized features
+    #   - reference vs current comparison must use the same scale
+    # Save the raw copy BEFORE fit_normalize_splits() at the start of run_pipeline().
+    # In the actual pipeline.py, add after feature computation:
+    #   raw_global_sequences = global_sequences.copy()
+    # and pass raw_global_sequences here.
+    from ml.reference_distributions import compute_and_store_reference_distributions
+
+    await compute_and_store_reference_distributions(
+        conn=conn,  # reuse the DB connection
+        global_sequences=raw_global_sequences,  # RAW (pre-normalization) features
+        global_labels=global_labels,
+        test_metrics=test_metrics,
+        model_version=model_version,
+    )
+else:
+    # Record challenger metrics only (no promotion)
+    await _record_challenger_in_db(run_id, model_version, test_metrics)
 ```
 
 Add `_record_challenger_in_db()`:
@@ -2106,12 +2233,23 @@ async def compute_and_store_reference_distributions(
     # Compute per-feature histograms (20 bins)
     feature_histograms: dict[str, dict[str, Any]] = {}
     feature_names = [
-        "log_ret_1d", "log_ret_5d", "log_ret_21d",
-        "ma_5", "ma_10", "ma_20", "ma_50",
-        "rsi_14", "macd", "macd_signal", "macd_hist",
-        "vol_30d", "vol_rank",
+        "log_ret_1d",
+        "log_ret_5d",
+        "log_ret_21d",
+        "ma_5",
+        "ma_10",
+        "ma_20",
+        "ma_50",
+        "rsi_14",
+        "macd",
+        "macd_signal",
+        "macd_hist",
+        "vol_30d",
+        "vol_rank",
         "vol_pct",
-        "excess_ret_1d", "excess_ret_5d", "excess_ret_21d",
+        "excess_ret_1d",
+        "excess_ret_5d",
+        "excess_ret_21d",
     ]
 
     for i, name in enumerate(feature_names):
@@ -2139,7 +2277,7 @@ async def compute_and_store_reference_distributions(
             if 0 <= idx < 3:
                 pred_dist[idx] = float(count / len(global_labels))
     else:
-        pred_dist = [1/3, 1/3, 1/3]
+        pred_dist = [1 / 3, 1 / 3, 1 / 3]
 
     # Build the reference payload
     reference_payload: dict[str, Any] = {
@@ -2456,6 +2594,7 @@ def _detect_new_champion(**context) -> str:
     # If training returned exit code 0 and promoted a champion
     # We check by looking at the model_registry updated_at
     from airflow.hooks.base import BaseHook
+
     pg_conn = BaseHook.get_connection("postgres_default")
     dsn = f"postgresql://{pg_conn.login}:{pg_conn.password}@{pg_conn.host}:{pg_conn.port}/{pg_conn.schema or 'stocklens'}"
 
@@ -2471,7 +2610,9 @@ def _detect_new_champion(**context) -> str:
             )
             if row and row["trained_at"]:
                 # If trained within the last 6 hours, it's from this DAG run
-                if datetime.now(row["trained_at"].tzinfo) - row["trained_at"] < timedelta(hours=6):
+                if datetime.now(row["trained_at"].tzinfo) - row[
+                    "trained_at"
+                ] < timedelta(hours=6):
                     return "capture_reference_distributions"
             return "skip_reference_capture"
         finally:
@@ -2487,6 +2628,7 @@ def _run_drift_detection(**context) -> None:
     uploads to S3, stores metrics.
     """
     import sys
+
     sys.path.insert(0, "/app")  # Add backend code to path
 
     # Import drift modules
@@ -2561,7 +2703,11 @@ def _run_drift_detection(**context) -> None:
 
         # Generate Evidently report
         if reference_dist:
-            from drift.router import _build_reference_dataframe, _build_current_dataframe
+            from drift.router import (
+                _build_reference_dataframe,
+                _build_current_dataframe,
+            )
+
             ref_df = _build_reference_dataframe(reference_dist)
             cur_df = _build_current_dataframe(prediction_logs)
             if ref_df is not None and cur_df is not None:
@@ -2571,8 +2717,10 @@ def _run_drift_detection(**context) -> None:
                 upload_report_to_s3(report_path, s3_key)
 
         # Log summary
-        print(f"Drift detection complete: {result['alerts_triggered']} alerts, "
-              f"max_psi={result['max_psi']:.4f}, max_js={result['max_js_divergence']:.4f}")
+        print(
+            f"Drift detection complete: {result['alerts_triggered']} alerts, "
+            f"max_psi={result['max_psi']:.4f}, max_js={result['max_js_divergence']:.4f}"
+        )
 
     asyncio.run(_run())
 
@@ -2580,6 +2728,7 @@ def _run_drift_detection(**context) -> None:
 def _cleanup(**context) -> None:
     """Prune old prediction_log and drift_metrics rows."""
     from airflow.hooks.base import BaseHook
+
     pg_conn = BaseHook.get_connection("postgres_default")
     dsn = f"postgresql://{pg_conn.login}:{pg_conn.password}@{pg_conn.host}:{pg_conn.port}/{pg_conn.schema or 'stocklens'}"
 
@@ -2605,7 +2754,9 @@ def _cleanup(**context) -> None:
             )
             dm_count = int(result.split()[-1])
 
-            print(f"Cleanup complete: removed {pl_count} prediction_log rows, {dm_count} drift_metrics rows")
+            print(
+                f"Cleanup complete: removed {pl_count} prediction_log rows, {dm_count} drift_metrics rows"
+            )
         finally:
             await conn.close()
 
@@ -2624,7 +2775,6 @@ with DAG(
     dagrun_timeout=timedelta(hours=6),  # Auto-fail stuck runs
     tags=["stocklens", "ml", "drift"],
 ) as dag:
-
     # Task 1: Check for new data
     check_data = BranchPythonOperator(
         task_id="check_new_ohlcv_data",
@@ -2643,11 +2793,13 @@ with DAG(
         from the stocklens-ml base image.
         """
         import sys
+
         sys.path.insert(0, "/app")
 
         # Import ML pipeline — works because backend source is mounted
         from ml.pipeline import run_pipeline
         import asyncio
+
         asyncio.run(run_pipeline())
 
     train_challenger = PythonOperator(

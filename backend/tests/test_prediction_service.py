@@ -107,6 +107,63 @@ class TestLoadModel:
         assert service.model is None
 
 
+class TestLoadModelEnsemble:
+    """The champion ensemble loads whole, or not at all."""
+
+    @staticmethod
+    def _fake_model(ensemble_size: int):
+        class FakeModel:
+            _model_version = "v1"
+            _ensemble_size = ensemble_size
+
+            def to(self, *_args):
+                return self
+
+            def eval(self):
+                return self
+
+        return FakeModel()
+
+    def test_loads_full_ensemble(self, tmp_path):
+        (tmp_path / "model.pt").write_bytes(b"x")
+        for i in range(5):
+            (tmp_path / f"model_seed{i}.pt").write_bytes(b"x")
+
+        svc = PredictionService()
+        with patch("src.prediction.service.GlobalLSTM") as mock_cls:
+            mock_cls.load.return_value = self._fake_model(5)
+            result = svc.load_model(str(tmp_path / "model.pt"))
+
+        assert result is True
+        assert len(svc.ensemble) == 5
+        assert svc.model is svc.ensemble[0]
+
+    def test_refuses_partial_ensemble(self, tmp_path):
+        """model.pt says 5 members; only 3 present → refuse, don't blend 3."""
+        (tmp_path / "model.pt").write_bytes(b"x")
+        for i in range(3):
+            (tmp_path / f"model_seed{i}.pt").write_bytes(b"x")
+
+        svc = PredictionService()
+        with patch("src.prediction.service.GlobalLSTM") as mock_cls:
+            mock_cls.load.return_value = self._fake_model(5)
+            result = svc.load_model(str(tmp_path / "model.pt"))
+
+        assert result is False
+        assert svc.model is None
+
+    def test_refuses_seeds_without_reference(self, tmp_path):
+        """Seed siblings with no model.pt are an incomplete prefix → refuse."""
+        for i in range(5):
+            (tmp_path / f"model_seed{i}.pt").write_bytes(b"x")
+
+        svc = PredictionService()
+        result = svc.load_model(str(tmp_path / "model.pt"))
+
+        assert result is False
+        assert svc.model is None
+
+
 # ── is_loaded ───────────────────────────────────────────────────────────────────
 
 
