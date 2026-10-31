@@ -10,11 +10,12 @@ import sys
 import traceback
 
 import structlog
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from starlette.responses import PlainTextResponse
 
+from src.auth.dependencies import require_active_user
 from src.config import settings
 from src.database.connection import close_pool, init_pool
 from src.database.init_db import run_migrations
@@ -192,10 +193,16 @@ async def global_exception_handler(request: Request, exc: Exception) -> PlainTex
 
 # ── Health & Debug endpoints ──
 
+# Debug surface is dev/test only — it enumerates tables and the schema version.
+_DEBUG_ENVS = frozenset({"development", "dev", "test"})
+
 
 @app.get("/debug/db", tags=["system"])
-async def debug_db():
-    """Debug endpoint — shows database state."""
+async def debug_db(_user=Depends(require_active_user)):
+    """Debug endpoint — database state (non-production, authenticated only)."""
+    if settings.ENVIRONMENT not in _DEBUG_ENVS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
     from src.database.connection import get_conn, release_conn
 
     try:
@@ -213,8 +220,13 @@ async def debug_db():
         finally:
             await release_conn(conn)
         return result
-    except Exception as e:
-        return {"error": str(e), "type": type(e).__name__}
+    except Exception:
+        # Opaque body — raw DB error strings leak schema/internal detail.
+        logger.exception("debug_db_failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database debug unavailable",
+        )
 
 
 @app.get("/health", tags=["system"])
