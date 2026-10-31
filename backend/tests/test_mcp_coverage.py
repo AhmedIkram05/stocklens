@@ -18,6 +18,17 @@ import jwt as pyjwt
 import pytest
 from httpx import AsyncClient
 
+
+def _mcp_headers(rest_headers: dict[str, str], scope: str = "mcp:tools") -> dict[str, str]:
+    """Mint an MCP-scoped access token for the user behind *rest_headers*."""
+    from src.auth.utils import decode_token
+    from src.mcp.auth import _mcp_create_access_token
+
+    sub = decode_token(rest_headers["Authorization"].split()[1]).sub
+    token, _jti, _exp = _mcp_create_access_token(sub, scope)
+    return {"Authorization": f"Bearer {token}"}
+
+
 # ── auth.py: RSA/JWKS & token helpers ──────────────────────────────────
 
 
@@ -96,52 +107,22 @@ async def test_oauth_authorize_missing_challenge(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_oauth_authorize_plain_pkce(client: AsyncClient):
-    # Register user first
-    email = f"mcp-plain-{secrets.token_hex(4)}@stocklens.dev"
-    await client.post(
-        "/auth/register", json={"email": email, "password": "TestPass123!", "full_name": "Plain"}
+async def test_oauth_authorize_plain_pkce_rejected(client: AsyncClient):
+    # OAuth 2.1 forbids plain — authorize rejects it before issuing a code.
+    r = await client.post(
+        "/oauth/authorize",
+        json={
+            "email": "test@stocklens.dev",
+            "password": "TestPass123!",
+            "client_id": "stocklens-mcp-public",
+            "redirect_uri": "http://localhost:6274/callback",
+            "code_challenge": "plain-verifier-123",
+            "code_challenge_method": "plain",
+            "state": "s1",
+        },
     )
-    verifier = "plain-verifier-123"
-    # plain == verifier == challenge — mock redis to avoid
-    # "Future attached to a different loop" under pytest-xdist
-    _mem: dict[str, dict] = {}
-
-    async def _fake_store(c, d, ttl=600):
-        _mem[c] = d
-
-    async def _fake_consume(c):
-        return _mem.pop(c, None)
-
-    with (
-        patch("src.mcp.auth._store_code", side_effect=_fake_store),
-        patch("src.mcp.auth._consume_code", side_effect=_fake_consume),
-    ):
-        r2 = await client.post(
-            "/oauth/authorize",
-            json={
-                "email": email,
-                "password": "TestPass123!",
-                "client_id": "stocklens-mcp-public",
-                "redirect_uri": "http://localhost:6274/callback",
-                "code_challenge": verifier,
-                "code_challenge_method": "plain",
-                "state": "s1",
-            },
-        )
-        assert r2.status_code == 200
-        code2 = r2.json()["code"]
-        r3 = await client.post(
-            "/oauth/token",
-            json={
-                "grant_type": "authorization_code",
-                "code": code2,
-                "code_verifier": verifier,
-                "redirect_uri": "http://localhost:6274/callback",
-                "client_id": "stocklens-mcp-public",
-            },
-        )
-        assert r3.status_code == 200
+    assert r.status_code == 400
+    assert "S256" in r.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -263,7 +244,7 @@ async def test_mcp_batch_mixed_ok_error(client: AsyncClient, auth_headers: dict[
     ]
     with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock) as mock:
         mock.return_value = json.dumps({"price": 1})
-        r = await client.post("/mcp", json=batch, headers=auth_headers)
+        r = await client.post("/mcp", json=batch, headers=_mcp_headers(auth_headers))
     assert r.status_code == 200
     data = r.json()
     assert isinstance(data, list)

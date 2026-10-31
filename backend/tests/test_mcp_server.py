@@ -18,6 +18,21 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import AsyncClient
 
+
+def _mcp_headers(rest_headers: dict[str, str], scope: str = "mcp:tools") -> dict[str, str]:
+    """Mint an MCP-scoped access token for the user behind *rest_headers*.
+
+    A REST access token carries no OAuth scope and is (correctly) denied MCP
+    tool access; MCP tools require an MCP-issued token.
+    """
+    from src.auth.utils import decode_token
+    from src.mcp.auth import _mcp_create_access_token
+
+    sub = decode_token(rest_headers["Authorization"].split()[1]).sub
+    token, _jti, _exp = _mcp_create_access_token(sub, scope)
+    return {"Authorization": f"Bearer {token}"}
+
+
 # ── Health (unauthenticated) ───────────────────────────────────────────
 
 
@@ -40,6 +55,8 @@ async def test_well_known_oauth_authorization_server(client: AsyncClient):
     assert "authorization_endpoint" in data
     assert "token_endpoint" in data
     assert "S256" in data["code_challenge_methods_supported"]
+    # OAuth 2.1: `plain` must not be advertised.
+    assert "plain" not in data["code_challenge_methods_supported"]
 
 
 async def test_well_known_protected_resource(client: AsyncClient):
@@ -135,7 +152,7 @@ async def test_mcp_tools_call_market_quote(client: AsyncClient, auth_headers: di
                 "method": "tools/call",
                 "params": {"name": "get_market_quote", "arguments": {"ticker": "AAPL"}},
             },
-            headers=auth_headers,
+            headers=_mcp_headers(auth_headers),
         )
     assert r.status_code == 200
     data = r.json()
@@ -160,6 +177,59 @@ async def test_mcp_tools_call_unknown_tool(client: AsyncClient, auth_headers: di
     # JSON-RPC error inside 200
     assert "error" in r.json()
     assert r.json()["error"]["code"] == -32602
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_tools_call_requires_scope(client: AsyncClient, auth_headers: dict[str, str]):
+    # A REST access token carries no OAuth scope and must not invoke MCP tools.
+    with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock) as mock_invoke:
+        r = await client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 40,
+                "method": "tools/call",
+                "params": {"name": "get_market_quote", "arguments": {"ticker": "AAPL"}},
+            },
+            headers=auth_headers,
+        )
+    assert r.status_code == 200
+    err = r.json()["error"]
+    assert err["code"] == -32003
+    assert err["data"]["required_scope"] == "market:read"
+    mock_invoke.assert_not_called()
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_tools_call_granular_scope_restricts_domain(
+    client: AsyncClient, auth_headers: dict[str, str]
+):
+    # A portfolio-only token may call portfolio tools but not market tools.
+    with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock) as mock_invoke:
+        mock_invoke.return_value = json.dumps({"ok": True})
+        denied = await client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 41,
+                "method": "tools/call",
+                "params": {"name": "get_market_quote", "arguments": {"ticker": "AAPL"}},
+            },
+            headers=_mcp_headers(auth_headers, "portfolio:read"),
+        )
+        allowed = await client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 42,
+                "method": "tools/call",
+                "params": {"name": "get_portfolio_summary", "arguments": {}},
+            },
+            headers=_mcp_headers(auth_headers, "portfolio:read"),
+        )
+    assert denied.json()["error"]["code"] == -32003
+    assert denied.json()["error"]["data"]["required_scope"] == "market:read"
+    assert allowed.json()["result"]["isError"] is False
 
 
 # ── OAuth PKCE flow ────────────────────────────────────────────────────
@@ -457,7 +527,7 @@ async def test_mcp_resources_read_holdings(client, auth_headers):
                 "method": "resources/read",
                 "params": {"uri": "portfolio://holdings"},
             },
-            headers=auth_headers,
+            headers=_mcp_headers(auth_headers),
         )
     assert r.status_code == 200
     contents = r.json()["result"]["contents"]
@@ -504,7 +574,7 @@ async def test_mcp_prompts_get(client, auth_headers):
             "method": "prompts/get",
             "params": {"name": "analyze-portfolio", "arguments": {"focus": "risk"}},
         },
-        headers=auth_headers,
+        headers=_mcp_headers(auth_headers),
     )
     assert r.status_code == 200
     result = r.json()["result"]
@@ -601,7 +671,7 @@ async def test_mcp_tools_on_2026_version(client: AsyncClient, auth_headers: dict
                     **_meta_2026(),
                 },
             },
-            headers=auth_headers,
+            headers=_mcp_headers(auth_headers),
         )
         assert r2.status_code == 200
         assert r2.json()["result"]["isError"] is False

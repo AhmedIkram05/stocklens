@@ -29,8 +29,15 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.config import settings
 from src.limiter import limiter
+from src.mcp.auth import (
+    MCP_TOOLS_SCOPE,
+    prompt_scope,
+    resource_scope,
+    scope_grants,
+    tool_scope,
+    verify_mcp_token,
+)
 from src.mcp.auth import router as oauth_router
-from src.mcp.auth import verify_mcp_token
 from src.mcp.tools_adapter import (
     get_mcp_prompts,
     get_mcp_resources,
@@ -95,8 +102,21 @@ mcp_router.include_router(oauth_router)
 # ── MCP JSON-RPC handlers (FastAPI fallback) ─────────────────────────────
 
 
-def _error(code: int, message: str, id_val: Any = None) -> dict:
-    return {"jsonrpc": "2.0", "id": id_val, "error": {"code": code, "message": message}}
+def _error(code: int, message: str, id_val: Any = None, data: Any = None) -> dict:
+    error: dict[str, Any] = {"code": code, "message": message}
+    if data is not None:
+        error["data"] = data
+    return {"jsonrpc": "2.0", "id": id_val, "error": error}
+
+
+def _insufficient_scope(required: str, msg_id: Any) -> dict:
+    """JSON-RPC error for a token lacking the scope a tool/resource needs."""
+    return _error(
+        -32003,
+        f"Insufficient scope: '{required}' or '{MCP_TOOLS_SCOPE}' required",
+        msg_id,
+        data={"required_scope": required},
+    )
 
 
 @mcp_router.get("/mcp/health")
@@ -254,6 +274,11 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
                 responses.append(_error(-32602, f"Unknown tool: {tool_name}", msg_id))
                 continue
 
+            required = tool_scope(tool_name)
+            if not scope_grants(payload.scopes, required):
+                responses.append(_insufficient_scope(required, msg_id))
+                continue
+
             user_id = payload.sub
             # portfolio_id may be in arguments or inferred
             portfolio_id = arguments.get("portfolio_id")
@@ -315,6 +340,10 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
             if not uri:
                 responses.append(_error(-32602, "Missing uri", msg_id))
                 continue
+            required = resource_scope(uri)
+            if required is not None and not scope_grants(payload.scopes, required):
+                responses.append(_insufficient_scope(required, msg_id))
+                continue
             try:
                 text = await read_resource(uri, user_id=payload.sub)
                 responses.append(
@@ -365,6 +394,10 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
             args = params.get("arguments") or {}
             if not name:
                 responses.append(_error(-32602, "Missing prompt name", msg_id))
+                continue
+            required = prompt_scope(name)
+            if required is not None and not scope_grants(payload.scopes, required):
+                responses.append(_insufficient_scope(required, msg_id))
                 continue
             try:
                 result = await get_prompt(name, args, user_id=payload.sub)
