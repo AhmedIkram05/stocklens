@@ -245,6 +245,24 @@ def test_prepare_global_dataset_empty_data() -> None:
     assert len(idxs) == 0
 
 
+def test_prepare_global_dataset_unknown_ticker_uses_unk_index() -> None:
+    """A ticker missing from the vocabulary maps to the reserved UNK index and
+    is surfaced via a warning, instead of silently borrowing another entity's
+    embedding row."""
+    from ml.pipeline import prepare_global_dataset
+    from ml.utils import UNK_IDX
+
+    data = {"AAPL": _make_ohlcv_array("AAPL")}
+    vocab = {"<UNK>": UNK_IDX}  # AAPL deliberately absent
+
+    with patch("ml.pipeline.logger.warning") as warn:
+        _, _, idxs, _, _ = prepare_global_dataset(data, vocab, spy_features_df=None)
+
+    assert len(idxs) > 0
+    assert np.all(idxs == UNK_IDX)
+    warn.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # fit_normalize_splits
 # ---------------------------------------------------------------------------
@@ -393,7 +411,7 @@ def _pipeline_up_to_gate(*, champion_da: float | None, test_metrics: dict):
                     MagicMock(),
                     "run_1",
                     np.zeros(120, dtype=np.int64),
-                    [],
+                    [MagicMock(), MagicMock()],  # ensemble members
                 )
             ),
         ),
@@ -465,4 +483,6 @@ async def test_gate_promotes_significant_gain() -> None:
     assert tags["promoted"] == "true"
     mgr.set_champion_alias.assert_called_once()
     rec_champion.assert_awaited_once()
+    # The whole ensemble is persisted, not just the seed-0 reference model.
+    assert len(mgr.save_champion_to_disk.call_args.kwargs["ensemble_models"]) == 2
     rec_challenger.assert_not_called()
