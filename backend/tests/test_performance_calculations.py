@@ -16,6 +16,7 @@ from src.performance.calculations import (
     BenchmarkComparisonResponse,
     HoldingPerformance,
     PortfolioPerformanceResponse,
+    _compute_twr,
     _get_closest_price,
     _sorted_price_dates,
     align_daily_return_series,
@@ -482,3 +483,132 @@ class TestGetClosestPriceBisect:
 
     def test_unknown_ticker_returns_none(self):
         assert _get_closest_price({}, "AAPL", date(2024, 1, 5)) is None
+
+
+class TestDegenerateQuoteDayChange:
+    """A zero-priced live quote must not divide by zero."""
+
+    def test_zero_price_quote_degrades_without_error(self):
+        # price 0 vs previous close 100 → day_change_pct == -100, so the
+        # start-of-day divisor (1 + pct/100) is 0. The weighted day-change must
+        # degrade (pct None) instead of raising ZeroDivisionError.
+        holdings = [
+            {"ticker": "AAPL", "shares": Decimal("10"), "average_cost_basis": Decimal("100")}
+        ]
+        result = compute_portfolio_performance(
+            portfolio_id="p1",
+            portfolio_name="Z",
+            holdings_data=holdings,
+            transactions=[],
+            cash_flows=[],
+            price_map={"AAPL": {date(2024, 12, 31): Decimal("100")}},
+            enable_twr=False,
+            live_quotes={"AAPL": (Decimal("0"), Decimal("100"))},
+        )
+        assert result.total_market_value == Decimal("0")
+        assert result.day_change == Decimal("-1000")  # 10 * (0 - 100)
+        assert result.day_change_pct is None
+
+
+class TestPreviousCloseGap:
+    """A stale/holey feed must not report a multi-day move as a day change."""
+
+    _HOLDINGS = [{"ticker": "AAPL", "shares": Decimal("10"), "average_cost_basis": Decimal("100")}]
+
+    def test_gap_larger_than_threshold_leaves_day_change_none(self):
+        price_map = {
+            "AAPL": {
+                date(2024, 1, 2): Decimal("100"),
+                date(2024, 1, 20): Decimal("110"),  # 18-day hole
+            }
+        }
+        result = compute_portfolio_performance(
+            portfolio_id="p1",
+            portfolio_name="Stale",
+            holdings_data=self._HOLDINGS,
+            transactions=[],
+            cash_flows=[],
+            price_map=price_map,
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 1, 20),
+            enable_twr=False,
+        )
+        hp = result.holdings[0]
+        assert hp.current_price == Decimal("110")
+        assert hp.day_change is None
+        assert hp.day_change_pct is None
+
+    def test_consecutive_sessions_keep_day_change(self):
+        price_map = {
+            "AAPL": {
+                date(2024, 1, 2): Decimal("100"),
+                date(2024, 1, 3): Decimal("110"),
+            }
+        }
+        result = compute_portfolio_performance(
+            portfolio_id="p1",
+            portfolio_name="Fresh",
+            holdings_data=self._HOLDINGS,
+            transactions=[],
+            cash_flows=[],
+            price_map=price_map,
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 1, 3),
+            enable_twr=False,
+        )
+        hp = result.holdings[0]
+        assert hp.day_change == Decimal("100")  # 10 * (110 - 100)
+
+
+class TestTWRMissingPrices:
+    """A held-but-unpriced position must not silently corrupt TWR."""
+
+    def test_subperiod_with_unpriced_holding_is_skipped(self):
+        # NEWCO is bought on 2024-06-01 but its first price is only 2024-12-31.
+        # Valuing it at £0 on 2024-06-01 would fabricate a ~+54.5% sub-period
+        # return; the period must be skipped so TWR only links priced spans.
+        transactions = [
+            {
+                "ticker": "AAPL",
+                "type": "BUY",
+                "shares": Decimal("100"),
+                "date": date(2023, 1, 1),
+                "total_amount_gbp": Decimal("10000"),
+            },
+            {
+                "ticker": "NEWCO",
+                "type": "BUY",
+                "shares": Decimal("100"),
+                "date": date(2024, 6, 1),
+                "total_amount_gbp": Decimal("5000"),
+            },
+        ]
+        price_map = {
+            "AAPL": {
+                date(2024, 1, 1): Decimal("100"),
+                date(2024, 6, 1): Decimal("110"),
+                date(2024, 12, 31): Decimal("120"),
+            },
+            "NEWCO": {date(2024, 12, 31): Decimal("50")},
+        }
+        twr, _ = _compute_twr(transactions, [], price_map, date(2024, 1, 1), date(2024, 12, 31))
+        # Only the fully-priced AAPL sub-period links: 11000/10000 - 1 = 10%.
+        assert twr == pytest.approx(Decimal("0.1"), abs=Decimal("1e-9"))
+
+    def test_all_subperiods_unpriced_returns_none(self):
+        transactions = [
+            {
+                "ticker": "NEWCO",
+                "type": "BUY",
+                "shares": Decimal("100"),
+                "date": date(2023, 1, 1),
+                "total_amount_gbp": Decimal("5000"),
+            },
+        ]
+        # No price at/before either boundary → every sub-period is invalid.
+        price_map = {"NEWCO": {date(2024, 12, 31): Decimal("50")}}
+        twr, twr_annualised = _compute_twr(
+            transactions, [], price_map, date(2024, 1, 1), date(2024, 12, 31)
+        )
+        assert twr is None
+        assert twr_annualised is None
