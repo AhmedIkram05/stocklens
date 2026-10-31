@@ -114,27 +114,28 @@ async def register(request: Request, body: RegisterRequest) -> AuthResponse:
     # Normalise email
     email = body.email.lower().strip()
 
-    # Check for existing user
-    existing = await _fetch_user_by_email(email)
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A user with this email already exists",
-        )
-
-    # Hash password and insert
+    # Hash password and insert atomically. ON CONFLICT makes the unique index
+    # the concurrency gate: a check-then-insert let two concurrent submits both
+    # pass the existence check and the loser hit a unique-violation 500.
     pwd_hash = hash_password(body.password)
     async with connection_ctx() as conn:
         row = await conn.fetchrow(
             """
             INSERT INTO users (email, password_hash, display_name)
             VALUES ($1, $2, $3)
+            ON CONFLICT (email) DO NOTHING
             RETURNING id, email, password_hash, display_name, is_active,
                       created_at, updated_at
             """,
             email,
             pwd_hash,
             body.full_name,
+        )
+
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A user with this email already exists",
         )
 
     user = dict(row)
