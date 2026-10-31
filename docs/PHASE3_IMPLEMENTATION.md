@@ -491,25 +491,83 @@ class MLConfig:
     TEST_SPLIT: float = 0.15
 
     # Data
-    TRAINING_TICKERS: list[str] = field(default_factory=lambda: [
-        "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "JPM", "V", "UNH",
-        "XOM", "JNJ", "WMT", "PG", "MA", "CVX", "HD", "MRK", "ABBV", "KO",
-        "PEP", "AVGO", "COST", "CRM", "BAC", "TMO", "MCD", "ABT", "ACN", "DIS",
-        "DHR", "LIN", "NFLX", "CSCO", "ADBE", "NEE", "CMCSA", "PFE", "TXN", "BMY",
-        "AMGN", "PM", "QCOM", "RTX", "IBM", "HON", "CAT", "INTU", "AMAT", "AMT",
-        "MS", "PLD", "SBUX", "VZ", "GE",
-    ])
+    TRAINING_TICKERS: list[str] = field(
+        default_factory=lambda: [
+            "AAPL",
+            "MSFT",
+            "GOOGL",
+            "AMZN",
+            "NVDA",
+            "META",
+            "TSLA",
+            "JPM",
+            "V",
+            "UNH",
+            "XOM",
+            "JNJ",
+            "WMT",
+            "PG",
+            "MA",
+            "CVX",
+            "HD",
+            "MRK",
+            "ABBV",
+            "KO",
+            "PEP",
+            "AVGO",
+            "COST",
+            "CRM",
+            "BAC",
+            "TMO",
+            "MCD",
+            "ABT",
+            "ACN",
+            "DIS",
+            "DHR",
+            "LIN",
+            "NFLX",
+            "CSCO",
+            "ADBE",
+            "NEE",
+            "CMCSA",
+            "PFE",
+            "TXN",
+            "BMY",
+            "AMGN",
+            "PM",
+            "QCOM",
+            "RTX",
+            "IBM",
+            "HON",
+            "CAT",
+            "INTU",
+            "AMAT",
+            "AMT",
+            "MS",
+            "PLD",
+            "SBUX",
+            "VZ",
+            "GE",
+        ]
+    )
     OHLCV_YEARS: int = 5  # How many years of history to fetch
 
     # Paths
     MODEL_ARTIFACT_DIR: str = field(
-        default_factory=lambda: os.environ.get("MODEL_ARTIFACT_DIR", "/model_artifacts/champion")
+        default_factory=lambda: os.environ.get(
+            "MODEL_ARTIFACT_DIR", "/model_artifacts/champion"
+        )
     )
     MLFLOW_TRACKING_URI: str = field(
-        default_factory=lambda: os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+        default_factory=lambda: os.environ.get(
+            "MLFLOW_TRACKING_URI", "http://mlflow:5000"
+        )
     )
     DATABASE_URL: str = field(
-        default_factory=lambda: os.environ.get("DATABASE_URL", "postgresql+asyncpg://stocklens:stocklens@postgres:5432/stocklens")
+        default_factory=lambda: os.environ.get(
+            "DATABASE_URL",
+            "postgresql+asyncpg://stocklens:stocklens@postgres:5432/stocklens",
+        )
     )
 
     @property
@@ -522,7 +580,9 @@ class MLConfig:
         return self.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://", 1)
 
     # Inference
-    MIN_OHLCV_DAYS: int = 60  # Minimum days needed for feature computation (30 window + padding)
+    MIN_OHLCV_DAYS: int = (
+        60  # Minimum days needed for feature computation (30 window + padding)
+    )
     PREDICTION_CACHE_TTL: int = 21600  # 6 hours in seconds
 
     # Class names
@@ -557,7 +617,9 @@ import numpy as np
 import pandas as pd
 
 
-def compute_log_returns(close: pd.Series, periods: list[int] = (1, 5, 21)) -> pd.DataFrame:
+def compute_log_returns(
+    close: pd.Series, periods: list[int] = (1, 5, 21)
+) -> pd.DataFrame:
     """Compute multi-period log returns from adjusted close prices.
 
     log_return(p) = ln(P_t / P_{t-p})
@@ -577,7 +639,9 @@ def compute_log_returns(close: pd.Series, periods: list[int] = (1, 5, 21)) -> pd
     return result
 
 
-def compute_moving_averages(close: pd.Series, windows: list[int] = (5, 10, 20, 50)) -> pd.DataFrame:
+def compute_moving_averages(
+    close: pd.Series, windows: list[int] = (5, 10, 20, 50)
+) -> pd.DataFrame:
     """Compute simple moving averages.
 
     Returns:
@@ -635,11 +699,14 @@ def compute_macd(
     macd_signal_line = macd_line.ewm(span=signal, adjust=False).mean()
     macd_hist = macd_line - macd_signal_line
 
-    return pd.DataFrame({
-        "macd": macd_line,
-        "macd_signal": macd_signal_line,
-        "macd_hist": macd_hist,
-    }, index=close.index)
+    return pd.DataFrame(
+        {
+            "macd": macd_line,
+            "macd_signal": macd_signal_line,
+            "macd_hist": macd_hist,
+        },
+        index=close.index,
+    )
 
 
 def compute_rolling_volatility(close: pd.Series, period: int = 30) -> pd.Series:
@@ -687,7 +754,9 @@ def standardise_features(
     Returns:
         (standardised_df, means, stds) tuple.
     """
-    feature_cols = [c for c in df.columns if not c.startswith("label") and c != "ticker"]
+    feature_cols = [
+        c for c in df.columns if not c.startswith("label") and c != "ticker"
+    ]
     if means is None:
         means = df[feature_cols].mean()
         stds = df[feature_cols].std()
@@ -814,8 +883,8 @@ def compute_adaptive_labels(
     # Classify
     labels = pd.Series(index=close.index, dtype=float)
     labels[forward_ret.abs() < threshold] = 1.0  # FLAT
-    labels[forward_ret >= threshold] = 2.0        # UP
-    labels[forward_ret <= -threshold] = 0.0       # DOWN
+    labels[forward_ret >= threshold] = 2.0  # UP
+    labels[forward_ret <= -threshold] = 0.0  # DOWN
 
     # NaN where forward_ret or threshold is NaN
     labels[forward_ret.isna() | threshold.isna()] = np.nan
@@ -893,8 +962,9 @@ class SequenceDataset(Dataset):
         labels: np.ndarray,
         ticker_idxs: np.ndarray,
     ) -> None:
-        assert len(sequences) == len(labels) == len(ticker_idxs), \
+        assert len(sequences) == len(labels) == len(ticker_idxs), (
             f"Length mismatch: {len(sequences)} vs {len(labels)} vs {len(ticker_idxs)}"
+        )
         self.sequences = torch.tensor(sequences, dtype=torch.float32)
         self.labels = torch.tensor(labels, dtype=torch.long)
         self.ticker_idxs = torch.tensor(ticker_idxs, dtype=torch.long)
@@ -943,8 +1013,8 @@ def create_sliding_windows(
     )
     # sliding_window_view returns shape (T-sL+1, sL, F)
     # Extract labels: the label at the END of each window (t+1)
-    window_labels = labels[sequence_length - 1:]
-    window_ticker_idxs = ticker_idxs[sequence_length - 1:]
+    window_labels = labels[sequence_length - 1 :]
+    window_ticker_idxs = ticker_idxs[sequence_length - 1 :]
 
     # Remove windows where the label is NaN
     valid_mask = ~np.isnan(window_labels)
@@ -952,7 +1022,11 @@ def create_sliding_windows(
     window_labels = window_labels[valid_mask]
     window_ticker_idxs = window_ticker_idxs[valid_mask]
 
-    return sequences, window_labels.astype(np.int64), window_ticker_idxs.astype(np.int64)
+    return (
+        sequences,
+        window_labels.astype(np.int64),
+        window_ticker_idxs.astype(np.int64),
+    )
 
 
 def chronological_split(
@@ -987,7 +1061,11 @@ def chronological_split(
     val_end = train_end + int(N * val_frac)
 
     train = (sequences[:train_end], labels[:train_end], ticker_idxs[:train_end])
-    val = (sequences[train_end:val_end], labels[train_end:val_end], ticker_idxs[train_end:val_end])
+    val = (
+        sequences[train_end:val_end],
+        labels[train_end:val_end],
+        ticker_idxs[train_end:val_end],
+    )
     test = (sequences[val_end:], labels[val_end:], ticker_idxs[val_end:])
 
     return train, val, test
@@ -1121,7 +1199,9 @@ import pytest
 @pytest.fixture
 def simple_close() -> pd.Series:
     """Monotonically increasing close prices (10 days)."""
-    return pd.Series([100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0])
+    return pd.Series(
+        [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0]
+    )
 
 
 @pytest.fixture
@@ -1140,7 +1220,9 @@ class TestLogReturns:
 
         result = compute_log_returns(simple_close)
         # 10 days -> 9 log returns (shift(1) makes first row NaN)
-        assert result["log_ret_1d"].iloc[1] == pytest.approx(np.log(101 / 100), rel=1e-6)
+        assert result["log_ret_1d"].iloc[1] == pytest.approx(
+            np.log(101 / 100), rel=1e-6
+        )
         assert result["log_ret_1d"].isna().iloc[0]
         assert result["log_ret_5d"].isna().iloc[:5].all()
 
@@ -1271,10 +1353,19 @@ class TestAllFeatures:
         df = pd.DataFrame({"adjusted_close": volatile_close})
         result = compute_all_features(df)
         expected_cols = [
-            "log_ret_1d", "log_ret_5d", "log_ret_21d",
-            "ma_5", "ma_10", "ma_20", "ma_50",
-            "rsi_14", "macd", "macd_signal", "macd_hist",
-            "vol_30d", "vol_rank",
+            "log_ret_1d",
+            "log_ret_5d",
+            "log_ret_21d",
+            "ma_5",
+            "ma_10",
+            "ma_20",
+            "ma_50",
+            "rsi_14",
+            "macd",
+            "macd_signal",
+            "macd_hist",
+            "vol_30d",
+            "vol_rank",
         ]
         for col in expected_cols:
             assert col in result.columns, f"Missing column: {col}"
@@ -1406,9 +1497,7 @@ class TestSequenceDataset:
     def test_empty_dataset(self) -> None:
         from ml.dataset import SequenceDataset
 
-        ds = SequenceDataset(
-            np.empty((0, 30, 13)), np.empty((0,)), np.empty((0,))
-        )
+        ds = SequenceDataset(np.empty((0, 30, 13)), np.empty((0,)), np.empty((0,)))
         assert len(ds) == 0
 
     def test_length_mismatch_raises(self) -> None:
@@ -1431,7 +1520,9 @@ class TestSlidingWindows:
         labels = np.random.randint(0, 3, size=50).astype(float)
         ticker_idxs = np.zeros(50)
 
-        seqs, labs, tidxs = create_sliding_windows(data, labels, ticker_idxs, sequence_length=30)
+        seqs, labs, tidxs = create_sliding_windows(
+            data, labels, ticker_idxs, sequence_length=30
+        )
 
         # 50 - 30 + 1 = 21 windows (assuming no NaN labels)
         assert len(seqs) <= 21
@@ -1444,7 +1535,9 @@ class TestSlidingWindows:
         labels = np.ones(20)
         ticker_idxs = np.zeros(20)
 
-        seqs, _, _ = create_sliding_windows(data, labels, ticker_idxs, sequence_length=30)
+        seqs, _, _ = create_sliding_windows(
+            data, labels, ticker_idxs, sequence_length=30
+        )
         assert len(seqs) == 0
 
     def test_nan_labels_filtered(self) -> None:
@@ -1454,7 +1547,9 @@ class TestSlidingWindows:
         labels = np.full(50, np.nan)  # All NaN
         ticker_idxs = np.zeros(50)
 
-        seqs, labs, _ = create_sliding_windows(data, labels, ticker_idxs, sequence_length=30)
+        seqs, labs, _ = create_sliding_windows(
+            data, labels, ticker_idxs, sequence_length=30
+        )
         assert len(seqs) == 0
         assert len(labs) == 0
 
@@ -1627,7 +1722,9 @@ class GlobalLSTM(nn.Module):
         ticker_embeds = ticker_embeds.unsqueeze(1).expand(-1, seq_len, -1)
 
         # Concatenate features with ticker embedding
-        combined = torch.cat([features, ticker_embeds], dim=-1)  # (B, seq_len, n_features + embed_dim)
+        combined = torch.cat(
+            [features, ticker_embeds], dim=-1
+        )  # (B, seq_len, n_features + embed_dim)
 
         # Project to hidden_dim
         projected = self.feature_projection(combined)  # (B, seq_len, hidden_dim)
@@ -1647,7 +1744,9 @@ class GlobalLSTM(nn.Module):
         return logits
 
     @torch.no_grad()
-    def predict_proba(self, features: torch.Tensor, ticker_idxs: torch.Tensor) -> torch.Tensor:
+    def predict_proba(
+        self, features: torch.Tensor, ticker_idxs: torch.Tensor
+    ) -> torch.Tensor:
         """Return softmax probabilities.
 
         Args:
@@ -1818,7 +1917,9 @@ def train_epoch(
         logits = model(features, ticker_idxs)
         loss = criterion(logits, labels)
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # ponytail: gradient clipping prevents exploding gradients
+        torch.nn.utils.clip_grad_norm_(
+            model.parameters(), max_norm=1.0
+        )  # ponytail: gradient clipping prevents exploding gradients
         optimizer.step()
 
         total_loss += loss.item()
@@ -1897,6 +1998,7 @@ def train(
     """
     if device is None:
         from ml.utils import get_device
+
         device = get_device()
 
     model = model.to(device)
@@ -1935,7 +2037,11 @@ def train(
 
         logger.info(
             "Epoch %d/%d - train_loss: %.4f, val_loss: %.4f, val_acc: %.4f",
-            epoch, n_epochs, train_loss, val_loss, val_acc,
+            epoch,
+            n_epochs,
+            train_loss,
+            val_loss,
+            val_acc,
         )
 
         # Early stopping check
@@ -1950,7 +2056,9 @@ def train(
             if patience_counter >= patience:
                 logger.info(
                     "Early stopping at epoch %d (best epoch %d, val_loss %.4f)",
-                    epoch, best_epoch, best_val_loss,
+                    epoch,
+                    best_epoch,
+                    best_val_loss,
                 )
                 break
 
@@ -2037,12 +2145,16 @@ def evaluate(
 
     # Per-class metrics
     per_class_f1 = _compute_per_class_f1(labels, preds, n_classes=ML_CONFIG.N_CLASSES)
-    confusion_matrix = _compute_confusion_matrix(labels, preds, n_classes=ML_CONFIG.N_CLASSES)
+    confusion_matrix = _compute_confusion_matrix(
+        labels, preds, n_classes=ML_CONFIG.N_CLASSES
+    )
 
     # Directional accuracy (UP vs DOWN only, ignoring FLAT)
-    directional_mask = (labels != 1)
+    directional_mask = labels != 1
     if directional_mask.sum() > 0:
-        directional_acc = float((preds[directional_mask] == labels[directional_mask]).mean())
+        directional_acc = float(
+            (preds[directional_mask] == labels[directional_mask]).mean()
+        )
     else:
         directional_acc = 0.0
 
@@ -2172,6 +2284,7 @@ def plot_confusion_matrix(
         Path to the saved plot.
     """
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
@@ -2194,8 +2307,14 @@ def plot_confusion_matrix(
     # Display values
     for i in range(len(class_names)):
         for j in range(len(class_names)):
-            ax.text(j, i, str(int(cm[i, j])), ha="center", va="center",
-                    color="white" if cm[i, j] > cm.max() / 2 else "black")
+            ax.text(
+                j,
+                i,
+                str(int(cm[i, j])),
+                ha="center",
+                va="center",
+                color="white" if cm[i, j] > cm.max() / 2 else "black",
+            )
 
     plt.tight_layout()
     plt.savefig(save_path, dpi=100, bbox_inches="tight")
@@ -2219,6 +2338,7 @@ def plot_loss_curves(
         Path to the saved plot.
     """
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
@@ -2261,6 +2381,7 @@ import torch
 @pytest.fixture
 def model() -> torch.nn.Module:
     from ml.model import GlobalLSTM
+
     return GlobalLSTM(
         n_features=13,
         vocab_size=56,  # 55 tickers + UNK
@@ -2293,7 +2414,16 @@ class TestGlobalLSTM:
 
     def test_different_ticker_embeddings(self) -> None:
         from ml.model import GlobalLSTM
-        model = GlobalLSTM(n_features=13, vocab_size=10, embed_dim=8, hidden_dim=32, n_layers=1, dropout=0.0, n_classes=3)
+
+        model = GlobalLSTM(
+            n_features=13,
+            vocab_size=10,
+            embed_dim=8,
+            hidden_dim=32,
+            n_layers=1,
+            dropout=0.0,
+            n_classes=3,
+        )
 
         features = torch.randn(4, 30, 13)
         ticker_idxs = torch.tensor([0, 1, 2, 3])
@@ -2362,6 +2492,7 @@ import pytest
 class TestDirectionalAccuracy:
     def test_perfect_prediction(self) -> None:
         from ml.evaluate import evaluate
+
         # We'll test the underlying functions directly
         from ml.evaluate import _compute_confusion_matrix
 
@@ -2543,7 +2674,9 @@ class MLflowManager:
         """Log hyperparameters to the active run."""
         mlflow.log_params(params)
 
-    def log_metrics(self, metrics: dict[str, float], step: Optional[int] = None) -> None:
+    def log_metrics(
+        self, metrics: dict[str, float], step: Optional[int] = None
+    ) -> None:
         """Log metrics to the active run.
 
         Args:
@@ -2552,7 +2685,9 @@ class MLflowManager:
         """
         mlflow.log_metrics(metrics, step=step)
 
-    def log_artifact(self, local_path: str, artifact_path: Optional[str] = None) -> None:
+    def log_artifact(
+        self, local_path: str, artifact_path: Optional[str] = None
+    ) -> None:
         """Log a local file as an artifact.
 
         Args:
@@ -2596,7 +2731,9 @@ class MLflowManager:
         run_id = self.active_run.info.run_id if self.active_run else "unknown"
         return run_id, version
 
-    def set_champion_alias(self, model_name: str = "GlobalLSTM", version: str = "1") -> None:
+    def set_champion_alias(
+        self, model_name: str = "GlobalLSTM", version: str = "1"
+    ) -> None:
         """Set the 'champion' alias on a model version.
 
         Args:
@@ -2731,14 +2868,26 @@ async def fetch_ohlcv_for_tickers(tickers: list[str]) -> dict[str, np.ndarray]:
             # Convert to numpy structured array
             dtype = [
                 ("date", "datetime64[D]"),
-                ("open", "f8"), ("high", "f8"), ("low", "f8"),
-                ("close", "f8"), ("adjusted_close", "f8"), ("volume", "i8"),
+                ("open", "f8"),
+                ("high", "f8"),
+                ("low", "f8"),
+                ("close", "f8"),
+                ("adjusted_close", "f8"),
+                ("volume", "i8"),
             ]
             arr = np.array(
-                [(r["date"], float(r["open"] or 0), float(r["high"] or 0),
-                  float(r["low"] or 0), float(r["close"] or 0),
-                  float(r["adjusted_close"] or 0), int(r["volume"] or 0))
-                 for r in rows],
+                [
+                    (
+                        r["date"],
+                        float(r["open"] or 0),
+                        float(r["high"] or 0),
+                        float(r["low"] or 0),
+                        float(r["close"] or 0),
+                        float(r["adjusted_close"] or 0),
+                        int(r["volume"] or 0),
+                    )
+                    for r in rows
+                ],
                 dtype=dtype,
             )
             if len(arr) >= ML_CONFIG.MIN_OHLCV_DAYS:
@@ -2781,10 +2930,12 @@ def prepare_global_dataset(
 
     for ticker, arr in ohlcv_data.items():
         # Convert to DataFrame for feature computation
-        df = pd.DataFrame({
-            "adjusted_close": arr["adjusted_close"],
-            "ticker": ticker,
-        })
+        df = pd.DataFrame(
+            {
+                "adjusted_close": arr["adjusted_close"],
+                "ticker": ticker,
+            }
+        )
 
         # Compute features
         features_df = compute_all_features(df)
@@ -2798,7 +2949,9 @@ def prepare_global_dataset(
         )
 
         # Convert to numpy for sliding windows
-        feature_values = features_df.drop(columns=["ticker"], errors="ignore").values.astype(np.float32)
+        feature_values = features_df.drop(
+            columns=["ticker"], errors="ignore"
+        ).values.astype(np.float32)
         label_values = labels.values.astype(np.float64)
         ticker_idx = vocab.get(ticker, 0)
 
@@ -2860,10 +3013,14 @@ async def run_pipeline() -> dict[str, float]:
     # 2. Build ticker vocabulary
     tickers_with_data = list(ohlcv_data.keys())
     vocab, vocab_size = build_ticker_vocabulary(tickers_with_data)
-    logger.info("Ticker vocabulary built", vocab_size=vocab_size, tickers=len(tickers_with_data))
+    logger.info(
+        "Ticker vocabulary built", vocab_size=vocab_size, tickers=len(tickers_with_data)
+    )
 
     # 3. Prepare global dataset
-    global_sequences, global_labels, global_ticker_idxs = prepare_global_dataset(ohlcv_data, vocab)
+    global_sequences, global_labels, global_ticker_idxs = prepare_global_dataset(
+        ohlcv_data, vocab
+    )
     logger.info("Global dataset prepared", samples=len(global_sequences))
 
     if len(global_sequences) < 100:
@@ -2872,13 +3029,17 @@ async def run_pipeline() -> dict[str, float]:
 
     # 4. Chronological split
     train_data, val_data, test_data = chronological_split(
-        global_sequences, global_labels, global_ticker_idxs,
+        global_sequences,
+        global_labels,
+        global_ticker_idxs,
         train_frac=ML_CONFIG.TRAIN_SPLIT,
         val_frac=ML_CONFIG.VAL_SPLIT,
     )
     logger.info(
         "Dataset split - train: %d, val: %d, test: %d",
-        len(train_data[0]), len(val_data[0]), len(test_data[0]),
+        len(train_data[0]),
+        len(val_data[0]),
+        len(test_data[0]),
     )
 
     # 5. Create DataLoaders
@@ -2906,48 +3067,59 @@ async def run_pipeline() -> dict[str, float]:
 
     # 7. Start MLflow run
     mlflow_mgr = MLflowManager()
-    run_id = mlflow_mgr.start_run(run_name=f"global_lstm_v1_{len(tickers_with_data)}tickers")
+    run_id = mlflow_mgr.start_run(
+        run_name=f"global_lstm_v1_{len(tickers_with_data)}tickers"
+    )
 
     # Log config params
-    mlflow_mgr.log_params({
-        "n_features": ML_CONFIG.N_FEATURES,
-        "vocab_size": vocab_size,
-        "embed_dim": ML_CONFIG.EMBED_DIM,
-        "hidden_dim": ML_CONFIG.HIDDEN_DIM,
-        "n_layers": ML_CONFIG.N_LAYERS,
-        "dropout": ML_CONFIG.DROPOUT,
-        "sequence_length": ML_CONFIG.SEQUENCE_LENGTH,
-        "batch_size": ML_CONFIG.BATCH_SIZE,
-        "learning_rate": ML_CONFIG.LEARNING_RATE,
-        "weight_decay": ML_CONFIG.WEIGHT_DECAY,
-        "patience": ML_CONFIG.PATIENCE,
-        "n_tickers": len(tickers_with_data),
-        "train_samples": len(train_ds),
-        "val_samples": len(val_ds),
-        "test_samples": len(test_ds),
-    })
+    mlflow_mgr.log_params(
+        {
+            "n_features": ML_CONFIG.N_FEATURES,
+            "vocab_size": vocab_size,
+            "embed_dim": ML_CONFIG.EMBED_DIM,
+            "hidden_dim": ML_CONFIG.HIDDEN_DIM,
+            "n_layers": ML_CONFIG.N_LAYERS,
+            "dropout": ML_CONFIG.DROPOUT,
+            "sequence_length": ML_CONFIG.SEQUENCE_LENGTH,
+            "batch_size": ML_CONFIG.BATCH_SIZE,
+            "learning_rate": ML_CONFIG.LEARNING_RATE,
+            "weight_decay": ML_CONFIG.WEIGHT_DECAY,
+            "patience": ML_CONFIG.PATIENCE,
+            "n_tickers": len(tickers_with_data),
+            "train_samples": len(train_ds),
+            "val_samples": len(val_ds),
+            "test_samples": len(test_ds),
+        }
+    )
 
     # 8. Train
-    history = train(model, train_loader, val_loader, device=device, n_epochs=ML_CONFIG.EPOCHS)
+    history = train(
+        model, train_loader, val_loader, device=device, n_epochs=ML_CONFIG.EPOCHS
+    )
 
     # Log epoch-level metrics
     for epoch in range(len(history["train_losses"])):
-        mlflow_mgr.log_metrics({
-            "train_loss": history["train_losses"][epoch],
-            "val_loss": history["val_losses"][epoch],
-            "val_accuracy": history["val_accuracies"][epoch],
-        }, step=epoch + 1)
+        mlflow_mgr.log_metrics(
+            {
+                "train_loss": history["train_losses"][epoch],
+                "val_loss": history["val_losses"][epoch],
+                "val_accuracy": history["val_accuracies"][epoch],
+            },
+            step=epoch + 1,
+        )
 
     # 9. Evaluate on test set
     test_metrics = evaluate(model, test_loader, device)
     logger.info("Test metrics: %s", test_metrics)
 
     # Log test metrics
-    mlflow_mgr.log_metrics({
-        "test_accuracy": test_metrics["accuracy"],
-        "test_directional_accuracy": test_metrics["directional_accuracy"],
-        "test_simulated_sharpe": test_metrics["simulated_sharpe"],
-    })
+    mlflow_mgr.log_metrics(
+        {
+            "test_accuracy": test_metrics["accuracy"],
+            "test_directional_accuracy": test_metrics["directional_accuracy"],
+            "test_simulated_sharpe": test_metrics["simulated_sharpe"],
+        }
+    )
 
     for class_name, f1 in test_metrics["per_class_f1"].items():
         mlflow_mgr.log_metrics({f"f1_{class_name.lower()}": f1})
@@ -3087,7 +3259,9 @@ class PredictionResponse(BaseModel):
 
     ticker: str
     direction: str = Field(description="Predicted direction: UP, FLAT, or DOWN")
-    confidence: DecimalAsFloat = Field(description="Confidence in the predicted class (0-1)")
+    confidence: DecimalAsFloat = Field(
+        description="Confidence in the predicted class (0-1)"
+    )
     probabilities: dict[str, DecimalAsFloat] = Field(
         description="Softmax probabilities for each class: {DOWN, FLAT, UP}"
     )
@@ -3100,7 +3274,9 @@ class PredictionErrorResponse(BaseModel):
     """Error response for prediction failures."""
 
     detail: str
-    code: str = Field(description="Error code: NO_DATA, MODEL_NOT_LOADED, INFERENCE_ERROR, UNKNOWN_TICKER")
+    code: str = Field(
+        description="Error code: NO_DATA, MODEL_NOT_LOADED, INFERENCE_ERROR, UNKNOWN_TICKER"
+    )
 ```
 
 **Why:** `model_version` enables frontend to display which model generated the prediction. `cached` flag for debugging. `probabilities` dict gives full softmax output for confidence-based UIs.
@@ -3153,7 +3329,9 @@ class PredictionService:
         self._feature_stds: Optional[np.ndarray] = None
         self._vocab: Optional[dict[str, int]] = None
 
-    def load_model(self, model_path: str = "/model_artifacts/champion/model.pt") -> bool:
+    def load_model(
+        self, model_path: str = "/model_artifacts/champion/model.pt"
+    ) -> bool:
         """Load champion model from disk.
 
         Args:
@@ -3212,26 +3390,36 @@ class PredictionService:
         features_df = compute_all_features(pd.DataFrame({"adjusted_close": close}))
 
         # Take the last SEQUENCE_LENGTH rows
-        feature_values = features_df.values[-ml_config.SEQUENCE_LENGTH:].astype(np.float32)
+        feature_values = features_df.values[-ml_config.SEQUENCE_LENGTH :].astype(
+            np.float32
+        )
 
         # Handle NaN (shouldn't happen with 60+ days of data, but safeguard)
         feature_values = np.nan_to_num(feature_values, nan=0.0)
 
         # Apply z-score standardisation using training distribution params
-        if self.model is not None and self.model._feature_means is not None and self.model._feature_stds is not None:
+        if (
+            self.model is not None
+            and self.model._feature_means is not None
+            and self.model._feature_stds is not None
+        ):
             means = self.model._feature_means
             stds = self.model._feature_stds
             feature_values = (feature_values - means) / stds
         else:
             # Fallback: per-batch standardisation (less accurate but prevents raw input)
-            logger.warning("No stored feature means/stds - applying per-batch standardisation")
+            logger.warning(
+                "No stored feature means/stds - applying per-batch standardisation"
+            )
             batch_mean = np.nanmean(feature_values, axis=0)
             batch_std = np.nanstd(feature_values, axis=0)
             batch_std[batch_std == 0] = 1.0
             feature_values = (feature_values - batch_mean) / batch_std
 
         # Convert to tensor
-        tensor = torch.tensor(feature_values, dtype=torch.float32).unsqueeze(0)  # (1, 30, N_FEATURES)
+        tensor = torch.tensor(feature_values, dtype=torch.float32).unsqueeze(
+            0
+        )  # (1, 30, N_FEATURES)
         return tensor
 
     def predict(self, ticker: str, ohlcv_rows: list[dict]) -> Optional[dict]:
@@ -3458,17 +3646,21 @@ async def lifespan(app: FastAPI):
 
     # Seed categories on first startup
     from src.categories.seed import seed_categories
+
     seeded = await seed_categories()
     if seeded:
         logger.info("categories_seeded", count=seeded)
 
     # Load prediction model
     from src.prediction.service import prediction_service
+
     loaded = prediction_service.load_model(settings.PREDICTION_MODEL_PATH)
     if loaded:
         logger.info("prediction_model_loaded", path=settings.PREDICTION_MODEL_PATH)
     else:
-        logger.warning("prediction_model_not_found", path=settings.PREDICTION_MODEL_PATH)
+        logger.warning(
+            "prediction_model_not_found", path=settings.PREDICTION_MODEL_PATH
+        )
 
     yield
     # ... existing shutdown logic ...
@@ -3522,9 +3714,13 @@ from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_predict_no_model(client: AsyncClient, auth_headers: dict[str, str]) -> None:
+async def test_predict_no_model(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
     """When no model is loaded, return 503."""
-    with patch("src.prediction.router.prediction_service.is_loaded", return_value=False):
+    with patch(
+        "src.prediction.router.prediction_service.is_loaded", return_value=False
+    ):
         response = await client.get(
             "/predict/AAPL",
             headers=auth_headers,
@@ -3534,10 +3730,14 @@ async def test_predict_no_model(client: AsyncClient, auth_headers: dict[str, str
 
 
 @pytest.mark.asyncio
-async def test_predict_no_data(client: AsyncClient, auth_headers: dict[str, str]) -> None:
+async def test_predict_no_data(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
     """When no OHLCV data exists, return 404."""
-    with patch("src.prediction.router.prediction_service.is_loaded", return_value=True), \
-         patch("src.prediction.router.get_ohlcv", return_value=[]):
+    with (
+        patch("src.prediction.router.prediction_service.is_loaded", return_value=True),
+        patch("src.prediction.router.get_ohlcv", return_value=[]),
+    ):
         response = await client.get(
             "/predict/AAPL",
             headers=auth_headers,
@@ -3546,7 +3746,9 @@ async def test_predict_no_data(client: AsyncClient, auth_headers: dict[str, str]
 
 
 @pytest.mark.asyncio
-async def test_predict_success(client: AsyncClient, auth_headers: dict[str, str]) -> None:
+async def test_predict_success(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
     """Happy path: model loaded, data exists, returns prediction."""
     # Seed some OHLCV data
     from src.market.repository import upsert_ohlcv
@@ -3554,15 +3756,17 @@ async def test_predict_success(client: AsyncClient, auth_headers: dict[str, str]
     rows = []
     for i in range(100):
         d = date.today() - timedelta(days=100 - i)
-        rows.append({
-            "date": d.isoformat(),
-            "open": 150.0 + i * 0.1,
-            "high": 152.0 + i * 0.1,
-            "low": 149.0 + i * 0.1,
-            "close": 151.0 + i * 0.1,
-            "adjusted_close": 150.0 + i * 0.1,
-            "volume": 1000000,
-        })
+        rows.append(
+            {
+                "date": d.isoformat(),
+                "open": 150.0 + i * 0.1,
+                "high": 152.0 + i * 0.1,
+                "low": 149.0 + i * 0.1,
+                "close": 151.0 + i * 0.1,
+                "adjusted_close": 150.0 + i * 0.1,
+                "volume": 1000000,
+            }
+        )
     await upsert_ohlcv("AAPL", rows)
 
     mock_result = {
@@ -3573,9 +3777,13 @@ async def test_predict_success(client: AsyncClient, auth_headers: dict[str, str]
         "model_version": "1",
     }
 
-    with patch("src.prediction.router.prediction_service.is_loaded", return_value=True), \
-         patch("src.prediction.router.prediction_service.predict", return_value=mock_result), \
-         patch("src.prediction.router.get_redis", return_value=None):
+    with (
+        patch("src.prediction.router.prediction_service.is_loaded", return_value=True),
+        patch(
+            "src.prediction.router.prediction_service.predict", return_value=mock_result
+        ),
+        patch("src.prediction.router.get_redis", return_value=None),
+    ):
         response = await client.get(
             "/predict/AAPL",
             headers=auth_headers,
@@ -3591,16 +3799,23 @@ async def test_predict_success(client: AsyncClient, auth_headers: dict[str, str]
 
 
 @pytest.mark.asyncio
-async def test_predict_cache_hit(client: AsyncClient, auth_headers: dict[str, str]) -> None:
+async def test_predict_cache_hit(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
     """When Redis cache is fresh, return cached prediction."""
     import json
 
     mock_redis = AsyncMock()
-    cached_data = json.dumps({
-        "ticker": "AAPL", "direction": "DOWN", "confidence": 0.6,
-        "probabilities": {"DOWN": 0.6, "FLAT": 0.3, "UP": 0.1},
-        "model_version": "1", "predicted_at": "2026-07-01T12:00:00+00:00",
-    })
+    cached_data = json.dumps(
+        {
+            "ticker": "AAPL",
+            "direction": "DOWN",
+            "confidence": 0.6,
+            "probabilities": {"DOWN": 0.6, "FLAT": 0.3, "UP": 0.1},
+            "model_version": "1",
+            "predicted_at": "2026-07-01T12:00:00+00:00",
+        }
+    )
     mock_redis.get.return_value = cached_data
 
     with patch("src.prediction.router.get_redis", return_value=mock_redis):
@@ -3623,10 +3838,14 @@ async def test_predict_requires_auth(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_predict_invalid_ticker(client: AsyncClient, auth_headers: dict[str, str]) -> None:
+async def test_predict_invalid_ticker(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
     """Non-existent ticker returns 404."""
-    with patch("src.prediction.router.prediction_service.is_loaded", return_value=True), \
-         patch("src.prediction.router.get_ohlcv", return_value=[]):
+    with (
+        patch("src.prediction.router.prediction_service.is_loaded", return_value=True),
+        patch("src.prediction.router.get_ohlcv", return_value=[]),
+    ):
         response = await client.get(
             "/predict/INVALID123",
             headers=auth_headers,
@@ -3635,19 +3854,32 @@ async def test_predict_invalid_ticker(client: AsyncClient, auth_headers: dict[st
 
 
 @pytest.mark.asyncio
-async def test_predict_model_exception(client: AsyncClient, auth_headers: dict[str, str]) -> None:
+async def test_predict_model_exception(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
     """If model.predict raises, return 500."""
     # Seed minimal data
     from src.market.repository import upsert_ohlcv
-    await upsert_ohlcv("AAPL", [{
-        "date": date.today().isoformat(),
-        "adjusted_close": 150.0, "volume": 1000000,
-    }])
 
-    with patch("src.prediction.router.prediction_service.is_loaded", return_value=True), \
-         patch("src.prediction.router.prediction_service.predict",
-               side_effect=RuntimeError("OOM")), \
-         patch("src.prediction.router.get_redis", return_value=None):
+    await upsert_ohlcv(
+        "AAPL",
+        [
+            {
+                "date": date.today().isoformat(),
+                "adjusted_close": 150.0,
+                "volume": 1000000,
+            }
+        ],
+    )
+
+    with (
+        patch("src.prediction.router.prediction_service.is_loaded", return_value=True),
+        patch(
+            "src.prediction.router.prediction_service.predict",
+            side_effect=RuntimeError("OOM"),
+        ),
+        patch("src.prediction.router.get_redis", return_value=None),
+    ):
         response = await client.get(
             "/predict/AAPL",
             headers=auth_headers,

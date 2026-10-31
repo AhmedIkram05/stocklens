@@ -41,19 +41,27 @@ Add a confidence-gated cascade to the receipt OCR pipeline: fast regex parsing f
 ```python
 # backend/src/receipts/models.py — add to existing file
 
+
 class FieldConfidence(BaseModel):
     """An extracted field with its confidence score."""
+
     value: str | float | list[dict] | None = None
     confidence: float  # 0.0 - 1.0
     source: Literal["regex", "llm"]
 
+
 class CascadeResult(BaseModel):
     """Result of the cascade extraction pipeline."""
+
     extraction: ReceiptExtraction
-    field_confidences: dict[str, FieldConfidence]  # {"merchant": ..., "total": ..., "date": ..., "items": ...}
+    field_confidences: dict[
+        str, FieldConfidence
+    ]  # {"merchant": ..., "total": ..., "date": ..., "items": ...}
     overall_confidence: float
     source: Literal["regex", "cascade", "degraded", "failed"]
-    discrepancies: list[dict]  # [{"field": "merchant", "regex": "TESCO", "llm": "Tesco Express"}]
+    discrepancies: list[
+        dict
+    ]  # [{"field": "merchant", "regex": "TESCO", "llm": "Tesco Express"}]
     raw_text: str
 ```
 
@@ -62,8 +70,10 @@ class CascadeResult(BaseModel):
 ```python
 # backend/src/receipts/llm_extractor.py
 
+
 class LLMExtractionResult(BaseModel):
     """Structured output from Bedrock Haiku extraction."""
+
     merchant_name: str | None = None
     total_amount: float | None = None
     date: str | None = None  # ISO format
@@ -175,25 +185,35 @@ Two scopes are tracked to prevent both per-receipt retry loops AND retry storms 
   def _text_hash(raw_text: str) -> str:
       return hashlib.sha256(raw_text.encode()).hexdigest()[:16]
 
+
   async def get_cached_llm(raw_text: str) -> dict | None:
       """Check LLM cache by text hash. Returns parsed dict or None."""
       # Import settings inside function to avoid circular import (config → receipts → cache → config)
       from src.config import settings
+
       key = f"llm_cache:{_text_hash(raw_text)}"
       cached = await (await get_redis()).get(key)
       return json.loads(cached) if cached else None
 
+
   async def set_cached_llm(raw_text: str, result: dict) -> None:
       from src.config import settings
+
       key = f"llm_cache:{_text_hash(raw_text)}"
       await (await get_redis()).setex(key, settings.LLM_CACHE_TTL, json.dumps(result))
 
+
   async def set_enrich_status(receipt_id: str, status: str) -> None:
       from src.config import settings
-      await (await get_redis()).setex(f"enrich_status:{receipt_id}", settings.ENRICH_STATUS_TTL, status)
+
+      await (await get_redis()).setex(
+          f"enrich_status:{receipt_id}", settings.ENRICH_STATUS_TTL, status
+      )
+
 
   async def get_enrich_status(receipt_id: str) -> str | None:
       return await (await get_redis()).get(f"enrich_status:{receipt_id}")
+
 
   async def increment_retry(scope: str, key_id: str) -> int:
       """Increment retry count by scope (receipt_id OR text_hash). Returns attempt number.
@@ -270,6 +290,7 @@ OCR text:
       # items: score by count (0 items = 0.0, N items = min(0.9, 0.5 + N*0.1))
       # Uses rapidfuzz to check if merchant matches known_merchants → boost confidence
 
+
   def _detect_discrepancies(
       heuristic: dict[str, FieldConfidence], llm: LLMExtractionResult
   ) -> list[dict]:
@@ -287,10 +308,14 @@ OCR text:
                   discrepancies.append({"field": field, "regex": ..., "llm": ...})
       return discrepancies
 
+
   def _merge_results(
-      heuristic: dict[str, FieldConfidence], llm: LLMExtractionResult, discrepancies: list[dict]
+      heuristic: dict[str, FieldConfidence],
+      llm: LLMExtractionResult,
+      discrepancies: list[dict],
   ) -> CascadeResult:
       """Pick the higher-confidence value for each field."""
+
 
   async def cascade_extract(image_bytes: bytes) -> CascadeResult:
       """Full cascade: OCR → regex → confidence check → optional LLM escalation."""
@@ -322,6 +347,7 @@ OCR text:
   - **Load known merchants from `backend/src/categories/seed.py`** — extract all `merchant_keywords` from `SEED_CATEGORIES` at module load:
     ```python
     from src.categories.seed import SEED_CATEGORIES
+
     KNOWN_MERCHANTS = [kw for cat in SEED_CATEGORIES for kw in cat["merchant_keywords"]]
     ```
   - Use `rapidfuzz.fuzz.token_sort_ratio` for matching

@@ -200,6 +200,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class OHLCVData(BaseModel):
     """Single day of OHLCV price data."""
+
     model_config = ConfigDict(json_encoders={Decimal: float})
 
     date: date
@@ -222,6 +223,7 @@ class OHLCVResponse(BaseModel):
 
 class QuoteResponse(BaseModel):
     """Current quote snapshot for a single ticker."""
+
     model_config = ConfigDict(json_encoders={Decimal: float})
 
     ticker: str
@@ -239,12 +241,19 @@ class BatchQuoteResponse(BaseModel):
     quotes: list[QuoteResponse]
     total: int
 
+
 # ── Query parameters ──
+
 
 class OHLCVParams(BaseModel):
     """Query params for OHLCV endpoint."""
-    start_date: Optional[date] = Field(None, description="Start date (inclusive). Defaults to 1 year ago.")
-    end_date: Optional[date] = Field(None, description="End date (inclusive). Defaults to today.")
+
+    start_date: Optional[date] = Field(
+        None, description="Start date (inclusive). Defaults to 1 year ago."
+    )
+    end_date: Optional[date] = Field(
+        None, description="End date (inclusive). Defaults to today."
+    )
     # ponytail: no max_days limit for Phase 2 — add if abuse becomes an issue
 ```
 
@@ -404,7 +413,12 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from requests.exceptions import HTTPError
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 
 import yfinance as yf
 
@@ -414,7 +428,9 @@ logger = logging.getLogger(__name__)
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=1, max=4),
-    retry=retry_if_exception_type((ConnectionError, TimeoutError, ValueError, HTTPError)),
+    retry=retry_if_exception_type(
+        (ConnectionError, TimeoutError, ValueError, HTTPError)
+    ),
     reraise=True,
 )
 def _download_ohlcv(
@@ -431,7 +447,9 @@ def _download_ohlcv(
     start_str = start_date.isoformat() if start_date else None
     end_str = end_date.isoformat() if end_date else None
 
-    df = yf.download(ticker, start=start_str, end=end_str, progress=False, auto_adjust=False)
+    df = yf.download(
+        ticker, start=start_str, end=end_str, progress=False, auto_adjust=False
+    )
 
     if df.empty:
         return []
@@ -441,15 +459,17 @@ def _download_ohlcv(
     rows = []
     for idx, row in df.iterrows():
         d = idx.date() if hasattr(idx, "date") else idx
-        rows.append({
-            "date": d,
-            "open": _maybe_decimal(row.get("Open")),
-            "high": _maybe_decimal(row.get("High")),
-            "low": _maybe_decimal(row.get("Low")),
-            "close": _maybe_decimal(row.get("Close")),
-            "adjusted_close": _maybe_decimal(row.get("Adj Close")),
-            "volume": _maybe_int(row.get("Volume")),
-        })
+        rows.append(
+            {
+                "date": d,
+                "open": _maybe_decimal(row.get("Open")),
+                "high": _maybe_decimal(row.get("High")),
+                "low": _maybe_decimal(row.get("Low")),
+                "close": _maybe_decimal(row.get("Close")),
+                "adjusted_close": _maybe_decimal(row.get("Adj Close")),
+                "volume": _maybe_int(row.get("Volume")),
+            }
+        )
     return rows
 
 
@@ -622,7 +642,9 @@ async def _refresh_ohlcv_if_stale(ticker: str) -> bool:
     # Cache HIT: newest data is yesterday or newer
     # Weekend tolerance: on Monday, accept Friday's data (3-day gap)
     staleness_days = 3 if date.today().weekday() == 0 else 1
-    if latest_db_date is not None and latest_db_date >= date.today() - timedelta(days=staleness_days):
+    if latest_db_date is not None and latest_db_date >= date.today() - timedelta(
+        days=staleness_days
+    ):
         return False
 
     # Cache MISS or stale: fetch from yfinance
@@ -894,9 +916,12 @@ async def test_get_quote_happy_path(
     auth_headers: dict[str, str],
 ) -> None:
     """GET /market/quote/AAPL returns quote data (mocked yfinance, no Redis)."""
-    with patch("src.market.provider._fetch_quote") as mock_fetch, \
-         patch("src.market.provider.get_redis", return_value=None):
+    with (
+        patch("src.market.provider._fetch_quote") as mock_fetch,
+        patch("src.market.provider.get_redis", return_value=None),
+    ):
         from datetime import datetime
+
         mock_fetch.return_value = {
             "ticker": "AAPL",
             "price": 185.50,
@@ -955,6 +980,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class HoldingPerformance(BaseModel):
     """Performance metrics for a single holding."""
+
     model_config = ConfigDict(json_encoders={Decimal: float})
 
     ticker: str
@@ -972,6 +998,7 @@ class HoldingPerformance(BaseModel):
 
 class PortfolioPerformanceResponse(BaseModel):
     """Aggregate portfolio performance."""
+
     model_config = ConfigDict(json_encoders={Decimal: float})
 
     portfolio_id: str
@@ -987,7 +1014,9 @@ class PortfolioPerformanceResponse(BaseModel):
         description="Uninvested cash = SUM(deposits) - SUM(net BUY amounts)",
     )
     # Time-weighted return
-    twr: Optional[Decimal] = Field(None, description="Time-weighted return over the period")
+    twr: Optional[Decimal] = Field(
+        None, description="Time-weighted return over the period"
+    )
     twr_annualised: Optional[Decimal] = None
     twr_start_date: Optional[date] = None
     twr_end_date: Optional[date] = None
@@ -1008,6 +1037,7 @@ class PortfolioPerformanceResponse(BaseModel):
 
 class BenchmarkComparisonResponse(BaseModel):
     """Portfolio vs benchmark comparison."""
+
     model_config = ConfigDict(json_encoders={Decimal: float})
 
     portfolio_id: str
@@ -1020,19 +1050,25 @@ class BenchmarkComparisonResponse(BaseModel):
     period_start: date
     period_end: date
     methodology: str = "daily-linked"
-    daily_returns_count: int = Field(0, description="Number of daily return observations used")
+    daily_returns_count: int = Field(
+        0, description="Number of daily return observations used"
+    )
     calculated_at: datetime
 
 
 class PerformanceParams(BaseModel):
     """Query parameters for performance endpoint."""
+
     start_date: Optional[date] = None
     end_date: Optional[date] = None
-    benchmark: Optional[str] = Field(None, description="Benchmark ticker (default: SPY)")
+    benchmark: Optional[str] = Field(
+        None, description="Benchmark ticker (default: SPY)"
+    )
 
 
 class BenchmarkParams(BaseModel):
     """Query parameters for benchmark comparison."""
+
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     benchmark: Optional[str] = Field("SPY", description="Benchmark ticker (SPY or QQQ)")
@@ -1111,19 +1147,28 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class CashFlowCreate(BaseModel):
     """Request body for recording a new cash flow (deposit)."""
-    amount: Decimal = Field(..., gt=Decimal(0), description="Deposit amount (positive only)")
-    source: str = Field("receipt", description="Source of deposit: 'receipt', 'manual', 'transfer'")
-    source_id: Optional[UUID] = Field(None, description="ID of the source receipt, if applicable")
+
+    amount: Decimal = Field(
+        ..., gt=Decimal(0), description="Deposit amount (positive only)"
+    )
+    source: str = Field(
+        "receipt", description="Source of deposit: 'receipt', 'manual', 'transfer'"
+    )
+    source_id: Optional[UUID] = Field(
+        None, description="ID of the source receipt, if applicable"
+    )
     notes: Optional[str] = None
 
 
 class CashFlowUpdate(BaseModel):
     """Request body for updating a cash flow (notes only — amount is immutable)."""
+
     notes: Optional[str] = None
 
 
 class CashFlowInDB(BaseModel):
     """Full cash flow record as stored in the database."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -1137,6 +1182,7 @@ class CashFlowInDB(BaseModel):
 
 class CashFlowResponse(BaseModel):
     """API response for a single cash flow."""
+
     model_config = ConfigDict(json_encoders={Decimal: float})
 
     id: str
@@ -1150,6 +1196,7 @@ class CashFlowResponse(BaseModel):
 
 class CashFlowListResponse(BaseModel):
     """Paginated list of cash flows."""
+
     cash_flows: list[CashFlowResponse]
     total: int
     limit: int
@@ -1314,6 +1361,7 @@ router = APIRouter()
 async def _verify_portfolio_ownership(portfolio_id: str, user_id: str) -> dict | None:
     """Return the portfolio row if it exists and belongs to *user_id*."""
     from src.database.connection import connection_ctx
+
     async with connection_ctx() as conn:
         row = await conn.fetchrow(
             "SELECT id, name, user_id, created_at, updated_at "
@@ -1324,7 +1372,9 @@ async def _verify_portfolio_ownership(portfolio_id: str, user_id: str) -> dict |
     return dict(row) if row else None
 
 
-@router.get("/portfolios/{portfolio_id}/cash-flows", response_model=CashFlowListResponse)
+@router.get(
+    "/portfolios/{portfolio_id}/cash-flows", response_model=CashFlowListResponse
+)
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def list_cash_flows_endpoint(
     request: Request,
@@ -1336,28 +1386,37 @@ async def list_cash_flows_endpoint(
     """List cash flows for a portfolio (most recent first)."""
     portfolio = await _verify_portfolio_ownership(str(portfolio_id), current_user.id)
     if portfolio is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found"
+        )
 
     rows = await list_cash_flows(str(portfolio_id), limit=limit, offset=offset)
     total = await count_cash_flows(str(portfolio_id))
 
     return CashFlowListResponse(
-        cash_flows=[CashFlowResponse(
-            id=str(r["id"]),
-            portfolio_id=str(r["portfolio_id"]),
-            amount=Decimal(r["amount"]),
-            source=r["source"],
-            source_id=str(r["source_id"]) if r.get("source_id") else None,
-            notes=r.get("notes"),
-            created_at=r["created_at"],
-        ) for r in rows],
+        cash_flows=[
+            CashFlowResponse(
+                id=str(r["id"]),
+                portfolio_id=str(r["portfolio_id"]),
+                amount=Decimal(r["amount"]),
+                source=r["source"],
+                source_id=str(r["source_id"]) if r.get("source_id") else None,
+                notes=r.get("notes"),
+                created_at=r["created_at"],
+            )
+            for r in rows
+        ],
         total=total,
         limit=limit,
         offset=offset,
     )
 
 
-@router.post("/portfolios/{portfolio_id}/cash-flows", response_model=CashFlowResponse, status_code=201)
+@router.post(
+    "/portfolios/{portfolio_id}/cash-flows",
+    response_model=CashFlowResponse,
+    status_code=201,
+)
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def create_cash_flow_endpoint(
     request: Request,
@@ -1368,7 +1427,9 @@ async def create_cash_flow_endpoint(
     """Record a cash flow (deposit) into a portfolio."""
     portfolio = await _verify_portfolio_ownership(str(portfolio_id), current_user.id)
     if portfolio is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found"
+        )
 
     row = await create_cash_flow(
         portfolio_id=str(portfolio_id),
@@ -1390,7 +1451,10 @@ async def create_cash_flow_endpoint(
     )
 
 
-@router.patch("/portfolios/{portfolio_id}/cash-flows/{cash_flow_id}", response_model=CashFlowResponse)
+@router.patch(
+    "/portfolios/{portfolio_id}/cash-flows/{cash_flow_id}",
+    response_model=CashFlowResponse,
+)
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def update_cash_flow_endpoint(
     request: Request,
@@ -1402,15 +1466,21 @@ async def update_cash_flow_endpoint(
     """Update notes on a cash flow (amount is immutable)."""
     portfolio = await _verify_portfolio_ownership(str(portfolio_id), current_user.id)
     if portfolio is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found"
+        )
 
     existing = await get_cash_flow(str(cash_flow_id))
     if existing is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cash flow not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Cash flow not found"
+        )
 
     updated = await update_cash_flow_notes(str(cash_flow_id), body.notes)
     if not updated:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update"
+        )
 
     row = await get_cash_flow(str(cash_flow_id))
     return CashFlowResponse(
@@ -1515,7 +1585,9 @@ def compute_holding_performance(
 
     portfolio_weight_pct = (
         (market_value / total_portfolio_value * 100)
-        if market_value is not None and total_portfolio_value and total_portfolio_value > 0
+        if market_value is not None
+        and total_portfolio_value
+        and total_portfolio_value > 0
         else None
     )
 
@@ -1609,14 +1681,16 @@ def compute_portfolio_performance(
     # Recalculate weights now that we have total_market_value
     for hp in holdings_perf:
         if hp.market_value is not None and total_market_value > 0:
-            hp.portfolio_weight_pct = (hp.market_value / total_market_value * 100)
+            hp.portfolio_weight_pct = hp.market_value / total_market_value * 100
 
     # ── 3. Portfolio-level P&L ──
     if total_market_value > 0 and total_cost_basis > 0:
         total_unrealised_pl = total_market_value - total_cost_basis
         total_unrealised_pl_pct = (total_unrealised_pl / total_cost_basis) * 100
     else:
-        total_unrealised_pl = total_market_value - total_cost_basis if total_market_value else None
+        total_unrealised_pl = (
+            total_market_value - total_cost_basis if total_market_value else None
+        )
         total_unrealised_pl_pct = None
 
     # ── 4. Day Change ──
@@ -1639,7 +1713,9 @@ def compute_portfolio_performance(
         total_weight = sum(day_change_weights.values())
         if total_weight > 0:
             weighted_sum = sum(
-                (hp.day_change_pct or 0) * day_change_weights.get(hp.ticker, 0) / total_weight
+                (hp.day_change_pct or 0)
+                * day_change_weights.get(hp.ticker, 0)
+                / total_weight
                 for hp in holdings_perf
             )
             total_day_change_pct = weighted_sum
@@ -1649,9 +1725,7 @@ def compute_portfolio_performance(
     # Net invested = sum of BUY amounts from transactions
     net_invested = sum(
         t["total_amount"] for t in transactions if t["type"] == "BUY"
-    ) - sum(
-        t["total_amount"] for t in transactions if t["type"] == "SELL"
-    )
+    ) - sum(t["total_amount"] for t in transactions if t["type"] == "SELL")
     free_cash_balance = total_deposits - net_invested
 
     # ── 6. TWR ──
@@ -1703,18 +1777,30 @@ def _compute_twr(
     are separate signals. Cash flow amounts are the external CF for TWR;
     transactions determine holdings state only.
     """
-    relevant_txns = [
-        t for t in transactions
-        if t["date"] <= end_date
-    ]
+    relevant_txns = [t for t in transactions if t["date"] <= end_date]
 
     if not relevant_txns and not cash_flows:
         return None, None
 
     # Merge transaction dates and cash flow dates
-    txn_dates = sorted({t["date"] for t in relevant_txns if start_date <= t["date"] <= end_date})
-    cf_dates = sorted({cf["created_at"].date() if hasattr(cf["created_at"], "date") else cf["created_at"]
-                       for cf in cash_flows if start_date <= (cf["created_at"].date() if hasattr(cf["created_at"], "date") else cf["created_at"]) <= end_date})
+    txn_dates = sorted(
+        {t["date"] for t in relevant_txns if start_date <= t["date"] <= end_date}
+    )
+    cf_dates = sorted(
+        {
+            cf["created_at"].date()
+            if hasattr(cf["created_at"], "date")
+            else cf["created_at"]
+            for cf in cash_flows
+            if start_date
+            <= (
+                cf["created_at"].date()
+                if hasattr(cf["created_at"], "date")
+                else cf["created_at"]
+            )
+            <= end_date
+        }
+    )
     all_dates = sorted(set([start_date] + txn_dates + cf_dates + [end_date]))
 
     # Build lookup maps
@@ -1724,7 +1810,11 @@ def _compute_twr(
 
     cfs_by_date: dict[date, Decimal] = defaultdict(Decimal)
     for cf in cash_flows:
-        cf_date = cf["created_at"].date() if hasattr(cf["created_at"], "date") else cf["created_at"]
+        cf_date = (
+            cf["created_at"].date()
+            if hasattr(cf["created_at"], "date")
+            else cf["created_at"]
+        )
         if start_date <= cf_date <= end_date:
             cfs_by_date[cf_date] += cf["amount"]
 
@@ -1739,9 +1829,13 @@ def _compute_twr(
         if txn["date"] >= start_date:
             continue
         if txn["type"] == "BUY":
-            current_holdings[txn["ticker"]] = current_holdings.get(txn["ticker"], Decimal(0)) + txn["shares"]
+            current_holdings[txn["ticker"]] = (
+                current_holdings.get(txn["ticker"], Decimal(0)) + txn["shares"]
+            )
         else:
-            current_holdings[txn["ticker"]] = current_holdings.get(txn["ticker"], Decimal(0)) - txn["shares"]
+            current_holdings[txn["ticker"]] = (
+                current_holdings.get(txn["ticker"], Decimal(0)) - txn["shares"]
+            )
             if current_holdings[txn["ticker"]] <= 0:
                 del current_holdings[txn["ticker"]]
 
@@ -1756,9 +1850,13 @@ def _compute_twr(
         for txn in txns_by_date.get(sub_end, []):
             ticker = txn["ticker"]
             if txn["type"] == "BUY":
-                current_holdings[ticker] = current_holdings.get(ticker, Decimal(0)) + txn["shares"]
+                current_holdings[ticker] = (
+                    current_holdings.get(ticker, Decimal(0)) + txn["shares"]
+                )
             else:
-                current_holdings[ticker] = current_holdings.get(ticker, Decimal(0)) - txn["shares"]
+                current_holdings[ticker] = (
+                    current_holdings.get(ticker, Decimal(0)) - txn["shares"]
+                )
                 if current_holdings[ticker] <= 0:
                     del current_holdings[ticker]
 
@@ -1775,7 +1873,7 @@ def _compute_twr(
         else:
             sub_return = (emv - bmv - cf_total) / bmv
 
-        cumulative_return *= (Decimal(1) + sub_return)
+        cumulative_return *= Decimal(1) + sub_return
         sub_period_count += 1
 
     if sub_period_count == 0:
@@ -1784,7 +1882,9 @@ def _compute_twr(
     twr = cumulative_return - Decimal(1)
     days = (end_date - start_date).days
     if days > 0:
-        twr_annualised = (Decimal(1) + twr) ** (Decimal(365) / Decimal(days)) - Decimal(1)
+        twr_annualised = (Decimal(1) + twr) ** (Decimal(365) / Decimal(days)) - Decimal(
+            1
+        )
     else:
         twr_annualised = None
 
@@ -1853,7 +1953,7 @@ def compute_benchmark_comparison(
     # Benchmark return from adjusted_close prices: simple geometric linking
     benchmark_return = Decimal(1)
     for r in benchmark_daily_returns:
-        benchmark_return *= (Decimal(1) + r)
+        benchmark_return *= Decimal(1) + r
     benchmark_return -= Decimal(1)
 
     # Excess return (alpha)
@@ -2015,6 +2115,7 @@ async def _get_cash_flows_sorted(portfolio_id: str) -> list[dict[str, Any]]:
         )
     return [dict(r) for r in rows]
 
+
 async def _get_free_cash_balance(portfolio_id: str) -> Decimal:
     """Compute free cash = total deposits - net invested (BUYs - SELLs)."""
     async with connection_ctx() as conn:
@@ -2029,6 +2130,7 @@ async def _get_free_cash_balance(portfolio_id: str) -> Decimal:
         )
     return Decimal(str(total_deposits)) - Decimal(str(net_invested))
 
+
 async def _build_price_map(
     tickers: list[str],
     start_date: date,
@@ -2040,10 +2142,13 @@ async def _build_price_map(
     """
     import asyncio
 
-    results = await asyncio.gather(*[
-        get_ohlcv(ticker, start_date=start_date, end_date=end_date, limit=2000)
-        for ticker in tickers
-    ], return_exceptions=True)
+    results = await asyncio.gather(
+        *[
+            get_ohlcv(ticker, start_date=start_date, end_date=end_date, limit=2000)
+            for ticker in tickers
+        ],
+        return_exceptions=True,
+    )
 
     price_map: dict[str, dict[date, Decimal]] = {}
     for ticker, rows in zip(tickers, results):
@@ -2051,7 +2156,11 @@ async def _build_price_map(
             logger.warning("price_map_fetch_failed", ticker=ticker, error=str(rows))
             price_map[ticker] = {}
         else:
-            price_map[ticker] = {r["date"]: r["adjusted_close"] for r in rows if r["adjusted_close"] is not None}
+            price_map[ticker] = {
+                r["date"]: r["adjusted_close"]
+                for r in rows
+                if r["adjusted_close"] is not None
+            }
     return price_map
 
 
@@ -2237,6 +2346,7 @@ def _compute_portfolio_daily_returns(
 
     # Build transaction index by date
     from collections import defaultdict
+
     txns_by_date: dict[date, list[dict]] = defaultdict(list)
     for t in transactions:
         txns_by_date[t["date"]].append(t)
@@ -2394,7 +2504,9 @@ class TestHoldingPerformance:
         assert result.unrealised_pl == Decimal("3000.00")
         assert result.unrealised_pl_pct == Decimal("20.00")
         assert result.day_change == Decimal("200.00")
-        assert result.day_change_pct == pytest.approx(Decimal("1.1236"), rel=Decimal("0.01"))
+        assert result.day_change_pct == pytest.approx(
+            Decimal("1.1236"), rel=Decimal("0.01")
+        )
         assert result.portfolio_weight_pct == Decimal("100.00")
 
     def test_missing_price(self):
@@ -2453,17 +2565,21 @@ class TestTWR:
         - TWR = (1+0)(1+0.0133)-1 = 0.0133
         """
         twr, ann = _compute_twr(
-            transactions=[{
-                "type": "BUY",
-                "ticker": "AAPL",
-                "shares": Decimal("10"),
-                "total_amount": Decimal("1500.00"),
-                "date": date(2024, 6, 15),
-            }],
-            cash_flows=[{
-                "amount": Decimal("1500.00"),
-                "created_at": datetime(2024, 6, 15),
-            }],
+            transactions=[
+                {
+                    "type": "BUY",
+                    "ticker": "AAPL",
+                    "shares": Decimal("10"),
+                    "total_amount": Decimal("1500.00"),
+                    "date": date(2024, 6, 15),
+                }
+            ],
+            cash_flows=[
+                {
+                    "amount": Decimal("1500.00"),
+                    "created_at": datetime(2024, 6, 15),
+                }
+            ],
             price_map={
                 "AAPL": {
                     date(2024, 1, 1): Decimal("148.00"),
@@ -2484,17 +2600,21 @@ class TestTWR:
         CF = 1500 on d1 via cash_flow, BUY 10@150 on same day.
         """
         twr, ann = _compute_twr(
-            transactions=[{
-                "type": "BUY",
-                "ticker": "AAPL",
-                "shares": Decimal("10"),
-                "total_amount": Decimal("1500.00"),
-                "date": date(2024, 1, 2),
-            }],
-            cash_flows=[{
-                "amount": Decimal("1500.00"),
-                "created_at": datetime(2024, 1, 2),
-            }],
+            transactions=[
+                {
+                    "type": "BUY",
+                    "ticker": "AAPL",
+                    "shares": Decimal("10"),
+                    "total_amount": Decimal("1500.00"),
+                    "date": date(2024, 1, 2),
+                }
+            ],
+            cash_flows=[
+                {
+                    "amount": Decimal("1500.00"),
+                    "created_at": datetime(2024, 1, 2),
+                }
+            ],
             price_map={
                 "AAPL": {
                     date(2024, 1, 1): Decimal("150.00"),
@@ -2513,17 +2633,21 @@ class TestTWR:
     def test_bmv_zero_guard(self):
         """BMV = 0 with cash flow → sub-period return is 0 (not division by zero)."""
         twr, ann = _compute_twr(
-            transactions=[{
-                "type": "BUY",
-                "ticker": "AAPL",
-                "shares": Decimal("10"),
-                "total_amount": Decimal("1500.00"),
-                "date": date(2024, 6, 15),
-            }],
-            cash_flows=[{
-                "amount": Decimal("1500.00"),
-                "created_at": datetime(2024, 6, 15),
-            }],
+            transactions=[
+                {
+                    "type": "BUY",
+                    "ticker": "AAPL",
+                    "shares": Decimal("10"),
+                    "total_amount": Decimal("1500.00"),
+                    "date": date(2024, 6, 15),
+                }
+            ],
+            cash_flows=[
+                {
+                    "amount": Decimal("1500.00"),
+                    "created_at": datetime(2024, 6, 15),
+                }
+            ],
             price_map={
                 "AAPL": {
                     date(2024, 6, 14): Decimal("150.00"),

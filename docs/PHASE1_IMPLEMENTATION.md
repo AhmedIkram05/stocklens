@@ -336,7 +336,7 @@ structlog.configure(
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
         structlog.processors.UnicodeDecoder(),
-        structlog.processors.JSONRenderer()  # JSON output for CloudWatch log insight
+        structlog.processors.JSONRenderer(),  # JSON output for CloudWatch log insight
     ],
     context_class=dict,
     logger_factory=structlog.stdlib.LoggerFactory(),
@@ -454,18 +454,22 @@ import asyncpg
 
 pool: asyncpg.Pool | None = None
 
+
 async def init_pool(dsn: str):
     global pool
     pool = await asyncpg.create_pool(dsn, min_size=2, max_size=10)
+
 
 async def get_conn() -> asyncpg.Connection:
     if pool is None:
         raise RuntimeError("Database pool not initialised")
     return await pool.acquire()
 
+
 async def release_conn(conn: asyncpg.Connection):
     if pool:
         await pool.release(conn)
+
 
 async def close_pool():
     global pool
@@ -479,6 +483,7 @@ async def close_pool():
 ```python
 from alembic.config import Config
 from alembic import command
+
 
 async def run_migrations():
     alembic_cfg = Config("alembic.ini")
@@ -580,12 +585,15 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     display_name: str = Field(default="", max_length=100)
 
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
 
+
 class TokenRefreshRequest(BaseModel):
     refresh_token: str
+
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -593,8 +601,10 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
 
+
 class LogoutRequest(BaseModel):
     refresh_token: str
+
 
 class UserResponse(BaseModel):
     id: str
@@ -1134,6 +1144,7 @@ from httpx import AsyncClient, ASGITransport
 from src.main import app
 from src.database.connection import init_pool, close_pool
 
+
 @pytest.fixture
 async def test_db():
     """Create a fresh connection to postgres_test, start a transaction,
@@ -1144,28 +1155,34 @@ async def test_db():
     await conn.execute("ROLLBACK")
     await conn.close()
 
+
 @pytest.fixture
 async def client():
     """Async HTTP client against the FastAPI app (no server needed)."""
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
+
 
 @pytest.fixture
 async def auth_headers(client):
     """Register a test user, login, return auth header dict."""
-    await client.post("/auth/register", json={
-        "email": "test@test.com", "password": "password123"
-    })
-    resp = await client.post("/auth/login", json={
-        "email": "test@test.com", "password": "password123"
-    })
+    await client.post(
+        "/auth/register", json={"email": "test@test.com", "password": "password123"}
+    )
+    resp = await client.post(
+        "/auth/login", json={"email": "test@test.com", "password": "password123"}
+    )
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
 
 @pytest.fixture
 async def test_portfolio(client, auth_headers):
     """Create a portfolio for the authenticated test user."""
-    resp = await client.post("/portfolios",
+    resp = await client.post(
+        "/portfolios",
         json={"name": "Test Portfolio"},
         headers=auth_headers,
     )
@@ -1205,13 +1222,17 @@ async def test_create_portfolio(client, auth_headers):
     assert data["name"] == "My Portfolio"
     assert "id" in data
 
+
 # OCR test example (sync — pure function)
 def test_parse_total_pound():
     from src.receipts.ocr import parse_total
+
     assert parse_total("Total £47.99") == 47.99
+
 
 def test_parse_total_grand_total():
     from src.receipts.ocr import parse_total
+
     assert parse_total("Grand Total: $123.45") == 123.45
 ```
 

@@ -97,9 +97,16 @@ def test_pg_conn_reads_postgres_default(stub_hook) -> None:
 def test_pg_dsn_formats_all_connection_fields(stub_hook) -> None:
     """Every part of the connection lands in the DSN, not just host and port."""
     stub_hook(
-        login="user", password="pw", host="postgres.internal", port=6543, schema="analytics"
+        login="user",
+        password="pw",
+        host="postgres.internal",
+        port=6543,
+        schema="analytics",
     )
-    assert weekly_retraining._pg_dsn() == "postgresql://user:pw@postgres.internal:6543/analytics"
+    assert (
+        weekly_retraining._pg_dsn()
+        == "postgresql://user:pw@postgres.internal:6543/analytics"
+    )
 
 
 def test_pg_dsn_defaults_schema_to_stocklens(stub_hook) -> None:
@@ -109,7 +116,9 @@ def test_pg_dsn_defaults_schema_to_stocklens(stub_hook) -> None:
     without one, so the fallback is the common path, not an edge case.
     """
     stub_hook(schema=None)
-    assert weekly_retraining._pg_dsn() == "postgresql://stocklens:s3cret@db:5432/stocklens"
+    assert (
+        weekly_retraining._pg_dsn() == "postgresql://stocklens:s3cret@db:5432/stocklens"
+    )
 
 
 def test_pg_dsn_is_url_safe_against_empty_password(stub_hook) -> None:
