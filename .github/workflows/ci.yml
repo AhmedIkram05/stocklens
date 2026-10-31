@@ -11,6 +11,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least privilege: read the repo for checkout, and PR metadata for
+# gitleaks-action's pull-request scan. No job here writes to the repo.
+permissions:
+  contents: read
+  pull-requests: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -92,6 +98,9 @@ jobs:
           cache: npm
       - run: npm ci
       - name: npm audit
+        # Non-blocking by design: 22 pre-existing advisories (1 critical, 9 high —
+        # undici, and uuid/xcode via Expo) are tracked separately. Restore the hard
+        # failure once the dependency upgrades land.
         run: npm audit --omit=dev || true
 
   rust:
@@ -294,7 +303,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Checkov
-        uses: bridgecrewio/checkov-action@master
+        uses: bridgecrewio/checkov-action@v12.1347.0
         with:
           directory: terraform/
       - name: tfsec
