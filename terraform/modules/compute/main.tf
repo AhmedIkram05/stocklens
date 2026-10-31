@@ -430,6 +430,10 @@ resource "aws_ecs_task_definition" "app" {
           value = var.environment
         },
         {
+          name  = "OAUTH_ISSUER"
+          value = var.oauth_issuer
+        },
+        {
           name  = "STRUCTLOG_LOG_LEVEL"
           value = "INFO"
         },

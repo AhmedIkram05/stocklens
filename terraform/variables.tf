@@ -64,6 +64,12 @@ variable "cors_origins" {
   default     = []
 }
 
+variable "oauth_issuer" {
+  description = "Public OAuth issuer URL clients use for MCP/OAuth discovery (e.g., https://api.stocklens.com). Required in deployed environments; empty in dev derives it from the request Host."
+  type        = string
+  default     = ""
+}
+
 variable "availability_zones" {
   description = "Availability zones for VPC subnets"
   type        = list(string)

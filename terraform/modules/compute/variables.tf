@@ -64,6 +64,12 @@ variable "cors_origins" {
   default     = []
 }
 
+variable "oauth_issuer" {
+  description = "Public OAuth issuer URL clients use for MCP/OAuth discovery (e.g., https://api.stocklens.com). Empty in dev derives the issuer from the request Host."
+  type        = string
+  default     = ""
+}
+
 variable "ecs_cpu" {
   description = "ECS task CPU units (Fargate)"
   type        = string

@@ -154,6 +154,7 @@ module "compute" {
   ecs_task_role_name           = module.iam.ecs_task_role_name
   container_image              = var.container_image
   cors_origins                 = var.cors_origins
+  oauth_issuer                 = var.oauth_issuer
   ecs_cpu                      = var.ecs_cpu
   ecs_memory                   = var.ecs_memory
   desired_count                = var.desired_count
