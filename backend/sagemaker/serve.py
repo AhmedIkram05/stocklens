@@ -68,17 +68,29 @@ elif CHAMPION_S3_URI:
 
     if not dest.exists():
         print(f"[sagemaker.serve] Downloading model from {CHAMPION_S3_URI}")
-        parts = CHAMPION_S3_URI.removeprefix("s3://").split("/", 1)
+        parts = CHAMPION_S3_URI.removeprefix("s3://").rstrip("/").split("/", 1)
         bucket = parts[0]
-        key = parts[1] if len(parts) > 1 else ""
+        # CHAMPION_S3_URI is a prefix (s3://bucket/champion); the bundle is the
+        # model.tar.gz within it — the same URI terraform appends to build
+        # model_data_url. Accept a direct tar.gz URI too.
+        prefix = parts[1] if len(parts) > 1 else ""
+        if prefix.endswith(".tar.gz"):
+            key = prefix
+        elif prefix:
+            key = f"{prefix}/model.tar.gz"
+        else:
+            key = "model.tar.gz"
 
         s3 = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "eu-west-2"))
         with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
             s3.download_file(bucket, key, tmp.name)
-            # Extract model.pt from tar.gz
+            # Extract the whole champion bundle (model.pt + model_seed*.pt
+            # ensemble members) — serving averages every member.
             with tarfile.open(tmp.name, "r:gz") as tf:
-                tf.extract("model.pt", path=dest.parent)
-            print(f"[sagemaker.serve] Extracted model to {dest}")
+                members = [m.name for m in tf.getmembers() if m.name.endswith(".pt")]
+                for name in members:
+                    tf.extract(name, path=dest.parent)
+            print(f"[sagemaker.serve] Extracted {len(members)} checkpoints to {dest.parent}")
         os.unlink(tmp.name)
 
     os.environ["PREDICTION_MODEL_PATH"] = str(dest)
@@ -135,10 +147,23 @@ def predict_fn(input_data: dict, model: None) -> dict:
     with torch.no_grad():
         features_tensor = features_tensor.to(prediction_service.device)
         ticker_idx = ticker_idx.to(prediction_service.device)
-        logits = prediction_service.model(features_tensor, ticker_idx)
-        probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
+        # Average per-seed softmax probs over the champion ensemble — same rule
+        # as the Fargate path, so both serving backends load the same model.
+        per_model = [
+            torch.softmax(m(features_tensor, ticker_idx), dim=-1).cpu().numpy()[0]
+            for m in (prediction_service.ensemble or [prediction_service.model])
+        ]
+        probs = np.mean(per_model, axis=0) if len(per_model) > 1 else per_model[0]
 
-    pred_class = int(np.argmax(probs))
+    # Abstention rule (mirrors the Fargate path / training evaluation)
+    margin = getattr(prediction_service.model, "_margin", None) or 0.0
+    edge = float(probs[2] - probs[0])  # p_up - p_down
+    if edge >= margin:
+        pred_class = 2  # UP
+    elif edge <= -margin:
+        pred_class = 0  # DOWN
+    else:
+        pred_class = 1  # FLAT (abstain)
     return {
         "direction": CLASS_NAMES[pred_class],
         "confidence": float(probs[pred_class]),

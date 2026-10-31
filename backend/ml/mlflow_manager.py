@@ -427,6 +427,41 @@ class MLflowManager:
             save_dir.mkdir(parents=True, exist_ok=True)
         return save_dir
 
+    def _atomic_save_model(
+        self,
+        model: GlobalLSTM,
+        save_path: Path,
+        *,
+        vocab: Optional[dict[str, int]],
+        feature_means: Optional[np.ndarray],
+        feature_stds: Optional[np.ndarray],
+        margin: Optional[float],
+        ensemble_size: Optional[int] = None,
+    ) -> None:
+        """Write one checkpoint via a same-directory temp file + ``os.replace``.
+
+        Atomic on POSIX (near-atomic on macOS), so a concurrent reader — the
+        backend startup or the paired promotion gate — never observes a
+        partially-written file.
+        """
+        fd, tmp_path = tempfile.mkstemp(dir=str(save_path.parent), suffix=".pt.tmp")
+        try:
+            model.save(
+                tmp_path,
+                vocab=vocab,
+                feature_means=feature_means,
+                feature_stds=feature_stds,
+                margin=margin,
+                ensemble_size=ensemble_size,
+            )
+            os.fsync(fd)  # flush OS buffer
+            os.replace(tmp_path, str(save_path))  # atomic on POSIX, near-atomic on macOS
+        finally:
+            os.close(fd)
+            # Clean up temp file if rename failed
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
     def save_champion_to_disk(
         self,
         model: GlobalLSTM,
@@ -440,20 +475,28 @@ class MLflowManager:
 
         Falls back to a local temp dir when the configured path
         (``/model_artifacts/champion``) is not writable — e.g. native macOS
-        runs outside Docker. Uses atomic write (temp file + rename) so the
-        backend never reads a partially-written model file. The checkpoint
-        includes ticker vocabulary, standardisation params and the abstention
-        margin selected on the validation set.
+        runs outside Docker. Every checkpoint is written atomically (temp file
+        + ``os.replace``) so the backend never reads a partially-written model
+        file. The checkpoint includes ticker vocabulary, standardisation params
+        and the abstention margin selected on the validation set.
+
+        The promoted champion is an N-seed probability ensemble: ``model.pt``
+        is the seed-0 reference member (carries the metadata) and every seed is
+        written as a ``model_seed{i}.pt`` sibling. The expected member count is
+        stamped on ``model.pt`` so serving can refuse a truncated ensemble.
+        Seed siblings not written by this call are pruned, so a run that
+        produces fewer seeds cannot leave stale ``model_seed{i}.pt`` files
+        behind for serving or the paired promotion gate to blend in.
 
         Args:
-            model: Trained GlobalLSTM instance (seed 0 when ensembling).
+            model: Trained GlobalLSTM instance — the seed-0 reference member.
             vocab: Ticker-to-index vocabulary for entity embedding lookup.
             feature_means: Per-feature means (from global pooled z-score).
             feature_stds: Per-feature stds (from global pooled z-score).
             margin: Abstention margin (|p_up - p_down| below this ⇒ FLAT).
-            ensemble_models: Additional seed models for the probability
-                ensemble. Saved alongside ``model.pt`` as
-                ``model_seed{i}.pt``; inference averages their outputs.
+            ensemble_models: Every seed model of the probability ensemble,
+                written alongside ``model.pt`` as ``model_seed{i}.pt``;
+                inference averages their outputs.
 
         Returns:
             Path to the saved model file.
@@ -461,37 +504,41 @@ class MLflowManager:
         save_dir = self._resolve_save_dir()
         save_path = str(save_dir / "model.pt")
 
-        # Write to a temp file in the same directory, then atomic rename
-        fd, tmp_path = tempfile.mkstemp(dir=str(save_dir), suffix=".pt.tmp")
-        try:
-            model.save(
-                tmp_path,
-                vocab=vocab,
-                feature_means=feature_means,
-                feature_stds=feature_stds,
-                margin=margin,
-            )
-            os.fsync(fd)  # flush OS buffer
-            os.replace(tmp_path, save_path)  # atomic on POSIX, near-atomic on macOS
-        finally:
-            os.close(fd)
-            # Clean up temp file if rename failed
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-
+        members = ensemble_models or []
+        self._atomic_save_model(
+            model,
+            save_dir / "model.pt",
+            vocab=vocab,
+            feature_means=feature_means,
+            feature_stds=feature_stds,
+            margin=margin,
+            ensemble_size=len(members),
+        )
         logger.info("Champion model saved to disk (atomic)", extra={"path": save_path})
 
-        members = ensemble_models or []
+        written: set[str] = set()
         for i, member in enumerate(members):
-            member.save(
-                str(save_dir / f"model_seed{i}.pt"),
+            seed_path = save_dir / f"model_seed{i}.pt"
+            self._atomic_save_model(
+                member,
+                seed_path,
                 vocab=vocab,
                 feature_means=feature_means,
                 feature_stds=feature_stds,
                 margin=margin,
+                ensemble_size=len(members),
             )
+            written.add(seed_path.name)
         if members:
             logger.info("Champion seed checkpoints saved (ensemble)", extra={"count": len(members)})
+
+        # Prune seed siblings this run did not write: a previous run with more
+        # seeds would otherwise leave stale checkpoints that serving and the
+        # paired gate blend into the promoted ensemble's predictions.
+        for stale in save_dir.glob("model_seed*.pt"):
+            if stale.name not in written:
+                stale.unlink()
+                logger.info("Pruned stale seed checkpoint", extra={"path": str(stale)})
 
         # -- Publish to champion S3 bucket if configured --
         champion_s3_uri = os.environ.get("CHAMPION_S3_URI", "")
@@ -502,18 +549,27 @@ class MLflowManager:
             bucket = parts[0]
             key_prefix = f"{parts[1]}/" if len(parts) > 1 else ""
 
-            # Publish loose model.pt (consumed by ECS bootstrap.py)
-            s3_key = f"{key_prefix}model.pt"
-            s3.upload_file(save_path, bucket, s3_key)
-            logger.info("Champion model published to S3", extra={"bucket": bucket, "key": s3_key})
+            # Publish the WHOLE champion prefix, not just model.pt: the
+            # ensemble members are what serving averages, so an incomplete
+            # prefix would ship a different model than the gate scored.
+            champion_files = [Path(save_path), *sorted(save_dir.glob("model_seed*.pt"))]
+            for path in champion_files:
+                s3_key = f"{key_prefix}{path.name}"
+                s3.upload_file(str(path), bucket, s3_key)
+                logger.info(
+                    "Champion artifact published to S3",
+                    extra={"bucket": bucket, "key": s3_key},
+                )
 
-            # Also publish model.tar.gz (consumed by SageMaker model_data_url)
-            import io  # noqa: E402  # ponytail: stdlib, no new dep
+            # Also publish model.tar.gz (consumed by SageMaker model_data_url),
+            # bundling the whole ensemble so extraction yields every member.
+            import io  # noqa: E402  # stdlib, no new dep
             import tarfile
 
             tar_buffer = io.BytesIO()
             with tarfile.open(fileobj=tar_buffer, mode="w:gz") as tar:
-                tar.add(save_path, arcname="model.pt")
+                for path in champion_files:
+                    tar.add(str(path), arcname=path.name)
             tar_buffer.seek(0)
             tar_key = f"{key_prefix}model.tar.gz"
             s3.upload_fileobj(tar_buffer, bucket, tar_key)

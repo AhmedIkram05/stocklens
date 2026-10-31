@@ -59,6 +59,10 @@ class GlobalLSTM(nn.Module):
         self._feature_stds: Optional[np.ndarray] = None
         self._model_version: str = "0"
         self._margin: Optional[float] = None
+        # Member-checkpoint count of the champion ensemble this checkpoint
+        # belongs to (0 = no seed siblings). Lets the serving loader refuse a
+        # truncated ensemble instead of blending it silently.
+        self._ensemble_size: Optional[int] = None
 
         # Ticker entity embedding
         self.ticker_embedding = nn.Embedding(
@@ -160,6 +164,7 @@ class GlobalLSTM(nn.Module):
         feature_stds: Optional[np.ndarray] = None,
         model_version: str = "0",
         margin: Optional[float] = None,
+        ensemble_size: Optional[int] = None,
     ) -> None:
         """Save model state dict and config metadata.
 
@@ -170,6 +175,8 @@ class GlobalLSTM(nn.Module):
             feature_stds: Per-feature stds for z-score standardisation.
             model_version: Model version string (default "0").
             margin: Abstention margin swept on validation data (None = always trade).
+            ensemble_size: Member-checkpoint count of the champion ensemble this
+                checkpoint belongs to (0 = no seed siblings).
         """
         payload: dict = {
             "state_dict": self.state_dict(),
@@ -191,6 +198,8 @@ class GlobalLSTM(nn.Module):
             payload["feature_stds"] = feature_stds
         if margin is not None:
             payload["margin"] = margin
+        if ensemble_size is not None:
+            payload["ensemble_size"] = ensemble_size
         torch.save(payload, path)
 
     @classmethod
@@ -227,6 +236,7 @@ class GlobalLSTM(nn.Module):
         model._feature_stds = checkpoint.get("feature_stds")
         model._model_version = checkpoint.get("model_version", "0")
         model._margin = checkpoint.get("margin")
+        model._ensemble_size = checkpoint.get("ensemble_size")
 
         model.eval()
         return model
