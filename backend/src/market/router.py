@@ -8,7 +8,7 @@ Endpoints:
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
 import structlog
@@ -45,8 +45,9 @@ async def refresh_ohlcv_if_stale(ticker: str) -> bool:
 
     # Cache HIT: newest data is yesterday or newer
     # Weekend tolerance: on Monday, accept Friday's data (3-day gap)
-    staleness_days = 3 if date.today().weekday() == 0 else 1
-    cutoff = date.today() - timedelta(days=staleness_days)
+    today = datetime.now(timezone.utc).date()
+    staleness_days = 3 if today.weekday() == 0 else 1
+    cutoff = today - timedelta(days=staleness_days)
     if latest_db_date is not None and latest_db_date >= cutoff:
         return False
 
@@ -109,10 +110,11 @@ async def get_ohlcv_endpoint(
     await refresh_ohlcv_if_stale(ticker)
 
     # Set date defaults after (potential) refresh
+    today = datetime.now(timezone.utc).date()
     if start_date is None:
-        start_date = date.today() - timedelta(days=365)
+        start_date = today - timedelta(days=365)
     if end_date is None:
-        end_date = date.today()
+        end_date = today
 
     rows = await get_ohlcv(ticker, start_date=start_date, end_date=end_date)
 

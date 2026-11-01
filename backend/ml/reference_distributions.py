@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -151,7 +152,7 @@ def build_reference_from_training_data(
         "n_training_samples": int(flat_features.shape[0]),
         "n_features": n_features,
         "feature_names": names[:n_features],
-        "computed_at": __import__("datetime").datetime.now().isoformat(),
+        "computed_at": datetime.now(timezone.utc).isoformat(),
     }
 
     logger.info(
@@ -172,7 +173,7 @@ def _empty_reference(feature_names: list[str]) -> dict[str, Any]:
         "n_training_samples": 0,
         "n_features": 0,
         "feature_names": feature_names,
-        "computed_at": __import__("datetime").datetime.now().isoformat(),
+        "computed_at": datetime.now(timezone.utc).isoformat(),
     }
 
 

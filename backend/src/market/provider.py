@@ -55,9 +55,9 @@ def _download_ohlcv(
     adjusted_close, volume. NaN values are converted to None.
     """
     if start_date is None:
-        start_date = date.today() - timedelta(days=20 * 365)
+        start_date = datetime.now(timezone.utc).date() - timedelta(days=20 * 365)
     if end_date is None:
-        end_date = date.today()
+        end_date = datetime.now(timezone.utc).date()
     start_str = start_date.isoformat()
     end_str = end_date.isoformat()
 
@@ -168,9 +168,9 @@ async def fetch_ohlcv(
     Defaults to the last 20 years if no dates provided (covers max period picker).
     """
     if start_date is None:
-        start_date = date.today() - timedelta(days=20 * 365)
+        start_date = datetime.now(timezone.utc).date() - timedelta(days=20 * 365)
     if end_date is None:
-        end_date = date.today()
+        end_date = datetime.now(timezone.utc).date()
 
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
