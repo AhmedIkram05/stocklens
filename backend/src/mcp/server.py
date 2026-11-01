@@ -255,11 +255,19 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
 
         # ── tools/list ──────────────────────────────────────────────────
         elif method == "tools/list":
+            # Only advertise tools the caller's scope can actually invoke —
+            # tools/call enforces the same map, so an unlisted tool is one the
+            # caller could not call anyway.
+            visible = [
+                tool
+                for tool in get_mcp_tools()
+                if scope_grants(payload.scopes, tool_scope(tool["name"]))
+            ]
             responses.append(
                 {
                     "jsonrpc": "2.0",
                     "id": msg_id,
-                    "result": {"tools": get_mcp_tools()},
+                    "result": {"tools": visible},
                 }
             )
 

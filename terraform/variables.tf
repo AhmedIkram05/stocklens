@@ -117,7 +117,10 @@ variable "langsmith_api_key" {
   description = "LangSmith API key for LLM tracing (sensitive, optional — auto-generated placeholder if empty)"
   type        = string
   sensitive   = true
-  default     = ""
+  # ephemeral: the key is supplied by CI at plan+apply time and must never be
+  # written into the uploaded tfplan artifact or state.
+  ephemeral = true
+  default   = ""
 }
 
 variable "ecs_cpu" {

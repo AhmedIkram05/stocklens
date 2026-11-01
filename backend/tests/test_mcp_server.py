@@ -120,11 +120,11 @@ async def test_mcp_initialize_and_tools_list(client: AsyncClient, auth_headers: 
     assert data["result"]["serverInfo"]["name"] == "stocklens"
     assert "tools" in data["result"]["capabilities"]
 
-    # tools/list
+    # tools/list — scoped token so all 16 tools are advertised
     r2 = await client.post(
         "/mcp",
         json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
-        headers=auth_headers,
+        headers=_mcp_headers(auth_headers),
     )
     assert r2.status_code == 200
     tools = r2.json()["result"]["tools"]
@@ -230,6 +230,27 @@ async def test_mcp_tools_call_granular_scope_restricts_domain(
     assert denied.json()["error"]["code"] == -32003
     assert denied.json()["error"]["data"]["required_scope"] == "market:read"
     assert allowed.json()["result"]["isError"] is False
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_tools_list_filters_by_scope(client: AsyncClient, auth_headers: dict[str, str]):
+    # tools/list advertises only the tools the caller's scope can invoke.
+    portfolio = await client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 43, "method": "tools/list"},
+        headers=_mcp_headers(auth_headers, "portfolio:read"),
+    )
+    names = {t["name"] for t in portfolio.json()["result"]["tools"]}
+    assert "get_portfolio_summary" in names
+    assert "get_market_quote" not in names
+
+    # A scopeless REST token can invoke nothing, so it is shown nothing.
+    none = await client.post(
+        "/mcp",
+        json={"jsonrpc": "2.0", "id": 44, "method": "tools/list"},
+        headers=auth_headers,
+    )
+    assert none.json()["result"]["tools"] == []
 
 
 # ── OAuth PKCE flow ────────────────────────────────────────────────────
@@ -651,7 +672,7 @@ async def test_mcp_tools_on_2026_version(client: AsyncClient, auth_headers: dict
     r = await client.post(
         "/mcp",
         json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": _meta_2026()},
-        headers=auth_headers,
+        headers=_mcp_headers(auth_headers),
     )
     assert r.status_code == 200
     assert len(r.json()["result"]["tools"]) == 16
@@ -742,7 +763,7 @@ async def test_mcp_batch_mixed_protocol_versions(client: AsyncClient, auth_heade
                 },
             },
         ],
-        headers=auth_headers,
+        headers=_mcp_headers(auth_headers),
     )
     assert r.status_code == 200
     responses = r.json()

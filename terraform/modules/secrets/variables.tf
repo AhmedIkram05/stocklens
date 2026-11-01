@@ -33,5 +33,6 @@ variable "langsmith_api_key" {
   description = "LangSmith API key for LLM tracing (sensitive, optional — auto-generated placeholder if empty)"
   type        = string
   sensitive   = true
+  ephemeral   = true
   default     = ""
 }
