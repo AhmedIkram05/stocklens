@@ -329,6 +329,10 @@ jobs:
 
       - name: Terraform plan
         id: plan
+        # LANGSMITH_API_KEY via TF_VAR_ (never a -var CLI arg) and the variable
+        # is ephemeral, so its value cannot land in the saved plan artifact.
+        env:
+          TF_VAR_langsmith_api_key: ${{ secrets.LANGSMITH_API_KEY }}
         run: |
           REGISTRY="${{ steps.login-ecr.outputs.registry }}"
           IMAGE_TAG="${REGISTRY}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
@@ -345,7 +349,6 @@ jobs:
             -var="sagemaker_image=${SAGEMAKER_IMAGE_TAG}" \
             -var="champion_s3_uri=s3://stocklens-mlflow-artifacts-dev/champion" \
             -var="environment=dev" \
-            -var="langsmith_api_key=${{ secrets.LANGSMITH_API_KEY }}" \
             -out=tfplan || { rc=$?; [ $rc -eq 2 ] && true || exit $rc; }
         working-directory: ${{ env.TERRAFORM_DIR }}
 
@@ -398,5 +401,9 @@ jobs:
       - name: Terraform apply
         # Applies the reviewed plan. No retry loop — if it fails, fix the
         # issue and re-run (fresh plan generated for review).
+        # Ephemeral values are not stored in the plan, so the key must be
+        # re-supplied here for the write-only secret version to be written.
+        env:
+          TF_VAR_langsmith_api_key: ${{ secrets.LANGSMITH_API_KEY }}
         run: terraform apply tfplan
         working-directory: ${{ env.TERRAFORM_DIR }}

@@ -87,6 +87,9 @@ resource "aws_secretsmanager_secret" "langsmith_api_key" {
 }
 
 resource "aws_secretsmanager_secret_version" "langsmith_api_key" {
-  secret_id     = aws_secretsmanager_secret.langsmith_api_key.id
-  secret_string = var.langsmith_api_key != "" ? var.langsmith_api_key : random_password.langsmith.result
+  secret_id = aws_secretsmanager_secret.langsmith_api_key.id
+  # Write-only: the key arrives as an ephemeral variable (TF_VAR_ in CI), so it
+  # never lands in state or the saved plan. Increment the version to rotate it.
+  secret_string_wo         = var.langsmith_api_key != "" ? var.langsmith_api_key : random_password.langsmith.result
+  secret_string_wo_version = 1
 }
