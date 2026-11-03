@@ -51,6 +51,32 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def token_audience() -> str | None:
+    """Configured JWT audience, or None when audience validation is disabled.
+
+    An unset ``JWT_AUDIENCE`` disables validation entirely so tokens minted
+    before the setting existed keep verifying.
+    """
+    return getattr(settings, "JWT_AUDIENCE", "") or None
+
+
+def token_issuer() -> str | None:
+    """Configured JWT issuer, or None when issuer validation is disabled."""
+    return getattr(settings, "JWT_ISSUER", "") or None
+
+
+def token_claim_extras() -> dict[str, str]:
+    """``iss``/``aud`` claims to embed — only the ones actually configured."""
+    extras: dict[str, str] = {}
+    issuer = token_issuer()
+    if issuer is not None:
+        extras["iss"] = issuer
+    audience = token_audience()
+    if audience is not None:
+        extras["aud"] = audience
+    return extras
+
+
 def create_access_token(user_id: str) -> Tuple[str, str]:
     """Create an HS256 signed access JWT.
 
@@ -69,6 +95,7 @@ def create_access_token(user_id: str) -> Tuple[str, str]:
         "exp": exp,
         "iat": int(now.timestamp()),
         "type": "access",
+        **token_claim_extras(),
     }
     token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
     return token, jti
@@ -92,6 +119,7 @@ def create_refresh_token(user_id: str) -> Tuple[str, str]:
         "exp": exp,
         "iat": int(now.timestamp()),
         "type": "refresh",
+        **token_claim_extras(),
     }
     token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
     return token, jti
@@ -115,6 +143,8 @@ def decode_token(token: str) -> TokenPayload:
         settings.JWT_SECRET_KEY,
         algorithms=[settings.JWT_ALGORITHM],
         leeway=10,  # tolerate clock skew between the token issuer and verifier
+        audience=token_audience(),
+        issuer=token_issuer(),
     )
     return TokenPayload(**payload)
 

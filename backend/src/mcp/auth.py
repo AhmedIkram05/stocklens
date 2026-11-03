@@ -63,6 +63,9 @@ from src.auth.utils import (
     create_refresh_token,
     decode_token,
     hash_token,
+    token_audience,
+    token_claim_extras,
+    token_issuer,
     verify_password,
 )
 from src.cache.redis import get_redis, is_token_blacklisted
@@ -308,6 +311,7 @@ def _mcp_create_access_token(user_id: str, scope: str = "mcp:tools"):
         "exp": int(exp.timestamp()),
         "type": "access",
         "scope": scope,
+        **token_claim_extras(),
     }
     tok = _try_rs256_encode(payload)
     if tok:
@@ -328,21 +332,34 @@ def _decode_mcp_claims(token: str) -> dict[str, Any]:
     Returning raw claims (not TokenPayload) lets callers read claims the
     TokenPayload schema does not model — notably the granted ``scope``.
     """
-    # Try RS256 first if header says RS256
+    # A token whose header says RS256 must verify as RS256. Swallowing a
+    # validation failure and retrying HS256 would mask aud/iss/expiry errors
+    # behind a signature error — validation must fail closed, so only the
+    # header-unreadable case falls through to the HS256 path.
     try:
         hdr = pyjwt.get_unverified_header(token)
-        if hdr.get("alg") == "RS256":
-            pem = _public_pem()
-            if pem:
-                return pyjwt.decode(token, pem, algorithms=["RS256"])
+    except pyjwt.InvalidTokenError:
+        raise
     except Exception:
-        pass
+        hdr = {}
+    if hdr.get("alg") == "RS256":
+        pem = _public_pem()
+        if pem:
+            return pyjwt.decode(
+                token,
+                pem,
+                algorithms=["RS256"],
+                audience=token_audience(),
+                issuer=token_issuer(),
+            )
     # Fallback HS256 via existing helper semantics (same secret/alg/leeway)
     return pyjwt.decode(
         token,
         settings.JWT_SECRET_KEY,
         algorithms=[settings.JWT_ALGORITHM],
         leeway=10,
+        audience=token_audience(),
+        issuer=token_issuer(),
     )
 
 

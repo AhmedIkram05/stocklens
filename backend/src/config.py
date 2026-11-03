@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, gt=0)
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     BCRYPT_ROUNDS: int = Field(default=12, gt=0)
+    # Audience / issuer claim validation. Empty (default) → the claim is neither
+    # emitted nor validated, so tokens minted before these settings existed keep
+    # verifying. Set JWT_AUDIENCE / JWT_ISSUER to enforce them strictly; do this
+    # only once every issuer of tokens has been updated to emit the claim.
+    JWT_AUDIENCE: str = ""
+    JWT_ISSUER: str = ""
     # MCP RS256 signing key (PEM). Empty → per-process ephemeral RSA keypair,
     # which rotates on every restart and breaks multi-worker deployments
     # (workers reject each other's RS256 tokens). Prod must set this.
