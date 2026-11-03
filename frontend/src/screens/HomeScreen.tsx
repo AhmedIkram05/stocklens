@@ -26,7 +26,7 @@ import { formatCurrencyRounded } from '../utils/formatters';
 import { portfolioService } from '../services/portfolios';
 
 import { useAuth } from '../contexts/AuthContext';
-import type { MainTabParamList, RootStackParamList } from '../navigation/AppNavigator';
+import type { MainTabParamList, RootStackParamList } from '../navigation/types';
 import ReceiptsSorter, { SortBy, SortDirection } from '../components/ReceiptsSorter';
 import { categoryService, type Category } from '../services/categories';
 

@@ -141,13 +141,88 @@ def compute_portfolio_performance(
     if start_date is None:
         start_date = end_date - timedelta(days=365)
 
-    # ── 1. Get current prices ──
+    latest_prices, previous_closes = _resolve_latest_prices(
+        holdings_data, price_map, end_date, live_quotes
+    )
+
+    holdings_perf, total_market_value, total_cost_basis, holdings_with_prices = (
+        _compute_holdings_metrics(holdings_data, latest_prices, previous_closes, fx_rates)
+    )
+
+    total_unrealised_pl, total_unrealised_pl_pct = _portfolio_pl(
+        total_market_value, total_cost_basis
+    )
+
+    total_day_change, total_day_change_pct, day_change_computed = _total_day_change(holdings_perf)
+
+    free_cash_balance = _free_cash_balance(cash_flows, transactions)
+
+    # ── TWR ──
+    twr: Optional[Decimal] = None
+    twr_annualised: Optional[Decimal] = None
+    if enable_twr:
+        twr, twr_annualised = _compute_twr(
+            transactions=transactions,
+            cash_flows=cash_flows,
+            price_map=price_map,
+            start_date=start_date,
+            end_date=end_date,
+            fx_rates=fx_rates,
+        )
+
+    data_quality = "complete" if holdings_with_prices == len(holdings_data) else "partial"
+
+    # FX-unknown holdings: a non-GBP currency valued at GBP-per-unit 1 means no
+    # real conversion rate was ever resolved (failed lookup at buy time, or the
+    # column default) — the holding is silently summed as if 1 native unit =
+    # 1 GBP. Never hide that: warn and surface the tickers on the response.
+    fx_unknown_tickers = _fx_unknown_tickers(holdings_data, fx_rates)
+    if fx_unknown_tickers:
+        logger.warning(
+            "fx_unknown_holdings_valued_at_rate_1",
+            tickers=fx_unknown_tickers,
+            impact="non-GBP holdings summed as if 1 native unit = 1 GBP "
+            "until a real rate is stored",
+        )
+
+    return PortfolioPerformanceResponse(
+        portfolio_id=portfolio_id,
+        portfolio_name=portfolio_name,
+        total_market_value=total_market_value,
+        total_cost_basis=total_cost_basis,
+        total_unrealised_pl=total_unrealised_pl,
+        total_unrealised_pl_pct=total_unrealised_pl_pct,
+        day_change=total_day_change if day_change_computed > 0 else None,
+        day_change_pct=total_day_change_pct,
+        free_cash_balance=free_cash_balance,
+        twr=twr,
+        twr_annualised=twr_annualised,
+        twr_start_date=start_date,
+        twr_end_date=end_date,
+        holdings=holdings_perf,
+        total_holdings=len(holdings_data),
+        data_quality=data_quality,
+        fx_unknown_tickers=fx_unknown_tickers,
+        calculated_at=datetime.now(timezone.utc),
+    )
+
+
+def _resolve_latest_prices(
+    holdings_data: list[dict[str, Any]],
+    price_map: dict[str, dict[date, Decimal]],
+    end_date: date,
+    live_quotes: Optional[dict[str, tuple[Decimal, Decimal]]],
+) -> tuple[dict[str, Decimal], dict[str, Decimal]]:
+    """Latest (period-end) and previous close per holding.
+
+    Only closes dated at/before ``end_date`` may be "today's" price. Live
+    intraday quotes, when supplied, override the stored closes.
+    """
     latest_prices: dict[str, Decimal] = {}
     previous_closes: dict[str, Decimal] = {}
     for h in holdings_data:
         ticker = h["ticker"]
         ticker_prices = price_map.get(ticker, {})
-        # Only closes dated at/before the period end may be "today's" price.
         sorted_dates = sorted(d for d in ticker_prices if d <= end_date)
         if not sorted_dates:
             continue
@@ -176,10 +251,21 @@ def compute_portfolio_performance(
             if prev_close is not None:
                 previous_closes[ticker] = prev_close
 
-    # ── 2. Per-holding metrics ──
-    holdings_with_prices = 0
-    holdings_total = len(holdings_data)
+    return latest_prices, previous_closes
 
+
+def _compute_holdings_metrics(
+    holdings_data: list[dict[str, Any]],
+    latest_prices: dict[str, Decimal],
+    previous_closes: dict[str, Decimal],
+    fx_rates: Optional[dict[str, Decimal]],
+) -> tuple[list[HoldingPerformance], Decimal, Decimal, int]:
+    """Per-holding metrics plus the totals they roll up to.
+
+    Returns ``(holdings, total_market_value, total_cost_basis,
+    holdings_with_prices)``. Weights are back-filled once the total is known.
+    """
+    holdings_with_prices = 0
     holdings_perf = []
     total_market_value = Decimal(0)
     total_cost_basis = Decimal(0)
@@ -210,18 +296,32 @@ def compute_portfolio_performance(
         if hp.market_value is not None and total_market_value > 0:
             hp.portfolio_weight_pct = hp.market_value / total_market_value * 100
 
-    # ── 3. Portfolio-level P&L ──
+    return holdings_perf, total_market_value, total_cost_basis, holdings_with_prices
+
+
+def _portfolio_pl(
+    total_market_value: Decimal, total_cost_basis: Decimal
+) -> tuple[Optional[Decimal], Optional[Decimal]]:
+    """Portfolio-level unrealised P&L and percentage (None when undefined)."""
     if total_market_value > 0 and total_cost_basis > 0:
         total_unrealised_pl = total_market_value - total_cost_basis
         total_unrealised_pl_pct = (total_unrealised_pl / total_cost_basis) * 100
     else:
         total_unrealised_pl = total_market_value - total_cost_basis if total_market_value else None
         total_unrealised_pl_pct = None
+    return total_unrealised_pl, total_unrealised_pl_pct
 
-    # ── 4. Day Change ──
-    # ponytail: day-change weights use previous_close × shares (start-of-day value).
-    # Using current_price × shares would slightly bias toward holdings with larger
-    # intraday gains. The difference is negligible for daily moves <2%.
+
+def _total_day_change(
+    holdings_perf: list[HoldingPerformance],
+) -> tuple[Decimal, Optional[Decimal], int]:
+    """Total day change plus its start-of-day-weighted percentage.
+
+    Weights use previous_close × shares (start-of-day value), not
+    current_price × shares, which would bias toward holdings with larger
+    intraday gains (negligible below ~2% daily moves). Returns
+    ``(total_change, weighted_pct, computed_count)``.
+    """
     total_day_change = Decimal(0)
     total_day_change_pct = None
     day_change_computed = 0
@@ -255,77 +355,49 @@ def compute_portfolio_performance(
         total_weight = sum(weights.values())
         if total_weight > 0:
             weighted_sum = sum(
-                (hp.day_change_pct or Decimal(0))
-                * weights.get(hp.ticker, Decimal(0))
-                / total_weight
-                for hp in holdings_perf
+                (
+                    (hp.day_change_pct or Decimal(0))
+                    * weights.get(hp.ticker, Decimal(0))
+                    / total_weight
+                    for hp in holdings_perf
+                ),
+                Decimal(0),
             )
             total_day_change_pct = weighted_sum
+    return total_day_change, total_day_change_pct, day_change_computed
 
-    # ── 5. Free cash balance ──
-    # Both sides in GBP: deposits are GBP; net invested uses the GBP-normalised
-    # transaction amounts so mixed-currency holdings don't corrupt the sum.
-    total_deposits = sum(cf["amount"] for cf in cash_flows)
-    net_invested = sum(t["total_amount_gbp"] for t in transactions if t["type"] == "BUY") - sum(
-        t["total_amount_gbp"] for t in transactions if t["type"] == "SELL"
-    )
-    free_cash_balance = total_deposits - net_invested
 
-    # ── 6. TWR ──
-    twr: Optional[Decimal] = None
-    twr_annualised: Optional[Decimal] = None
-    if enable_twr:
-        twr, twr_annualised = _compute_twr(
-            transactions=transactions,
-            cash_flows=cash_flows,
-            price_map=price_map,
-            start_date=start_date,
-            end_date=end_date,
-            fx_rates=fx_rates,
-        )
+def _free_cash_balance(
+    cash_flows: list[dict[str, Any]], transactions: list[dict[str, Any]]
+) -> Decimal:
+    """Deposits minus net invested, both in GBP.
 
-    # ── 7. Data quality ──
-    data_quality = "complete" if holdings_with_prices == holdings_total else "partial"
+    Deposits are GBP; net invested uses the GBP-normalised transaction amounts
+    so mixed-currency holdings don't corrupt the sum.
+    """
+    total_deposits = sum((cf["amount"] for cf in cash_flows), Decimal(0))
+    net_invested = sum(
+        (t["total_amount_gbp"] for t in transactions if t["type"] == "BUY"), Decimal(0)
+    ) - sum((t["total_amount_gbp"] for t in transactions if t["type"] == "SELL"), Decimal(0))
+    return total_deposits - net_invested
 
-    # FX-unknown holdings: a non-GBP currency valued at GBP-per-unit 1 means no
-    # real conversion rate was ever resolved (failed lookup at buy time, or the
-    # column default) — the holding is silently summed as if 1 native unit =
-    # 1 GBP. Never hide that: warn and surface the tickers on the response.
-    fx_unknown_tickers = sorted(
+
+def _fx_unknown_tickers(
+    holdings_data: list[dict[str, Any]], fx_rates: Optional[dict[str, Decimal]]
+) -> list[str]:
+    """Non-GBP holdings valued at GBP-per-unit 1 (an unresolved rate).
+
+    A non-GBP currency valued at 1 means no real conversion rate was ever
+    resolved (failed lookup at buy time, or the column default) — the holding
+    is silently summed as if 1 native unit = 1 GBP, so callers must surface it.
+    """
+    return sorted(
         {
             h["ticker"]
             for h in holdings_data
             if (h.get("currency") or "").upper() not in ("", "GBP")
             and (fx_rates or {}).get(h["ticker"], Decimal(1)) == Decimal(1)
         }
-    )
-    if fx_unknown_tickers:
-        logger.warning(
-            "fx_unknown_holdings_valued_at_rate_1",
-            tickers=fx_unknown_tickers,
-            impact="non-GBP holdings summed as if 1 native unit = 1 GBP "
-            "until a real rate is stored",
-        )
-
-    return PortfolioPerformanceResponse(
-        portfolio_id=portfolio_id,
-        portfolio_name=portfolio_name,
-        total_market_value=total_market_value,
-        total_cost_basis=total_cost_basis,
-        total_unrealised_pl=total_unrealised_pl,
-        total_unrealised_pl_pct=total_unrealised_pl_pct,
-        day_change=total_day_change if day_change_computed > 0 else None,
-        day_change_pct=total_day_change_pct,
-        free_cash_balance=free_cash_balance,
-        twr=twr,
-        twr_annualised=twr_annualised,
-        twr_start_date=start_date,
-        twr_end_date=end_date,
-        holdings=holdings_perf,
-        total_holdings=holdings_total,
-        data_quality=data_quality,
-        fx_unknown_tickers=fx_unknown_tickers,
-        calculated_at=datetime.now(timezone.utc),
     )
 
 

@@ -612,3 +612,127 @@ class TestTWRMissingPrices:
         )
         assert twr is None
         assert twr_annualised is None
+
+
+class TestPortfolioPerformanceEdgeCases:
+    """Pin the degenerate-value behaviour of the aggregate function.
+
+    These are the safety net for the ``compute_portfolio_performance``
+    decomposition (guardrail for the money-math core): every assertion below
+    documents the *current* value, so a refactor that changes a branch breaks
+    a test instead of a portfolio.
+    """
+
+    def test_zero_share_holding_is_valueless(self):
+        # A zero-share row is a real (valued-at-0) holding, not a missing price:
+        # market value 0 is falsy, so portfolio P&L is undefined (None), not 0.
+        holdings = [{"ticker": "ZRO", "shares": Decimal("0"), "average_cost_basis": Decimal("100")}]
+        result = compute_portfolio_performance(
+            portfolio_id="p1",
+            portfolio_name="Zero",
+            holdings_data=holdings,
+            transactions=[],
+            cash_flows=[],
+            price_map={"ZRO": {date(2024, 12, 31): Decimal("150")}},
+            enable_twr=False,
+        )
+        assert result.total_market_value == Decimal("0")
+        assert result.total_cost_basis == Decimal("0")
+        assert result.total_unrealised_pl is None
+        assert result.total_unrealised_pl_pct is None
+        assert result.holdings[0].market_value == Decimal("0")
+        assert result.holdings[0].portfolio_weight_pct is None
+        assert result.data_quality == "complete"
+
+    def test_negative_unrealised_pl(self):
+        holdings = [
+            {"ticker": "LOSS", "shares": Decimal("10"), "average_cost_basis": Decimal("200")}
+        ]
+        result = compute_portfolio_performance(
+            portfolio_id="p1",
+            portfolio_name="Loss",
+            holdings_data=holdings,
+            transactions=[],
+            cash_flows=[],
+            price_map={"LOSS": {date(2024, 12, 31): Decimal("100")}},
+            enable_twr=False,
+        )
+        assert result.total_market_value == Decimal("1000")
+        assert result.total_cost_basis == Decimal("2000")
+        assert result.total_unrealised_pl == Decimal("-1000")
+        assert result.total_unrealised_pl_pct == Decimal("-50")
+
+    def test_all_holdings_unpriced_is_partial(self):
+        # No price at all → market value is unknown (None path), cost basis is
+        # still known, and the response is flagged partial rather than valued 0.
+        holdings = [{"ticker": "UNP", "shares": Decimal("5"), "average_cost_basis": Decimal("10")}]
+        result = compute_portfolio_performance(
+            portfolio_id="p1",
+            portfolio_name="Unpriced",
+            holdings_data=holdings,
+            transactions=[],
+            cash_flows=[],
+            price_map={},
+            enable_twr=False,
+        )
+        assert result.total_market_value == Decimal("0")
+        assert result.total_cost_basis == Decimal("50")
+        assert result.total_unrealised_pl is None
+        assert result.data_quality == "partial"
+        assert result.holdings[0].market_value is None
+
+
+class TestTWRChain:
+    """The TWR chain must link sub-periods multiplicatively.
+
+    Pins ``_compute_twr`` — called by ``compute_portfolio_performance`` — so
+    the decomposition of the latter keeps the linking semantics untouched.
+    """
+
+    def test_single_subperiod_all_negative(self):
+        transactions = [
+            {
+                "ticker": "AAPL",
+                "type": "BUY",
+                "shares": Decimal("100"),
+                "date": date(2023, 1, 1),
+                "total_amount_gbp": Decimal("10000"),
+            }
+        ]
+        price_map = {
+            "AAPL": {
+                date(2024, 1, 1): Decimal("100"),
+                date(2024, 12, 31): Decimal("50"),
+            }
+        }
+        twr, annualised = _compute_twr(
+            transactions, [], price_map, date(2024, 1, 1), date(2024, 12, 31)
+        )
+        assert twr == Decimal("-0.5")  # 5000/10000 - 1
+        assert annualised == Decimal("-0.5")  # exactly 365 days
+
+    def test_multi_subperiod_chain_links_negative_returns(self):
+        # A mid-period cash flow splits the span into two sub-periods without
+        # changing holdings; the chain must link -20% then -25% → -40% total,
+        # not sum (-45%) and not compound from the deposit.
+        transactions = [
+            {
+                "ticker": "AAPL",
+                "type": "BUY",
+                "shares": Decimal("100"),
+                "date": date(2023, 1, 1),
+                "total_amount_gbp": Decimal("10000"),
+            }
+        ]
+        cash_flows = [{"amount": Decimal("1000"), "created_at": date(2024, 6, 1)}]
+        price_map = {
+            "AAPL": {
+                date(2024, 1, 1): Decimal("100"),
+                date(2024, 6, 1): Decimal("80"),
+                date(2024, 12, 31): Decimal("60"),
+            }
+        }
+        twr, _ = _compute_twr(
+            transactions, cash_flows, price_map, date(2024, 1, 1), date(2024, 12, 31)
+        )
+        assert twr == pytest.approx(Decimal("-0.4"), abs=Decimal("1e-9"))
