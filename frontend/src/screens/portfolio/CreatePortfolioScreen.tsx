@@ -15,7 +15,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../../contexts/ThemeContext';
 import BackButton from '../../components/BackButton';
-import { PortfolioStackParamList } from '../../navigation/AppNavigator';
+import { PortfolioStackParamList } from '../../navigation/types';
 import { portfolioService } from '../../services/portfolios';
 
 type CreatePortfolioNavProp = CompositeNavigationProp<

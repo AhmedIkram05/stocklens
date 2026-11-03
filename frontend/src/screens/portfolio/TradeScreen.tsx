@@ -18,7 +18,7 @@ import { StatusBar } from 'expo-status-bar';
 
 import { useTheme, brandColors } from '../../contexts/ThemeContext';
 import BackButton from '../../components/BackButton';
-import { PortfolioStackParamList } from '../../navigation/AppNavigator';
+import { PortfolioStackParamList } from '../../navigation/types';
 import { portfolioService, Holding } from '../../services/portfolios';
 import { marketService, QuoteData } from '../../services/market';
 import { ApiError } from '../../services/api';

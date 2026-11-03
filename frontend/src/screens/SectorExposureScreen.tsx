@@ -25,7 +25,7 @@ import ResponsiveContainer from '../components/ResponsiveContainer';
 import PageHeader from '../components/PageHeader';
 import SectorBar from '../components/analysis/SectorBar';
 import { useTheme } from '../contexts/ThemeContext';
-import { PortfolioStackParamList } from '../navigation/AppNavigator';
+import { PortfolioStackParamList } from '../navigation/types';
 import { portfolioService, SectorExposureData } from '../services/portfolios';
 import { formatCurrencyGBP } from '../utils/formatters';
 import { spacing, typography, radii, shadows } from '../styles/theme';

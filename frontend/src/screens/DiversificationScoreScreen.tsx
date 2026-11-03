@@ -25,7 +25,7 @@ import ScreenContainer from '../components/ScreenContainer';
 import ResponsiveContainer from '../components/ResponsiveContainer';
 import PageHeader from '../components/PageHeader';
 import { useTheme, brandColors } from '../contexts/ThemeContext';
-import { PortfolioStackParamList } from '../navigation/AppNavigator';
+import { PortfolioStackParamList } from '../navigation/types';
 import {
   portfolioService,
   DiversificationScoreData,
