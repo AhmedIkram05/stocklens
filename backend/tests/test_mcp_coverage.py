@@ -242,7 +242,7 @@ async def test_mcp_batch_mixed_ok_error(client: AsyncClient, auth_headers: dict[
             "params": {"name": "get_market_quote", "arguments": {"ticker": "AAPL"}},
         },
     ]
-    with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock) as mock:
+    with patch("src.mcp.server.invoke_tool", new_callable=AsyncMock) as mock:
         mock.return_value = json.dumps({"price": 1})
         r = await client.post("/mcp", json=batch, headers=_mcp_headers(auth_headers))
     assert r.status_code == 200
@@ -254,6 +254,8 @@ async def test_mcp_batch_mixed_ok_error(client: AsyncClient, auth_headers: dict[
     assert "result" in methods[1]  # ping
     assert "result" in methods[2]  # tools/list
     assert "error" in methods[3]  # unknown
+    # tools/call reached the stubbed adapter and returned its result
+    assert methods[4]["result"]["content"][0]["text"] == json.dumps({"price": 1})
 
 
 @pytest.mark.asyncio
@@ -270,7 +272,7 @@ async def test_mcp_sse_accept_header(client: AsyncClient, auth_headers: dict[str
 
 @pytest.mark.asyncio
 async def test_mcp_tools_call_exception_path(client: AsyncClient, auth_headers: dict[str, str]):
-    with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock) as mock:
+    with patch("src.mcp.server.invoke_tool", new_callable=AsyncMock) as mock:
         mock.side_effect = KeyError("Unknown tool: nope")
         r = await client.post(
             "/mcp",
@@ -278,12 +280,13 @@ async def test_mcp_tools_call_exception_path(client: AsyncClient, auth_headers: 
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "tools/call",
-                "params": {"name": "nope", "arguments": {}},
+                "params": {"name": "get_market_quote", "arguments": {"ticker": "AAPL"}},
             },
-            headers=auth_headers,
+            headers=_mcp_headers(auth_headers),
         )
-        # Our server maps KeyError to -32602 inside tools/call path, but direct side_effect
-        # goes to outer KeyError handler -> -32602
+        # A known tool passes the name/scope guards and reaches invoke_tool; the
+        # KeyError it raises is mapped to -32602 by the tools/call handler.
+        mock.assert_called_once()
         assert r.status_code == 200
         assert r.json()["error"]["code"] == -32602
 
