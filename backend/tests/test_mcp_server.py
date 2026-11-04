@@ -142,7 +142,7 @@ async def test_mcp_initialize_and_tools_list(client: AsyncClient, auth_headers: 
 
 @pytest.mark.usefixtures("_seed_categories")
 async def test_mcp_tools_call_market_quote(client: AsyncClient, auth_headers: dict[str, str]):
-    with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock) as mock_invoke:
+    with patch("src.mcp.server.invoke_tool", new_callable=AsyncMock) as mock_invoke:
         mock_invoke.return_value = json.dumps({"ticker": "AAPL", "price": 150.0})
         r = await client.post(
             "/mcp",
@@ -182,7 +182,7 @@ async def test_mcp_tools_call_unknown_tool(client: AsyncClient, auth_headers: di
 @pytest.mark.usefixtures("_seed_categories")
 async def test_mcp_tools_call_requires_scope(client: AsyncClient, auth_headers: dict[str, str]):
     # A REST access token carries no OAuth scope and must not invoke MCP tools.
-    with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock) as mock_invoke:
+    with patch("src.mcp.server.invoke_tool", new_callable=AsyncMock) as mock_invoke:
         r = await client.post(
             "/mcp",
             json={
@@ -205,7 +205,7 @@ async def test_mcp_tools_call_granular_scope_restricts_domain(
     client: AsyncClient, auth_headers: dict[str, str]
 ):
     # A portfolio-only token may call portfolio tools but not market tools.
-    with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock) as mock_invoke:
+    with patch("src.mcp.server.invoke_tool", new_callable=AsyncMock) as mock_invoke:
         mock_invoke.return_value = json.dumps({"ok": True})
         denied = await client.post(
             "/mcp",
@@ -678,7 +678,7 @@ async def test_mcp_tools_on_2026_version(client: AsyncClient, auth_headers: dict
     assert len(r.json()["result"]["tools"]) == 16
 
     # tools/call under 2026-07-28
-    with patch("src.mcp.tools_adapter.invoke_tool", new_callable=AsyncMock) as mock:
+    with patch("src.mcp.server.invoke_tool", new_callable=AsyncMock) as mock:
         mock.return_value = json.dumps({"quote": 42})
         r2 = await client.post(
             "/mcp",
