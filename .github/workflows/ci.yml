@@ -182,7 +182,7 @@ jobs:
         env:
           VIRTUAL_ENV: ${{ github.workspace }}/venv
         run: |
-          uv pip install ruff
+          uv pip install ruff==0.15.15
           ./venv/bin/ruff check backend/
           ./venv/bin/ruff format --check backend/
       - name: Build Rust extension

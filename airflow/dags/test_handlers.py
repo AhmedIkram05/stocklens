@@ -91,12 +91,18 @@ def fake_asyncpg(monkeypatch):
 # ── _check_new_ohlcv_data ──────────────────────────────────────────────────
 class TestCheckNewOhlcvData:
     def test_no_max_date_skips(self, stub_dsn, fake_asyncpg):
-        conn = fake_asyncpg(_FakeAsyncConn(row={"max_date": None, "champion_trained_at": None}))
+        conn = fake_asyncpg(
+            _FakeAsyncConn(row={"max_date": None, "champion_trained_at": None})
+        )
         assert weekly_retraining._check_new_ohlcv_data() == "skip_retraining"
         assert conn.closed
 
     def test_no_champion_bootstraps_training(self, stub_dsn, fake_asyncpg):
-        fake_asyncpg(_FakeAsyncConn(row={"max_date": date(2026, 7, 1), "champion_trained_at": None}))
+        fake_asyncpg(
+            _FakeAsyncConn(
+                row={"max_date": date(2026, 7, 1), "champion_trained_at": None}
+            )
+        )
         assert weekly_retraining._check_new_ohlcv_data() == "train_challenger"
 
     def test_advance_at_threshold_trains(self, stub_dsn, fake_asyncpg):
@@ -137,7 +143,10 @@ class TestDetectNewChampion:
     def test_recent_champion_triggers_capture(self, stub_dsn, fake_asyncpg):
         trained = datetime.now(tz=timezone.utc) - timedelta(hours=1)
         fake_asyncpg(_FakeAsyncConn(row={"trained_at": trained}))
-        assert weekly_retraining._detect_new_champion() == "capture_reference_distributions"
+        assert (
+            weekly_retraining._detect_new_champion()
+            == "capture_reference_distributions"
+        )
 
     def test_old_champion_skips_capture(self, stub_dsn, fake_asyncpg):
         trained = datetime.now(tz=timezone.utc) - timedelta(hours=10)
@@ -178,15 +187,23 @@ class TestCleanup:
 # ── _run_ingest / _seed_script_path ────────────────────────────────────────
 class TestRunIngest:
     def test_success_does_not_raise(self, monkeypatch):
-        monkeypatch.setattr(weekly_retraining, "_seed_script_path", lambda: "/tmp/seed.py")
+        monkeypatch.setattr(
+            weekly_retraining, "_seed_script_path", lambda: "/tmp/seed.py"
+        )
         monkeypatch.setattr(weekly_retraining, "_pg_conn", _StubPgConn)
-        monkeypatch.setattr(weekly_retraining.subprocess, "run", lambda *_a, **_k: _Completed(0))
+        monkeypatch.setattr(
+            weekly_retraining.subprocess, "run", lambda *_a, **_k: _Completed(0)
+        )
         weekly_retraining._run_ingest()
 
     def test_nonzero_exit_raises(self, monkeypatch):
-        monkeypatch.setattr(weekly_retraining, "_seed_script_path", lambda: "/tmp/seed.py")
+        monkeypatch.setattr(
+            weekly_retraining, "_seed_script_path", lambda: "/tmp/seed.py"
+        )
         monkeypatch.setattr(weekly_retraining, "_pg_conn", _StubPgConn)
-        monkeypatch.setattr(weekly_retraining.subprocess, "run", lambda *_a, **_k: _Completed(1))
+        monkeypatch.setattr(
+            weekly_retraining.subprocess, "run", lambda *_a, **_k: _Completed(1)
+        )
         with pytest.raises(RuntimeError, match="OHLCV ingest failed"):
             weekly_retraining._run_ingest()
 
@@ -218,7 +235,10 @@ def _register_fake_module(monkeypatch, name, **attrs):
 def drift_stack(monkeypatch):
     """Install fake drift/DB collaborators and expose their recorded calls."""
     state = types.SimpleNamespace(
-        champion={"model_version": "v2", "metrics": {"reference_distributions": {"f": [1, 2]}}},
+        champion={
+            "model_version": "v2",
+            "metrics": {"reference_distributions": {"f": [1, 2]}},
+        },
         holdings=[{"ticker": "AAPL"}],
         logs=[
             {
@@ -275,7 +295,9 @@ def drift_stack(monkeypatch):
     def _upload(path, key):
         state.upload_calls.append((path, key))
 
-    _register_fake_module(monkeypatch, "drift.evidently_reporter", EvidentlyReporter=_Reporter)
+    _register_fake_module(
+        monkeypatch, "drift.evidently_reporter", EvidentlyReporter=_Reporter
+    )
     _register_fake_module(
         monkeypatch,
         "drift.repository",
@@ -295,7 +317,9 @@ def drift_stack(monkeypatch):
         build_s3_key=lambda rid, name: f"{rid}/{name}",
         upload_report_to_s3=_upload,
     )
-    _register_fake_module(monkeypatch, "src.database.connection", connection_ctx=lambda: _Ctx())
+    _register_fake_module(
+        monkeypatch, "src.database.connection", connection_ctx=lambda: _Ctx()
+    )
     return state
 
 
@@ -304,7 +328,9 @@ class TestRunDriftDetection:
         weekly_retraining._run_drift_detection()
         assert drift_stack.compute_calls
         assert len(drift_stack.metric_calls) == 1
-        assert drift_stack.upload_calls == [("/tmp/report.html", "run-1/drift_report_rid-1.html")]
+        assert drift_stack.upload_calls == [
+            ("/tmp/report.html", "run-1/drift_report_rid-1.html")
+        ]
 
     def test_no_champion_skips(self, drift_stack):
         drift_stack.champion = None
