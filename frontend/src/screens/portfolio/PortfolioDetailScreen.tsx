@@ -15,7 +15,7 @@ import { StatusBar } from 'expo-status-bar';
 
 import BackButton from '../../components/BackButton';
 import { brandColors, useTheme } from '../../contexts/ThemeContext';
-import type { PortfolioStackParamList } from '../../navigation/AppNavigator';
+import type { PortfolioStackParamList } from '../../navigation/types';
 import type { PortfolioPerformance } from '../../services/portfolios';
 import {
   graphqlRequest,

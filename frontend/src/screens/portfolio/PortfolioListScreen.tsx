@@ -15,7 +15,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 
 import { brandColors, useTheme } from '../../contexts/ThemeContext';
-import type { PortfolioStackParamList } from '../../navigation/AppNavigator';
+import type { PortfolioStackParamList } from '../../navigation/types';
 import { portfolioService, Portfolio, PortfolioPerformance } from '../../services/portfolios';
 import { formatCurrencyRounded, formatRelativeDate } from '../../utils/formatters';
 import { spacing, radii, typography, shadows } from '../../styles/theme';

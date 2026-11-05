@@ -84,7 +84,7 @@ def test_compute_class_weights_imbalanced() -> None:
     weights = compute_class_weights(labels, n_classes=3)
     assert weights[1] > weights[0]  # minority class (1) gets higher weight
     assert weights[2] > weights[0]  # minority class (2) gets higher weight
-    assert weights[1] == pytest.approx(weights[2], rel=0.1)
+    assert weights[1].item() == pytest.approx(weights[2].item(), rel=0.1)
 
 
 def test_compute_class_weights_single_class() -> None:

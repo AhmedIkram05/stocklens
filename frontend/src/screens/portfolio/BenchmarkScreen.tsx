@@ -12,7 +12,7 @@ import ResponsiveContainer from '../../components/ResponsiveContainer';
 import AppText from '../../components/AppText';
 
 import { useTheme, brandColors } from '../../contexts/ThemeContext';
-import { PortfolioStackParamList } from '../../navigation/AppNavigator';
+import { PortfolioStackParamList } from '../../navigation/types';
 import { portfolioService, BenchmarkComparison } from '../../services/portfolios';
 import { PERIOD_OPTIONS, periodToStartDate, periodLabel } from '../../constants/periods';
 import { useBreakpoint } from '../../hooks/useBreakpoint';

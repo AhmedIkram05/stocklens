@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any
+from collections.abc import Awaitable, Callable
+from typing import Any, NamedTuple
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -31,6 +32,7 @@ from src.config import settings
 from src.limiter import limiter
 from src.mcp.auth import (
     MCP_TOOLS_SCOPE,
+    McpPrincipal,
     prompt_scope,
     resource_scope,
     scope_grants,
@@ -152,6 +154,205 @@ async def mcp_sse(request: Request, payload=Depends(verify_mcp_token)):
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
+# ── JSON-RPC method handlers (data, not control flow) ─────────────────────
+# Each handler owns one method's logic and returns the JSON-RPC response dict,
+# or None for a notification (no response per JSON-RPC). Adding a method is a
+# new function plus one _METHOD_HANDLERS entry.
+
+
+class _RpcContext(NamedTuple):
+    """Everything a method handler needs for one JSON-RPC message."""
+
+    params: dict
+    msg_id: Any
+    principal: McpPrincipal
+    requested_version: str | None
+
+
+def _ok(msg_id: Any, result: dict) -> dict:
+    return {"jsonrpc": "2.0", "id": msg_id, "result": result}
+
+
+async def _handle_discover(ctx: _RpcContext) -> dict:
+    logger.info("mcp_discover", version=ctx.requested_version)
+    return _ok(ctx.msg_id, _discover_result())
+
+
+async def _handle_initialize(ctx: _RpcContext) -> dict:
+    if ctx.requested_version == "2026-07-28":
+        return _error(
+            -32601,
+            "Method not found: initialize (2026-07-28 has no initialize handshake)",
+            ctx.msg_id,
+        )
+    proto = ctx.params.get("protocolVersion", _LEGACY_VERSION)
+    logger.info(
+        "mcp_initialize",
+        client=ctx.params.get("clientInfo", {}).get("name", "unknown"),
+    )
+    return _ok(
+        ctx.msg_id,
+        {
+            "protocolVersion": proto,
+            "capabilities": {
+                "tools": {"listChanged": False},
+                "resources": {"listChanged": False},
+                "prompts": {"listChanged": False},
+            },
+            "serverInfo": {
+                "name": getattr(settings, "MCP_SERVER_NAME", "stocklens"),
+                "version": "0.1.0",
+                "description": (
+                    "StockLens portfolio & market intelligence — "
+                    "16 tools, 2 resources, 1 prompt via OAuth 2.1 RS256"
+                ),
+            },
+        },
+    )
+
+
+async def _handle_notifications_initialized(ctx: _RpcContext) -> None:
+    # Notification — no response per JSON-RPC
+    return None
+
+
+async def _handle_tools_list(ctx: _RpcContext) -> dict:
+    # Only advertise tools the caller's scope can actually invoke —
+    # tools/call enforces the same map, so an unlisted tool is one the
+    # caller could not call anyway.
+    visible = [
+        tool
+        for tool in get_mcp_tools()
+        if scope_grants(ctx.principal.scopes, tool_scope(tool["name"]))
+    ]
+    return _ok(ctx.msg_id, {"tools": visible})
+
+
+async def _handle_tools_call(ctx: _RpcContext) -> dict:
+    tool_name = ctx.params.get("name")
+    arguments = ctx.params.get("arguments") or {}
+    if not tool_name:
+        return _error(-32602, "Missing tool name", ctx.msg_id)
+    if tool_name not in get_tool_names():
+        return _error(-32602, f"Unknown tool: {tool_name}", ctx.msg_id)
+
+    required = tool_scope(tool_name)
+    if not scope_grants(ctx.principal.scopes, required):
+        return _insufficient_scope(required, ctx.msg_id)
+
+    user_id = ctx.principal.sub
+    # portfolio_id may be in arguments or inferred
+    portfolio_id = arguments.get("portfolio_id")
+
+    # Structured logging for observability (MCP equivalent of LangSmith tracing)
+    call_id = uuid.uuid4().hex[:8]
+    logger.info(
+        "mcp_tool_call",
+        call_id=call_id,
+        tool=tool_name,
+        user_id=user_id[:8],
+        has_portfolio=bool(portfolio_id),
+    )
+    try:
+        result_text = await invoke_tool(tool_name, arguments, user_id, portfolio_id)
+        # MCP result is list of content blocks
+        return _ok(
+            ctx.msg_id,
+            {"content": [{"type": "text", "text": result_text}], "isError": False},
+        )
+    except KeyError as e:
+        return _error(-32602, str(e), ctx.msg_id)
+    except Exception:
+        logger.exception("mcp_tool_error", tool=tool_name, call_id=call_id)
+        # Opaque to the client — raw exception text leaks DB constraint
+        # names and internal paths; details live in the server log.
+        return _ok(
+            ctx.msg_id,
+            {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": json.dumps({"error": "Internal error processing tool call"}),
+                    }
+                ],
+                "isError": True,
+            },
+        )
+
+
+async def _handle_resources_list(ctx: _RpcContext) -> dict:
+    return _ok(ctx.msg_id, {"resources": get_mcp_resources()})
+
+
+async def _handle_resources_read(ctx: _RpcContext) -> dict:
+    uri = ctx.params.get("uri")
+    if not uri:
+        return _error(-32602, "Missing uri", ctx.msg_id)
+    required = resource_scope(uri)
+    if required is not None and not scope_grants(ctx.principal.scopes, required):
+        return _insufficient_scope(required, ctx.msg_id)
+    try:
+        text = await read_resource(uri, user_id=ctx.principal.sub)
+        return _ok(
+            ctx.msg_id,
+            {"contents": [{"uri": uri, "mimeType": "application/json", "text": text}]},
+        )
+    except KeyError as e:
+        return _error(-32602, str(e), ctx.msg_id)
+    except Exception:
+        logger.exception("mcp_resource_error", uri=uri)
+        # Opaque to the client — details are in the server log above.
+        return _ok(
+            ctx.msg_id,
+            {
+                "contents": [
+                    {
+                        "uri": uri,
+                        "mimeType": "text/plain",
+                        "text": json.dumps({"error": "Internal error reading resource"}),
+                    }
+                ]
+            },
+        )
+
+
+async def _handle_prompts_list(ctx: _RpcContext) -> dict:
+    return _ok(ctx.msg_id, {"prompts": get_mcp_prompts()})
+
+
+async def _handle_prompts_get(ctx: _RpcContext) -> dict:
+    name = ctx.params.get("name")
+    args = ctx.params.get("arguments") or {}
+    if not name:
+        return _error(-32602, "Missing prompt name", ctx.msg_id)
+    required = prompt_scope(name)
+    if required is not None and not scope_grants(ctx.principal.scopes, required):
+        return _insufficient_scope(required, ctx.msg_id)
+    try:
+        result = await get_prompt(name, args, user_id=ctx.principal.sub)
+        return _ok(ctx.msg_id, result)
+    except KeyError as e:
+        return _error(-32602, str(e), ctx.msg_id)
+
+
+async def _handle_ping(ctx: _RpcContext) -> dict:
+    return _ok(ctx.msg_id, {})
+
+
+_METHOD_HANDLERS: dict[str, Callable[[_RpcContext], Awaitable[dict | None]]] = {
+    "server/discover": _handle_discover,
+    "initialize": _handle_initialize,
+    "notifications/initialized": _handle_notifications_initialized,
+    "tools/list": _handle_tools_list,
+    "tools/call": _handle_tools_call,
+    "resources/list": _handle_resources_list,
+    "resources/read": _handle_resources_read,
+    "prompts/list": _handle_prompts_list,
+    "prompts/get": _handle_prompts_get,
+    "ping": _handle_ping,
+}
+
+
 @mcp_router.post("/mcp")
 @limiter.limit(settings.RATE_LIMIT_MCP)
 async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
@@ -204,221 +405,21 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
             )
             continue
 
-        # ── server/discover (2026-07-28) ─────────────────────────────────
-        if method == "server/discover":
-            responses.append({"jsonrpc": "2.0", "id": msg_id, "result": _discover_result()})
-            logger.info("mcp_discover", version=requested)
-
-        # ── initialize (2025-06-18 only — rejected on 2026-07-28) ────────
-        elif method == "initialize":
-            if requested == "2026-07-28":
-                responses.append(
-                    _error(
-                        -32601,
-                        "Method not found: initialize (2026-07-28 has no initialize handshake)",
-                        msg_id,
-                    )
-                )
-                continue
-            proto = params.get("protocolVersion", _LEGACY_VERSION)
-            responses.append(
-                {
-                    "jsonrpc": "2.0",
-                    "id": msg_id,
-                    "result": {
-                        "protocolVersion": proto,
-                        "capabilities": {
-                            "tools": {"listChanged": False},
-                            "resources": {"listChanged": False},
-                            "prompts": {"listChanged": False},
-                        },
-                        "serverInfo": {
-                            "name": getattr(settings, "MCP_SERVER_NAME", "stocklens"),
-                            "version": "0.1.0",
-                            "description": (
-                                "StockLens portfolio & market intelligence — "
-                                "16 tools, 2 resources, 1 prompt via OAuth 2.1 RS256"
-                            ),
-                        },
-                    },
-                }
-            )
-            logger.info(
-                "mcp_initialize",
-                client=params.get("clientInfo", {}).get("name", "unknown"),
-            )
-
-        # ── notifications/initialized ───────────────────────────────────
-        elif method == "notifications/initialized":
-            # Notification — no response per JSON-RPC
+        handler = _METHOD_HANDLERS.get(method)
+        if handler is None:
+            responses.append(_error(-32601, f"Method not found: {method}", msg_id))
             continue
 
-        # ── tools/list ──────────────────────────────────────────────────
-        elif method == "tools/list":
-            # Only advertise tools the caller's scope can actually invoke —
-            # tools/call enforces the same map, so an unlisted tool is one the
-            # caller could not call anyway.
-            visible = [
-                tool
-                for tool in get_mcp_tools()
-                if scope_grants(payload.scopes, tool_scope(tool["name"]))
-            ]
-            responses.append(
-                {
-                    "jsonrpc": "2.0",
-                    "id": msg_id,
-                    "result": {"tools": visible},
-                }
+        result = await handler(
+            _RpcContext(
+                params=params,
+                msg_id=msg_id,
+                principal=payload,
+                requested_version=requested,
             )
-
-        # ── tools/call ──────────────────────────────────────────────────
-        elif method == "tools/call":
-            tool_name = params.get("name")
-            arguments = params.get("arguments") or {}
-            if not tool_name:
-                responses.append(_error(-32602, "Missing tool name", msg_id))
-                continue
-            if tool_name not in get_tool_names():
-                responses.append(_error(-32602, f"Unknown tool: {tool_name}", msg_id))
-                continue
-
-            required = tool_scope(tool_name)
-            if not scope_grants(payload.scopes, required):
-                responses.append(_insufficient_scope(required, msg_id))
-                continue
-
-            user_id = payload.sub
-            # portfolio_id may be in arguments or inferred
-            portfolio_id = arguments.get("portfolio_id")
-
-            # Structured logging for observability (MCP equivalent of LangSmith tracing)
-            call_id = uuid.uuid4().hex[:8]
-            logger.info(
-                "mcp_tool_call",
-                call_id=call_id,
-                tool=tool_name,
-                user_id=user_id[:8],
-                has_portfolio=bool(portfolio_id),
-            )
-            try:
-                result_text = await invoke_tool(tool_name, arguments, user_id, portfolio_id)
-                # MCP result is list of content blocks
-                responses.append(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": msg_id,
-                        "result": {
-                            "content": [{"type": "text", "text": result_text}],
-                            "isError": False,
-                        },
-                    }
-                )
-            except KeyError as e:
-                responses.append(_error(-32602, str(e), msg_id))
-            except Exception:
-                logger.exception("mcp_tool_error", tool=tool_name, call_id=call_id)
-                # Opaque to the client — raw exception text leaks DB constraint
-                # names and internal paths; details live in the server log.
-                responses.append(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": msg_id,
-                        "result": {
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": json.dumps(
-                                        {"error": "Internal error processing tool call"}
-                                    ),
-                                }
-                            ],
-                            "isError": True,
-                        },
-                    }
-                )
-
-        # ── resources/list ──────────────────────────────────────────────
-        elif method == "resources/list":
-            responses.append(
-                {"jsonrpc": "2.0", "id": msg_id, "result": {"resources": get_mcp_resources()}}
-            )
-        # ── resources/read ──────────────────────────────────────────────
-        elif method == "resources/read":
-            uri = params.get("uri")
-            if not uri:
-                responses.append(_error(-32602, "Missing uri", msg_id))
-                continue
-            required = resource_scope(uri)
-            if required is not None and not scope_grants(payload.scopes, required):
-                responses.append(_insufficient_scope(required, msg_id))
-                continue
-            try:
-                text = await read_resource(uri, user_id=payload.sub)
-                responses.append(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": msg_id,
-                        "result": {
-                            "contents": [
-                                {
-                                    "uri": uri,
-                                    "mimeType": "application/json",
-                                    "text": text,
-                                }
-                            ]
-                        },
-                    }
-                )
-            except KeyError as e:
-                responses.append(_error(-32602, str(e), msg_id))
-            except Exception:
-                logger.exception("mcp_resource_error", uri=uri)
-                # Opaque to the client — details are in the server log above.
-                responses.append(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": msg_id,
-                        "result": {
-                            "contents": [
-                                {
-                                    "uri": uri,
-                                    "mimeType": "text/plain",
-                                    "text": json.dumps(
-                                        {"error": "Internal error reading resource"}
-                                    ),
-                                }
-                            ]
-                        },
-                    }
-                )
-        # ── prompts/list ─────────────────────────────────────────────────
-        elif method == "prompts/list":
-            responses.append(
-                {"jsonrpc": "2.0", "id": msg_id, "result": {"prompts": get_mcp_prompts()}}
-            )
-        # ── prompts/get ──────────────────────────────────────────────────
-        elif method == "prompts/get":
-            name = params.get("name")
-            args = params.get("arguments") or {}
-            if not name:
-                responses.append(_error(-32602, "Missing prompt name", msg_id))
-                continue
-            required = prompt_scope(name)
-            if required is not None and not scope_grants(payload.scopes, required):
-                responses.append(_insufficient_scope(required, msg_id))
-                continue
-            try:
-                result = await get_prompt(name, args, user_id=payload.sub)
-                responses.append({"jsonrpc": "2.0", "id": msg_id, "result": result})
-            except KeyError as e:
-                responses.append(_error(-32602, str(e), msg_id))
-
-        # ── ping ────────────────────────────────────────────────────────
-        elif method == "ping":
-            responses.append({"jsonrpc": "2.0", "id": msg_id, "result": {}})
-
-        else:
-            responses.append(_error(-32601, f"Method not found: {method}", msg_id))
+        )
+        if result is not None:
+            responses.append(result)
 
     # Notifications-only batch → 202 No Content per JSON-RPC
     if not responses:
@@ -428,8 +429,8 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
     accept = request.headers.get("accept", "")
     if "text/event-stream" in accept and len(responses) == 1:
         # Single response as SSE per MCP Streamable HTTP
-        payload = json.dumps(responses[0])
-        body = f"event: message\ndata: {payload}\n\n"
+        sse_payload = json.dumps(responses[0])
+        body = f"event: message\ndata: {sse_payload}\n\n"
 
         async def sse_gen():
             yield body

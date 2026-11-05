@@ -182,7 +182,7 @@ jobs:
         env:
           VIRTUAL_ENV: ${{ github.workspace }}/venv
         run: |
-          uv pip install ruff
+          uv pip install ruff==0.15.15
           ./venv/bin/ruff check backend/
           ./venv/bin/ruff format --check backend/
       - name: Build Rust extension
@@ -266,7 +266,8 @@ jobs:
         run: |
           uv pip install -r airflow/requirements.txt pytest pytest-cov
           COVERAGE_RCFILE=airflow/coverage.rc \
-            ./venv/bin/python -m pytest airflow/dags/test_dag.py -v \
+            ./venv/bin/python -m pytest \
+            airflow/dags/test_dag.py airflow/dags/test_handlers.py -v \
             --cov=airflow/dags \
             --cov-report=lcov:${{ github.workspace }}/airflow/coverage/lcov.info
       - name: Verify airflow coverage report exists

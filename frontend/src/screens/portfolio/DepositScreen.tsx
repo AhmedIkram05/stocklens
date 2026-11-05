@@ -18,7 +18,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { brandColors, useTheme } from '../../contexts/ThemeContext';
 import BackButton from '../../components/BackButton';
 import { spacing, typography, radii } from '../../styles/theme';
-import { PortfolioStackParamList } from '../../navigation/AppNavigator';
+import { PortfolioStackParamList } from '../../navigation/types';
 import { portfolioService } from '../../services/portfolios';
 import { receiptService, Receipt } from '../../services/receipts';
 import { formatCurrencyRounded } from '../../utils/formatters';

@@ -295,3 +295,75 @@ class TestNowUtc:
         now = _now_utc()
         assert now.tzinfo is not None
         assert now.tzinfo.utcoffset(now) == timedelta(0)
+
+
+# ── Audience / issuer validation ────────────────────────────────────────────────
+
+
+class TestAudienceIssuerValidation:
+    """``aud``/``iss`` are emitted and validated only when configured.
+
+    Defaults are empty, so tokens minted before these settings existed keep
+    verifying; setting them opts into strict validation.
+    """
+
+    def _base_settings(self, monkeypatch):
+        monkeypatch.setattr("src.auth.utils.settings.JWT_SECRET_KEY", "test-secret")
+        monkeypatch.setattr("src.auth.utils.settings.JWT_ALGORITHM", "HS256")
+        monkeypatch.setattr("src.auth.utils.settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES", 30)
+        monkeypatch.setattr("src.auth.utils.settings.JWT_AUDIENCE", "")
+        monkeypatch.setattr("src.auth.utils.settings.JWT_ISSUER", "")
+
+    def test_unset_settings_emit_no_claims(self, monkeypatch):
+        self._base_settings(monkeypatch)
+        token, _ = create_access_token("user-1")
+        raw = jwt.decode(token, "test-secret", algorithms=["HS256"])
+        assert "aud" not in raw
+        assert "iss" not in raw
+        assert decode_token(token).sub == "user-1"
+
+    def test_configured_audience_is_emitted_and_validated(self, monkeypatch):
+        self._base_settings(monkeypatch)
+        monkeypatch.setattr("src.auth.utils.settings.JWT_AUDIENCE", "stocklens-api")
+
+        token, _ = create_access_token("user-1")
+        decoded = jwt.decode(token, "test-secret", algorithms=["HS256"], audience="stocklens-api")
+        assert decoded["aud"] == "stocklens-api"
+        assert decode_token(token).sub == "user-1"
+
+        # A token minted for another audience must be rejected.
+        monkeypatch.setattr("src.auth.utils.settings.JWT_AUDIENCE", "other-api")
+        with pytest.raises(jwt.InvalidAudienceError):
+            decode_token(token)
+
+    def test_configured_issuer_is_emitted_and_validated(self, monkeypatch):
+        self._base_settings(monkeypatch)
+        monkeypatch.setattr("src.auth.utils.settings.JWT_ISSUER", "https://issuer.example")
+
+        token, _ = create_access_token("user-1")
+        decoded = jwt.decode(token, "test-secret", algorithms=["HS256"])
+        assert decoded["iss"] == "https://issuer.example"
+        assert decode_token(token).sub == "user-1"
+
+        # Wrong issuer → rejected.
+        monkeypatch.setattr("src.auth.utils.settings.JWT_ISSUER", "https://evil.example")
+        with pytest.raises(jwt.InvalidIssuerError):
+            decode_token(token)
+
+    def test_absent_issuer_rejected_when_configured(self, monkeypatch):
+        self._base_settings(monkeypatch)
+        # Legacy token with no iss claim (minted while the setting was unset).
+        legacy, _ = create_access_token("user-1")
+        monkeypatch.setattr("src.auth.utils.settings.JWT_ISSUER", "https://issuer.example")
+        with pytest.raises(jwt.InvalidTokenError):
+            decode_token(legacy)
+
+    def test_refresh_token_also_carries_claims(self, monkeypatch):
+        self._base_settings(monkeypatch)
+        monkeypatch.setattr("src.auth.utils.settings.JWT_AUDIENCE", "stocklens-api")
+        monkeypatch.setattr("src.auth.utils.settings.JWT_ISSUER", "https://issuer.example")
+        monkeypatch.setattr("src.auth.utils.settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS", 7)
+
+        token, _ = create_refresh_token("user-1")
+        payload = decode_token(token)
+        assert payload.type == "refresh"

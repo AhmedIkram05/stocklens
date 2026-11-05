@@ -89,7 +89,10 @@ resource "aws_secretsmanager_secret" "langsmith_api_key" {
 resource "aws_secretsmanager_secret_version" "langsmith_api_key" {
   secret_id = aws_secretsmanager_secret.langsmith_api_key.id
   # Write-only: the key arrives as an ephemeral variable (TF_VAR_ in CI), so it
-  # never lands in state or the saved plan. Increment the version to rotate it.
+  # never lands in state or the saved plan. A write-only value is only re-sent
+  # when secret_string_wo_version changes, so rotating LANGSMITH_API_KEY in
+  # GitHub Secrets is a no-op until the version below is bumped (1 -> 2 -> ...);
+  # otherwise the previously stored value is silently retained.
   secret_string_wo         = var.langsmith_api_key != "" ? var.langsmith_api_key : random_password.langsmith.result
   secret_string_wo_version = 1
 }

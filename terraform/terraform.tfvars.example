@@ -28,6 +28,9 @@ db_password    = "<generate-a-24-char-random-string>"
 jwt_secret_key = "<generate-a-256-bit-random-key>"
 # redis_pass   = ""  # Omit to auto-generate a 24-char random token via random_password.redis
 # langsmith_api_key = "<get-from-langsmith-settings>"  # LangSmith API key for LLM tracing
+#   Rotating LANGSMITH_API_KEY in GitHub Secrets is a no-op until
+#   secret_string_wo_version in terraform/modules/secrets/main.tf is bumped —
+#   the write-only secret otherwise silently keeps its previously stored value.
 
 # ── CORS origins for production frontend ─────────────────────────────
 cors_origins = [

@@ -496,11 +496,21 @@ class TestGetMarketNews:
         assert data["articles"][0]["title"] == "Big news"
 
     async def test_max_clamped(self):
-        result_str = await TOOLS["get_market_news"].ainvoke(
-            {"ticker": "AAPL", "user_id": USER_ID, "max_articles": 999}
-        )
+        article = {
+            "title": "Big news",
+            "publisher": "Reuters",
+            "link": "http://x",
+            "providerPublishTime": 1700000000,
+            "summary": "Stuff happened",
+        }
+        with patch("src.agent.tools.yf") as mock_yf:
+            mock_yf.Ticker.return_value.news = [article] * 12
+            result_str = await TOOLS["get_market_news"].ainvoke(
+                {"ticker": "AAPL", "user_id": USER_ID, "max_articles": 999}
+            )
         data = json.loads(result_str)
         assert data["ticker"] == "AAPL"
+        assert len(data["articles"]) == 10  # 999 clamps to the 10 ceiling
 
 
 class TestCompareTickersSideBySide:
@@ -958,11 +968,21 @@ class TestGetMarketNewsLimits:
 
     async def test_min_articles_clamped(self):
         """max_articles < 1 is clamped to 1."""
-        result_str = await TOOLS["get_market_news"].ainvoke(
-            {"ticker": "AAPL", "user_id": USER_ID, "max_articles": -5}
-        )
+        article = {
+            "title": "Big news",
+            "publisher": "Reuters",
+            "link": "http://x",
+            "providerPublishTime": 1700000000,
+            "summary": "Stuff happened",
+        }
+        with patch("src.agent.tools.yf") as mock_yf:
+            mock_yf.Ticker.return_value.news = [article, article]
+            result_str = await TOOLS["get_market_news"].ainvoke(
+                {"ticker": "AAPL", "user_id": USER_ID, "max_articles": -5}
+            )
         data = json.loads(result_str)
         assert data["ticker"] == "AAPL"
+        assert len(data["articles"]) == 1  # -5 clamps to 1
 
 
 class TestGetLSTMForecastErrors:

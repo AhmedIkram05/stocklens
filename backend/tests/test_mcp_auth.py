@@ -1071,3 +1071,79 @@ def test_oauth_authorize_post_is_rate_limited(monkeypatch):
         jwks_b = auth_mod._jwks()
         assert [k["kid"] for k in jwks_b["keys"]] == [jwks_b["keys"][0]["kid"]]
         assert kid_a not in [k["kid"] for k in jwks_b["keys"]]
+
+
+# ── Audience / issuer claim validation (MCP token path) ─────────────────────
+
+
+class TestMcpAudienceIssuerValidation:
+    """``aud``/``iss`` validation on MCP tokens — enabled only when configured."""
+
+    def test_roundtrip_emits_and_validates_claims(self, monkeypatch):
+        from src.config import settings
+        from src.mcp.auth import _decode_mcp_claims, _mcp_create_access_token
+
+        monkeypatch.setattr(settings, "JWT_AUDIENCE", "stocklens-mcp")
+        monkeypatch.setattr(settings, "JWT_ISSUER", "https://issuer.example")
+
+        token, _jti, _exp = _mcp_create_access_token("user-1", "mcp:tools")
+        claims = _decode_mcp_claims(token)
+        assert claims["aud"] == "stocklens-mcp"
+        assert claims["iss"] == "https://issuer.example"
+        assert claims["scope"] == "mcp:tools"
+
+    def test_wrong_audience_rejected(self, monkeypatch):
+        import jwt as pyjwt
+
+        from src.config import settings
+        from src.mcp.auth import _decode_mcp_claims, _mcp_create_access_token
+
+        monkeypatch.setattr(settings, "JWT_AUDIENCE", "stocklens-mcp")
+        token, _jti, _exp = _mcp_create_access_token("user-1", "mcp:tools")
+
+        monkeypatch.setattr(settings, "JWT_AUDIENCE", "some-other-resource")
+        with pytest.raises(pyjwt.InvalidAudienceError):
+            _decode_mcp_claims(token)
+
+    def test_deployed_config_absent_issuer_rejected(self, monkeypatch):
+        import jwt as pyjwt
+
+        from src.config import settings
+        from src.mcp.auth import _decode_mcp_claims, _mcp_create_access_token
+
+        # Token minted with no issuer (as legacy tokens are).
+        monkeypatch.setattr(settings, "JWT_ISSUER", "")
+        token, _jti, _exp = _mcp_create_access_token("user-1", "mcp:tools")
+
+        # Deployed-env configuration requires an issuer → absent iss is rejected.
+        monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+        monkeypatch.setattr(settings, "JWT_ISSUER", "https://issuer.example")
+        with pytest.raises(pyjwt.InvalidTokenError):
+            _decode_mcp_claims(token)
+
+    def test_deployed_config_correct_issuer_accepted(self, monkeypatch):
+        from src.config import settings
+        from src.mcp.auth import _decode_mcp_claims, _mcp_create_access_token
+
+        monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+        monkeypatch.setattr(settings, "JWT_ISSUER", "https://issuer.example")
+        token, _jti, _exp = _mcp_create_access_token("user-1", "mcp:tools")
+        assert _decode_mcp_claims(token)["iss"] == "https://issuer.example"
+
+    def test_rest_scopeless_token_denied_mcp_tools(self):
+        """Regression: a REST token (no OAuth scope) grants no MCP scope."""
+        from src.auth.utils import create_access_token
+        from src.mcp.auth import (
+            MCP_TOOLS_SCOPE,
+            _decode_mcp_claims,
+            granted_scopes,
+            scope_grants,
+            tool_scope,
+        )
+
+        token, _ = create_access_token("user-1")
+        granted = granted_scopes(_decode_mcp_claims(token).get("scope"))
+        assert granted == frozenset()
+        assert MCP_TOOLS_SCOPE not in granted
+        assert scope_grants(granted, tool_scope("get_portfolio_summary")) is False
+        assert scope_grants(granted, "market:read") is False
