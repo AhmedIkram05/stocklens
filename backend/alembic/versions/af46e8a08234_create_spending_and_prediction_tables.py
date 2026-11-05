@@ -71,8 +71,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("DROP TABLE IF EXISTS agent_conversations")
+    # agent_conversations and spending_categories are created by 0001, so its
+    # downgrade owns dropping them. This migration's IF NOT EXISTS creates are
+    # no-ops on a fresh database and must not drop tables it did not create.
     op.execute("DROP INDEX IF EXISTS idx_receipts_user_date")
     op.execute("ALTER TABLE receipts DROP COLUMN IF EXISTS line_items")
     op.execute("ALTER TABLE receipts DROP COLUMN IF EXISTS category_id")
-    op.execute("DROP TABLE IF EXISTS spending_categories")
