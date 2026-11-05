@@ -33,12 +33,9 @@ from alembic.script import ScriptDirectory
 ALEMBIC_DIR = Path(__file__).resolve().parents[1] / "alembic"
 ALEMBIC_INI = ALEMBIC_DIR.parent / "alembic.ini"
 
-# ``base`` is not a valid downgrade target: revisions ``af46e8a08234`` and
-# ``0001`` both DROP the same tables (``agent_conversations``,
-# ``spending_categories``), so a full downgrade fails on the second drop.
-# ``0008`` is the deepest target that reverts cleanly while still exercising
-# the newest revisions' downgrade bodies.
-DOWNGRADE_TARGET = "0008"
+# Down to the empty database: exercises every downgrade body in the chain and
+# proves it is fully reversible.
+DOWNGRADE_TARGET = "base"
 
 
 def _script_directory() -> ScriptDirectory:
@@ -48,10 +45,16 @@ def _script_directory() -> ScriptDirectory:
 def _test_dsn() -> str:
     """The DSN the rest of the suite uses.
 
-    ``conftest`` rewrites the docker ``postgres_test`` host to
-    ``localhost:5433`` when it is loaded; under ``--noconftest`` the raw URL is
-    used instead.
+    Prefer an environment-provided DSN so the probe points at whatever database
+    the environment provides — CI sets ``TEST_DATABASE_URL`` to its service
+    container. Fall back to ``settings.TEST_DATABASE_URL``, which ``conftest``
+    rewrites from the docker ``postgres_test`` host to ``localhost:5433`` on the
+    host; under ``--noconftest`` the raw URL is used instead.
     """
+    for var in ("TEST_DATABASE_URL", "DATABASE_URL"):
+        value = os.environ.get(var)
+        if value:
+            return value
     from src.config import settings
 
     return settings.TEST_DATABASE_URL
@@ -114,6 +117,21 @@ def _revision(dsn: str) -> str | None:
     return asyncio.run(_read())
 
 
+def _has_table(dsn: str, table: str) -> bool:
+    """True if ``table`` exists in the ``public`` schema of ``dsn``."""
+
+    async def _check() -> bool:
+        conn = await asyncpg.connect(_as_asyncpg_dsn(dsn))
+        try:
+            return bool(
+                await conn.fetchval("SELECT to_regclass($1) IS NOT NULL", f"public.{table}")
+            )
+        finally:
+            await conn.close()
+
+    return asyncio.run(_check())
+
+
 class TestRevisionChain:
     def test_single_head(self):
         assert len(_script_directory().get_heads()) == 1, (
@@ -150,7 +168,7 @@ class TestRevisionChain:
 @pytest.mark.integration
 @pytest.mark.skipif(_SKIP_REASON is not None, reason=_SKIP_REASON or "")
 def test_upgrade_head_then_downgrade_round_trip(monkeypatch):
-    """Upgrade a throwaway database to head, then downgrade to 0008.
+    """Upgrade a throwaway database to head, then downgrade all the way to base.
 
     Asserts the recorded revision after each direction, so a migration whose
     ``upgrade`` or ``downgrade`` raises (the failure mode the structural checks
@@ -176,6 +194,7 @@ def test_upgrade_head_then_downgrade_round_trip(monkeypatch):
         assert _revision(temp_dsn) == _script_directory().get_current_head()
 
         downgrade(cfg, DOWNGRADE_TARGET)
-        assert _revision(temp_dsn) == DOWNGRADE_TARGET
+        assert _revision(temp_dsn) is None, "alembic_version must be empty after downgrade base"
+        assert not _has_table(temp_dsn, "users"), "0001's tables must be gone after downgrade base"
     finally:
         asyncio.run(_drop_database(_as_asyncpg_dsn(test_dsn), temp_db))
