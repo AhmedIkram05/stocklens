@@ -85,6 +85,12 @@ __pycache__/
 *.egg-info/
 .ruff_cache/
 .pytest_cache/
+.venv/
+venv/
+.mypy_cache/
+htmlcov/
+.tox/
+.nox/
 
 # ─── Rust ───────────────────────────────────────────────────────────────────────
 # Rust build artifacts — hundreds of MB from cargo build / maturin

@@ -11,7 +11,11 @@
     "test": "jest --config frontend/jest.config.js",
     "test:unit": "jest --config frontend/jest.config.js --testPathPattern='unit\\.test\\.(ts|tsx)$'",
     "test:integration": "jest --config frontend/jest.config.js --testPathPattern='integration\\.test\\.(ts|tsx)$'",
-    "test:coverage": "jest --config frontend/jest.config.js --coverage"
+    "test:coverage": "jest --config frontend/jest.config.js --coverage",
+    "lint": "eslint frontend/src/"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

@@ -1,8 +1,8 @@
 # Stage 0: Rust native module builder (features-engine)
-# Use python:3.12-slim so maturin builds a wheel matching the runtime ABI
-# (python:3.12-slim in builder/runtime stages). The official rust image ships
-# without Python; installing Python from Debian Bookworm gives us 3.11, which
-# produces a cp311-tagged wheel — uninstallable on Python 3.12.
+# Use python:3.14-slim so maturin builds a wheel matching the runtime ABI
+# (python:3.14-slim in builder/runtime stages). The official rust image ships
+# without Python; installing Python from Debian Bookworm gives us 3.14, which
+# produces a cp314-tagged wheel — uninstallable on Python 3.12.
 # Cross-compilation is unnecessary: buildx QEMU emulation makes ARM64 look
 # native, so the default Rust target is aarch64-unknown-linux-gnu.
 FROM python:3.14-slim AS rust-builder

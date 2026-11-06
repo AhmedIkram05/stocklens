@@ -163,7 +163,7 @@ One typed read graph for the RN app (schema committed at `schema.graphql`, types
 | Infrastructure      | Terraform: 14 modules / 164 resources · 7 Docker services · ECS Fargate ARM64 on Graviton                                            |
 | CI/CD               | 9 parallel CI jobs · 8-job, 5-stage deploy · Checkov + tfsec + Gitleaks + Trivy + hadolint + weekly CodeQL                           |
 | Security            | OIDC (zero long-lived AWS creds) · WAF + OWASP CRS · three-tier security groups · pip-audit / npm-audit / cargo-audit                |
-| Documentation       | 9 ADRs · MCP guide + live evidence · 21 demo assets (7 PNG, 2 GIF, 12 MP4)                                                           |
+| Documentation       | 10 ADRs · MCP guide + live evidence · 21 demo assets (7 PNG, 2 GIF, 12 MP4)                                                          |
 
 ## Demos
 
@@ -234,6 +234,7 @@ Every non-trivial design choice is recorded as an Architecture Decision Record (
 | **Explicit cash_flows table** (ADR-002)     | Generic ledger, simple-Dietz approximation | Unambiguous TWR computation; dated+typed rows make cash-flow handling provably correct vs. ledger ambiguity                                                                        |
 | **Hybrid cache** (ADR-003)                  | All-Redis, all-PostgreSQL, no cache        | OHLCV is large/immutable → indexed PG table; quotes are small/volatile → Redis with short TTL; avoids memory pressure on Redis                                                     |
 | **Separate market + performance** (ADR-004) | Monolithic combined module                 | Clean isolation: yfinance wrapping (thread-pool, rate-limited) doesn't taint the pure TWR/benchmark logic                                                                          |
+| **Grilling session notes** (ADR-005)        | Unreviewed Phase 2 concepts                | Stress-tested Phase 2 domain concepts and architecture before planning; surfaced edge cases (e.g. zero-cost-basis TWR) and recorded accepted limitations                           |
 | **Champion model via EFS** (ADR-006)        | Only S3, only SageMaker                    | EFS mount = zero-copy inference on Fargate; S3 for durable storage + CloudFront delivery; SageMaker as optional serving backend                                                    |
 | **Bedrock SigV4 only** (ADR-007)            | Separate API key auth                      | Bedrock uses AWS SigV4 natively; phantom `BEDROCK_API_KEY` would be unused and a security concern                                                                                  |
 | **Terraform remote state S3+DDB** (ADR-008) | Local state, Terraform Cloud, Consul       | S3 + DynamoDB = free, auditable, no vendor lock; `use_lockfile` enables collaborative apply safety                                                                                 |
@@ -243,7 +244,7 @@ Every non-trivial design choice is recorded as an Architecture Decision Record (
 | **Focal loss for classification**           | Cross-entropy, weighted CE                 | Focal loss (γ=1.19, tuned via Optuna; pt computed from unweighted CE so class weights don't skew the focal factor) emphasizes hard misclassifications in imbalanced market regimes |
 | **Evidently for drift**                     | whylogs, Alibi Detect, custom              | Evidently's PSI/KS/JSD suite covers distribution, feature, and model drift in one library; lightweight, Airflow-native                                                             |
 
-All 9 ADRs with full rationale: [docs/adr/](docs/adr/).
+All 10 ADRs with full rationale: [docs/adr/](docs/adr/).
 
 ## Deep Dives
 
