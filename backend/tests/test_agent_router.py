@@ -267,6 +267,8 @@ class TestChatEndpoint:
         assert sse[-1]["event"] == "error"
         err_data = json.loads(sse[-1]["data"])
         assert "error" in err_data
+        # Internal exception text must not leak to the client.
+        assert "simulated crash" not in err_data["error"]
 
     async def test_done_event_includes_trace_id(
         self,

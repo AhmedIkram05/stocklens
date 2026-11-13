@@ -480,8 +480,40 @@ def _is_cimd_client_id(client_id: str) -> bool:
 # persists nothing, so the first-party allowlist is hardcoded: the register
 # defaults (loopback wildcard, claude.ai) plus the RFC 8252 §7.3 loopback
 # redirect pattern with any port.
-_FIRST_PARTY_HTTPS_HOSTS = frozenset({"claude.ai"})
-_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def _first_party_redirect_target(uri: str) -> str | None:
+    """Rebuild an allowlisted first-party redirect URI, or return None.
+
+    The origin is taken from a constant per allowed host, so the destination
+    can only ever be loopback or a registered first-party host even though the
+    path/query come from the request. Rebuilding instead of echoing the
+    caller's string keeps the redirect sink free of request-controlled input.
+    """
+    try:
+        parts = urllib.parse.urlsplit(uri)
+        port = parts.port
+    except ValueError:
+        return None
+    host = (parts.hostname or "").lower()
+    if parts.scheme == "http" and host == "127.0.0.1":
+        origin = "http://127.0.0.1"
+    elif parts.scheme == "http" and host == "localhost":
+        origin = "http://localhost"
+    elif parts.scheme == "http" and host == "::1":
+        origin = "http://[::1]"
+    elif parts.scheme == "https" and host == "claude.ai":
+        origin = "https://claude.ai"
+    else:
+        return None
+    if port is not None:
+        origin = origin + ":" + str(port)
+    target = parts.path or "/"
+    if parts.query:
+        target = target + "?" + parts.query
+    if parts.fragment:
+        target = target + "#" + parts.fragment
+    return origin + target
 
 
 def _is_first_party_redirect(uri: str) -> bool:
@@ -493,14 +525,7 @@ def _is_first_party_redirect(uri: str) -> bool:
     lets an attacker 302 the authorization code (bound to their own PKCE
     challenge) to a redirect they control → account takeover.
     """
-    try:
-        parts = urllib.parse.urlsplit(uri)
-    except ValueError:
-        return False
-    host = (parts.hostname or "").lower()
-    if parts.scheme == "http" and host in _LOOPBACK_HOSTS:
-        return True
-    return parts.scheme == "https" and host in _FIRST_PARTY_HTTPS_HOSTS
+    return _first_party_redirect_target(uri) is not None
 
 
 def _cimd_host_blocked(host: str) -> bool:
@@ -763,6 +788,9 @@ async def oauth_authorize_post(body: AuthorizeRequest, request: Request):
 
     # CIMD: URL-formatted client_id = fetch metadata document, enforce redirect_uri
     client_name: str | None = None
+    # The redirect sink only ever receives a validated destination: the
+    # registered entry from the CIMD document, or a re-built first-party URL.
+    redirect_uri: str | None = None
     if _is_cimd_client_id(body.client_id):
         doc = await asyncio.to_thread(_fetch_cimd_document, body.client_id)
         if doc is None:
@@ -770,17 +798,24 @@ async def oauth_authorize_post(body: AuthorizeRequest, request: Request):
                 status_code=400, detail="Invalid or unreachable client_id metadata document"
             )
         redirect_uris = doc.get("redirect_uris") or []
-        if body.redirect_uri not in redirect_uris:
+        # Redirect to the registered entry itself rather than the request echo:
+        # same value, but not request-controlled at the sink.
+        redirect_uri = next(
+            (u for u in redirect_uris if isinstance(u, str) and u == body.redirect_uri), None
+        )
+        if redirect_uri is None:
             raise HTTPException(
                 status_code=400, detail="redirect_uri not listed in client_id metadata document"
             )
         client_name = doc.get("client_name") or "external-client"
         logger.info("cimd_client_resolved", client_id=body.client_id[:64], client_name=client_name)
-    elif not _is_first_party_redirect(body.redirect_uri):
+    else:
         # First-party/static client (and any non-https client_id): the auth
         # code must only reach a registered or loopback redirect — honouring
         # a client-chosen redirect_uri is a code-injection account takeover.
-        raise HTTPException(status_code=400, detail="redirect_uri not allowed for this client")
+        redirect_uri = _first_party_redirect_target(body.redirect_uri)
+        if redirect_uri is None:
+            raise HTTPException(status_code=400, detail="redirect_uri not allowed for this client")
 
     user = await _authenticate_user(body.email, body.password)
     if user is None:
@@ -804,15 +839,14 @@ async def oauth_authorize_post(body: AuthorizeRequest, request: Request):
 
     # Spec: redirect with code if redirect_uri is non-loopback; for inspector loopback return JSON.
     # RFC 9207: iss param on authorization responses (strict string comparison, no normalization).
+    assert redirect_uri is not None  # both branches above assign it or raise
     iss_param = urllib.parse.quote(_issuer(request), safe="")
-    if body.redirect_uri.startswith("http://localhost") or body.redirect_uri.startswith(
-        "http://127.0.0.1"
-    ):
+    if redirect_uri.startswith("http://localhost") or redirect_uri.startswith("http://127.0.0.1"):
         return {"code": code, "state": body.state, "iss": _issuer(request)}
 
     # 302 redirect for browser clients
-    sep = "&" if "?" in body.redirect_uri else "?"
-    loc = f"{body.redirect_uri}{sep}code={code}&iss={iss_param}"
+    sep = "&" if "?" in redirect_uri else "?"
+    loc = f"{redirect_uri}{sep}code={code}&iss={iss_param}"
     if body.state:
         loc += f"&state={body.state}"
     return RedirectResponse(url=loc, status_code=302)

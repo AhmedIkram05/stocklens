@@ -90,9 +90,12 @@ async def chat(
                 }
             )
             yield f"event: done\ndata: {done_payload}\n\n"
-        except Exception as e:
-            logger.exception("chat_stream_error", error=str(e))
-            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+        except Exception:
+            # Details stay in the server log; the client gets a generic message
+            # so internal exception text is never exposed.
+            logger.exception("chat_stream_error")
+            payload = json.dumps({"error": "An unexpected error occurred."})
+            yield f"event: error\ndata: {payload}\n\n"
 
     return StreamingResponse(
         event_generator(),

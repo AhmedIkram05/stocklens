@@ -526,6 +526,27 @@ def test_first_party_redirect_allowlist():
     assert _is_first_party_redirect("http://[::1/cb") is False
 
 
+def test_first_party_redirect_target_rebuilds_from_allowlisted_origin():
+    from src.mcp.auth import _first_party_redirect_target
+
+    # Path/query/fragment preserved, origin constant per allowed host
+    assert (
+        _first_party_redirect_target("http://127.0.0.1:8765/cb?x=1#f")
+        == "http://127.0.0.1:8765/cb?x=1#f"
+    )
+    assert (
+        _first_party_redirect_target("https://claude.ai/callback") == "https://claude.ai/callback"
+    )
+    # Userinfo never survives the rebuild (host is what was allowlisted)
+    assert _first_party_redirect_target("http://user:pass@127.0.0.1:8765/cb") == (
+        "http://127.0.0.1:8765/cb"
+    )
+    # Out-of-range port is not a valid destination
+    assert _first_party_redirect_target("http://127.0.0.1:99999/cb") is None
+    # Hostile hosts are rejected by the same helper
+    assert _first_party_redirect_target("https://claude.ai.evil.example/cb") is None
+
+
 async def test_authorize_public_client_rejects_hostile_redirect_uri():
     from fastapi import HTTPException
 
