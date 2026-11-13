@@ -27,8 +27,23 @@ permissions:
   contents: read
 
 jobs:
+  # ─── Eval switch (master switch → output) ─────────────────────────
+  # The experiment calls Bedrock, so it needs AWS credentials. Mirrors
+  # deploy.yml: while the cloud side is down (AWS_DEPLOY_ENABLED unset), skip
+  # the evaluation and let the run conclude green instead of red-failing on
+  # missing credentials. Set AWS_DEPLOY_ENABLED=true to restore evaluation.
+  eval-switch:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.eval.outputs.enabled }}
+    steps:
+      - id: eval
+        run: echo "enabled=${{ vars.AWS_DEPLOY_ENABLED == 'true' }}" >> "$GITHUB_OUTPUT"
+
   evaluate:
     name: Run LangSmith Agent Evaluation
+    needs: eval-switch
+    if: needs.eval-switch.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     # Postgres service container for agent tool queries (portfolio, OHLCV, etc.)
     services:
@@ -58,20 +73,15 @@ jobs:
       ENVIRONMENT: development
       # No Redis in CI — the cache layer degrades gracefully.
       REDIS_URL: 'redis://localhost:6379/0'
-      # Use the eval region (eu-west-2 — the app's home region).
+      # Use the eval region (eu-west-2 — the app's home region).
       AWS_REGION: eu-west-2
-      # yfinance needs HTTPS
-      REQUESTS_CA_BUNDLE: ''
 
     steps:
       - uses: actions/checkout@v7
 
       - name: Configure AWS credentials (OIDC)
-        # Gated on AWS_DEPLOY_ENABLED: nothing in this job's steps uses AWS
-        # (postgres is a local service container, eval runs on LangSmith +
-        # yfinance), but the OIDC role is currently dead and red-failed the
-        # whole job at this step since July. Unset variable = step skipped.
-        if: vars.AWS_DEPLOY_ENABLED == 'true'
+        # The experiment calls Bedrock, so this job requires AWS credentials.
+        # It only runs when eval-switch enables it (AWS_DEPLOY_ENABLED=true).
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.ECS_DEPLOY_ROLE_ARN }}
