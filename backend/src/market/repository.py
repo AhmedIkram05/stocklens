@@ -89,43 +89,45 @@ async def upsert_ohlcv(ticker: str, rows: list[dict[str, Any]]) -> int:
     BATCH_SIZE = 3000
     total_inserted = 0
 
-    for i in range(0, len(rows), BATCH_SIZE):
-        batch = rows[i : i + BATCH_SIZE]
+    # One pool connection for every batch, not one per batch.
+    async with connection_ctx() as conn:
+        for i in range(0, len(rows), BATCH_SIZE):
+            batch = rows[i : i + BATCH_SIZE]
 
-        params: list[Any] = []
-        for r in batch:
-            params.extend(
-                [
-                    ticker,
-                    r["date"],
-                    r.get("open"),
-                    r.get("high"),
-                    r.get("low"),
-                    r.get("close"),
-                    r.get("adjusted_close"),
-                    r.get("volume"),
-                ]
+            params: list[Any] = []
+            for r in batch:
+                params.extend(
+                    [
+                        ticker,
+                        r["date"],
+                        r.get("open"),
+                        r.get("high"),
+                        r.get("low"),
+                        r.get("close"),
+                        r.get("adjusted_close"),
+                        r.get("volume"),
+                    ]
+                )
+
+            n_cols = 8
+            placeholders = ", ".join(
+                f"(${i * n_cols + 1}, ${i * n_cols + 2}::date, ${i * n_cols + 3}::numeric, "
+                f"${i * n_cols + 4}::numeric, ${i * n_cols + 5}::numeric, "
+                f"${i * n_cols + 6}::numeric, ${i * n_cols + 7}::numeric, "
+                f"${i * n_cols + 8}::bigint)"
+                for i in range(len(batch))
             )
 
-        n_cols = 8
-        placeholders = ", ".join(
-            f"(${i * n_cols + 1}, ${i * n_cols + 2}::date, ${i * n_cols + 3}::numeric, "
-            f"${i * n_cols + 4}::numeric, ${i * n_cols + 5}::numeric, "
-            f"${i * n_cols + 6}::numeric, ${i * n_cols + 7}::numeric, ${i * n_cols + 8}::bigint)"
-            for i in range(len(batch))
-        )
+            query = (
+                "INSERT INTO ohlcv_prices "
+                "(ticker, date, open, high, low, close, adjusted_close, volume) "
+                f"VALUES {placeholders} "
+                "ON CONFLICT (ticker, date) DO NOTHING"
+            )
 
-        query = (
-            "INSERT INTO ohlcv_prices "
-            "(ticker, date, open, high, low, close, adjusted_close, volume) "
-            f"VALUES {placeholders} "
-            "ON CONFLICT (ticker, date) DO NOTHING"
-        )
-
-        async with connection_ctx() as conn:
             status = await conn.execute(query, *params)
-        count = int(status.split()[-1]) if status and status.startswith("INSERT") else 0
-        total_inserted += count
+            count = int(status.split()[-1]) if status and status.startswith("INSERT") else 0
+            total_inserted += count
 
     return total_inserted
 
