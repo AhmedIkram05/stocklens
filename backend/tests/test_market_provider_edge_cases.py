@@ -190,6 +190,43 @@ class TestDownloadOHLCV:
         assert call_args.kwargs["start"] == "2024-06-01"
         assert call_args.kwargs["end"] == "2024-06-30"
 
+    @patch("src.market.provider.yf.download")
+    def test_preserves_row_order_dates_and_fields(self, mock_download):
+        """A multi-year frame keeps row order and converts every field."""
+        import pandas as pd
+
+        n = 500
+        idx = pd.date_range("2020-01-02", periods=n, freq="B")
+        mock_download.return_value = pd.DataFrame(
+            {
+                "Open": np.arange(n, dtype=float),
+                "High": np.arange(n, dtype=float) + 2,
+                "Low": np.arange(n, dtype=float) - 2,
+                "Close": np.arange(n, dtype=float) + 1,
+                "Adj Close": np.arange(n, dtype=float) + 0.5,
+                "Volume": np.arange(n, dtype=float) * 1000,
+            },
+            index=idx,
+        )
+        result = _download_ohlcv("AAPL")
+
+        assert len(result) == n
+        assert [r["date"] for r in result] == [d.date() for d in idx]
+        assert result[0]["open"] == Decimal("0.0")
+        assert result[-1]["close"] == Decimal("500.0")
+        assert result[10]["volume"] == 10000
+        assert result[10]["adjusted_close"] == Decimal("10.5")
+
+    @patch("src.market.provider.yf.download")
+    def test_plain_date_index_passes_through(self, mock_download):
+        """Non-Timestamp index values are returned unchanged (no .date call)."""
+        import pandas as pd
+
+        idx = pd.Index([date(2024, 1, 2), date(2024, 1, 3)])
+        mock_download.return_value = pd.DataFrame({"Close": [1.0, 2.0]}, index=idx)
+        result = _download_ohlcv("AAPL")
+        assert [r["date"] for r in result] == [date(2024, 1, 2), date(2024, 1, 3)]
+
 
 class TestFetchQuote:
     """_fetch_quote: yfinance Ticker.info extraction."""
