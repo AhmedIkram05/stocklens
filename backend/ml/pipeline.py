@@ -141,6 +141,28 @@ async def fetch_ohlcv_for_tickers(tickers: list[str]) -> dict[str, np.ndarray]:
     return result
 
 
+def remap_ticker_indices(
+    ticker_idxs: np.ndarray,
+    source_vocab: dict[str, int],
+    target_vocab: dict[str, int],
+) -> np.ndarray:
+    """Map ticker indices from ``source_vocab`` into ``target_vocab``.
+
+    Unknown indices and tickers absent from the target vocab map to 0 — the
+    same fallback the previous per-window dict lookup used.
+    """
+    max_source_idx = max(source_vocab.values(), default=-1)
+    lookup = np.zeros(max_source_idx + 1, dtype=np.int64)
+    for ticker, idx in source_vocab.items():
+        lookup[idx] = target_vocab.get(ticker, 0)
+
+    idxs = np.asarray(ticker_idxs, dtype=np.int64)
+    out = np.zeros(len(idxs), dtype=np.int64)
+    valid = (idxs >= 0) & (idxs <= max_source_idx)
+    out[valid] = lookup[idxs[valid]]
+    return out
+
+
 def prepare_global_dataset(
     ohlcv_data: dict[str, np.ndarray],
     vocab: dict[str, int],
@@ -896,11 +918,7 @@ async def run_pipeline() -> dict[str, Any]:
                 # embedding row i refers to a different ticker in each vocab,
                 # so scoring the champion on this run's indices silently
                 # corrupts its DA whenever the ticker universe shifts.
-                inv_vocab = {idx: ticker for ticker, idx in vocab.items()}
-                champ_ticker_idxs = np.array(
-                    [champion._vocab.get(inv_vocab.get(int(t), ""), 0) for t in test_raw[2]],
-                    dtype=np.int64,
-                )
+                champ_ticker_idxs = remap_ticker_indices(test_raw[2], vocab, champion._vocab)
                 champ_ds = SequenceDataset(champ_seqs, test_raw[1], champ_ticker_idxs)
                 champ_loader = DataLoader(champ_ds, batch_size=ML_CONFIG.BATCH_SIZE, shuffle=False)
                 per_model_probs = [
