@@ -558,11 +558,14 @@ def compute_portfolio_daily_returns(
     start_date: date,
     end_date: date,
     fx_rates: Optional[dict[str, Decimal]] = None,
+    live_quotes: Optional[dict[str, tuple[Decimal, Decimal]]] = None,
 ) -> tuple[list[date], list[Decimal]]:
     """Compute daily portfolio returns for tracking error calculation.
 
     Reconstructs holdings at each trading day and computes day-over-day
-    percentage return. Returns (trading_days, daily_returns).
+    percentage return. Returns (trading_days, daily_returns). ``live_quotes``
+    (ticker -> (price, previous_close)) overrides the stored close on the final
+    trading day, matching ``compute_portfolio_performance``.
     """
     all_dates: set[date] = set()
     for ticker_prices in price_map.values():
@@ -577,14 +580,23 @@ def compute_portfolio_daily_returns(
     for t in transactions:
         txns_by_date[t["date"]].append(t)
 
+    last_day = trading_days[-1]
+
+    def _price_at(ticker: str, day_: date) -> Optional[Decimal]:
+        if live_quotes and day_ == last_day:
+            quote = live_quotes.get(ticker)
+            if quote is not None:
+                return quote[0]
+        return price_map.get(ticker, {}).get(day_)
+
     def _value_at(day_: date) -> Decimal:
         """Market value of the current holdings at ``day_``'s prices (GBP)."""
         total = Decimal(0)
         for ticker, shares in current.items():
-            ticker_prices = price_map.get(ticker, {})
-            if day_ in ticker_prices and ticker_prices[day_] is not None:
+            price = _price_at(ticker, day_)
+            if price is not None:
                 fx = (fx_rates or {}).get(ticker, Decimal(1))
-                total += shares * ticker_prices[day_] * fx
+                total += shares * price * fx
         return total
 
     daily_returns: list[Decimal] = []

@@ -408,6 +408,104 @@ class TestCompareToBenchmark:
         assert "live_quotes" in captured
         assert captured["live_quotes"]["AAPL"][0] == Decimal("120")
 
+    async def test_mid_period_buy_is_not_booked_as_return(self):
+        """A mid-period BUY is a flow, not P&L: flat prices must yield 0% returns.
+
+        The old inline valuation applied the day's trades *before* pricing, so a
+        flat-price BUY doubled the position and produced a +100% daily return.
+        """
+        today = date.today()
+        d1 = date.fromordinal(today.toordinal() - 2)
+        d2 = date.fromordinal(today.toordinal() - 1)
+        d3 = today
+        flat = [{"date": d, "adjusted_close": Decimal("100")} for d in (d1, d2, d3)]
+        batch = {"AAPL": flat, "SPY": flat}
+
+        conn = MagicMock()
+        conn.fetchrow = AsyncMock(return_value={"id": TEST_PORTFOLIO, "name": "Test"})
+        conn.fetch = AsyncMock(
+            side_effect=[
+                [
+                    {
+                        "id": "h1",
+                        "ticker": "AAPL",
+                        "shares": Decimal("10"),
+                        "average_cost_basis": Decimal("100"),
+                        "average_cost_basis_gbp": Decimal("100"),
+                        "currency": "GBP",
+                        "fx_rate_to_gbp": Decimal("1"),
+                    }
+                ],
+                [
+                    {
+                        "id": "t1",
+                        "ticker": "AAPL",
+                        "type": "BUY",
+                        "shares": Decimal("10"),
+                        "total_amount": Decimal("1000"),
+                        "total_amount_gbp": Decimal("1000"),
+                        "transaction_date": d1,
+                    },
+                    {
+                        "id": "t2",
+                        "ticker": "AAPL",
+                        "type": "BUY",
+                        "shares": Decimal("10"),
+                        "total_amount": Decimal("1000"),
+                        "total_amount_gbp": Decimal("1000"),
+                        "transaction_date": d2,
+                    },
+                ],
+                [],
+            ]
+        )
+
+        class _ConnCtx:
+            async def __aenter__(self):
+                return conn
+
+            async def __aexit__(self, *exc):
+                return False
+
+        captured = {}
+
+        def _capture_comparison(**kwargs):
+            captured.update(kwargs)
+            model = MagicMock()
+            model.benchmark_return = Decimal("0")
+            model.excess_return_alpha = Decimal("0")
+            model.tracking_error = Decimal("0")
+            model.information_ratio = Decimal("0")
+            model.daily_returns_count = 2
+            return model
+
+        perf_model = MagicMock()
+        perf_model.twr = Decimal("0")
+
+        with (
+            patch("src.agent.tools.connection_ctx", return_value=_ConnCtx()),
+            patch(
+                "src.performance.calculations.compute_portfolio_performance",
+                return_value=perf_model,
+            ),
+            patch(
+                "src.performance.calculations.compute_benchmark_comparison",
+                side_effect=_capture_comparison,
+            ),
+            patch(
+                "src.market.provider.fetch_quote",
+                new=AsyncMock(
+                    return_value={"price": Decimal("100"), "previous_close": Decimal("100")}
+                ),
+            ),
+            patch("src.market.repository.get_ohlcv_batch", new=AsyncMock(return_value=batch)),
+        ):
+            await TOOLS["compare_to_benchmark"].ainvoke(
+                {"portfolio_id": TEST_PORTFOLIO, "user_id": USER_ID, "benchmark_ticker": "SPY"}
+            )
+
+        assert captured["portfolio_daily_returns"] == [Decimal("0"), Decimal("0")]
+
     async def test_missing_benchmark_data(self):
         with patch("src.market.repository.get_ohlcv_batch", new=AsyncMock(return_value={})):
             result_str = await TOOLS["compare_to_benchmark"].ainvoke(

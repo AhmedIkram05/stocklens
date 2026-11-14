@@ -54,3 +54,23 @@ async def test_get_ohlcv_batch_empty_tickers_short_circuits():
 
     assert result == {}
     assert "query" not in captured  # no query issued
+
+
+async def test_upsert_ohlcv_reuses_one_connection_across_batches():
+    """A multi-batch upsert must acquire the pool connection once, not per batch."""
+    from src.market.repository import upsert_ohlcv
+
+    conn = MagicMock()
+    conn.execute = AsyncMock(return_value="INSERT 0 1")
+    ctx = MagicMock()
+    ctx.return_value.__aenter__ = AsyncMock(return_value=conn)
+    ctx.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    base = date(2024, 1, 1).toordinal()
+    rows = [{"date": date.fromordinal(base + i)} for i in range(3003)]
+
+    with patch("src.market.repository.connection_ctx", ctx):
+        inserted = await upsert_ohlcv("AAPL", rows)
+
+    assert inserted == 2  # two batches (3000 + 3), each reporting one insert
+    assert ctx.call_count == 1

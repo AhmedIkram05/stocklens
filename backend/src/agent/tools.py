@@ -547,58 +547,21 @@ async def compare_to_benchmark(
         if prev_p > 0:
             benchmark_daily_returns.append((curr_p - prev_p) / prev_p)
 
-    # 3. Compute portfolio daily returns
-    from collections import defaultdict
+    # 3. Compute portfolio daily returns via the shared helper: it values the
+    # pre-trade position, so a BUY/SELL is a flow and not booked as P&L, and it
+    # applies live quotes on the final day. This is the single implementation
+    # used by the portfolio endpoint too.
+    from src.performance.queries import compute_portfolio_daily_returns
 
-    portfolio_dates_list: list[_date] = []
-    portfolio_daily_returns_list: list[_Decimal] = []
-
-    all_price_dates: set[_date] = set()
-    for tp in price_map.values():
-        all_price_dates.update(tp.keys())
-    if all_price_dates:
-        trading_days = sorted(d for d in all_price_dates if start <= d <= end)
-        if len(trading_days) >= 2:
-            txns_by_date: dict[_date, list[dict]] = defaultdict(list)
-            for t in transactions:
-                date_key = t.get("date") or t.get("transaction_date")
-                if date_key:
-                    txns_by_date[date_key].append(t)
-
-            current_shares: dict[str, _Decimal] = {}
-            previous_value = _Decimal(0)
-
-            for i, day in enumerate(trading_days):
-                for txn in txns_by_date.get(day, []):
-                    ticker = txn["ticker"]
-                    if txn["type"] == "BUY":
-                        cur = current_shares.get(ticker, _Decimal(0))
-                        current_shares[ticker] = cur + txn["shares"]
-                    elif txn["type"] == "SELL":
-                        cur = current_shares.get(ticker, _Decimal(0))
-                        current_shares[ticker] = cur - txn["shares"]
-                        if current_shares[ticker] <= 0:
-                            del current_shares[ticker]
-
-                value = _Decimal(0)
-                for ticker, shares in current_shares.items():
-                    tp = price_map.get(ticker, {})
-                    # Use live intraday price on the final day when available
-                    # (mirrors compute_portfolio_performance's live_quotes override)
-                    if i == len(trading_days) - 1 and ticker in live_quotes:
-                        px = live_quotes[ticker][0]
-                    elif day in tp and tp[day] is not None:
-                        px = tp[day]
-                    else:
-                        continue
-                    fx = fx_rates.get(ticker, _Decimal(1))
-                    value += shares * px * fx
-
-                if i > 0 and previous_value > 0:
-                    portfolio_daily_returns_list.append((value - previous_value) / previous_value)
-                    portfolio_dates_list.append(day)
-
-                previous_value = value
+    _portfolio_dates, portfolio_daily_returns_list = compute_portfolio_daily_returns(
+        holdings=holdings_data,
+        transactions=transactions,
+        price_map=price_map,
+        start_date=start,
+        end_date=end,
+        fx_rates=fx_rates,
+        live_quotes=live_quotes or None,
+    )
 
     try:
         comparison = compute_benchmark_comparison(
