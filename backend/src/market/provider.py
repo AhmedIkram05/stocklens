@@ -71,21 +71,19 @@ def _download_ohlcv(
     if isinstance(first_col, tuple):
         df.columns = [c[0] for c in df.columns]
 
-    rows = []
-    for idx, row in df.iterrows():
-        d = idx.date() if hasattr(idx, "date") else idx
-        rows.append(
-            {
-                "date": d,
-                "open": _maybe_decimal(row.get("Open")),
-                "high": _maybe_decimal(row.get("High")),
-                "low": _maybe_decimal(row.get("Low")),
-                "close": _maybe_decimal(row.get("Close")),
-                "adjusted_close": _maybe_decimal(row.get("Adj Close")),
-                "volume": _maybe_int(row.get("Volume")),
-            }
-        )
-    return rows
+    records = df.to_dict("records")
+    return [
+        {
+            "date": idx.date() if hasattr(idx, "date") else idx,
+            "open": _maybe_decimal(record.get("Open")),
+            "high": _maybe_decimal(record.get("High")),
+            "low": _maybe_decimal(record.get("Low")),
+            "close": _maybe_decimal(record.get("Close")),
+            "adjusted_close": _maybe_decimal(record.get("Adj Close")),
+            "volume": _maybe_int(record.get("Volume")),
+        }
+        for idx, record in zip(df.index, records)
+    ]
 
 
 @retry(

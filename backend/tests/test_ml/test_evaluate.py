@@ -271,3 +271,90 @@ class TestDirectionalCounts:
         assert metrics["n_directional"] == 0
         assert metrics["n_directional_correct"] == 0
         assert metrics["directional_accuracy"] == 0.0
+
+
+class TestNonOverlappingMask:
+    """The vectorised "every h-th window per ticker" mask must match the
+    original per-ticker ``idx[::h]`` slice exactly, including unsorted input."""
+
+    @staticmethod
+    def _reference(ticker_idxs: np.ndarray, h: int) -> np.ndarray:
+        keep = np.zeros(len(ticker_idxs), dtype=bool)
+        for t in np.unique(ticker_idxs):
+            idx = np.flatnonzero(ticker_idxs == t)
+            keep[idx[::h]] = True
+        return keep
+
+    @pytest.mark.parametrize("h", [1, 2, 3, 5, 7])
+    def test_parity_sorted_tickers(self, h: int) -> None:
+        from ml.evaluate import _non_overlapping_mask
+
+        rng = np.random.default_rng(h)
+        ticker_idxs = np.sort(rng.integers(0, 12, size=500))
+        np.testing.assert_array_equal(
+            _non_overlapping_mask(ticker_idxs, h), self._reference(ticker_idxs, h)
+        )
+
+    @pytest.mark.parametrize("h", [2, 3, 5])
+    def test_parity_unsorted_tickers(self, h: int) -> None:
+        from ml.evaluate import _non_overlapping_mask
+
+        rng = np.random.default_rng(100 + h)
+        ticker_idxs = rng.integers(0, 12, size=500)
+        np.testing.assert_array_equal(
+            _non_overlapping_mask(ticker_idxs, h), self._reference(ticker_idxs, h)
+        )
+
+    def test_empty_input(self) -> None:
+        from ml.evaluate import _non_overlapping_mask
+
+        assert _non_overlapping_mask(np.array([], dtype=np.int64), 5).size == 0
+
+    def test_single_ticker_keeps_every_hth(self) -> None:
+        from ml.evaluate import _non_overlapping_mask
+
+        ticker_idxs = np.zeros(10, dtype=np.int64)
+        assert np.flatnonzero(_non_overlapping_mask(ticker_idxs, 3)).tolist() == [0, 3, 6, 9]
+
+    def test_matches_reference_strategy_sharpe(self) -> None:
+        """End-to-end: Sharpe from the vectorised mask equals the loop version."""
+        from ml.config import ML_CONFIG
+        from ml.evaluate import _strategy_sharpe
+
+        h = ML_CONFIG.FORECAST_HORIZON
+
+        def reference(preds, fwd_rets, dates, ticker_idxs, mode, cost_bps):
+            if mode == "long_only":
+                signal = (preds == 2).astype(float)
+            else:
+                signal = np.where(preds == 2, 1.0, np.where(preds == 0, -1.0, 0.0))
+            keep = self._reference(ticker_idxs, h)
+            sig, rets, dts = signal[keep], fwd_rets[keep], dates[keep]
+            active = sig != 0.0
+            gross = sig * rets
+            gross[active] -= cost_bps / 1e4
+            _, inv = np.unique(dts, return_inverse=True)
+            counts = np.bincount(inv)
+            sums = np.bincount(inv, weights=gross)
+            port = (sums / np.maximum(counts, 1))[::h]
+            if len(port) < 2:
+                return 0.0
+            std = float(port.std())
+            if std == 0.0:
+                return 0.0
+            return float(port.mean() / std * np.sqrt(252.0 / h))
+
+        for seed in range(5):
+            r = np.random.default_rng(seed)
+            n = 400
+            ticker_idxs = np.sort(r.integers(0, 10, n))
+            # Repeat dates across tickers so the cross-sectional path is exercised.
+            dates = np.datetime64("2020-01-01") + (np.arange(n) % 200)
+            preds = r.integers(0, 3, n)
+            fwd = r.normal(0.0005, 0.01, n)
+            for mode in ("long_only", "long_short"):
+                for cost in (0.0, 5.0):
+                    expected = reference(preds, fwd, dates, ticker_idxs, mode, cost)
+                    assert _strategy_sharpe(
+                        preds, fwd, dates, ticker_idxs, mode, cost
+                    ) == pytest.approx(expected)

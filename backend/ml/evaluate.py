@@ -207,6 +207,25 @@ def _real_sharpe_metrics(
     return out
 
 
+def _non_overlapping_mask(ticker_idxs: np.ndarray, h: int) -> np.ndarray:
+    """Keep every h-th window per ticker, in date order.
+
+    A single stable argsort groups each ticker's indices; within a group the
+    original (date) order is preserved, so the selection is identical to the
+    per-ticker ``idx[::h]`` slice but without the O(tickers x N) scan.
+    """
+    keep = np.zeros(len(ticker_idxs), dtype=bool)
+    if len(ticker_idxs) == 0:
+        return keep
+    _, inv = np.unique(ticker_idxs, return_inverse=True)
+    order = np.argsort(inv, kind="stable")
+    counts = np.bincount(inv)
+    starts = np.concatenate(([0], np.cumsum(counts)[:-1]))
+    pos_in_group = np.arange(len(inv)) - starts[inv[order]]
+    keep[order[pos_in_group % h == 0]] = True
+    return keep
+
+
 def _strategy_sharpe(
     preds: np.ndarray,
     fwd_rets: np.ndarray,
@@ -236,10 +255,7 @@ def _strategy_sharpe(
     else:
         signal = np.where(preds == UP, 1.0, np.where(preds == DOWN, -1.0, 0.0))
 
-    keep = np.zeros(len(preds), dtype=bool)
-    for t in np.unique(ticker_idxs):
-        idx = np.flatnonzero(ticker_idxs == t)
-        keep[idx[::h]] = True
+    keep = _non_overlapping_mask(ticker_idxs, h)
 
     sig = signal[keep]
     rets = fwd_rets[keep]

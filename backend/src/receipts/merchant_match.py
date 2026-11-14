@@ -12,7 +12,7 @@ extracted merchant name closely matches a known entity.
 from __future__ import annotations
 
 import structlog
-from rapidfuzz import fuzz
+from rapidfuzz import fuzz, process
 
 from src.categories.seed import SEED_CATEGORIES
 
@@ -56,22 +56,25 @@ def fuzzy_match_merchant(
     if not merchants:
         return None, 0.0
 
-    best_score = 0.0
-    best_match: str | None = None
+    # One native scan; extractOne resolves ties to the first choice, matching
+    # the previous strict `>` loop. processor=None keeps the explicit lower()
+    # (rapidfuzz's default processor also strips punctuation, changing scores).
+    result = process.extractOne(
+        merchant_name.lower(),
+        [known.lower() for known in merchants],
+        scorer=fuzz.token_set_ratio,
+        processor=None,
+        score_cutoff=80,
+    )
+    if result is None:
+        return None, 0.0
 
-    for known in merchants:
-        score = fuzz.token_set_ratio(merchant_name.lower(), known.lower())
-        if score > best_score:
-            best_score = score
-            best_match = known
-
-    if best_score >= 80:
-        logger.debug(
-            "merchant_fuzzy_match",
-            input=merchant_name,
-            match=best_match,
-            score=round(best_score, 1),
-        )
-        return best_match, best_score
-
-    return None, 0.0
+    _, best_score, best_idx = result
+    best_match = merchants[best_idx]
+    logger.debug(
+        "merchant_fuzzy_match",
+        input=merchant_name,
+        match=best_match,
+        score=round(best_score, 1),
+    )
+    return best_match, best_score
