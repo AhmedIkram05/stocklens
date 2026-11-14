@@ -166,3 +166,25 @@ class TestFeatureNames:
         assert "log_ret_1d" in FEATURE_NAMES
         assert "rsi_14" in FEATURE_NAMES
         assert "vol_30d" in FEATURE_NAMES
+
+
+class TestExtractMeanVectors:
+    """Feature means are pulled from each log once, not once per feature."""
+
+    def test_skips_logs_without_stats_or_means(self) -> None:
+        from src.drift.service import extract_mean_vectors
+
+        logs = [
+            {"features": {"stats": {"means": [0.1, 0.2]}}},
+            {"features": {}},
+            {"features": None},
+            {},
+            {"features": {"stats": {"stds": [1.0]}}},
+            {"features": {"stats": {"means": [0.3, 0.4]}}},
+        ]
+        assert extract_mean_vectors(logs) == [[0.1, 0.2], [0.3, 0.4]]
+
+    def test_empty_logs(self) -> None:
+        from src.drift.service import extract_mean_vectors
+
+        assert extract_mean_vectors([]) == []

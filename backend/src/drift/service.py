@@ -121,6 +121,21 @@ def compute_prediction_distribution(
     return np.array([counts[c] / total for c in classes], dtype=np.float64)
 
 
+def extract_mean_vectors(logs: list[dict]) -> list[list[float]]:
+    """Pull each prediction log's feature-mean vector once.
+
+    Logs without ``features.stats.means`` are skipped. Extracting once per
+    ticker (rather than once per feature) avoids re-traversing every log for
+    every feature.
+    """
+    vectors = []
+    for entry in logs:
+        stats = (entry.get("features") or {}).get("stats")
+        if stats and "means" in stats:
+            vectors.append(stats["means"])
+    return vectors
+
+
 # ── Feature name mappings ─────────────────────────────────────────────────────
 # The order the model receives; used to index into raw feature_stats arrays.
 FEATURE_NAMES: tuple[str, ...] = (
@@ -210,6 +225,7 @@ class DriftDetector:
                 skipped_tickers.append(ticker)
 
             # --- feature-level drift ---
+            mean_vectors = extract_mean_vectors(logs)
             for feature_name, ref_array in ref_feature_arrays.items():
                 idx = _FEATURE_INDEX.get(feature_name)
                 if idx is None:
@@ -219,11 +235,7 @@ class DriftDetector:
                     logger.warning("drift_unknown_reference_feature", feature_name=feature_name)
                     skipped_windows += 1
                     continue
-                cur_values = []
-                for entry in logs:
-                    stats = (entry.get("features") or {}).get("stats")
-                    if stats and "means" in stats:
-                        cur_values.append(float(stats["means"][idx]))
+                cur_values = [float(means[idx]) for means in mean_vectors]
                 cur_array = np.array(cur_values, dtype=np.float64)
 
                 # Below two samples PSI/KS/JS are uninterpretable — the old
