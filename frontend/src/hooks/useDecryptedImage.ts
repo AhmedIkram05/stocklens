@@ -1,8 +1,18 @@
 import { useEffect, useState } from 'react';
 import fileCrypto from '@/utils/fileCrypto';
 
-// simple in-memory cache for decrypted temp paths
+// simple in-memory cache for decrypted temp paths (bounded so a long session
+// scrolling many receipts cannot grow it without limit)
 const cache = new Map<string, string>();
+const MAX_CACHE_ENTRIES = 50;
+
+function remember(src: string, decrypted: string) {
+  if (cache.size >= MAX_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(src, decrypted);
+}
 
 /**
  * useDecryptedImage
@@ -30,7 +40,7 @@ export default function useDecryptedImage(src?: string | null) {
       try {
         const dec = await fileCrypto.decryptImageToTemp(src);
         if (!mounted) return;
-        cache.set(src, dec);
+        remember(src, dec);
         setResolved(dec);
       } catch (e) {
         if (!mounted) return;

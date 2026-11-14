@@ -99,4 +99,32 @@ describe('useDecryptedImage', () => {
       expect(result.current).toBe('file://enc-empty.enc');
     });
   });
+
+  it('evicts the oldest entry once the cache limit is reached', async () => {
+    mockedDecrypt.mockResolvedValue('file://tmp/evict.jpg');
+
+    // Fill past the 50-entry cap. Let each async effect settle before unmount.
+    for (let i = 0; i < 55; i++) {
+      const { unmount } = await renderHook(() => useDecryptedImage(`file://evict-${i}.enc`));
+      await new Promise((r) => setImmediate(r));
+      unmount();
+    }
+    expect(mockedDecrypt).toHaveBeenCalledTimes(55);
+
+    // The first entry was evicted, so it decrypts again.
+    const { unmount: unmountFirst } = await renderHook(() =>
+      useDecryptedImage('file://evict-0.enc'),
+    );
+    await new Promise((r) => setImmediate(r));
+    unmountFirst();
+    expect(mockedDecrypt).toHaveBeenCalledTimes(56);
+
+    // A recent entry is still cached — no extra decrypt.
+    const { unmount: unmountRecent } = await renderHook(() =>
+      useDecryptedImage('file://evict-54.enc'),
+    );
+    await new Promise((r) => setImmediate(r));
+    unmountRecent();
+    expect(mockedDecrypt).toHaveBeenCalledTimes(56);
+  });
 });
