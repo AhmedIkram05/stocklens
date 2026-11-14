@@ -118,3 +118,8 @@ class TestExtractOneParity:
 
     def test_below_threshold_returns_none_and_zero(self) -> None:
         assert fuzzy_match_merchant("zzzzzzzz", ["abcdefgh"]) == (None, 0.0)
+
+    def test_lowered_index_matches_default_merchants(self) -> None:
+        from src.receipts.merchant_match import KNOWN_MERCHANTS_LOWER
+
+        assert KNOWN_MERCHANTS_LOWER == [m.lower() for m in KNOWN_MERCHANTS]

@@ -21,6 +21,10 @@ logger = structlog.get_logger()
 # ── Known merchants loaded once at module load ───────────────────────────
 
 KNOWN_MERCHANTS: list[str] = [kw for cat in SEED_CATEGORIES for kw in cat["merchant_keywords"]]
+# Lower-cased once at import: the default path is called many times per receipt
+# (parse_merchant scans candidate lines), and re-lowering 209 strings each call
+# was pure waste.
+KNOWN_MERCHANTS_LOWER: list[str] = [m.lower() for m in KNOWN_MERCHANTS]
 
 
 # ── Public API ────────────────────────────────────────────────────────────
@@ -52,7 +56,12 @@ def fuzzy_match_merchant(
     if not merchant_name or not merchant_name.strip():
         return None, 0.0
 
-    merchants = known_merchants if known_merchants is not None else KNOWN_MERCHANTS
+    if known_merchants is None:
+        merchants = KNOWN_MERCHANTS
+        lowered = KNOWN_MERCHANTS_LOWER
+    else:
+        merchants = known_merchants
+        lowered = [known.lower() for known in merchants]
     if not merchants:
         return None, 0.0
 
@@ -61,7 +70,7 @@ def fuzzy_match_merchant(
     # (rapidfuzz's default processor also strips punctuation, changing scores).
     result = process.extractOne(
         merchant_name.lower(),
-        [known.lower() for known in merchants],
+        lowered,
         scorer=fuzz.token_set_ratio,
         processor=None,
         score_cutoff=80,
