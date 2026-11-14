@@ -1709,6 +1709,38 @@ class TestComputePortfolioDailyReturns:
         for r in returns:
             assert float(r) == pytest.approx(0, abs=1e-12)
 
+    def test_live_quotes_override_final_day(self):
+        """A live quote prices the final trading day, matching the perf endpoint."""
+        from src.performance.queries import compute_portfolio_daily_returns
+
+        pm = {
+            "AAPL": {
+                date(2024, 6, 1): Decimal("100"),
+                date(2024, 6, 3): Decimal("100"),
+            }
+        }
+        txns = [
+            {"ticker": "AAPL", "type": "BUY", "shares": Decimal("10"), "date": date(2024, 6, 1)},
+        ]
+        _, flat_returns = compute_portfolio_daily_returns(
+            holdings=[{"ticker": "AAPL", "shares": 10}],
+            transactions=txns,
+            price_map=pm,
+            start_date=date(2024, 6, 1),
+            end_date=date(2024, 6, 3),
+        )
+        assert float(flat_returns[0]) == pytest.approx(0, abs=1e-12)
+
+        _, live_returns = compute_portfolio_daily_returns(
+            holdings=[{"ticker": "AAPL", "shares": 10}],
+            transactions=txns,
+            price_map=pm,
+            start_date=date(2024, 6, 1),
+            end_date=date(2024, 6, 3),
+            live_quotes={"AAPL": (Decimal("110"), Decimal("100"))},
+        )
+        assert float(live_returns[0]) == pytest.approx(0.10, abs=1e-12)
+
 
 class TestBenchmarkExceptionHandler:
     """Tests for the benchmark endpoint's outer exception handler."""
