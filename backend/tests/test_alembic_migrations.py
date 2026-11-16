@@ -217,7 +217,7 @@ def test_schema_metadata_has_no_autogenerate_diff(monkeypatch):
         engine = create_engine(sync_dsn)
         try:
             with engine.connect() as conn:
-                context = MigrationContext.configure(conn, compare_server_default=True)
+                context = MigrationContext.configure(conn, opts={"compare_server_default": True})
                 diff = compare_metadata(context, target_metadata)
         finally:
             engine.dispose()
