@@ -20,9 +20,11 @@ async def get_ohlcv(
     limit: int = 2000,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    """Return OHLCV rows for *ticker*, ordered by date ascending.
+    """Return the newest OHLCV rows for *ticker*, ordered by date ascending.
 
-    Returns empty list when no data exists.
+    ``limit``/``offset`` paginate from the newest row backwards, so callers
+    never run out of recent history when the table holds more rows than the
+    limit. Returns an empty list when no data exists.
     """
     conditions = ["ticker = $1"]
     params: list[Any] = [ticker]
@@ -38,10 +40,12 @@ async def get_ohlcv(
         idx += 1
 
     query = (
+        "SELECT date, open, high, low, close, adjusted_close, volume FROM ("
         "SELECT date, open, high, low, close, adjusted_close, volume "
         f"FROM ohlcv_prices WHERE {' AND '.join(conditions)} "
+        f"ORDER BY date DESC LIMIT ${idx} OFFSET ${idx + 1}"
+        ") ranked "
         "ORDER BY date ASC"
-        f" LIMIT ${idx} OFFSET ${idx + 1}"
     )
     params.extend([limit, offset])
 
