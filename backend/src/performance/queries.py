@@ -21,6 +21,7 @@ from fastapi import HTTPException, status
 
 from src.config import settings
 from src.database.connection import connection_ctx
+from src.market.fx import current_fx_rates
 from src.market.provider import fetch_ohlcv
 from src.market.quotes import get_quote
 from src.market.repository import get_earliest_ohlcv_date, get_ohlcv_batch, upsert_ohlcv
@@ -281,13 +282,10 @@ async def get_bulk_portfolio_performance(
         price_map = await build_price_map(tickers, start_date, end_date)
         live_quotes = await fetch_live_quotes(tickers)
 
-        # FX rates per ticker
-        fx_rates: dict[str, Decimal] = {}
-        for holdings in holdings_by_pid.values():
-            for h in holdings:
-                t = h["ticker"]
-                if t not in fx_rates and h.get("fx_rate_to_gbp") is not None:
-                    fx_rates[t] = h["fx_rate_to_gbp"]
+        # Today's FX rate per ticker (read path; falls back to the stored rate)
+        fx_rates = await current_fx_rates(
+            [h for holdings in holdings_by_pid.values() for h in holdings]
+        )
     else:
         price_map = {}
         live_quotes = {}
@@ -393,13 +391,18 @@ async def get_portfolio_performance(
     cash_flows = await get_cash_flows_sorted(str(portfolio_id))
     tickers = list({h["ticker"] for h in holdings})
 
-    # GBP per 1 native unit, per holding (today's rate — see currency plan).
-    fx_rates = {h["ticker"]: (h.get("fx_rate_to_gbp") or Decimal(1)) for h in holdings}
+    # GBP per 1 native unit, per holding, at today's rate. Cost basis comes
+    # from the accumulated GBP column, not this rate. No historical FX series
+    # exists, so a historical end_date still uses today's rate for FX.
+    fx_rates = await current_fx_rates(holdings)
 
     price_map = await build_price_map(tickers, start_date, end_date)
 
-    # Fetch live intraday quotes to override OHLCV closing prices
-    live_quotes = await fetch_live_quotes(tickers)
+    # Live intraday quotes only belong to a period that ends today; applying
+    # them to a historical end_date would rewrite the past.
+    live_quotes = (
+        await fetch_live_quotes(tickers) if end_date >= datetime.now(timezone.utc).date() else {}
+    )
 
     return compute_portfolio_performance(
         portfolio_id=str(portfolio_id),
@@ -452,7 +455,7 @@ async def get_benchmark_comparison(
     cash_flows = await get_cash_flows_sorted(str(portfolio_id))
     tickers = list({h["ticker"] for h in holdings})
 
-    fx_rates = {h["ticker"]: (h.get("fx_rate_to_gbp") or Decimal(1)) for h in holdings}
+    fx_rates = await current_fx_rates(holdings)
 
     all_tickers = list(set(tickers + [benchmark]))
 
@@ -480,8 +483,10 @@ async def get_benchmark_comparison(
             detail=f"No price data found for benchmark {benchmark}",
         )
 
-    # Fetch live quote for benchmark intraday price
-    live_quotes = await fetch_live_quotes(tickers)
+    # Live quotes only for a period ending today (see get_portfolio_performance)
+    live_quotes = (
+        await fetch_live_quotes(tickers) if end_date >= datetime.now(timezone.utc).date() else {}
+    )
 
     perf_response = compute_portfolio_performance(
         portfolio_id=str(portfolio_id),

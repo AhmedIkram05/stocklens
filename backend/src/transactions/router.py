@@ -21,7 +21,12 @@ from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
 from src.locks import lock_portfolio, portfolio_write
-from src.market.fx import get_fx_rate_to_gbp, resolve_instrument
+from src.market.fx import (
+    FxRateUnavailableError,
+    InstrumentResolutionError,
+    get_fx_rate_to_gbp,
+    resolve_instrument,
+)
 from src.transactions.schemas import (
     TransactionCreate,
     TransactionListResponse,
@@ -202,7 +207,7 @@ async def _apply_buy_to_holdings(
         price,
         currency,
         fx_rate_to_gbp,
-        price * fx_rate_to_gbp,
+        total_amount_gbp,
     )
 
 
@@ -253,9 +258,17 @@ async def create_transaction(
 
     total_amount = body.shares * body.price_per_share
 
-    # Resolve native currency + today's GBP FX rate for this ticker.
-    currency, _ = await resolve_instrument(body.ticker)
-    fx_rate_to_gbp = await get_fx_rate_to_gbp(currency)
+    # Resolve native currency + today's GBP FX rate for this ticker. Fail
+    # closed: a failed lookup must not persist GBP at rate 1 for a USD/GBp
+    # instrument.
+    try:
+        currency, _ = await resolve_instrument(body.ticker)
+        fx_rate_to_gbp = await get_fx_rate_to_gbp(currency)
+    except (InstrumentResolutionError, FxRateUnavailableError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Currency data unavailable; retry shortly",
+        ) from exc
     total_amount_gbp = total_amount * fx_rate_to_gbp
 
     async with connection_ctx() as conn:

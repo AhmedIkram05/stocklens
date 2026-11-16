@@ -279,7 +279,7 @@ class TestFetchQuote:
         assert result["change_pct"] == Decimal("0")
         assert result["previous_close"] == Decimal("0")
         assert result["volume"] == 0
-        assert result["currency"] == "GBP"
+        assert result["currency"] is None  # resolve_instrument fails closed, never assumes GBP
 
     @patch("src.market.provider.yf.Ticker")
     def test_delisted_ticker_returns_none(self, mock_ticker_cls):

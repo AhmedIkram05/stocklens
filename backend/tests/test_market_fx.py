@@ -16,7 +16,14 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
-from src.market.fx import get_fx_rate_to_gbp, resolve_instrument
+import pytest
+
+from src.market.fx import (
+    InstrumentResolutionError,
+    current_fx_rates,
+    get_fx_rate_to_gbp,
+    resolve_instrument,
+)
 
 
 def _unique_currency(label: str) -> str:
@@ -74,23 +81,28 @@ class TestResolveInstrument:
         assert currency2 == "USD"
         assert exchange2 == "NYSE"
 
-    async def test_provider_returns_no_currency_falls_back_to_gbp(self):
-        """When provider returns no currency, defaults to GBP."""
-        mock_quote = {}
+    async def test_provider_returns_no_currency_fails_closed(self):
+        """A quote without a currency must not be recorded as GBP."""
         with patch("src.market.fx.provider.fetch_quote", new_callable=AsyncMock) as mock_fetch:
-            mock_fetch.return_value = mock_quote
-            currency, exchange = await resolve_instrument("NODATA")
+            mock_fetch.return_value = {}
+            with pytest.raises(InstrumentResolutionError):
+                await resolve_instrument("NODATA")
 
-        assert currency == "GBP"
-        assert exchange is None
-
-    async def test_provider_raises_falls_back_to_gbp(self):
-        """When provider raises, defaults to GBP gracefully."""
+    async def test_provider_raises_fails_closed(self):
+        """Provider failure must not persist GBP at rate 1."""
         with patch("src.market.fx.provider.fetch_quote", new_callable=AsyncMock) as mock_fetch:
             mock_fetch.side_effect = Exception("yfinance down")
-            currency, exchange = await resolve_instrument("BROKEN")
+            with pytest.raises(InstrumentResolutionError):
+                await resolve_instrument("BROKEN")
 
-        assert currency == "GBP"  # graceful fallback
+    async def test_provider_gbp_pence_preserved(self):
+        """LSE pence (GBp) must stay a minor-unit code, not collapse to GBP."""
+        with patch("src.market.fx.provider.fetch_quote", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = {"currency": "GBp", "exchange": "LSE"}
+            currency, exchange = await resolve_instrument(f"GBPX{uuid4().hex[:6]}.L")
+
+        assert currency == "GBp"
+        assert exchange == "LSE"
 
     async def test_currency_already_uppercased(self):
         await _ensure_instrument("TSLA", "usd", "NASDAQ")
@@ -214,3 +226,97 @@ class TestGetFxRateToGbp:
             # This will raise — but the outer try/except catches it
             rate = await get_fx_rate_to_gbp("EUR")
             assert rate == Decimal("1.30")
+
+
+# ── Minor units ────────────────────────────────────────────────────────────
+
+
+class TestMinorUnits:
+    """LSE pence / JSE cents / TASE agorot are 1/100 of the major currency."""
+
+    async def test_gbp_pence_is_one_hundredth(self):
+        assert await get_fx_rate_to_gbp("GBp") == Decimal("0.01")
+
+    async def test_gbx_alias_is_one_hundredth(self):
+        assert await get_fx_rate_to_gbp("GBX") == Decimal("0.01")
+
+    async def test_zac_multiplies_zar_rate_by_one_hundredth(self):
+        with (
+            patch("src.market.fx.get_redis", side_effect=Exception("Redis down")),
+            patch("src.market.fx.provider.fetch_fx", new_callable=AsyncMock) as mock_fetch,
+        ):
+            mock_fetch.return_value = Decimal("0.05")
+            rate = await get_fx_rate_to_gbp("ZAc")
+
+        assert rate == Decimal("0.0005")
+        mock_fetch.assert_awaited_once_with("ZAR")
+
+    async def test_current_fx_rates_handles_mixed_minor_units(self):
+        rates = await current_fx_rates(
+            [
+                {"ticker": "VOD.L", "currency": "GBp", "fx_rate_to_gbp": Decimal("0.01")},
+                {"ticker": "BARC.L", "currency": "GBP", "fx_rate_to_gbp": Decimal("1")},
+            ]
+        )
+        assert rates == {"VOD.L": Decimal("0.01"), "BARC.L": Decimal("1")}
+
+    async def test_current_fx_rates_falls_back_to_stored_rate_on_failure(self):
+        with patch("src.market.fx.get_fx_rate_to_gbp", side_effect=Exception("provider down")):
+            rates = await current_fx_rates(
+                [{"ticker": "AAPL", "currency": "USD", "fx_rate_to_gbp": Decimal("0.79")}]
+            )
+        assert rates == {"AAPL": Decimal("0.79")}
+
+
+# ── Market values ──────────────────────────────────────────────────────────
+
+
+class TestMarketValues:
+    """Sector/HHI valuation uses market price × today's FX, not cost."""
+
+    async def test_uses_current_price_and_fx(self):
+        from src.market.quotes import market_values_gbp
+
+        holdings = [
+            {
+                "ticker": "VOD.L",
+                "shares": Decimal("10"),
+                "currency": "GBp",
+                "average_cost_basis_gbp": Decimal("3"),
+            }
+        ]
+        with (
+            patch("src.market.quotes.get_quote", new=AsyncMock(return_value={"price": "350"})),
+            patch(
+                "src.market.fx.current_fx_rates",
+                new=AsyncMock(return_value={"VOD.L": Decimal("0.01")}),
+            ),
+        ):
+            values = await market_values_gbp(holdings)
+
+        assert values == {"VOD.L": Decimal("35.00")}
+
+    async def test_falls_back_to_stored_cost_when_quote_fails(self):
+        from src.market.quotes import market_values_gbp
+
+        holdings = [
+            {
+                "ticker": "AAPL",
+                "shares": Decimal("10"),
+                "currency": "USD",
+                "average_cost_basis_gbp": Decimal("100"),
+            }
+        ]
+        with (
+            patch(
+                "src.market.quotes.get_quote",
+                new=AsyncMock(side_effect=RuntimeError("provider down")),
+            ),
+            patch(
+                "src.market.fx.current_fx_rates",
+                new=AsyncMock(return_value={"AAPL": Decimal("0.8")}),
+            ),
+        ):
+            values = await market_values_gbp(holdings)
+
+        assert values == {"AAPL": Decimal("1000")}
