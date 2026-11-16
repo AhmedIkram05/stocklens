@@ -118,8 +118,22 @@ class TestGetOHLCV:
 
         assert len(page1) == 2
         assert len(page2) == 2
-        assert page1[0]["date"] == date(2024, 1, 2)
-        assert page2[0]["date"] == date(2024, 1, 4)
+        # Newest page first, ascending within the page.
+        assert [r["date"] for r in page1] == [date(2024, 1, 5), date(2024, 1, 6)]
+        assert [r["date"] for r in page2] == [date(2024, 1, 3), date(2024, 1, 4)]
+
+    async def test_limit_applies_inside_date_range(self):
+        """The newest-N window must be computed after the date filters."""
+        rows = [
+            {"date": date(2024, 1, i), "close": Decimal(str(180 + i)), **NULL_OHLCV}
+            for i in range(2, 7)
+        ]
+        await upsert_ohlcv("AAPL", rows)
+
+        result = await get_ohlcv(
+            "AAPL", start_date=date(2024, 1, 3), end_date=date(2024, 1, 6), limit=2
+        )
+        assert [r["date"] for r in result] == [date(2024, 1, 5), date(2024, 1, 6)]
 
     async def test_order_by_date_asc(self):
         rows = [
