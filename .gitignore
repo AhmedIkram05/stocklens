@@ -72,10 +72,15 @@ android/
 
 # ─── Terraform (contains secrets and environment-specific values) ──────────────
 *.tfvars
-*.tfplan
 !*.tfvars.example
 *.tfstate
 *.tfstate.*
+*.tfplan
+*.plan
+# `terraform plan -out=tfplan` writes a file with no extension. It is a zip
+# containing tfstate, so it must never be tracked.
+tfplan
+tfplan.*
 .terraform/
 
 # ─── Python ────────────────────────────────────────────────────────────────────
