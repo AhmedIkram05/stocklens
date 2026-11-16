@@ -49,7 +49,14 @@ async def test_apply_buy_to_holdings_is_atomic_upsert():
     conn = _StubConn([])
     conn.execute = AsyncMock(return_value="INSERT 0 1")
     await _apply_buy_to_holdings(
-        conn, "p1", "AAPL", Decimal("10"), Decimal("150"), "USD", Decimal("0.8"), Decimal("120")
+        conn,
+        "p1",
+        "AAPL",
+        Decimal("10"),
+        Decimal("150"),
+        "USD",
+        Decimal("0.8"),
+        Decimal("1200"),
     )
 
     call = conn.execute.call_args
@@ -78,9 +85,9 @@ async def test_apply_buy_to_holdings_is_atomic_upsert():
     assert args[1] == "AAPL"
     assert args[2] == Decimal("10")
     assert args[3] == Decimal("150")
-    # $7 is the buy's GBP amount — the per-buy GBP basis ($7/$3 = £12/share)
-    # seeds the insert path.
-    assert args[6] == Decimal("120")
+    # $7 is the buy's total GBP amount — $7/$3 seeds the insert at £120/share
+    # and the UPDATE adds the same total to the accumulated GBP basis.
+    assert args[6] == Decimal("1200")
 
 
 async def test_list_transactions_clamps_limit_to_valid_range(monkeypatch):

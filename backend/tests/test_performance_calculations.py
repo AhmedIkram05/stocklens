@@ -109,6 +109,22 @@ class TestComputeHoldingPerformance:
         assert hp.market_value == Decimal("1500.0")  # 10 * 200 * 0.75
         assert hp.average_cost_basis == Decimal("112.5")
 
+    def test_cost_basis_uses_accumulated_gbp_column(self):
+        """The GBP column preserves each buy's historical rate; do not re-rate it."""
+        hp = compute_holding_performance(
+            ticker="AAPL",
+            shares=Decimal("10"),
+            avg_cost_basis=Decimal("150"),  # USD
+            avg_cost_basis_gbp=Decimal("120"),  # accumulated GBP per share
+            current_price=Decimal("200"),  # USD
+            previous_close=Decimal("195"),
+            total_portfolio_value=Decimal("10000"),
+            fx_rate=Decimal("0.8"),  # today's rate
+        )
+        assert hp.average_cost_basis == Decimal("120")
+        assert hp.cost_basis == Decimal("1200")
+        assert hp.market_value == Decimal("1600")  # 10 * 200 * 0.8
+
     def test_no_portfolio_weight_when_no_total_value(self):
         hp = compute_holding_performance(
             ticker="AAPL",
@@ -263,6 +279,51 @@ class TestComputePortfolioPerformance:
             live_quotes=live_quotes,
         )
         assert result.total_market_value == Decimal("1500")  # 10 * 150 (live quote)
+
+    def test_live_quotes_ignored_for_historical_end_date(self):
+        """A historical report must not use today's intraday quote."""
+        holdings = [
+            {"ticker": "AAPL", "shares": Decimal("10"), "average_cost_basis": Decimal("100")},
+        ]
+        price_map = {"AAPL": {date(2024, 12, 31): Decimal("120")}}
+        result = compute_portfolio_performance(
+            portfolio_id="p1",
+            portfolio_name="Historical",
+            holdings_data=holdings,
+            transactions=[],
+            cash_flows=[],
+            price_map=price_map,
+            end_date=date(2024, 12, 31),
+            enable_twr=False,
+            live_quotes={"AAPL": (Decimal("150"), Decimal("145"))},
+        )
+        assert result.total_market_value == Decimal("1200")
+
+    def test_gbp_pence_valued_at_one_hundredth(self):
+        """A 350p LSE quote is £3.50, not £350."""
+        holdings = [
+            {
+                "ticker": "VOD.L",
+                "shares": Decimal("10"),
+                "average_cost_basis": Decimal("300"),
+                "average_cost_basis_gbp": Decimal("3"),
+                "currency": "GBp",
+            },
+        ]
+        price_map = {"VOD.L": {date(2024, 12, 31): Decimal("350")}}
+        result = compute_portfolio_performance(
+            portfolio_id="p1",
+            portfolio_name="Pence",
+            holdings_data=holdings,
+            transactions=[],
+            cash_flows=[],
+            price_map=price_map,
+            end_date=date(2024, 12, 31),
+            enable_twr=False,
+            fx_rates={"VOD.L": Decimal("0.01")},
+        )
+        assert result.total_market_value == Decimal("35")
+        assert result.total_cost_basis == Decimal("30")
 
     def test_free_cash_balance(self):
         """Free cash balance = deposits - net invested."""

@@ -121,7 +121,9 @@ def _fetch_quote(ticker: str) -> dict[str, Any]:
         "previous_close": _maybe_decimal(prev_close),
         "volume": _maybe_int(volume),
         # Market currency / exchange — used to normalise to the GBP base.
-        "currency": info.get("currency") or "GBP",
+        # Do not default to GBP here: resolve_instrument must fail closed when
+        # the provider cannot name the currency, not store a 1.0 FX rate.
+        "currency": info.get("currency"),
         "exchange": info.get("exchange"),
         "timestamp": datetime.now(timezone.utc),
     }

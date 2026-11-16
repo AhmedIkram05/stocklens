@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -405,6 +405,10 @@ class TestMarketNews:
 
 
 class TestSectorExposure:
+    @patch(
+        "src.agent.tool_endpoints.market_values_gbp",
+        new=AsyncMock(return_value={"AAPL": Decimal("1800")}),
+    )
     @patch("src.agent.tool_endpoints.yf")
     async def test_returns_sector_breakdown(self, mock_yf, client, auth_headers):
         mock_yf.Ticker.return_value = _mock_ticker_info()
@@ -421,6 +425,10 @@ class TestSectorExposure:
         assert data["sectors"][0]["value_gbp"] == 1800.0
         assert data["sectors"][0]["allocation_pct"] == 100.0
 
+    @patch(
+        "src.agent.tool_endpoints.market_values_gbp",
+        new=AsyncMock(return_value={"ZZZ": Decimal("500")}),
+    )
     @patch("src.agent.tool_endpoints.yf")
     async def test_unknown_sector_fallback(self, mock_yf, client, auth_headers):
         """Ticker with no sector info falls back to 'Unknown' and still sums."""
@@ -455,6 +463,10 @@ class TestSectorExposure:
 
 
 class TestDiversificationScore:
+    @patch(
+        "src.agent.tool_endpoints.market_values_gbp",
+        new=AsyncMock(return_value={"AAPL": Decimal("1800")}),
+    )
     @patch("src.agent.tool_endpoints.yf")
     async def test_single_holding_scores_low(self, mock_yf, client, auth_headers):
         mock_yf.Ticker.return_value = _mock_ticker_info()
@@ -474,6 +486,10 @@ class TestDiversificationScore:
         assert "Consider adding more holdings" in data["recommendations"][0]
         assert "breakdown" in data
 
+    @patch(
+        "src.agent.tool_endpoints.market_values_gbp",
+        new=AsyncMock(return_value={"AAPL": Decimal("1800"), "MSFT": Decimal("1800")}),
+    )
     @patch("src.agent.tool_endpoints.yf")
     async def test_multi_holding_scores_higher_and_effective(self, mock_yf, client, auth_headers):
         """Two equal-weighted holdings => effective_holdings 2, lower top exposure."""
@@ -501,10 +517,20 @@ class TestDiversificationScore:
         pid = await _create_portfolio_for_auth_user(auth_user_id)
         async with connection_ctx() as conn:
             await _seed_holding(conn, pid, "AAPL", 10, 180.0)
-        with patch("src.agent.tool_endpoints.yf", mock_yf):
+        with (
+            patch("src.agent.tool_endpoints.yf", mock_yf),
+            patch(
+                "src.agent.tool_endpoints.market_values_gbp",
+                new=AsyncMock(return_value={"AAPL": Decimal("1800")}),
+            ),
+        ):
             resp = await client.get(f"/agent/diversification-score/{pid}", headers=auth_headers)
         return resp.json()["overall_score"]
 
+    @patch(
+        "src.agent.tool_endpoints.market_values_gbp",
+        new=AsyncMock(return_value={"AAPL": Decimal("0")}),
+    )
     @patch("src.agent.tool_endpoints.yf")
     async def test_zero_value_rejected(self, mock_yf, client, auth_headers):
         mock_yf.Ticker.return_value = _mock_ticker_info()

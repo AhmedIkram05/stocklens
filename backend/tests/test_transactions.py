@@ -8,8 +8,25 @@ All database access runs inside the per-test transaction provided by
 from __future__ import annotations
 
 from datetime import date, timedelta
+from decimal import Decimal
 
 import httpx
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _stub_currency(monkeypatch):
+    """Keep write-path tests offline: resolve every ticker as GBP at 1.0."""
+
+    async def _resolve(ticker):
+        return ("GBP", None)
+
+    async def _rate(currency):
+        return Decimal("1")
+
+    for mod in ("src.holdings.router", "src.transactions.router"):
+        monkeypatch.setattr(f"{mod}.resolve_instrument", _resolve)
+        monkeypatch.setattr(f"{mod}.get_fx_rate_to_gbp", _rate)
 
 
 async def _create_portfolio(client: httpx.AsyncClient, headers: dict[str, str]) -> dict:
@@ -321,3 +338,32 @@ class TestGetTransaction:
             headers=auth_headers,
         )
         assert response.status_code == 404
+
+
+class TestTransactionCurrencyFailure:
+    """New writes fail closed instead of persisting GBP at rate 1."""
+
+    async def test_create_currency_failure_returns_503(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str], monkeypatch
+    ):
+        from src.transactions.router import InstrumentResolutionError
+
+        p = await _create_portfolio(client, auth_headers)
+        await _create_cash_flow(client, p["id"], auth_headers, amount=1000.0)
+
+        async def _boom(ticker):
+            raise InstrumentResolutionError("provider down")
+
+        monkeypatch.setattr("src.transactions.router.resolve_instrument", _boom)
+        response = await client.post(
+            f"/portfolios/{p['id']}/transactions",
+            json={
+                "ticker": "AAPL",
+                "type": "BUY",
+                "shares": "1.0",
+                "price_per_share": "10.0",
+                "transaction_date": "2026-06-01",
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 503

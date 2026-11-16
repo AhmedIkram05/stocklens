@@ -8,7 +8,10 @@ fallback — a stale price can mislead; the 60s TTL already bounds yfinance load
 
 from __future__ import annotations
 
+import asyncio
 import json
+from collections.abc import Iterable, Mapping
+from decimal import Decimal
 from typing import Any
 
 import structlog
@@ -19,6 +22,7 @@ from src.market.provider import fetch_quote
 logger = structlog.get_logger()
 
 QUOTE_CACHE_TTL = 60  # seconds — glossary normative (was 30 in market/router.py; bug fix)
+_READ_TIMEOUT = 5.0  # seconds — valuation fallbacks must not hang on a provider retry
 
 
 def _quote_key(ticker: str) -> str:
@@ -45,3 +49,31 @@ async def get_quote(ticker: str) -> dict[str, Any]:
     except Exception:
         logger.warning("quote_cache_write_failed", ticker=ticker.upper(), exc_info=True)
     return quote
+
+
+async def market_values_gbp(holdings: Iterable[Mapping[str, Any]]) -> dict[str, Decimal]:
+    """Return ticker → shares × current price × current FX, in GBP.
+
+    Uses the cached quote path and today's FX rate, not the acquisition rate
+    stored on the holding. When a quote is unavailable the stored GBP cost
+    basis is used instead, so a provider outage degrades to cost rather than
+    valuing the position at zero.
+    """
+    from src.market.fx import current_fx_rates
+
+    rows = list(holdings)
+    if not rows:
+        return {}
+    fx = await current_fx_rates(rows)
+
+    async def _one(h: Mapping[str, Any]) -> tuple[str, Decimal]:
+        ticker = h["ticker"]
+        shares = Decimal(str(h["shares"]))
+        try:
+            quote = await asyncio.wait_for(get_quote(ticker), _READ_TIMEOUT)
+            return ticker, shares * Decimal(str(quote["price"])) * fx[ticker]
+        except Exception:
+            logger.warning("market_value_fallback_cost", ticker=ticker, exc_info=True)
+            return ticker, shares * Decimal(str(h.get("average_cost_basis_gbp") or 0))
+
+    return dict(await asyncio.gather(*(_one(h) for h in rows)))
