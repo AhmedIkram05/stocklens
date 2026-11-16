@@ -1,13 +1,10 @@
-"""
-Tests for database initialisation / Alembic migration orchestration.
-
-Reuses the same test-DB transaction isolation from conftest.
-"""
+"""Tests for database initialisation / Alembic migration orchestration."""
 
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import asyncpg
 import pytest
 
 
@@ -33,143 +30,119 @@ class TestNormaliseDSN:
         assert result == "postgresql://host1/db?url=postgresql+asyncpg://host2"
 
 
-class TestDetectAndFixBrokenState:
-    """_detect_and_fix_broken_state — migration health check."""
+class TestAssertSupportedState:
+    """The legacy partial-schema state is refused, not guessed at."""
 
-    @patch("src.database.init_db.asyncpg.connect")
-    async def test_skips_when_version_not_bridge(self, mock_connect: AsyncMock):
-        """When alembic_version is not d2f4e1b3c5a7, no fix is applied."""
-        from src.database.init_db import _detect_and_fix_broken_state
+    async def test_skips_when_version_is_not_the_bridge(self):
+        from src.database.init_db import _assert_supported_state
 
-        mock_conn = AsyncMock()
-        mock_conn.fetchval.return_value = "0010"  # clean state
-        mock_connect.return_value = mock_conn
+        conn = AsyncMock()
+        conn.fetchval.return_value = "0011"
 
-        await _detect_and_fix_broken_state()
+        await _assert_supported_state(conn)
 
-        mock_conn.fetchval.assert_called_once_with("SELECT version_num FROM alembic_version")
-        # _FIX_SQL should not have been executed
-        assert mock_conn.execute.call_count == 0
-        mock_conn.close.assert_called_once()
+        conn.fetchval.assert_awaited_once_with("SELECT version_num FROM alembic_version")
 
-    @patch("src.database.init_db.asyncpg.connect")
-    async def test_skips_when_users_table_exists(self, mock_connect: AsyncMock):
-        """Bridge version but users table exists → no fix needed."""
-        from src.database.init_db import _detect_and_fix_broken_state
+    async def test_missing_version_table_is_clean(self):
+        from src.database.init_db import _assert_supported_state
 
-        mock_conn = AsyncMock()
-        # First query returns bridge version
-        mock_conn.fetchval.return_value = "d2f4e1b3c5a7"
-        # Second query: users table exists
-        mock_conn.fetchval.side_effect = ["d2f4e1b3c5a7", True]
-
-        mock_connect.return_value = mock_conn
-
-        await _detect_and_fix_broken_state()
-
-        # Should check users table existence
-        calls = [c for c in mock_conn.fetchval.call_args_list if "information_schema" in str(c)]
-        assert len(calls) == 1
-        # _FIX_SQL should not run
-        assert mock_conn.execute.call_count == 0
-        mock_conn.close.assert_called_once()
-
-    @patch("src.database.init_db.asyncpg.connect")
-    async def test_applies_fix_when_bridge_and_no_users(self, mock_connect: AsyncMock):
-        """Bridge version + missing users table → fix is applied."""
-        from src.database.init_db import _detect_and_fix_broken_state
-
-        mock_conn = AsyncMock()
-        mock_conn.fetchval.side_effect = ["d2f4e1b3c5a7", False]  # bridge, no users
-
-        mock_connect.return_value = mock_conn
-
-        await _detect_and_fix_broken_state()
-
-        # Should execute _FIX_SQL and update alembic_version
-        execute_calls = [c[0][0] for c in mock_conn.execute.call_args_list]
-        assert any("CREATE TABLE IF NOT EXISTS users" in str(c) for c in execute_calls)
-        assert any(
-            "UPDATE alembic_version SET version_num = '0010'" in str(c) for c in execute_calls
-        )
-        mock_conn.close.assert_called_once()
-
-    @patch("src.database.init_db.asyncpg.connect")
-    async def test_handles_missing_alembic_version_table(self, mock_connect: AsyncMock):
-        """When alembic_version table doesn't exist, fetchval returns None."""
-        from src.database.init_db import _detect_and_fix_broken_state
-
-        mock_conn = AsyncMock()
-        mock_conn.fetchval.return_value = None  # no alembic_version row
-        mock_connect.return_value = mock_conn
-
-        await _detect_and_fix_broken_state()
-
-        # Should skip — no bridge version detected
-        assert mock_conn.execute.call_count == 0
-        mock_conn.close.assert_called_once()
-
-    @patch("src.database.init_db.asyncpg.connect")
-    async def test_handles_undefined_table_error(self, mock_connect: AsyncMock):
-        """UndefinedTableError (table doesn't exist yet) is caught and skipped."""
-        import asyncpg
-
-        from src.database.init_db import _detect_and_fix_broken_state
-
-        mock_conn = AsyncMock()
-        mock_conn.fetchval.side_effect = asyncpg.exceptions.UndefinedTableError(
+        conn = AsyncMock()
+        conn.fetchval.side_effect = asyncpg.exceptions.UndefinedTableError(
             'relation "alembic_version" does not exist'
         )
-        mock_connect.return_value = mock_conn
 
-        await _detect_and_fix_broken_state()
+        await _assert_supported_state(conn)
 
-        # Should skip without crashing
-        mock_conn.close.assert_called_once()
+    async def test_bridge_with_empty_schema_is_allowed(self):
+        from src.database.init_db import _assert_supported_state
+
+        conn = AsyncMock()
+        conn.fetchval.side_effect = ["d2f4e1b3c5a7", 0]
+
+        await _assert_supported_state(conn)
+
+    async def test_bridge_with_existing_tables_raises(self):
+        from src.database.init_db import _assert_supported_state
+
+        conn = AsyncMock()
+        conn.fetchval.side_effect = ["d2f4e1b3c5a7", 3]
+
+        with pytest.raises(RuntimeError, match="already has 3 table"):
+            await _assert_supported_state(conn)
 
 
 class TestRunMigrations:
-    """run_migrations — Alembic migration orchestration."""
+    """run_migrations serialises the upgrade and never swallows errors."""
 
-    @patch("src.database.init_db._detect_and_fix_broken_state", new_callable=AsyncMock)
-    @patch("src.database.init_db.asyncio.to_thread")
-    async def test_runs_upgrade_and_fix(self, mock_to_thread, mock_fix):
-        """run_migrations calls upgrade then _detect_and_fix_broken_state."""
+    async def test_acquires_lock_runs_upgrade_and_releases(self):
         from src.database.init_db import run_migrations
 
-        await run_migrations()
+        conn = AsyncMock()
+        conn.fetchval.return_value = "0011"
 
-        mock_to_thread.assert_called_once()
-        # Verify the first arg to to_thread is alembic.command.upgrade
-        args, _ = mock_to_thread.call_args
-        assert args[0].__name__ == "upgrade"
-        mock_fix.assert_awaited_once()
-
-    @patch("src.database.init_db._detect_and_fix_broken_state", new_callable=AsyncMock)
-    @patch("src.database.init_db.asyncio.to_thread")
-    async def test_handles_programming_error_gracefully(self, mock_to_thread, mock_fix):
-        """ProgrammingError from alembic is caught and logged."""
-        from sqlalchemy.exc import ProgrammingError
-
-        class DummyOrig(Exception):
-            pass
-
-        mock_to_thread.side_effect = ProgrammingError("statement", {}, DummyOrig("already applied"))
-
-        from src.database.init_db import run_migrations
-
-        await run_migrations()
-
-        # Should still run the fix even if upgrade raised ProgrammingError
-        mock_fix.assert_awaited_once()
-
-    @patch("src.database.init_db._detect_and_fix_broken_state", new_callable=AsyncMock)
-    @patch("src.database.init_db.asyncio.to_thread")
-    async def test_propagates_non_programming_errors(self, mock_to_thread, mock_fix):
-        """Non-ProgrammingError exceptions propagate."""
-        mock_to_thread.side_effect = RuntimeError("Unexpected error")
-
-        from src.database.init_db import run_migrations
-
-        with pytest.raises(RuntimeError, match="Unexpected error"):
+        with (
+            patch("src.database.init_db.asyncpg.connect", AsyncMock(return_value=conn)),
+            patch("src.database.init_db.asyncio.to_thread", new_callable=AsyncMock) as to_thread,
+        ):
             await run_migrations()
+
+        statements = [call.args[0] for call in conn.execute.await_args_list]
+        assert "pg_advisory_lock" in statements[1]
+        assert "pg_advisory_unlock" in statements[-1]
+
+        args, _ = to_thread.call_args
+        assert args[0].__name__ == "upgrade"
+        assert args[2] == "head"
+        conn.close.assert_awaited_once()
+
+    async def test_refuses_legacy_state_before_upgrading(self):
+        from src.database.init_db import run_migrations
+
+        conn = AsyncMock()
+        conn.fetchval.side_effect = ["d2f4e1b3c5a7", 1]
+
+        with (
+            patch("src.database.init_db.asyncpg.connect", AsyncMock(return_value=conn)),
+            patch("src.database.init_db.asyncio.to_thread", new_callable=AsyncMock) as to_thread,
+        ):
+            with pytest.raises(RuntimeError, match="legacy d2f4e1b3c5a7"):
+                await run_migrations()
+
+        to_thread.assert_not_awaited()
+        conn.close.assert_awaited_once()
+
+    async def test_propagates_upgrade_errors(self):
+        from src.database.init_db import run_migrations
+
+        conn = AsyncMock()
+        conn.fetchval.return_value = "0011"
+
+        with (
+            patch("src.database.init_db.asyncpg.connect", AsyncMock(return_value=conn)),
+            patch(
+                "src.database.init_db.asyncio.to_thread",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="boom"):
+                await run_migrations()
+
+        statements = [call.args[0] for call in conn.execute.await_args_list]
+        assert any("pg_advisory_unlock" in stmt for stmt in statements)
+        conn.close.assert_awaited_once()
+
+    async def test_unlock_failure_is_logged_not_raised(self):
+        from src.database.init_db import run_migrations
+
+        conn = AsyncMock()
+        conn.fetchval.return_value = "0011"
+        conn.execute.side_effect = [None, None, None, RuntimeError("unlock failed")]
+
+        with (
+            patch("src.database.init_db.asyncpg.connect", AsyncMock(return_value=conn)),
+            patch("src.database.init_db.asyncio.to_thread", new_callable=AsyncMock),
+        ):
+            await run_migrations()
+
+        conn.close.assert_awaited_once()

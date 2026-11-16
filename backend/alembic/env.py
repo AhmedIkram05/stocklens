@@ -17,7 +17,6 @@ from logging.config import fileConfig
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import context
-from src.config import settings
 from src.database.schema import target_metadata
 
 # Alembic Config object — provides access to alembic.ini values
@@ -46,6 +45,8 @@ async def run_async_migrations() -> None:
     Tests run against the isolated ``postgres_test`` database, so when the
     environment is ``test`` we migrate there instead of the runtime DB.
     """
+    from src.config import settings
+
     dsn = settings.TEST_DATABASE_URL if settings.ENVIRONMENT == "test" else settings.DATABASE_URL
     connectable = create_async_engine(
         dsn,
