@@ -38,7 +38,7 @@ backend/src/mcp/tools_adapter.py — Tool schema stripping + ainvoke + resources
 backend/src/mcp/server.py        — Router: server/discover + version gate (-32022), initialize (legacy), tools/list, tools/call, resources/list, resources/read, prompts/list, prompts/get, ping + SSE, SDK fallback
 backend/src/config.py            (+ MCP_ENABLED, OAUTH_*, MCP_JWT_*)
 backend/src/main.py              (+ mcp_router mount, 8 lines)
-backend/pyproject.toml           (+ mcp>=1.12,<2, authlib, cryptography)
+backend/pyproject.toml           (+ authlib, cryptography)
 backend/tests/test_mcp_server.py      (35 tests)
 backend/tests/test_mcp_tools_adapter.py (16 tests)
 backend/tests/test_mcp_auth.py        (25 tests)
@@ -60,7 +60,7 @@ backend/tests/test_mcp_auth.py        (25 tests)
 - `GET /mcp` — SSE `endpoint` event (Inspector discovery)
 - `GET /mcp/health` — unauth `{tools:16, resources:2, prompts:1, auth:"oauth2.1-pkce-rs256"}`
 - `Accept: text/event-stream` → single JSON-RPC wrapped as `event: message`
-- SDK: `FastMCP.streamable_http_app()` when `mcp` installed; fallback pure FastAPI JSON-RPC (CI green without extra)
+- Transport: FastAPI JSON-RPC router (no SDK dependency)
 
 ## Protocol Support — Dual-Version (2025-06-18 + 2026-07-28)
 
@@ -77,7 +77,7 @@ Serves **both** the initialize-based 2025-06-18 protocol and the **stateless 202
 | `GET /mcp` SSE `endpoint`   | kept (Inspector / Claude Desktop legacy)    | kept deliberately for dual-version; 2026-07-28 removes GET streams                                                                              |
 | Cross-call state            | per-connection session                      | n/a — stateless; every call carries bearer token + explicit args                                                                                |
 
-> **SDK note:** the official `mcp` SDK (`mcp>=1.12,<2`) implements 2025-06-18 — `create_mcp_app()`'s `streamable_http_app()` remains the SDK-native legacy path with a `ponytail:` comment, to be upgraded when an SDK release lands 2026-07-28. The hand-rolled JSON-RPC router in `server.py` already serves both versions.
+> **Transport note:** the FastAPI JSON-RPC router in `server.py` is the only transport and serves both protocol versions. The previous FastMCP SDK path was removed because its import no longer exists in the installed SDK and nothing called it.
 
 ## Adapter Contract — Full Spec
 

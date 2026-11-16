@@ -49,9 +49,8 @@ has OAuth 2.1 PKCE + RS256/JWKS, so this is a natural extension.
 - **Auth hardening is in scope:** issuer param + metadata flag, CIMD, 401 `scope=`
   guidance. DCR's AS-binding requirement is already satisfied structurally (the AS is
   server-authoritative) — no code change, documented only.
-- **SDK stays as-is.** `create_mcp_app()` keeps serving the legacy path via the installed
-  `mcp` SDK (`>=1.12,<2`) with a comment noting it's the SDK-native legacy path until an
-  SDK release implements 2026-07-28. No SDK upgrade in this migration.
+- **SDK path removed.** `create_mcp_app()` was deleted; the FastAPI JSON-RPC router is
+  the only transport and serves both versions. No SDK dependency or upgrade remains.
 - **Out of scope:** Enterprise-Managed Authorization (separate extension; add later if a
   client needs it), LAAD migration (separate work item), mTLS / per-scope enforcement
   (already listed as the next rung in docs/mcp.md's security checklist).
@@ -115,9 +114,7 @@ scope="portfolio:read"` (resource_metadata already present; add scope guidance).
    shared implementation for tools/resources/prompts/ping.
 3. Keep `GET /mcp` SSE endpoint-event and `Accept: text/event-stream` response handling
    untouched (dual-version legacy support).
-4. `create_mcp_app()` (line ~311): add a `ponytail:` comment noting the SDK-native
-   streamable_http_app is the legacy (2025-06-18) path until an SDK release implements
-   2026-07-28; no functional change.
+4. The SDK mount was removed; the FastAPI JSON-RPC router is the only transport.
 5. Tests in `backend/tests/test_mcp_server.py`:
    - `server/discover` returns supportedVersions/capabilities/serverInfo/ttlMs/cacheScope.
    - request with `protocolVersion: "2020-01-01"` → −32022 with data.supported/requested.

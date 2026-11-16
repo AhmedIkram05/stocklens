@@ -144,6 +144,8 @@ def test_strip_injected_removes_required():
 def test_get_mcp_tools_schema_via_args_schema():
     from unittest.mock import MagicMock, patch
 
+    from src.mcp.tools_adapter import _reset_tool_cache
+
     mock_schema = MagicMock()
     mock_schema.model_json_schema.return_value = {
         "type": "object",
@@ -155,11 +157,37 @@ def test_get_mcp_tools_schema_via_args_schema():
     mock_tool.description = "test desc"
     mock_tool.args_schema = mock_schema
 
-    with patch("src.mcp.tools_adapter._load_tools", return_value={"test_tool": mock_tool}):
-        defs = get_mcp_tools()
-        assert len(defs) == 1
-        assert defs[0]["name"] == "test_tool"
-        assert "user_id" not in defs[0]["inputSchema"]["properties"]
+    _reset_tool_cache()
+    try:
+        with patch("src.mcp.tools_adapter._load_tools", return_value={"test_tool": mock_tool}):
+            defs = get_mcp_tools()
+            assert len(defs) == 1
+            assert defs[0]["name"] == "test_tool"
+            assert "user_id" not in defs[0]["inputSchema"]["properties"]
+    finally:
+        _reset_tool_cache()
+
+
+def test_get_mcp_tools_memoises_definitions(monkeypatch):
+    import src.mcp.tools_adapter as adapter
+
+    adapter._reset_tool_cache()
+    calls: list[int] = []
+    original = adapter._strip_injected
+
+    def counting(schema):
+        calls.append(1)
+        return original(schema)
+
+    monkeypatch.setattr(adapter, "_strip_injected", counting)
+    try:
+        first = adapter.get_mcp_tools()
+        second = adapter.get_mcp_tools()
+    finally:
+        adapter._reset_tool_cache()
+
+    assert first is second
+    assert len(calls) == len(first)
 
 
 @pytest.mark.asyncio

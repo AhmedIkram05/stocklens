@@ -24,7 +24,7 @@
 
 ### 🔌 MCP Enterprise Server (Streamable HTTP + OAuth 2.1)
 
-A **self-built MCP server** exposing StockLens's **16 canonical tools** via the **official Python SDK (`mcp>=1.12`**, Streamable HTTP, **OAuth 2.1 PKCE S256**), **mounted on the existing FastAPI** - no separate service, no tool duplication. Single source of truth: `src/agent/tools.py` → `src/mcp/tools_adapter.py` → MCP `Tool` definitions (injected `user_id`/`portfolio_id` stripped from `inputSchema`, injected server-side from verified JWT).
+A **self-built MCP server** exposing StockLens's **16 canonical tools** via a **FastAPI-native JSON-RPC transport**, Streamable HTTP, **OAuth 2.1 PKCE S256**, **mounted on the existing FastAPI** - no separate service, no tool duplication. Single source of truth: `src/agent/tools.py` → `src/mcp/tools_adapter.py` → MCP `Tool` definitions (injected `user_id`/`portfolio_id` stripped from `inputSchema`, injected server-side from verified JWT).
 
 > **Modern MCP (2026-07-28):** the server is **dual-version** - it serves the **stateless 2026-07-28 core** (`server/discover` with `supportedVersions`, per-request `_meta`, explicit `-32022` on unsupported versions; no initialize handshake) **alongside** legacy 2025-06-18 initialize clients (Inspector, Claude Desktop). Auth is hardened with **CIMD** client registration (HTTPS-URL `client_id` metadata documents, SSRF-guarded) and **RFC 9207 issuer validation** (`iss` in authorize responses). Details: `docs/mcp.md` → Protocol Support.
 
@@ -99,7 +99,7 @@ flowchart LR
 | Schema    | `tool.args_schema.model_json_schema()` → `_strip_injected()` removes `user_id`/`portfolio_id` from `properties`/`required`                                                                                        |
 | Invoke    | `invoke_tool(name, args, user_id, portfolio_id?)` → `resolve_portfolio_id()` (explicit or oldest portfolio) → `tool.ainvoke({…args, user_id, portfolio_id})` → JSON string → MCP `content: [{type:"text", text}]` |
 | Mount     | `src/mcp/server.py:mcp_router` (`/.well-known/*`, `/oauth/*`, `/mcp`) included in `src/main.py` when `MCP_ENABLED`                                                                                                |
-| Fallback  | `create_mcp_app()` tries `mcp.server.fastmcp.FastMCP` SDK, degrades to FastAPI JSON-RPC so CI stays green without `mcp` extra                                                                                     |
+| Transport | FastAPI JSON-RPC router; the FastMCP SDK path was removed and there is no SDK dependency                                                                                                                          |
 
 **Verification (93 tests, 100% MCP server pass):**
 
