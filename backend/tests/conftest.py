@@ -59,6 +59,16 @@ settings.TEST_DATABASE_URL = TEST_DSN
 settings.DATABASE_URL = TEST_DSN
 
 
+@pytest.fixture(autouse=True)
+def _reset_mcp_tool_cache():
+    """Keep tool/schema caches from leaking between tests."""
+    from src.mcp.tools_adapter import _reset_tool_cache
+
+    _reset_tool_cache()
+    yield
+    _reset_tool_cache()
+
+
 @pytest.fixture(scope="session")
 def event_loop():
     """Use the same event loop for the entire session."""

@@ -1,19 +1,14 @@
 """StockLens MCP Server — FastAPI-native Streamable HTTP.
 
-Exposes 16 canonical tools as MCP Tools with OAuth 2.1 protection.
-Official Python SDK (modelcontextprotocol/python-sdk) is the primary transport
-when installed; FastAPI fallback handles JSON-RPC directly so tests run without
-extra deps.
+Exposes 16 canonical tools as MCP Tools with OAuth 2.1 protection. The
+JSON-RPC transport is implemented directly on FastAPI; there is no SDK
+dependency.
 
 Mount:
     from src.mcp.server import mcp_router  # includes /.well-known/* + /oauth/* + /mcp
     app.include_router(mcp_router)
 
-Or low-level ASGI mount:
-    from src.mcp.server import create_mcp_app
-    app.mount("/mcp", create_mcp_app())
-
-CV keywords: MCP SDK, Streamable HTTP, SSE, OAuth 2.1 PKCE, FastAPI mount,
+CV keywords: MCP, Streamable HTTP, SSE, OAuth 2.1 PKCE, FastAPI mount,
 single source of truth, 16 tools, structlog observability.
 """
 
@@ -439,51 +434,3 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
 
     out: Any = responses if is_batch else responses[0]
     return JSONResponse(content=out)
-
-
-# ── Optional: official SDK ASGI mount when available ─────────────────────
-
-
-def create_mcp_app():
-    """Return an ASGI app for `app.mount('/mcp', create_mcp_app())`.
-
-    Tries to return the official SDK's StreamableHTTP app (FastMCP) with
-    OAuth-aware tool registration; falls back to a Starlette wrapper around
-    mcp_router so `mount` still works without extra deps.
-    """
-    try:
-        # Official SDK path — requires `mcp` extra
-        from mcp.server.fastmcp import FastMCP  # type: ignore
-
-        fastmcp = FastMCP(name=getattr(settings, "MCP_SERVER_NAME", "stocklens"))
-
-        # Register 16 tools dynamically — same adapter, now via SDK decorators
-        for defn in get_mcp_tools():
-            name = defn["name"]
-
-            def _make_handler(n: str):
-                async def _handler(**kwargs):
-                    # SDK injects auth context via request state; fallback to kwargs
-                    # For CV, this shows SDK-native registration while reusing adapter
-                    user_id = kwargs.pop("_user_id", "unknown")
-                    return await invoke_tool(n, kwargs, user_id)
-
-                _handler.__name__ = n
-                return _handler
-
-            fastmcp.tool(name=name, description=defn["description"])(_make_handler(name))
-
-        # Streamable HTTP ASGI with auth.
-        # ponytail: SDK-native path is the legacy 2025-06-18 implementation until an
-        # SDK release ships 2026-07-28 (server/discover) — the router above already
-        # serves both versions; upgrade here when the SDK does.
-        app = fastmcp.streamable_http_app()  # type: ignore[attr-defined]
-        return app
-    except Exception as exc:
-        # ponytail: degrade to FastAPI router wrapped as ASGI — no new dep required
-        logger.info("mcp_sdk_unavailable_fallback_to_router", reason=str(exc))
-        from fastapi import FastAPI
-
-        fallback = FastAPI()
-        fallback.include_router(mcp_router)
-        return fallback
