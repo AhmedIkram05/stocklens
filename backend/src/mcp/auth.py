@@ -47,7 +47,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # RS256 — optional, graceful fallback to HS256 (cryptography already in deps via authlib)
 try:
@@ -66,7 +66,7 @@ from src.auth.utils import (
     token_audience,
     token_claim_extras,
     token_issuer,
-    verify_password,
+    verify_password_async,
 )
 from src.cache.redis import get_redis, is_token_blacklisted
 from src.config import settings
@@ -605,8 +605,8 @@ def _fetch_cimd_document(client_id: str) -> dict[str, Any] | None:
 
 
 class AuthorizeRequest(BaseModel):
-    email: str
-    password: str
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., max_length=128)
     client_id: str
     redirect_uri: str
     code_challenge: str
@@ -716,9 +716,8 @@ async def _authenticate_user(email: str, password: str) -> dict | None:
             "SELECT id, email, password_hash, is_active FROM users WHERE email = $1",
             email,
         )
-    if row is None:
-        return None
-    if not verify_password(password, row["password_hash"]):
+    valid = await verify_password_async(password, row["password_hash"] if row else None)
+    if row is None or not valid:
         return None
     if not row["is_active"]:
         raise HTTPException(status_code=403, detail="Account is deactivated")
