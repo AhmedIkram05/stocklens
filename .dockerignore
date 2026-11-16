@@ -16,10 +16,19 @@ __pycache__
 .mypy_cache
 .ruff_cache
 coverage
-.env
-.env.*
-!.env.example
+# Match nested env files too: `backend/.env` is inside the build context for
+# the root-context Airflow image and was previously baked into it.
+**/.env
+**/.env.*
+!**/.env.example
 .DS_Store
 .venv/
+**/.venv/
 *.log
 htmlcov/
+# Terraform state/plan files contain secrets and must never enter an image.
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfplan
+**/tfplan
+**/.terraform/
