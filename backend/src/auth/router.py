@@ -34,9 +34,9 @@ from src.auth.utils import (
     create_access_token,
     create_refresh_token,
     decode_token,
-    hash_password,
+    hash_password_async,
     hash_token,
-    verify_password,
+    verify_password_async,
 )
 from src.cache.redis import blacklist_token, is_token_blacklisted
 from src.config import settings
@@ -117,7 +117,7 @@ async def register(request: Request, body: RegisterRequest) -> AuthResponse:
     # Hash password and insert atomically. ON CONFLICT makes the unique index
     # the concurrency gate: a check-then-insert let two concurrent submits both
     # pass the existence check and the loser hit a unique-violation 500.
-    pwd_hash = hash_password(body.password)
+    pwd_hash = await hash_password_async(body.password)
     async with connection_ctx() as conn:
         row = await conn.fetchrow(
             """
@@ -168,8 +168,9 @@ async def login(request: Request, body: LoginRequest) -> AuthResponse:
     """Authenticate a user and return a token pair."""
     email = body.email.lower().strip()
     user = await _fetch_user_by_email(email)
+    valid = await verify_password_async(body.password, user["password_hash"] if user else None)
 
-    if user is None or not verify_password(body.password, user["password_hash"]):
+    if user is None or not valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",

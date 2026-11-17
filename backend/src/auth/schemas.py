@@ -75,14 +75,14 @@ class RegisterRequest(BaseModel):
 
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=128)
-    full_name: str = Field(..., min_length=1)
+    full_name: str = Field(..., min_length=1, max_length=100)
 
 
 class LoginRequest(BaseModel):
     """User login payload."""
 
     email: EmailStr
-    password: str
+    password: str = Field(..., max_length=128)
 
 
 class RefreshRequest(BaseModel):

@@ -24,6 +24,8 @@ from langgraph.prebuilt import InjectedState
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.database.connection import connection_ctx
+from src.market.fx import current_fx_rates
+from src.market.quotes import market_values_gbp
 from src.market.repository import get_ohlcv
 
 logger = logging.getLogger(__name__)
@@ -80,7 +82,7 @@ async def get_portfolio_summary(
 
         # Fetch holdings (ticker + shares + cost basis + fx) for market-value calc
         holdings_rows = await conn.fetch(
-            "SELECT ticker, shares, average_cost_basis_gbp, "
+            "SELECT ticker, shares, currency, average_cost_basis_gbp, "
             "COALESCE(fx_rate_to_gbp, 1) AS fx_rate_to_gbp "
             "FROM holdings WHERE portfolio_id = $1::uuid",
             portfolio_id,
@@ -123,11 +125,13 @@ async def get_portfolio_summary(
             if isinstance(r, tuple) and r[1] is not None:
                 live_prices[r[0]] = r[1]
 
+    fx_rates = await current_fx_rates(holdings_rows)
+
     total_cost_basis = Decimal(0)
     total_market_value = Decimal(0)
     for h in holdings_rows:
         shares = Decimal(str(h["shares"]))
-        fx = Decimal(str(h["fx_rate_to_gbp"]))
+        fx = fx_rates[h["ticker"]]
         cost = Decimal(str(h["average_cost_basis_gbp"])) * shares
         total_cost_basis += cost
         price = live_prices.get(h["ticker"])
@@ -213,7 +217,7 @@ async def get_sector_exposure(
     """
     async with connection_ctx() as conn:
         rows = await conn.fetch(
-            "SELECT h.ticker, h.shares, h.average_cost_basis_gbp "
+            "SELECT h.ticker, h.shares, h.currency, h.fx_rate_to_gbp, h.average_cost_basis_gbp "
             "FROM holdings h "
             "JOIN portfolios p ON p.id = h.portfolio_id "
             "WHERE h.portfolio_id = $1::uuid AND p.user_id = $2::uuid",
@@ -224,10 +228,9 @@ async def get_sector_exposure(
     if not rows:
         return json.dumps({"error": "No holdings found for this portfolio"})
 
-    # Calculate total value
-    total_value = sum(
-        float(r["shares"]) * _decimal_to_float(r["average_cost_basis_gbp"]) for r in rows
-    )
+    # Current market value in GBP (falls back to the stored cost basis)
+    values = await market_values_gbp(rows)
+    total_value = float(sum(values.values()))
 
     # Fetch sector for each unique ticker from yfinance
     unique_tickers = list({r["ticker"] for r in rows})
@@ -256,7 +259,7 @@ async def get_sector_exposure(
     sector_tickers: dict[str, list[str]] = {}
     for r in rows:
         sector = sector_map.get(r["ticker"], "Unknown")
-        value = float(r["shares"]) * _decimal_to_float(r["average_cost_basis_gbp"])
+        value = float(values[r["ticker"]])
         sector_values[sector] = sector_values.get(sector, 0) + value
         sector_tickers.setdefault(sector, []).append(r["ticker"])
 
@@ -386,7 +389,7 @@ async def get_portfolio_performance(
         if isinstance(r, tuple) and r[1] is not None:
             live_quotes[r[0]] = r[1]
 
-    fx_rates = {h["ticker"]: (h.get("fx_rate_to_gbp") or _Decimal(1)) for h in holdings_data}
+    fx_rates = await current_fx_rates(holdings_data)
 
     try:
         result = compute_portfolio_performance(
@@ -517,7 +520,7 @@ async def compare_to_benchmark(
         if isinstance(r, tuple) and r[1] is not None:
             live_quotes[r[0]] = r[1]
 
-    fx_rates = {h["ticker"]: (h.get("fx_rate_to_gbp") or _Decimal(1)) for h in holdings_data}
+    fx_rates = await current_fx_rates(holdings_data)
 
     try:
         # 1. Compute portfolio performance to get TWR
@@ -624,7 +627,7 @@ async def get_portfolio_diversification_score(
     """
     async with connection_ctx() as conn:
         rows = await conn.fetch(
-            "SELECT h.ticker, h.shares, h.average_cost_basis_gbp "
+            "SELECT h.ticker, h.shares, h.currency, h.fx_rate_to_gbp, h.average_cost_basis_gbp "
             "FROM holdings h "
             "JOIN portfolios p ON p.id = h.portfolio_id "
             "WHERE h.portfolio_id = $1::uuid AND p.user_id = $2::uuid",
@@ -635,11 +638,9 @@ async def get_portfolio_diversification_score(
     if not rows:
         return json.dumps({"error": "No holdings found for this portfolio"})
 
-    # Calculate total value and weights
-    values = []
-    for r in rows:
-        value = float(r["shares"]) * _decimal_to_float(r["average_cost_basis_gbp"])
-        values.append({"ticker": r["ticker"], "value": value})
+    # Current market value in GBP (falls back to the stored cost basis)
+    values_map = await market_values_gbp(rows)
+    values = [{"ticker": r["ticker"], "value": float(values_map[r["ticker"]])} for r in rows]
 
     total = sum(v["value"] for v in values)
     if total <= 0:

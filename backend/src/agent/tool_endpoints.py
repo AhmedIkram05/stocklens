@@ -31,6 +31,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from src.auth.dependencies import get_current_user
 from src.auth.schemas import UserInDB
 from src.database.connection import connection_ctx
+from src.market.quotes import market_values_gbp
 
 logger = logging.getLogger(__name__)
 
@@ -311,7 +312,7 @@ async def sector_exposure(
     """Calculate sector allocation for a portfolio using yfinance sector data."""
     async with connection_ctx() as conn:
         rows = await conn.fetch(
-            "SELECT h.ticker, h.shares, h.average_cost_basis_gbp "
+            "SELECT h.ticker, h.shares, h.currency, h.fx_rate_to_gbp, h.average_cost_basis_gbp "
             "FROM holdings h "
             "JOIN portfolios p ON p.id = h.portfolio_id "
             "WHERE h.portfolio_id = $1::uuid AND p.user_id = $2::uuid",
@@ -322,9 +323,8 @@ async def sector_exposure(
     if not rows:
         raise HTTPException(status_code=404, detail="No holdings found for this portfolio")
 
-    total_value = sum(
-        float(r["shares"]) * _decimal_to_float(r["average_cost_basis_gbp"]) for r in rows
-    )
+    values = await market_values_gbp(rows)
+    total_value = float(sum(values.values()))
 
     unique_tickers = list({r["ticker"] for r in rows})
     sector_map: dict[str, str] = {}
@@ -345,7 +345,7 @@ async def sector_exposure(
     sector_tickers: dict[str, list[str]] = {}
     for r in rows:
         sector = sector_map.get(r["ticker"], "Unknown")
-        value = float(r["shares"]) * _decimal_to_float(r["average_cost_basis_gbp"])
+        value = float(values[r["ticker"]])
         sector_values[sector] = sector_values.get(sector, 0) + value
         sector_tickers.setdefault(sector, []).append(r["ticker"])
 
@@ -381,7 +381,7 @@ async def diversification_score(
     """
     async with connection_ctx() as conn:
         rows = await conn.fetch(
-            "SELECT h.ticker, h.shares, h.average_cost_basis_gbp "
+            "SELECT h.ticker, h.shares, h.currency, h.fx_rate_to_gbp, h.average_cost_basis_gbp "
             "FROM holdings h "
             "JOIN portfolios p ON p.id = h.portfolio_id "
             "WHERE h.portfolio_id = $1::uuid AND p.user_id = $2::uuid",
@@ -392,10 +392,10 @@ async def diversification_score(
     if not rows:
         raise HTTPException(status_code=404, detail="No holdings found for this portfolio")
 
-    values: list[dict] = []
-    for r in rows:
-        v = float(r["shares"]) * _decimal_to_float(r["average_cost_basis_gbp"])
-        values.append({"ticker": r["ticker"], "value": v})
+    values_map = await market_values_gbp(rows)
+    values: list[dict] = [
+        {"ticker": r["ticker"], "value": float(values_map[r["ticker"]])} for r in rows
+    ]
 
     total = sum(v["value"] for v in values)
     if total <= 0:

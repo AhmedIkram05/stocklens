@@ -36,6 +36,7 @@ def compute_holding_performance(
     previous_close: Optional[Decimal],
     total_portfolio_value: Optional[Decimal],
     fx_rate: Optional[Decimal] = None,
+    avg_cost_basis_gbp: Optional[Decimal] = None,
 ) -> HoldingPerformance:
     """Compute performance metrics for a single holding.
 
@@ -51,6 +52,9 @@ def compute_holding_performance(
         previous_close: Previous day's close (None if unavailable).
         total_portfolio_value: Total portfolio value for weight calculation.
         fx_rate: GBP per 1 native unit; pre-converts per-share prices to GBP.
+        avg_cost_basis_gbp: Accumulated GBP cost per share. When supplied it is
+            used directly, preserving each buy's historical FX rate instead of
+            re-rating the whole position at today's rate.
 
     Returns:
         HoldingPerformance with computed metrics.
@@ -61,6 +65,9 @@ def compute_holding_performance(
             current_price = current_price * fx_rate
         if previous_close is not None:
             previous_close = previous_close * fx_rate
+    if avg_cost_basis_gbp is not None:
+        avg_cost_basis = avg_cost_basis_gbp
+    elif fx_rate is not None and fx_rate != Decimal(1):
         avg_cost_basis = avg_cost_basis * fx_rate
 
     cost_basis = shares * avg_cost_basis
@@ -243,8 +250,10 @@ def _resolve_latest_prices(
                     previous=str(previous_date),
                 )
 
-    # Override with live intraday quotes if available
-    if live_quotes:
+    # Override with live intraday quotes only for a period ending today.
+    # Applying today's quote to a historical end_date silently rewrites the
+    # past (e.g. a 31-March report showing today's price).
+    if live_quotes and end_date >= datetime.now(timezone.utc).date():
         for ticker, (price, prev_close) in live_quotes.items():
             if price is not None:
                 latest_prices[ticker] = price
@@ -284,6 +293,7 @@ def _compute_holdings_metrics(
             previous_close=previous_closes.get(ticker),
             total_portfolio_value=None,  # Will recalc after we know the total
             fx_rate=fx_rate,
+            avg_cost_basis_gbp=h.get("average_cost_basis_gbp"),
         )
         if hp.market_value is not None:
             total_market_value += hp.market_value
@@ -391,11 +401,13 @@ def _fx_unknown_tickers(
     resolved (failed lookup at buy time, or the column default) — the holding
     is silently summed as if 1 native unit = 1 GBP, so callers must surface it.
     """
+    from src.market.fx import currency_parts
+
     return sorted(
         {
             h["ticker"]
             for h in holdings_data
-            if (h.get("currency") or "").upper() not in ("", "GBP")
+            if currency_parts(h.get("currency"))[0] != "GBP"
             and (fx_rates or {}).get(h["ticker"], Decimal(1)) == Decimal(1)
         }
     )

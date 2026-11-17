@@ -103,6 +103,16 @@ class TestGetMessages:
             assert msgs[2]["role"] == "user"
             assert msgs[2]["content"] == "Second"
 
+    async def test_returns_newest_messages_in_order(self):
+        """A long conversation keeps its most recent turns, not the first ones."""
+        async with connection_ctx() as conn:
+            cid = await create_conversation(conn, user_id=USER_ID)
+            for i in range(5):
+                await add_message(conn, cid, USER_ID, "user", f"m{i}")
+
+            msgs = await get_conversation_messages(conn, cid, limit=3)
+            assert [m["content"] for m in msgs] == ["m2", "m3", "m4"]
+
 
 class TestUserConversations:
     async def test_list_user_conversations(self):

@@ -173,7 +173,13 @@ class TestGetSectorExposure:
             await _seed_holding(conn, "AAPL", 10, 100.0)
             await _seed_holding(conn, "MSFT", 10, 100.0)
 
-        with patch("src.agent.tools.yf") as mock_yf:
+        with (
+            patch("src.agent.tools.yf") as mock_yf,
+            patch(
+                "src.agent.tools.market_values_gbp",
+                new=AsyncMock(return_value={"AAPL": Decimal("1000"), "MSFT": Decimal("1000")}),
+            ),
+        ):
             mock_ticker = MagicMock()
             mock_ticker.info = {"sector": "Technology"}
             mock_yf.Ticker.return_value = mock_ticker
@@ -186,14 +192,41 @@ class TestGetSectorExposure:
         assert len(data["sectors"]) == 1
         assert data["sectors"][0]["sector"] == "Technology"
 
+    async def test_values_positions_at_market_not_cost(self):
+        """Sector weights must use market value, not historical cost."""
+        async with connection_ctx() as conn:
+            await _seed_holding(conn, "AAPL", 10, 100.0)  # cost 1000
+
+        with (
+            patch("src.agent.tools.yf") as mock_yf,
+            patch(
+                "src.agent.tools.market_values_gbp",
+                new=AsyncMock(return_value={"AAPL": Decimal("2500")}),
+            ),
+        ):
+            mock_ticker = MagicMock()
+            mock_ticker.info = {"sector": "Technology"}
+            mock_yf.Ticker.return_value = mock_ticker
+            result_str = await TOOLS["get_sector_exposure"].ainvoke(
+                {"portfolio_id": TEST_PORTFOLIO, "user_id": USER_ID}
+            )
+
+        data = json.loads(result_str)
+        assert data["total_value_gbp"] == 2500.0
+        assert data["sectors"][0]["allocation_pct"] == 100.0
+
 
 class TestGetDiversificationScore:
     async def test_hhi_single_holding_is_high(self):
         async with connection_ctx() as conn:
             await _seed_holding(conn, "AAPL", 10, 100.0)
-        result_str = await TOOLS["get_portfolio_diversification_score"].ainvoke(
-            {"portfolio_id": TEST_PORTFOLIO, "user_id": USER_ID}
-        )
+        with patch(
+            "src.agent.tools.market_values_gbp",
+            new=AsyncMock(return_value={"AAPL": Decimal("1000")}),
+        ):
+            result_str = await TOOLS["get_portfolio_diversification_score"].ainvoke(
+                {"portfolio_id": TEST_PORTFOLIO, "user_id": USER_ID}
+            )
         data = json.loads(result_str)
         # Single holding -> HHI = 100^2 = 10000
         assert data["hhi_score"] == 10000.0
@@ -791,7 +824,13 @@ class TestGetSectorExposureErrors:
             await _seed_holding(conn, "AAPL", 10, 100.0)
             await _seed_holding(conn, "MSFT", 10, 100.0)
 
-        with patch("src.agent.tools.yf") as mock_yf:
+        with (
+            patch("src.agent.tools.yf") as mock_yf,
+            patch(
+                "src.agent.tools.market_values_gbp",
+                new=AsyncMock(return_value={"AAPL": Decimal("1000"), "MSFT": Decimal("1000")}),
+            ),
+        ):
             mock_ticker = MagicMock()
             type(mock_ticker).info = PropertyMock(side_effect=ValueError("YF down"))
             mock_yf.Ticker.return_value = mock_ticker
@@ -999,12 +1038,16 @@ class TestGetDiversificationScoreErrors:
     """Error-handling branches for get_portfolio_diversification_score."""
 
     async def test_zero_total_value(self):
-        """Holdings with zero cost basis → zero total → error."""
+        """Holdings with zero market value → zero total → error."""
         async with connection_ctx() as conn:
             await _seed_holding(conn, "AAPL", 10, 0.0)
-        result_str = await TOOLS["get_portfolio_diversification_score"].ainvoke(
-            {"portfolio_id": TEST_PORTFOLIO, "user_id": USER_ID}
-        )
+        with patch(
+            "src.agent.tools.market_values_gbp",
+            new=AsyncMock(return_value={"AAPL": Decimal("0")}),
+        ):
+            result_str = await TOOLS["get_portfolio_diversification_score"].ainvoke(
+                {"portfolio_id": TEST_PORTFOLIO, "user_id": USER_ID}
+            )
         data = json.loads(result_str)
         assert "error" in data
         assert "zero or negative total value" in data["error"].lower()

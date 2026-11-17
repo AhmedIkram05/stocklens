@@ -7,6 +7,7 @@ validation, both of which are already declared in ``pyproject.toml``.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Tuple
@@ -42,6 +43,27 @@ def verify_password(password: str, password_hash: str) -> bool:
         password.encode("utf-8")[:72],
         password_hash.encode("utf-8"),
     )
+
+
+_DUMMY_PASSWORD = "stocklens-timing-equalizer-not-a-real-password"
+_DUMMY_PASSWORD_HASH = hash_password(_DUMMY_PASSWORD)
+
+
+async def hash_password_async(password: str) -> str:
+    """Hash *password* without blocking the event loop."""
+    return await asyncio.to_thread(hash_password, password)
+
+
+async def verify_password_async(password: str, password_hash: str | None) -> bool:
+    """Verify *password* without blocking the event loop.
+
+    A missing *password_hash* (unknown account) still runs one bcrypt check
+    against a dummy hash, so callers cannot leak account existence by timing.
+    """
+    valid = await asyncio.to_thread(
+        verify_password, password, password_hash or _DUMMY_PASSWORD_HASH
+    )
+    return bool(password_hash) and valid
 
 
 # ── Token creation ────────────────────────────────────────────────────────────
