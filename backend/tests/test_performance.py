@@ -7,7 +7,7 @@ and HTTP endpoint integration tests.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
@@ -240,7 +240,7 @@ class TestPortfolioPerformance:
             cash_flows=[],
             price_map=ohlcv_prices,
             start_date=date(2024, 1, 1),
-            end_date=date(2024, 12, 31),
+            end_date=datetime.now(timezone.utc).date(),
             enable_twr=False,
             live_quotes=live_quotes,
         )
@@ -280,7 +280,7 @@ class TestPortfolioPerformance:
             cash_flows=[],
             price_map=ohlcv_prices,
             start_date=date(2024, 1, 1),
-            end_date=date(2024, 12, 31),
+            end_date=datetime.now(timezone.utc).date(),
             enable_twr=False,
             live_quotes=live_quotes,
         )

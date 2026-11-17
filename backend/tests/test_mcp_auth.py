@@ -1168,3 +1168,46 @@ class TestMcpAudienceIssuerValidation:
         assert MCP_TOOLS_SCOPE not in granted
         assert scope_grants(granted, tool_scope("get_portfolio_summary")) is False
         assert scope_grants(granted, "market:read") is False
+
+
+@pytest.mark.asyncio
+async def test_authenticate_user_unknown_email_still_verifies(monkeypatch):
+    """Unknown account must still run one verification (timing oracle)."""
+    import src.mcp.auth as mcp_auth
+
+    verify = AsyncMock(return_value=False)
+    monkeypatch.setattr(mcp_auth, "verify_password_async", verify)
+
+    class FakeConn:
+        async def fetchrow(self, *args):
+            return None
+
+    class FakeCtx:
+        def __call__(self):
+            return self
+
+        async def __aenter__(self):
+            return FakeConn()
+
+        async def __aexit__(self, *args):
+            return False
+
+    monkeypatch.setattr(mcp_auth, "connection_ctx", FakeCtx())
+
+    assert await mcp_auth._authenticate_user("missing@example.com", "pw") is None
+    verify.assert_awaited_once_with("pw", None)
+
+
+def test_authorize_request_password_is_bounded():
+    from pydantic import ValidationError
+
+    from src.mcp.auth import AuthorizeRequest
+
+    with pytest.raises(ValidationError):
+        AuthorizeRequest(
+            email="user@example.com",
+            password="x" * 129,
+            client_id="client",
+            redirect_uri="https://example.com/callback",
+            code_challenge="challenge",
+        )

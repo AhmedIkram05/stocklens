@@ -160,6 +160,6 @@ async def get_quote_endpoint(
         previous_close=quote_data["previous_close"],
         volume=quote_data["volume"],
         timestamp=quote_data["timestamp"],
-        currency=quote_data.get("currency", "GBP"),
+        currency=quote_data.get("currency") or "GBP",
         exchange=quote_data.get("exchange"),
     )

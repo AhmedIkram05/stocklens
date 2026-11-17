@@ -18,6 +18,7 @@ round-trip runs for real there.
 from __future__ import annotations
 
 import asyncio
+import io
 import os
 import socket
 import uuid
@@ -45,12 +46,16 @@ def _script_directory() -> ScriptDirectory:
 def _test_dsn() -> str:
     """The DSN the rest of the suite uses.
 
-    Prefer an environment-provided DSN so the probe points at whatever database
-    the environment provides — CI sets ``TEST_DATABASE_URL`` to its service
-    container. Fall back to ``settings.TEST_DATABASE_URL``, which ``conftest``
-    rewrites from the docker ``postgres_test`` host to ``localhost:5433`` on the
-    host; under ``--noconftest`` the raw URL is used instead.
+    Prefer the configured value (conftest rewrites the docker hostname to the
+    published localhost port), then fall back to the raw environment.
     """
+    try:
+        from src.config import settings
+
+        if settings.TEST_DATABASE_URL:
+            return settings.TEST_DATABASE_URL
+    except Exception:
+        pass
     for var in ("TEST_DATABASE_URL", "DATABASE_URL"):
         value = os.environ.get(var)
         if value:
@@ -163,6 +168,63 @@ class TestRevisionChain:
             assert callable(getattr(module, "downgrade", None)), (
                 f"{rev.revision} ({module.__name__}) has no downgrade()"
             )
+
+
+def test_offline_sql_renders_without_a_database():
+    """``alembic upgrade head --sql`` must render SQL using the ini URL."""
+    from alembic.command import upgrade
+
+    cfg = Config(str(ALEMBIC_INI))
+    cfg.set_main_option("script_location", str(ALEMBIC_DIR))
+    buffer = io.StringIO()
+    cfg.output_buffer = buffer
+    upgrade(cfg, "head", sql=True)
+
+    sql = buffer.getvalue()
+    assert "CREATE TABLE users" in sql
+    assert "CREATE TABLE cascade_decisions" in sql
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(_SKIP_REASON is not None, reason=_SKIP_REASON or "")
+def test_schema_metadata_has_no_autogenerate_diff(monkeypatch):
+    """``schema.py`` must match the migrated database exactly.
+
+    A non-empty diff means ``alembic revision --autogenerate`` would emit a
+    migration that drops or rewrites live columns.
+    """
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+    from sqlalchemy import create_engine
+
+    from src.config import settings
+    from src.database.schema import target_metadata
+
+    test_dsn = _test_dsn()
+    temp_db = f"stocklens_autogen_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+    temp_dsn = _with_database(test_dsn, temp_db)
+
+    asyncio.run(_create_database(_as_asyncpg_dsn(test_dsn), temp_db))
+    try:
+        monkeypatch.setattr(settings, "ENVIRONMENT", "test")
+        monkeypatch.setattr(settings, "TEST_DATABASE_URL", temp_dsn)
+
+        cfg = Config(str(ALEMBIC_INI))
+        cfg.set_main_option("script_location", str(ALEMBIC_DIR))
+        upgrade(cfg, "head")
+
+        sync_dsn = temp_dsn.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+        engine = create_engine(sync_dsn)
+        try:
+            with engine.connect() as conn:
+                context = MigrationContext.configure(conn, opts={"compare_server_default": True})
+                diff = compare_metadata(context, target_metadata)
+        finally:
+            engine.dispose()
+
+        assert diff == [], f"autogenerate diff: {diff}"
+    finally:
+        asyncio.run(_drop_database(_as_asyncpg_dsn(test_dsn), temp_db))
 
 
 @pytest.mark.integration

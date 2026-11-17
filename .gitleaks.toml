@@ -1,8 +1,9 @@
-# Gitleaks config for StockLens
-# Allowlist pre-existing findings that have been remediated.
-
+# Gitleaks config for StockLens.
+#
+# The only allowlist is the historical `.env` commit. It must stay allowlisted
+# until history is rewritten (see docs/SECURITY-INCIDENT-2026-11-16.md), because
+# the values in that commit were live. Do NOT add a `paths = [".env"]` entry:
+# that suppresses every future .env finding, which is how this was missed.
 [allowlist]
-  # GCP API key in .env — removed in f04ea30, only persists in history.
-  description = "Pre-existing GCP API key, removed from current .env"
+  description = "Historical .env secrets, removed in f04ea30; purge together with tfplan"
   commits = ["8296c351980c60ed6df6bfb8d2fb139d3c97484f"]
-  paths = [".env"]
