@@ -7,6 +7,7 @@ Uses monkeypatch for settings values.
 from __future__ import annotations
 
 import hashlib
+import threading
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -16,13 +17,16 @@ from freezegun import freeze_time
 
 from src.auth.schemas import TokenPayload
 from src.auth.utils import (
+    _DUMMY_PASSWORD_HASH,
     _now_utc,
     create_access_token,
     create_refresh_token,
     decode_token,
     hash_password,
+    hash_password_async,
     hash_token,
     verify_password,
+    verify_password_async,
 )
 
 # ── Password hashing ─────────────────────────────────────────────────────────
@@ -80,6 +84,45 @@ class TestVerifyPassword:
 
     def test_with_empty_hash_returns_false(self):
         assert verify_password("anything", "") is False
+
+
+class TestAsyncPasswordHelpers:
+    @pytest.mark.asyncio
+    async def test_hash_password_async_offloads(self, monkeypatch):
+        import src.auth.utils as auth_utils
+
+        seen = {}
+
+        def fake_hash(password):
+            seen["thread"] = threading.current_thread()
+            return "hashed"
+
+        monkeypatch.setattr(auth_utils, "hash_password", fake_hash)
+        assert await hash_password_async("pw") == "hashed"
+        assert seen["thread"] is not threading.main_thread()
+
+    @pytest.mark.asyncio
+    async def test_verify_password_async_uses_dummy_for_missing_hash(self, monkeypatch):
+        import src.auth.utils as auth_utils
+
+        seen = {}
+
+        def fake_verify(password, password_hash):
+            seen["hash"] = password_hash
+            seen["thread"] = threading.current_thread()
+            return True
+
+        monkeypatch.setattr(auth_utils, "verify_password", fake_verify)
+        # A matching dummy must never authenticate an unknown account.
+        assert await verify_password_async("pw", None) is False
+        assert seen["hash"] == _DUMMY_PASSWORD_HASH
+        assert seen["thread"] is not threading.main_thread()
+
+    @pytest.mark.asyncio
+    async def test_verify_password_async_returns_real_result(self):
+        h = hash_password("CorrectHorse1")
+        assert await verify_password_async("CorrectHorse1", h) is True
+        assert await verify_password_async("wrong", h) is False
 
 
 # ── Token creation ────────────────────────────────────────────────────────────

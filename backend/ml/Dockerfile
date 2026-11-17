@@ -3,7 +3,7 @@ ARG BASE_IMAGE=nvidia/cuda:12.4.1-runtime-ubuntu22.04
 
 # Stage 1: Rust native module builder
 # Use same Python version as runtime to ensure ABI-compatible wheel (cp314)
-FROM python:3.14-slim AS rust-builder
+FROM python:3.15-slim AS rust-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
@@ -39,7 +39,7 @@ RUN --mount=type=cache,target=/src/target,sharing=locked \
 
 
 # Stage 2: Build Python dependencies with uv
-FROM python:3.14-slim AS builder
+FROM python:3.15-slim AS builder
 
 # Disable .pyc compilation — saves ~30% temp disk during build for 15k files.
 # .pyc is generated lazily on first import; fine for batch training jobs.

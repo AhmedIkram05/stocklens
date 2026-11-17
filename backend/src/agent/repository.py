@@ -103,14 +103,21 @@ async def get_conversation_messages(
     conversation_id: UUID,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
-    """Return all messages for a conversation, ordered by created_at ASC."""
+    """Return the newest *limit* messages, ordered oldest → newest.
+
+    ``id`` is a monotonically increasing bigint, so it is the stable tie-break
+    that ``created_at`` (transaction-start time) cannot provide.
+    """
     rows = await conn.fetch(
         "SELECT id, conversation_id, role, content, tools_used, "
         "reasoning_steps, created_at "
-        "FROM agent_conversations "
-        "WHERE conversation_id = $1::uuid "
-        "ORDER BY created_at ASC "
-        "LIMIT $2",
+        "FROM ("
+        "SELECT id, conversation_id, role, content, tools_used, reasoning_steps, "
+        "created_at, ROW_NUMBER() OVER (ORDER BY id DESC) AS rn "
+        "FROM agent_conversations WHERE conversation_id = $1::uuid"
+        ") ranked "
+        "WHERE rn <= $2 "
+        "ORDER BY id ASC",
         conversation_id,
         limit,
     )

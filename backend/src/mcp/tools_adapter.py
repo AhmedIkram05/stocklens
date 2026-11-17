@@ -28,6 +28,16 @@ _INJECTED = {"user_id", "portfolio_id"}
 
 # Cache of LangChain tools keyed by name
 _TOOLS: dict[str, Any] | None = None
+# Cache of the derived MCP definitions; rebuilding Pydantic schemas per call is
+# the expensive half of tools/list.
+_TOOL_DEFINITIONS: list[dict[str, Any]] | None = None
+
+
+def _reset_tool_cache() -> None:
+    """Drop both caches — for tests that patch ``_load_tools``."""
+    global _TOOLS, _TOOL_DEFINITIONS
+    _TOOLS = None
+    _TOOL_DEFINITIONS = None
 
 
 def _load_tools() -> dict[str, Any]:
@@ -64,6 +74,10 @@ def get_mcp_tools() -> list[dict[str, Any]]:
     Each entry: {name, description, inputSchema}
     inputSchema is JSON Schema with injected fields stripped.
     """
+    global _TOOL_DEFINITIONS
+    if _TOOL_DEFINITIONS is not None:
+        return _TOOL_DEFINITIONS
+
     definitions: list[dict[str, Any]] = []
     for tool in _load_tools().values():
         # LangChain StructuredTool exposes .args_schema (Pydantic) or .args
@@ -96,7 +110,8 @@ def get_mcp_tools() -> list[dict[str, Any]]:
         )
     # Deterministic ordering for stable MCP list_tools
     definitions.sort(key=lambda d: d["name"])
-    return definitions
+    _TOOL_DEFINITIONS = definitions
+    return _TOOL_DEFINITIONS
 
 
 def get_tool_names() -> list[str]:

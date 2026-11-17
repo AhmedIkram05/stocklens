@@ -12,6 +12,7 @@ also have standalone endpoints:
 
 from __future__ import annotations
 
+from decimal import Decimal
 from uuid import UUID
 
 import asyncpg
@@ -30,7 +31,12 @@ from src.holdings.schemas import (
 )
 from src.limiter import limiter
 from src.locks import lock_portfolio, portfolio_write
-from src.market.fx import get_fx_rate_to_gbp, resolve_instrument
+from src.market.fx import (
+    FxRateUnavailableError,
+    InstrumentResolutionError,
+    get_fx_rate_to_gbp,
+    resolve_instrument,
+)
 
 logger = structlog.get_logger()
 
@@ -159,9 +165,17 @@ async def create_holding(
             detail="Portfolio not found",
         )
 
-    # Resolve native currency + today's GBP FX rate for this ticker.
-    currency, _ = await resolve_instrument(body.ticker)
-    fx_rate_to_gbp = await get_fx_rate_to_gbp(currency)
+    # Resolve native currency + today's GBP FX rate for this ticker. Fail
+    # closed: recording an unresolved currency as GBP at rate 1 would persist
+    # a permanently wrong GBP value.
+    try:
+        currency, _ = await resolve_instrument(body.ticker)
+        fx_rate_to_gbp = await get_fx_rate_to_gbp(currency)
+    except (InstrumentResolutionError, FxRateUnavailableError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Currency data unavailable; retry shortly",
+        ) from exc
     average_cost_basis_gbp = body.average_cost_basis * fx_rate_to_gbp
 
     try:
@@ -253,6 +267,33 @@ async def update_holding(
             detail="At least one field must be provided for update",
         )
 
+    # Editing the native cost of a manually-created holding (transaction-backed
+    # holdings are refused below) must re-rate it at today's FX, not at the
+    # rate frozen when the row was created.
+    current_fx: Decimal | None = None
+    resolved_currency: str | None = None
+    if body.average_cost_basis is not None:
+        existing = await _fetch_holding_by_id(holding_id, current_user.id)
+        if existing is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Holding not found",
+            )
+        # Advisory pre-check: reject transaction-backed holdings before the
+        # provider round-trip. The authoritative guard still runs under lock.
+        async with connection_ctx() as conn:
+            await _assert_no_linked_transactions(
+                conn, str(existing["portfolio_id"]), existing["ticker"]
+            )
+        try:
+            resolved_currency, _ = await resolve_instrument(existing["ticker"])
+            current_fx = await get_fx_rate_to_gbp(resolved_currency)
+        except (InstrumentResolutionError, FxRateUnavailableError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Currency data unavailable; retry shortly",
+            ) from exc
+
     set_clauses = []
     params: list = []
     idx = 1
@@ -263,12 +304,27 @@ async def update_holding(
         idx += 1
 
     if body.average_cost_basis is not None:
+        if current_fx is None or resolved_currency is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Currency data unavailable; retry shortly",
+            )
         acb_idx = idx
         set_clauses.append(f"average_cost_basis = ${acb_idx}::numeric")
         params.append(body.average_cost_basis)
         idx += 1
-        # Recompute GBP-normalised cost basis from the new native value.
-        set_clauses.append(f"average_cost_basis_gbp = ${acb_idx}::numeric * fx_rate_to_gbp")
+        gbp_idx = idx
+        set_clauses.append(f"average_cost_basis_gbp = ${gbp_idx}::numeric")
+        params.append(body.average_cost_basis * current_fx)
+        idx += 1
+        rate_idx = idx
+        set_clauses.append(f"fx_rate_to_gbp = ${rate_idx}::numeric")
+        params.append(current_fx)
+        idx += 1
+        curr_idx = idx
+        set_clauses.append(f"currency = ${curr_idx}")
+        params.append(resolved_currency)
+        idx += 1
 
     set_clauses.append("updated_at = now()")
     params.append(holding_id)
@@ -403,6 +459,22 @@ async def update_portfolio_holding(
             detail="At least one field must be provided for update",
         )
 
+    current_fx: Decimal | None = None
+    resolved_currency: str | None = None
+    if body.average_cost_basis is not None:
+        async with connection_ctx() as conn:
+            await _assert_no_linked_transactions(
+                conn, str(existing["portfolio_id"]), existing["ticker"]
+            )
+        try:
+            resolved_currency, _ = await resolve_instrument(existing["ticker"])
+            current_fx = await get_fx_rate_to_gbp(resolved_currency)
+        except (InstrumentResolutionError, FxRateUnavailableError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Currency data unavailable; retry shortly",
+            ) from exc
+
     set_clauses = []
     params: list = []
     idx = 1
@@ -413,12 +485,27 @@ async def update_portfolio_holding(
         idx += 1
 
     if body.average_cost_basis is not None:
+        if current_fx is None or resolved_currency is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Currency data unavailable; retry shortly",
+            )
         acb_idx = idx
         set_clauses.append(f"average_cost_basis = ${acb_idx}::numeric")
         params.append(body.average_cost_basis)
         idx += 1
-        # Recompute GBP-normalised cost basis from the new native value.
-        set_clauses.append(f"average_cost_basis_gbp = ${acb_idx}::numeric * fx_rate_to_gbp")
+        gbp_idx = idx
+        set_clauses.append(f"average_cost_basis_gbp = ${gbp_idx}::numeric")
+        params.append(body.average_cost_basis * current_fx)
+        idx += 1
+        rate_idx = idx
+        set_clauses.append(f"fx_rate_to_gbp = ${rate_idx}::numeric")
+        params.append(current_fx)
+        idx += 1
+        curr_idx = idx
+        set_clauses.append(f"currency = ${curr_idx}")
+        params.append(resolved_currency)
+        idx += 1
 
     set_clauses.append("updated_at = now()")
     params.append(holding_id)
@@ -439,6 +526,12 @@ async def update_portfolio_holding(
             await lock_portfolio(conn, portfolio_id)
             await _assert_no_linked_transactions(conn, str(portfolio_id), existing["ticker"])
             row = await conn.fetchrow(query, *params)
+
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Holding not found",
+        )
 
     logger.info(
         "holding_updated",

@@ -23,6 +23,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -109,7 +110,7 @@ holdings = Table(
     Column("average_cost_basis", Numeric(12, 4), nullable=False),
     Column("currency", String(8), nullable=False, server_default=text("'GBP'")),
     Column("fx_rate_to_gbp", Numeric(18, 10), nullable=False, server_default=text("1.0")),
-    Column("average_cost_basis_gbp", Numeric(12, 4), nullable=True),
+    Column("average_cost_basis_gbp", Numeric(12, 4), nullable=False),
     Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
     Column("updated_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
 )
@@ -135,7 +136,7 @@ transactions = Table(
     Column("total_amount", Numeric(24, 6), nullable=False),
     Column("currency", String(8), nullable=False, server_default=text("'GBP'")),
     Column("fx_rate_to_gbp", Numeric(18, 10), nullable=False, server_default=text("1.0")),
-    Column("total_amount_gbp", Numeric(24, 6), nullable=True),
+    Column("total_amount_gbp", Numeric(24, 6), nullable=False),
     Column("transaction_date", Date(), nullable=False),
     Column("notes", Text()),
     Column(
@@ -187,6 +188,9 @@ receipts = Table(
     Column("line_items", JSONB()),
     Column("receipt_image_s3_key", String(500)),
     Column("scanned_at", DateTime(timezone=True), nullable=False),
+    Column("notes", Text()),
+    Column("transaction_date", Date()),
+    Column("source", String(20), server_default="regex"),
     Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
 )
 
@@ -202,6 +206,55 @@ spending_categories = Table(
     Column("description", String(255)),
     Column("merchant_keywords", JSONB()),
     Column("associated_tickers", JSONB()),
+)
+
+# ---------------------------------------------------------------------------
+# Cash flows — explicit portfolio deposits
+# ---------------------------------------------------------------------------
+
+cash_flows = Table(
+    "cash_flows",
+    target_metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
+    Column(
+        "portfolio_id",
+        UUID(as_uuid=True),
+        ForeignKey("portfolios.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("amount", Numeric(12, 2), nullable=False),
+    Column("source", String(50), nullable=False, server_default="receipt"),
+    Column("source_id", UUID(as_uuid=True), nullable=True),
+    Column("notes", Text(), nullable=True),
+    Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
+)
+
+# ---------------------------------------------------------------------------
+# Cascade decisions — per-receipt OCR cascade observability
+# ---------------------------------------------------------------------------
+
+cascade_decisions = Table(
+    "cascade_decisions",
+    target_metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
+    Column(
+        "receipt_id",
+        UUID(as_uuid=True),
+        ForeignKey("receipts.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("raw_text_hash", String(16), nullable=False),
+    Column("regex_confidence", REAL(), nullable=False),
+    Column("llm_confidence", REAL(), nullable=True),
+    Column("chosen_source", String(20), nullable=False),
+    Column("field_confidences", JSONB(), nullable=True),
+    Column("discrepancies", JSONB(), nullable=True),
+    Column("processing_time_ms", Integer(), nullable=False),
+    Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
+    CheckConstraint(
+        "chosen_source IN ('regex', 'cascade', 'pending_llm', 'degraded', 'failed')",
+        name="chk_cascade_decisions_source",
+    ),
 )
 
 # ---------------------------------------------------------------------------
@@ -254,6 +307,8 @@ conversations = Table(
     ),
     Column("title", Text(), nullable=True),  # auto-generated from first user message
     Column("message_count", Integer(), server_default=text("0"), nullable=False),
+    Column("user_rating", Text(), nullable=True),
+    Column("user_rating_comment", Text(), nullable=True),
     Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
     Column("updated_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
 )
@@ -319,6 +374,13 @@ Index("idx_refresh_tokens_hash", refresh_tokens.c.token_hash, unique=True)
 # Transactions — spending_category lookup
 Index("idx_transactions_spending_category", transactions.c.spending_category_id)
 
+# Cash flows — portfolio + created_at
+Index("idx_cash_flows_portfolio_date", cash_flows.c.portfolio_id, cash_flows.c.created_at)
+
+# Cascade decisions — receipt + hash lookups
+Index("idx_cascade_decisions_receipt", cascade_decisions.c.receipt_id)
+Index("idx_cascade_decisions_hash", cascade_decisions.c.raw_text_hash)
+
 # Spending categories — GIN index on merchant_keywords JSONB
 Index(
     "idx_categories_keywords",
@@ -376,6 +438,13 @@ drift_metrics = Table(
     Column("report_s3_key", String(500), nullable=True),
     Column("details", JSONB, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint(
+        "drift_run_id",
+        "ticker",
+        "metric_type",
+        "feature_name",
+        name="uq_drift_metrics_run_ticker_metric_feature",
+    ),
 )
 
 Index("idx_drift_metrics_run", drift_metrics.c.drift_run_id)
