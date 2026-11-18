@@ -26,9 +26,16 @@ import strawberry
 import structlog
 from fastapi import HTTPException
 from graphql.error import GraphQLError
+from strawberry.extensions import (
+    MaxAliasesLimiter,
+    ParserCache,
+    QueryDepthLimiter,
+    ValidationCache,
+)
 
 from src.auth.utils import decode_token
 from src.cache.redis import get_redis, is_token_blacklisted
+from src.graphql.extensions import QueryTimeout
 from src.graphql.streaming import (
     _fetch_with_timeout,
     subscribe_portfolio,
@@ -56,6 +63,12 @@ from src.performance.schemas import (
 from src.portfolios.queries import fetch_portfolio_by_id, fetch_portfolios_from_db
 
 logger = structlog.get_logger(__name__)
+
+# Request-scoped limits. Subscriptions are exempt from the timeout: they are
+# long-lived streams, not request work.
+GRAPHQL_MAX_DEPTH = 10
+GRAPHQL_MAX_ALIASES = 50
+GRAPHQL_QUERY_TIMEOUT_SECONDS = 30
 
 
 def _f(value: Any) -> float | None:
@@ -576,7 +589,18 @@ class Subscription:
             unsubscribe_portfolio(pid)
 
 
-schema = strawberry.Schema(query=Query, subscription=Subscription)
+schema = strawberry.Schema(
+    query=Query,
+    subscription=Subscription,
+    extensions=[
+        lambda: QueryDepthLimiter(max_depth=GRAPHQL_MAX_DEPTH),
+        lambda: MaxAliasesLimiter(max_alias_count=GRAPHQL_MAX_ALIASES),
+        lambda: QueryTimeout(seconds=GRAPHQL_QUERY_TIMEOUT_SECONDS),
+        # Mobile clients resend identical documents — cache parse + validation.
+        lambda: ParserCache(),
+        lambda: ValidationCache(),
+    ],
+)
 
 # Re-exported for tests (patch targets live in this namespace).
 __all__ = [
