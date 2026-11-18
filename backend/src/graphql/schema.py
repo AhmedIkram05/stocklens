@@ -583,7 +583,8 @@ class Subscription:
                 first = await get_portfolio_valuation(pid, user_id)
             except HTTPException:
                 raise GraphQLError("Forbidden")
-            yield _to_portfolio_valuation(first)
+            if first.data_quality == "complete":
+                yield _to_portfolio_valuation(first)
             async for message in pubsub.listen():
                 if message.get("type") != "message":
                     continue
@@ -594,7 +595,10 @@ class Subscription:
                     raise GraphQLError(payload[PORTFOLIO_STREAM_ERROR])
                 # Re-check the token each tick: expiry/blacklist closes the stream.
                 await _validate_ws_token(token)
-                yield _to_portfolio_valuation(PortfolioPerformanceResponse.model_validate(payload))
+                valuation = PortfolioPerformanceResponse.model_validate(payload)
+                if valuation.data_quality != "complete":
+                    continue
+                yield _to_portfolio_valuation(valuation)
         finally:
             try:
                 if pubsub is not None:

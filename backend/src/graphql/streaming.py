@@ -70,12 +70,14 @@ async def _fetch_with_timeout(symbol: str) -> dict:
         return await get_quote(symbol)
 
 
-async def _safe_publish(redis, channel: str, payload: str) -> None:
-    """A publish failure must not abort the rest of the tick."""
+async def _safe_publish(redis, channel: str, payload: str) -> bool:
+    """Publish without aborting the tick; returns whether it landed."""
     try:
         await redis.publish(channel, payload)
+        return True
     except Exception as exc:
         logger.warning("pubsub_publish_failed", channel=channel, error=str(exc))
+        return False
 
 
 async def _publish_portfolio(
@@ -87,13 +89,22 @@ async def _publish_portfolio(
             # Ownership is re-checked inside get_portfolio_valuation.
             async with asyncio.timeout(POLL_FETCH_TIMEOUT_SECONDS):
                 valuation = await get_portfolio_valuation(portfolio_id, user_id)
-        except HTTPException:
-            # Ownership lost (transferred/deleted): terminate the stream and
-            # stop paying for this subscription on every tick.
-            _portfolio_subscribers.pop((portfolio_id, user_id), None)
-            await _safe_publish(
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                logger.warning(
+                    "portfolio_valuation_http_error",
+                    portfolio_id=portfolio_id,
+                    status=exc.status_code,
+                )
+                return
+            # Ownership lost (transferred/deleted): terminate the stream. Only
+            # drop the subscription once the sentinel actually reached Redis,
+            # otherwise the next tick retries.
+            published = await _safe_publish(
                 redis, channel, json.dumps({PORTFOLIO_STREAM_ERROR: "Portfolio not found"})
             )
+            if published:
+                _portfolio_subscribers.pop((portfolio_id, user_id), None)
             return
         except Exception as exc:
             logger.warning(
@@ -104,9 +115,13 @@ async def _publish_portfolio(
             )
             return
 
-    if valuation.total_holdings and valuation.total_market_value is None:
-        # Provider outage: publishing zeros would wipe a good valuation.
-        logger.warning("portfolio_valuation_unpriced", portfolio_id=portfolio_id)
+    if valuation.data_quality != "complete":
+        # Partial pricing would publish an understated total over a good one.
+        logger.warning(
+            "portfolio_valuation_incomplete",
+            portfolio_id=portfolio_id,
+            data_quality=valuation.data_quality,
+        )
         return
 
     await _safe_publish(redis, channel, json.dumps(valuation.model_dump(mode="json")))

@@ -376,6 +376,37 @@ async def test_portfolio_valuation_replay_and_tick(_ws_token) -> None:
     assert (PID, uid) not in _portfolio_subscribers  # cleanup drained the refcount
 
 
+async def test_portfolio_valuation_revalidates_token_each_tick(_ws_token) -> None:
+    """An expired/blacklisted token closes an already-open stream."""
+    uid = decode_token(_ws_token).sub
+    channel = f"portfolio:stream:{PID}:{uid}"
+    tick = _canned_valuation(1300.0).model_dump(mode="json")
+    pubsub = _FakePubSub(
+        messages=[{"type": "message", "channel": channel, "data": json.dumps(tick)}]
+    )
+    gen = Subscription().portfolio_valuation(_authed_info(_ws_token), PID)
+    with (
+        patch("src.graphql.schema.get_redis", new=AsyncMock(return_value=_FakeRedis(pubsub))),
+        # First call authenticates; the per-tick re-check sees a revoked token.
+        patch(
+            "src.graphql.schema.is_token_blacklisted",
+            new=AsyncMock(side_effect=[False, True]),
+        ),
+        patch(
+            "src.graphql.schema.fetch_portfolio_by_id",
+            new=AsyncMock(return_value={"id": PID}),
+        ),
+        patch(
+            "src.graphql.schema.get_portfolio_valuation",
+            new=AsyncMock(return_value=_canned_valuation(1200.0)),
+        ),
+    ):
+        await anext(gen)  # replay
+        with pytest.raises(GraphQLError, match="Forbidden"):
+            await anext(gen)
+    assert (PID, uid) not in _portfolio_subscribers
+
+
 async def test_portfolio_valuation_terminates_when_ownership_is_lost(_ws_token) -> None:
     """The poller's sentinel ends the stream instead of leaving stale data open."""
     uid = decode_token(_ws_token).sub
@@ -517,22 +548,43 @@ async def test_poller_tick_ownership_lost_sends_error_and_drops() -> None:
     assert _portfolio_subscribers == {}  # dead subscription no longer polled
 
 
-async def test_poller_tick_skips_unpriced_valuation() -> None:
-    """A provider outage must not publish a zero valuation over a good one."""
+async def test_poller_tick_skips_incomplete_valuation() -> None:
+    """A partial valuation would publish an understated total over a good one."""
     subscribe_portfolio(PID, "user-1")
-    unpriced = _canned_valuation(0.0, total_holdings=2).model_copy(
-        update={"total_market_value": None}
+    partial = _canned_valuation(1200.0, total_holdings=2).model_copy(
+        update={"data_quality": "partial"}
     )
     fake = _FakeRedis(_FakePubSub())
     with (
         patch(
             "src.graphql.streaming.get_portfolio_valuation",
-            new=AsyncMock(return_value=unpriced),
+            new=AsyncMock(return_value=partial),
         ),
         patch("src.graphql.streaming.get_redis", new=AsyncMock(return_value=fake)),
     ):
         await _poller_tick()
     assert fake.published == []
+
+
+async def test_poller_tick_keeps_entry_when_error_publish_fails() -> None:
+    """If the terminal sentinel cannot be delivered, retry on the next tick."""
+    subscribe_portfolio(PID, "user-1")
+
+    class _DeadRedis(_FakeRedis):
+        async def publish(self, channel: str, payload: str) -> int:
+            raise RuntimeError("redis down")
+
+    with (
+        patch(
+            "src.graphql.streaming.get_portfolio_valuation",
+            new=AsyncMock(side_effect=HTTPException(status_code=404, detail="Portfolio not found")),
+        ),
+        patch(
+            "src.graphql.streaming.get_redis", new=AsyncMock(return_value=_DeadRedis(_FakePubSub()))
+        ),
+    ):
+        await _poller_tick()
+    assert (PID, "user-1") in _portfolio_subscribers
 
 
 async def test_poller_tick_publish_failure_does_not_abort_others() -> None:
