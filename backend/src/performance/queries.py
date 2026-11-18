@@ -36,6 +36,7 @@ from src.performance.calculations import (
     _sorted_price_dates,
     align_daily_return_series,
     compute_benchmark_comparison,
+    compute_live_valuation,
     compute_portfolio_performance,
 )
 from src.performance.schemas import (
@@ -482,6 +483,43 @@ async def get_portfolio_performance(
         enable_twr=settings.ENABLE_TWR,
         live_quotes=live_quotes,
         fx_rates=fx_rates,
+    )
+
+
+async def get_portfolio_valuation(
+    portfolio_id: str,
+    user_id: str,
+    live_quotes: Optional[dict[str, tuple[Decimal, Decimal]]] = None,
+) -> PortfolioPerformanceResponse:
+    """Live valuation for the ``portfolioValuation`` subscription.
+
+    Requires the portfolio to belong to *user_id*. Reuses ``get_holdings`` and
+    the shared valuation math; skips OHLCV/TWR work that a 60s tick cannot
+    afford. ``live_quotes`` may be supplied by a caller that already fetched
+    them, otherwise they are fetched here (Redis-cached 60s).
+    """
+    portfolio = await verify_portfolio_ownership(portfolio_id, user_id)
+    if portfolio is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Portfolio not found",
+        )
+
+    holdings = await get_holdings(portfolio_id)
+    free_cash = await get_free_cash_balance(portfolio_id)
+    tickers = sorted({h["ticker"] for h in holdings})
+
+    if live_quotes is None:
+        live_quotes = await fetch_live_quotes(tickers) if tickers else {}
+    fx_rates = await current_fx_rates(holdings) if holdings else {}
+
+    return compute_live_valuation(
+        portfolio_id=portfolio_id,
+        portfolio_name=portfolio["name"],
+        holdings_data=holdings,
+        live_quotes=live_quotes,
+        fx_rates=fx_rates,
+        free_cash_balance=free_cash,
     )
 
 

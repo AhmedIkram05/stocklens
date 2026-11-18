@@ -1,10 +1,12 @@
 # StockLens GraphQL schema — SDL mirror of backend/src/graphql/schema.py
 #
-# Codegen source (CI-stable, no live introspection). Sync rule: any schema.py
-# change → regenerate via `print(schema.as_str())` + recommit both.
-# Phase 6 drift check: diff this file against live introspection output.
+# Codegen source (CI-stable, no live introspection). Any schema.py change must be
+# regenerated with `print(schema.as_str())` and committed together with
+# generated.ts. Guarded by backend/tests/test_graphql_schema_sync.py and the
+# "GraphQL codegen drift" CI step.
 #
-# Phase 3: full Query SDL (query-only; Phase 4 appends Subscription).
+# Query = read facade. Subscriptions: marketQuote (per ticker) and
+# portfolioValuation (server-computed portfolio totals + holdings).
 
 type BenchmarkComparison {
   portfolioId: ID!
@@ -38,14 +40,10 @@ type CumulativeReturn {
   value: Float!
 }
 
-"""
-Date (isoformat)
-"""
+"""Date (isoformat)"""
 scalar Date
 
-"""
-Date with time (isoformat)
-"""
+"""Date with time (isoformat)"""
 scalar DateTime
 
 type Holding {
@@ -84,11 +82,7 @@ type Portfolio {
   transactions: [Transaction!]!
   cashFlows: [CashFlow!]!
   performance(startDate: Date = null, endDate: Date = null): PortfolioPerformance!
-  benchmark(
-    benchmark: String! = "SPY"
-    startDate: Date = null
-    endDate: Date = null
-  ): BenchmarkComparison!
+  benchmark(benchmark: String! = "SPY", startDate: Date = null, endDate: Date = null): BenchmarkComparison!
 }
 
 type PortfolioPerformance {
@@ -106,6 +100,22 @@ type PortfolioPerformance {
   twrStartDate: Date
   twrEndDate: Date
   twrMethodology: String!
+  holdings: [HoldingPerformance!]!
+  totalHoldings: Int!
+  dataQuality: String!
+  calculatedAt: DateTime!
+}
+
+type PortfolioValuation {
+  portfolioId: ID!
+  portfolioName: String!
+  totalMarketValue: Float
+  totalCostBasis: Float!
+  totalUnrealisedPl: Float
+  totalUnrealisedPlPct: Float
+  dayChange: Float
+  dayChangePct: Float
+  freeCashBalance: Float!
   holdings: [HoldingPerformance!]!
   totalHoldings: Int!
   dataQuality: String!
@@ -132,6 +142,7 @@ type Quote {
 
 type Subscription {
   marketQuote(ticker: String!): Quote!
+  portfolioValuation(portfolioId: ID!): PortfolioValuation!
 }
 
 type Transaction {

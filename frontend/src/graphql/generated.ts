@@ -121,6 +121,22 @@ export type PortfolioPerformance = {
   twrStartDate: Maybe<Scalars['Date']['output']>;
 };
 
+export type PortfolioValuation = {
+  calculatedAt: Scalars['DateTime']['output'];
+  dataQuality: Scalars['String']['output'];
+  dayChange: Maybe<Scalars['Float']['output']>;
+  dayChangePct: Maybe<Scalars['Float']['output']>;
+  freeCashBalance: Scalars['Float']['output'];
+  holdings: Array<HoldingPerformance>;
+  portfolioId: Scalars['ID']['output'];
+  portfolioName: Scalars['String']['output'];
+  totalCostBasis: Scalars['Float']['output'];
+  totalHoldings: Scalars['Int']['output'];
+  totalMarketValue: Maybe<Scalars['Float']['output']>;
+  totalUnrealisedPl: Maybe<Scalars['Float']['output']>;
+  totalUnrealisedPlPct: Maybe<Scalars['Float']['output']>;
+};
+
 export type Query = {
   marketQuote: Quote;
   portfolio: Maybe<Portfolio>;
@@ -149,10 +165,15 @@ export type Quote = {
 
 export type Subscription = {
   marketQuote: Quote;
+  portfolioValuation: PortfolioValuation;
 };
 
 export type SubscriptionMarketQuoteArgs = {
   ticker: Scalars['String']['input'];
+};
+
+export type SubscriptionPortfolioValuationArgs = {
+  portfolioId: Scalars['ID']['input'];
 };
 
 export type Transaction = {
@@ -227,4 +248,39 @@ export type PortfolioDetailQuery = {
       }>;
     };
   } | null;
+};
+
+export type PortfolioValuationSubscriptionVariables = Exact<{
+  portfolioId: string | number;
+}>;
+
+export type PortfolioValuationSubscription = {
+  portfolioValuation: {
+    portfolioId: string;
+    portfolioName: string;
+    totalMarketValue: number | null;
+    totalCostBasis: number;
+    totalUnrealisedPl: number | null;
+    totalUnrealisedPlPct: number | null;
+    dayChange: number | null;
+    dayChangePct: number | null;
+    freeCashBalance: number;
+    totalHoldings: number;
+    dataQuality: string;
+    calculatedAt: string;
+    holdings: Array<{
+      ticker: string;
+      shares: number;
+      averageCostBasis: number;
+      currentPrice: number | null;
+      currency: string;
+      marketValue: number | null;
+      costBasis: number;
+      unrealisedPl: number | null;
+      unrealisedPlPct: number | null;
+      dayChange: number | null;
+      dayChangePct: number | null;
+      portfolioWeightPct: number | null;
+    }>;
+  };
 };

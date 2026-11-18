@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -20,12 +21,16 @@ from src.graphql.schema import Subscription
 from src.graphql.streaming import (
     _poller_loop,
     _poller_tick,
+    _portfolio_subscribers,
     _symbol_subscribers,
     start_quote_poller,
     stop_quote_poller,
+    subscribe_portfolio,
     subscribe_symbol,
+    unsubscribe_portfolio,
     unsubscribe_symbol,
 )
+from src.performance.schemas import PortfolioPerformanceResponse
 
 CANNED_QUOTE = {
     "ticker": "AAPL",
@@ -42,14 +47,18 @@ CANNED_QUOTE = {
 
 @pytest.fixture(autouse=True)
 def _clean_registry():
-    """Snapshot/restore the refcount registry — resolver tests subscribe too."""
+    """Snapshot/restore the refcount registries — resolver tests subscribe too."""
     saved = dict(_symbol_subscribers)
+    saved_portfolios = dict(_portfolio_subscribers)
     _symbol_subscribers.clear()
+    _portfolio_subscribers.clear()
     try:
         yield
     finally:
         _symbol_subscribers.clear()
         _symbol_subscribers.update(saved)
+        _portfolio_subscribers.clear()
+        _portfolio_subscribers.update(saved_portfolios)
 
 
 class _FakePubSub:
@@ -293,3 +302,159 @@ async def test_poller_loop_ticks_and_survives_errors() -> None:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
     assert calls >= 2
+
+
+def _canned_valuation(market_value: float = 1200.0) -> PortfolioPerformanceResponse:
+    return PortfolioPerformanceResponse(
+        portfolio_id="pid-1",
+        portfolio_name="Retirement",
+        total_market_value=Decimal(str(market_value)),
+        total_cost_basis=Decimal("1000"),
+        total_unrealised_pl=Decimal("200"),
+        total_unrealised_pl_pct=Decimal("20"),
+        day_change=Decimal("20"),
+        day_change_pct=Decimal("1.7"),
+        free_cash_balance=Decimal("0"),
+        twr=None,
+        twr_annualised=None,
+        twr_start_date=None,
+        twr_end_date=None,
+        twr_methodology="live-valuation",
+        holdings=[],
+        total_holdings=0,
+        data_quality="complete",
+        calculated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+
+
+async def test_portfolio_valuation_replay_and_tick(_ws_token) -> None:
+    """First yield == server compute; later yields == parsed pub/sub valuations."""
+    tick = _canned_valuation(1300.0).model_dump(mode="json")
+    pubsub = _FakePubSub(
+        messages=[
+            {"type": "subscribe", "channel": "portfolio:stream:pid-1"},
+            {"type": "message", "channel": "portfolio:stream:pid-1", "data": json.dumps(tick)},
+        ]
+    )
+    gen = Subscription().portfolio_valuation(_authed_info(_ws_token), "pid-1")
+    get_redis_patch, blacklist_patch = _patch_ws_redis(pubsub)
+    with (
+        get_redis_patch,
+        blacklist_patch,
+        patch(
+            "src.graphql.schema.fetch_portfolio_by_id",
+            new=AsyncMock(return_value={"id": "pid-1"}),
+        ),
+        patch(
+            "src.graphql.schema.get_portfolio_valuation",
+            new=AsyncMock(return_value=_canned_valuation(1200.0)),
+        ),
+    ):
+        first = await anext(gen)
+        assert pubsub.subscribed == ["portfolio:stream:pid-1"]
+        assert float(first.total_market_value) == 1200.0
+        second = await anext(gen)
+        assert float(second.total_market_value) == 1300.0
+        with pytest.raises(StopAsyncIteration):
+            await anext(gen)
+    assert pubsub.unsubscribed == ["portfolio:stream:pid-1"]
+    assert pubsub.closed
+    assert "pid-1" not in _portfolio_subscribers  # cleanup drained the refcount
+
+
+async def test_portfolio_valuation_rejects_unowned_portfolio(_ws_token) -> None:
+    """Ownership is verified before subscribing — no data for other users."""
+    gen = Subscription().portfolio_valuation(_authed_info(_ws_token), "pid-x")
+    get_redis_patch, blacklist_patch = _patch_ws_redis(_FakePubSub())
+    with (
+        get_redis_patch,
+        blacklist_patch,
+        patch(
+            "src.graphql.schema.fetch_portfolio_by_id",
+            new=AsyncMock(return_value=None),
+        ),
+    ):
+        with pytest.raises(GraphQLError, match="Forbidden"):
+            await anext(gen)
+    assert _portfolio_subscribers == {}
+
+
+@pytest.mark.parametrize(
+    "context",
+    [
+        {},
+        {"connection_params": {}},
+        {"connection_params": {"authToken": ""}},
+        {"connection_params": {"authToken": "garbage"}},
+        {"connection_params": {"authToken": "Bearer garbage"}},
+    ],
+)
+async def test_portfolio_valuation_ws_auth_rejects_missing_or_invalid_token(context) -> None:
+    gen = Subscription().portfolio_valuation(SimpleNamespace(context=context), "pid-1")
+    with pytest.raises(GraphQLError, match="Forbidden"):
+        await anext(gen)
+    assert _portfolio_subscribers == {}
+
+
+def test_portfolio_unsubscribe_refcount() -> None:
+    subscribe_portfolio("pid-1", "user-1")
+    subscribe_portfolio("pid-1", "user-1")
+    assert _portfolio_subscribers == {"pid-1": ("user-1", 2)}
+    unsubscribe_portfolio("pid-1")
+    assert _portfolio_subscribers == {"pid-1": ("user-1", 1)}
+    unsubscribe_portfolio("pid-1")
+    assert _portfolio_subscribers == {}
+    unsubscribe_portfolio("pid-1")  # unknown portfolio: no KeyError
+    assert _portfolio_subscribers == {}
+
+
+async def test_poller_tick_publishes_portfolio_valuation() -> None:
+    subscribe_portfolio("pid-1", "user-1")
+    fake = _FakeRedis(_FakePubSub())
+    with (
+        patch(
+            "src.graphql.streaming.get_portfolio_valuation",
+            new=AsyncMock(return_value=_canned_valuation(1200.0)),
+        ),
+        patch("src.graphql.streaming.get_redis", new=AsyncMock(return_value=fake)),
+    ):
+        await _poller_tick()
+    assert [channel for channel, _ in fake.published] == ["portfolio:stream:pid-1"]
+    assert json.loads(fake.published[0][1])["total_market_value"] == 1200.0
+
+
+async def test_poller_tick_skips_failed_portfolio() -> None:
+    """A DB/valuation failure must not stop other portfolios or raise."""
+    subscribe_portfolio("pid-1", "user-1")
+    fake = _FakeRedis(_FakePubSub())
+    with (
+        patch(
+            "src.graphql.streaming.get_portfolio_valuation",
+            new=AsyncMock(side_effect=RuntimeError("db down")),
+        ),
+        patch("src.graphql.streaming.get_redis", new=AsyncMock(return_value=fake)),
+    ):
+        await _poller_tick()
+    assert fake.published == []
+
+
+async def test_poller_tick_handles_symbols_and_portfolios() -> None:
+    subscribe_symbol("AAPL")
+    subscribe_portfolio("pid-1", "user-1")
+    fake = _FakeRedis(_FakePubSub())
+    with (
+        patch(
+            "src.graphql.streaming.get_quote",
+            new=AsyncMock(return_value=dict(CANNED_QUOTE)),
+        ),
+        patch(
+            "src.graphql.streaming.get_portfolio_valuation",
+            new=AsyncMock(return_value=_canned_valuation(1200.0)),
+        ),
+        patch("src.graphql.streaming.get_redis", new=AsyncMock(return_value=fake)),
+    ):
+        await _poller_tick()
+    assert {channel for channel, _ in fake.published} == {
+        "quote:stream:AAPL",
+        "portfolio:stream:pid-1",
+    }
