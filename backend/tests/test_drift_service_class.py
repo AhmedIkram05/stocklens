@@ -16,6 +16,7 @@ from src.drift.service import (
     compute_ks_statistic,
     compute_prediction_distribution,
     compute_psi,
+    extract_mean_vectors,
 )
 
 
@@ -439,3 +440,19 @@ class TestFeatureNames:
         ]
         for e in expected:
             assert e in FEATURE_NAMES
+
+
+class TestExtractMeanVectors:
+    """Legacy rows may hold a JSON string (double-encoded before the fix)."""
+
+    def test_dict_features(self):
+        logs = [{"features": {"stats": {"means": [1.0, 2.0]}}}]
+        assert extract_mean_vectors(logs) == [[1.0, 2.0]]
+
+    def test_double_encoded_features(self):
+        logs = [{"features": '{"stats": {"means": [3.0, 4.0]}}'}]
+        assert extract_mean_vectors(logs) == [[3.0, 4.0]]
+
+    def test_missing_or_corrupt_features(self):
+        logs = [{}, {"features": None}, {"features": "not-json"}]
+        assert extract_mean_vectors(logs) == []

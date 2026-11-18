@@ -325,7 +325,6 @@ async def seed_categories() -> int:
     """Insert seed categories into ``spending_categories`` if not already present.
     Returns the number of rows inserted.
     """
-    import json
 
     from src.database.connection import connection_ctx
 
@@ -358,8 +357,8 @@ async def seed_categories() -> int:
                     "VALUES ($1, $2, $3::jsonb, $4::jsonb)",
                     cat["name"],
                     cat["description"],
-                    json.dumps(cat["merchant_keywords"]),
-                    json.dumps(cat["associated_tickers"]),
+                    cat["merchant_keywords"],
+                    cat["associated_tickers"],
                 )
                 count += 1
     return count

@@ -9,7 +9,6 @@ because the thread pool limits concurrent DB connections to max_workers (2).
 from __future__ import annotations
 
 import asyncio
-import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -207,10 +206,10 @@ async def _log_prediction(
                 model_version,
                 prediction,
                 confidence,
-                json.dumps(probabilities),
-                json.dumps(features_payload),
-                json.dumps(feature_stats) if feature_stats else None,
-                json.dumps(raw_names_payload),
+                probabilities,
+                features_payload,
+                feature_stats,
+                raw_names_payload,
             )
     except Exception as exc:
         # Log but never raise — the prediction response has already been sent

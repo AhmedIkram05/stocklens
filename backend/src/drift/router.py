@@ -31,7 +31,7 @@ from src.drift.schemas import (
     DriftRunRequest,
     DriftRunResponse,
 )
-from src.drift.service import FEATURE_NAMES, DriftDetector
+from src.drift.service import FEATURE_NAMES, DriftDetector, decode_jsonb_dict
 from src.drift.utils import build_s3_key, generate_presigned_url, upload_report_to_s3
 
 logger = structlog.get_logger()
@@ -255,8 +255,8 @@ def _build_current_dataframe(
 
     for ticker, logs in prediction_logs.items():
         for entry in logs:
-            features_data = entry.get("features", {}) or {}
-            stats = features_data.get("stats")
+            features_data = decode_jsonb_dict(entry.get("features"))
+            stats = decode_jsonb_dict(features_data.get("stats"))
             if stats and "means" in stats:
                 row: dict[str, float] = {}
                 for i, value in enumerate(stats["means"]):
