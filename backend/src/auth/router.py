@@ -64,6 +64,11 @@ async def _store_refresh_token(user_id: str, jti: str, exp: int) -> None:
     token_hash = hash_token(jti, user_id)
     async with connection_ctx() as conn:
         await conn.execute(
+            "DELETE FROM refresh_tokens "
+            "WHERE user_id = $1::uuid AND expires_at < now() - interval '1 day'",
+            user_id,
+        )
+        await conn.execute(
             """
             INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
             VALUES ($1::uuid, $2, to_timestamp($3))
@@ -292,6 +297,13 @@ async def refresh(request: Request, body: RefreshRequest) -> TokenPair:
         )
 
     user_id = payload.sub
+    async with connection_ctx() as conn:
+        active = await conn.fetchval("SELECT is_active FROM users WHERE id = $1::uuid", user_id)
+    if not active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account is inactive",
+        )
 
     # Blacklist old refresh JTI in Redis
     await blacklist_token(payload.jti, 86400)  # 24h TTL (well past token expiry)

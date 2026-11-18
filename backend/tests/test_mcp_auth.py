@@ -771,6 +771,8 @@ class _FakeRefreshConn:
                 return None  # rowcount 0 → reuse path
             self.tokens[token_hash] = True
             return True  # rowcount 1 → mint path
+        if "SELECT is_active FROM users" in query:
+            return True
         raise AssertionError(f"unexpected fetchval: {query[:60]}")
 
     async def fetchrow(self, query, *args):
@@ -785,6 +787,8 @@ class _FakeRefreshConn:
         if "UPDATE refresh_tokens SET revoked = true WHERE user_id" in query:
             self.revoked_all_for.append(args[0])
             return "UPDATE 0"
+        if "DELETE FROM refresh_tokens" in query:
+            return "DELETE 0"
         if "INSERT INTO refresh_tokens" in query:
             self.new_inserts.append(args)
             return "INSERT 0 1"

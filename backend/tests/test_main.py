@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from httpx import AsyncClient
 
 from src.main import app
 
@@ -234,9 +235,8 @@ class TestLifespan:
 class TestHealthEndpoint:
     """Test /health endpoint."""
 
-    def test_health_endpoint_exists(self):
-        client = TestClient(app)
-        response = client.get("/health")
+    async def test_health_endpoint_exists(self, client: AsyncClient):
+        response = await client.get("/health")
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ok"

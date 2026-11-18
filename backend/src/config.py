@@ -1,6 +1,3 @@
-import os
-from pathlib import Path
-
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
@@ -133,16 +130,5 @@ class Settings(BaseSettings):
                 self.REDIS_URL = f"rediss://{self.REDIS_HOST}:{self.REDIS_PORT}/0"
         return self
 
-
-# ── .env guard — fail fast if .env is missing in non-dev environments ──
-# Also treat "dev" as a development env (Terraform uses "dev" as env name).
-
-env_path = Path(".env")
-_env = os.environ.get("ENVIRONMENT", "development")
-if not env_path.exists() and _env not in ("development", "dev", "test"):
-    raise RuntimeError(
-        f".env file not found at {env_path.resolve()}. "
-        "Create one from .env.example or set all env vars directly."
-    )
 
 settings = Settings()

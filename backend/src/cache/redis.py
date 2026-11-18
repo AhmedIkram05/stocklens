@@ -24,9 +24,9 @@ async def get_redis() -> Redis:
     if _pool is None:
         url_kwargs = parse_url(settings.REDIS_URL)
         if settings.REDIS_URL.startswith("rediss://"):
-            # ElastiCache uses AWS-managed self-signed certs —
-            # skip client-side verification (cannot pin a cert that rotates).
-            url_kwargs["ssl_cert_reqs"] = None
+            # ElastiCache leaf certs rotate but chain to Amazon Trust Services,
+            # which is in the system CA store.
+            url_kwargs["ssl_cert_reqs"] = "required"
         _pool = ConnectionPool(**url_kwargs)
         logger.info("redis_pool_initialised", url=settings.REDIS_URL)
     return Redis(connection_pool=_pool)
@@ -72,23 +72,3 @@ async def is_token_blacklisted(jti: str) -> bool:
     except Exception:
         logger.warning("redis_blacklist_check_failed", jti=jti[:8], exc_info=True)
         return False
-
-
-# ── Rate-limit counter helpers (optional, slowapi usually handles this) ──────
-
-
-async def increment_rate_limit(key: str, window: int) -> int:
-    """Increment a sliding-window counter and return the current count."""
-    r = await get_redis()
-    pipe = r.pipeline()
-    pipe.incr(f"rl:{key}")
-    pipe.expire(f"rl:{key}", window)
-    result = await pipe.execute()
-    return int(result[0])
-
-
-async def get_rate_limit(key: str) -> int:
-    """Return the current count for a rate-limit key (0 if absent)."""
-    r = await get_redis()
-    val = await r.get(f"rl:{key}")
-    return int(val) if val is not None else 0

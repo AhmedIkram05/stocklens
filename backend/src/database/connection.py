@@ -6,6 +6,7 @@ All runtime queries use raw asyncpg — no SQLAlchemy ORM at query time.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -13,6 +14,11 @@ from typing import AsyncIterator
 import asyncpg
 
 pool: asyncpg.Pool | None = None
+
+
+class DatabaseUnavailableError(RuntimeError):
+    """The pool cannot serve a connection right now."""
+
 
 # JSONB codec so ``SELECT metrics FROM model_registry`` returns ``dict``
 # instead of a raw JSON string.  Registered on every connection in the pool.
@@ -41,6 +47,7 @@ async def init_pool(dsn: str, min_size: int = 2, max_size: int = 10) -> None:
         _normalise_dsn(dsn),
         min_size=min_size,
         max_size=max_size,
+        command_timeout=10,
         init=_init_jsonb_codec,
     )
 
@@ -54,8 +61,11 @@ async def get_conn() -> asyncpg.Connection:
     this function directly to ensure connections are always returned.
     """
     if pool is None:
-        raise RuntimeError("Database pool not initialised")
-    return await pool.acquire()
+        raise DatabaseUnavailableError("Database pool not initialised")
+    try:
+        return await asyncio.wait_for(pool.acquire(), timeout=5)
+    except TimeoutError:
+        raise DatabaseUnavailableError("Database connection pool exhausted") from None
 
 
 async def release_conn(conn: asyncpg.Connection) -> None:
@@ -78,6 +88,12 @@ async def connection_ctx() -> AsyncIterator[asyncpg.Connection]:
         yield conn
     finally:
         await release_conn(conn)
+
+
+async def ping(timeout: float = 2.0) -> None:
+    """Raise if the pool cannot serve a trivial query."""
+    async with connection_ctx() as conn:
+        await asyncio.wait_for(conn.fetchval("SELECT 1"), timeout=timeout)
 
 
 async def close_pool() -> None:

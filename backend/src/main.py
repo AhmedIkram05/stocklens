@@ -13,11 +13,16 @@ import structlog
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
-from starlette.responses import PlainTextResponse
+from starlette.responses import JSONResponse, PlainTextResponse
 
 from src.auth.dependencies import require_active_user
 from src.config import settings
-from src.database.connection import close_pool, init_pool
+from src.database.connection import (
+    DatabaseUnavailableError,
+    close_pool,
+    init_pool,
+    ping,
+)
 from src.database.init_db import run_migrations
 from src.limiter import limiter
 from src.receipts.router import router as receipt_router
@@ -150,6 +155,12 @@ async def lifespan(app: FastAPI):
             await stop_quote_poller()
         except Exception:
             logger.exception("quote_poller_stop_failed")
+        try:
+            from src.cache.redis import close_redis
+
+            await close_redis()
+        except Exception:
+            logger.exception("redis_close_failed")
         await close_pool()
 
 
@@ -232,7 +243,19 @@ async def debug_db(_user=Depends(require_active_user)):
 @app.get("/health", tags=["system"])
 async def health():
     """Health check — used by Docker and load balancers."""
+    try:
+        await ping()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unavailable",
+        ) from None
     return {"status": "ok", "environment": settings.ENVIRONMENT}
+
+
+@app.exception_handler(DatabaseUnavailableError)
+async def _database_unavailable(request: Request, exc: DatabaseUnavailableError):
+    return JSONResponse({"detail": "Database unavailable"}, status_code=503)
 
 
 # ── Router registrations ──

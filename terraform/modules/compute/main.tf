@@ -93,6 +93,10 @@ resource "aws_ecs_cluster" "main" {
 # ── GPU EC2 Launch Template (g5.xlarge for ML training) ──────────────
 # The ml_training task runs on EC2 GPU instances via this capacity provider.
 
+data "aws_vpc" "this" {
+  id = var.vpc_id
+}
+
 data "aws_ssm_parameter" "ecs_agent_installed_ami" {
   name = "/aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id"
 }
@@ -428,6 +432,10 @@ resource "aws_ecs_task_definition" "app" {
         {
           name  = "ENVIRONMENT"
           value = var.environment
+        },
+        {
+          name  = "FORWARDED_ALLOW_IPS"
+          value = data.aws_vpc.this.cidr_block
         },
         {
           name  = "OAUTH_ISSUER"
