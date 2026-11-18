@@ -703,3 +703,28 @@ Verified against current consumers (Detail = single `portfolioService.getPerform
 - [ ] PortfolioDetailScreen renders from ONE GraphQL query + live ticks replace the 30s blind poll (codegen types from committed schema.graphql;network tab: one POST /graphql + WS frames while focused;no REST polling;typecheck + jest green..
 - [ ] README "Why GraphQL + REST here?" documents the split + caveat;CONTEXT.md + ADR 010 referenced, not re-planned..
 - [ ] Full Definition-of-Done checklist (§6.3) passes;git diff touches only the files enumerated in this plan..
+
+---
+
+## Phase 8 (post-close): drift guards, server-side valuation, request limits
+
+Added after the Phase 7 close-out review (see ADR-011). No REST surface changed.
+
+1. **Deterministic codegen.** `codegen.yml` pins `avoidOptionals: true` and
+   `skipTypename: true`; `generated.ts` is regenerated from the lockfile
+   toolchain. `backend/tests/test_graphql_schema_sync.py` parse-compares
+   `schema.py` with `schema.graphql`, and the CI lint job regenerates
+   `generated.ts` and fails on any diff.
+2. **`portfolioValuation(portfolioId)` subscription.** One stream per portfolio
+   carrying FX-correct holdings + totals from the shared performance math (no
+   TWR — that stays on `portfolio.performance`). Replaces the per-ticker
+   `marketQuote` fan-out on `PortfolioDetailScreen`; `quoteMerge.ts` is deleted.
+   `marketQuote` remains as a generic primitive.
+3. **Request hardening.** Depth 10, 50 aliases, 30s execute timeout, parser and
+   validation caches — all Strawberry extension factories. The timeout applies
+   to `on_execute` only, so subscriptions are unaffected.
+
+Verification: backend tests for valuation math, resolver auth/ownership/replay,
+poller fan-out, and each limit; frontend unit + integration tests for the new
+subscription and the valuation overlay. Full backend suite runs in CI (Postgres
+service); frontend suite + `tsc` + ESLint + Prettier run locally and in CI.
