@@ -8,3 +8,8 @@ generates:
       scalars:
         Date: string
         DateTime: string
+      # Pinned so generated types cannot silently reshape when the plugin
+      # majors move: required-nullable fields (no `?`) and no `__typename`
+      # noise. The fetch-based client has no normalized cache that needs it.
+      avoidOptionals: true
+      skipTypename: true

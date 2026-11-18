@@ -97,7 +97,6 @@ describe('graphqlRequest', () => {
 describe('toPortfolioPerformance', () => {
   it('maps camelCase codegen shape to snake_case, deriving total_cost_basis', () => {
     const result = toPortfolioPerformance({
-      __typename: 'PortfolioPerformance',
       portfolioId: 'pid-1',
       portfolioName: 'Retirement',
       totalMarketValue: 2100,
@@ -116,7 +115,6 @@ describe('toPortfolioPerformance', () => {
       calculatedAt: '2025-01-02T00:00:00',
       holdings: [
         {
-          __typename: 'HoldingPerformance',
           ticker: 'AAPL',
           shares: 10,
           averageCostBasis: 150,
@@ -158,7 +156,6 @@ describe('toPortfolioPerformance', () => {
 
   it('nulls optional money fields that arrive as null', () => {
     const result = toPortfolioPerformance({
-      __typename: 'PortfolioPerformance',
       portfolioId: 'pid-2',
       portfolioName: 'Empty',
       totalMarketValue: null,
