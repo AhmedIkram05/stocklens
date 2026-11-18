@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 
 import numpy as np
@@ -121,6 +122,16 @@ def compute_prediction_distribution(
     return np.array([counts[c] / total for c in classes], dtype=np.float64)
 
 
+def decode_jsonb_dict(value: object) -> dict:
+    """Return a jsonb column as a dict, decoding legacy double-encoded values."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return {}
+    return value if isinstance(value, dict) else {}
+
+
 def extract_mean_vectors(logs: list[dict]) -> list[list[float]]:
     """Pull each prediction log's feature-mean vector once.
 
@@ -130,7 +141,7 @@ def extract_mean_vectors(logs: list[dict]) -> list[list[float]]:
     """
     vectors = []
     for entry in logs:
-        stats = (entry.get("features") or {}).get("stats")
+        stats = decode_jsonb_dict(decode_jsonb_dict(entry.get("features")).get("stats"))
         if stats and "means" in stats:
             vectors.append(stats["means"])
     return vectors
@@ -235,7 +246,11 @@ class DriftDetector:
                     logger.warning("drift_unknown_reference_feature", feature_name=feature_name)
                     skipped_windows += 1
                     continue
-                cur_values = [float(means[idx]) for means in mean_vectors]
+                cur_values = [
+                    float(means[idx])
+                    for means in mean_vectors
+                    if len(means) > idx and means[idx] is not None
+                ]
                 cur_array = np.array(cur_values, dtype=np.float64)
 
                 # Below two samples PSI/KS/JS are uninterpretable — the old

@@ -233,7 +233,7 @@ async def scan_receipt(
             category,
             cascade_result.raw_text,
             cascade_result.overall_confidence,
-            json.dumps([item.model_dump(mode="json") for item in cascade_result.extraction.items]),
+            [item.model_dump(mode="json") for item in cascade_result.extraction.items],
             datetime.now(timezone.utc),
             cascade_result.source,
             cascade_result.extraction.date,
@@ -376,8 +376,8 @@ async def _log_cascade_decision(
                 llm_confidence,
                 chosen_source,
                 processing_time_ms,
-                json.dumps(field_confidences) if field_confidences else None,
-                json.dumps(discrepancies) if discrepancies else None,
+                field_confidences or None,
+                discrepancies or None,
             )
     except Exception:
         logger.warning("cascade_decision_log_failed", receipt_id=receipt_id, exc_info=True)
@@ -493,7 +493,7 @@ async def create_receipt(
             body.category_id,
             body.ocr_raw_text,
             body.ocr_confidence,
-            json.dumps(body.line_items) if body.line_items is not None else None,
+            body.line_items,
             body.receipt_image_s3_key,
             body.notes,
             body.transaction_date,
@@ -588,7 +588,6 @@ async def update_receipt(
                 set_clauses.append(f"{col} = ${idx}::uuid")
             elif col == "line_items":
                 set_clauses.append(f"{col} = ${idx}::jsonb")
-                val = json.dumps(val)
             elif col == "ocr_confidence":
                 set_clauses.append(f"{col} = ${idx}::real")
             elif col == "total_amount":

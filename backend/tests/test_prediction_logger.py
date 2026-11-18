@@ -59,6 +59,9 @@ async def test_log_prediction_happy_path() -> None:
         assert row["features"] is not None
         assert row["feature_stats"] is not None
         assert row["raw_feature_names"] is not None
+        assert isinstance(row["probabilities"], dict)
+        assert isinstance(row["features"], dict)
+        assert isinstance(row["feature_stats"], dict)
 
 
 @pytest.mark.asyncio
