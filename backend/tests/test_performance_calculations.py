@@ -810,6 +810,7 @@ class TestComputeLiveValuation:
             "shares": Decimal("10"),
             "average_cost_basis": Decimal("100"),
             "average_cost_basis_gbp": Decimal("100"),
+            "currency": "GBP",
         }
         row.update(overrides)
         return row
@@ -873,9 +874,40 @@ class TestComputeLiveValuation:
 
         assert resp.data_quality == "partial"
         assert resp.total_market_value == Decimal("1200")
+        # Full cost basis minus a partial market value would understate P&L.
+        assert resp.total_unrealised_pl is None
+        assert resp.total_unrealised_pl_pct is None
         msft = next(h for h in resp.holdings if h.ticker == "MSFT")
         assert msft.market_value is None
         assert msft.unrealised_pl is None
+
+    def test_no_live_prices_nulls_totals(self):
+        resp = compute_live_valuation(
+            portfolio_id="pid-1",
+            portfolio_name="P",
+            holdings_data=[self._holding("AAPL")],
+            live_quotes={},
+            fx_rates={"AAPL": Decimal("1")},
+            free_cash_balance=Decimal("0"),
+        )
+
+        assert resp.total_market_value is None
+        assert resp.total_unrealised_pl is None
+        assert resp.day_change is None
+        assert resp.data_quality == "partial"
+
+    def test_fx_unknown_marks_partial(self):
+        """A non-GBP holding valued at rate 1 must not report complete quality."""
+        resp = compute_live_valuation(
+            portfolio_id="pid-1",
+            portfolio_name="P",
+            holdings_data=[self._holding(currency="USD")],
+            live_quotes={"AAPL": (Decimal("120"), Decimal("118"))},
+            fx_rates={"AAPL": Decimal("1")},
+            free_cash_balance=Decimal("0"),
+        )
+
+        assert resp.data_quality == "partial"
 
     def test_empty_portfolio(self):
         resp = compute_live_valuation(

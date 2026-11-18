@@ -26,8 +26,14 @@ class QueryTimeout(SchemaExtension):
         self.seconds = seconds
 
     async def on_execute(self) -> AsyncIterator[None]:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.seconds
         try:
-            async with asyncio.timeout(self.seconds):
+            async with asyncio.timeout_at(deadline):
                 yield
         except TimeoutError:
-            raise GraphQLError("Query timed out")
+            # Only claim the timeout when our own deadline expired; a resolver's
+            # wait_for/timeout must surface as itself, not "Query timed out".
+            if loop.time() >= deadline:
+                raise GraphQLError("Query timed out")
+            raise

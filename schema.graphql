@@ -40,10 +40,14 @@ type CumulativeReturn {
   value: Float!
 }
 
-"""Date (isoformat)"""
+"""
+Date (isoformat)
+"""
 scalar Date
 
-"""Date with time (isoformat)"""
+"""
+Date with time (isoformat)
+"""
 scalar DateTime
 
 type Holding {
@@ -82,7 +86,11 @@ type Portfolio {
   transactions: [Transaction!]!
   cashFlows: [CashFlow!]!
   performance(startDate: Date = null, endDate: Date = null): PortfolioPerformance!
-  benchmark(benchmark: String! = "SPY", startDate: Date = null, endDate: Date = null): BenchmarkComparison!
+  benchmark(
+    benchmark: String! = "SPY"
+    startDate: Date = null
+    endDate: Date = null
+  ): BenchmarkComparison!
 }
 
 type PortfolioPerformance {

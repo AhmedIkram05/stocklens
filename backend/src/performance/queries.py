@@ -498,6 +498,15 @@ async def get_portfolio_valuation(
     afford. ``live_quotes`` may be supplied by a caller that already fetched
     them, otherwise they are fetched here (Redis-cached 60s).
     """
+    try:
+        UUID(portfolio_id)
+    except (ValueError, AttributeError):
+        # A non-UUID id would otherwise reach asyncpg as a cast error.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Portfolio not found",
+        )
+
     portfolio = await verify_portfolio_ownership(portfolio_id, user_id)
     if portfolio is None:
         raise HTTPException(
@@ -505,8 +514,10 @@ async def get_portfolio_valuation(
             detail="Portfolio not found",
         )
 
-    holdings = await get_holdings(portfolio_id)
-    free_cash = await get_free_cash_balance(portfolio_id)
+    # Canonicalise — UUID casing from the client must not fork the registry key.
+    canonical_id = str(portfolio["id"])
+    holdings = await get_holdings(canonical_id)
+    free_cash = await get_free_cash_balance(canonical_id)
     tickers = sorted({h["ticker"] for h in holdings})
 
     if live_quotes is None:
@@ -514,7 +525,7 @@ async def get_portfolio_valuation(
     fx_rates = await current_fx_rates(holdings) if holdings else {}
 
     return compute_live_valuation(
-        portfolio_id=portfolio_id,
+        portfolio_id=canonical_id,
         portfolio_name=portfolio["name"],
         holdings_data=holdings,
         live_quotes=live_quotes,

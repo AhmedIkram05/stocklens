@@ -14,11 +14,14 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi import HTTPException
 from graphql.error import GraphQLError
 
+from src.auth.utils import decode_token
 from src.graphql import streaming
 from src.graphql.schema import Subscription
 from src.graphql.streaming import (
+    PORTFOLIO_STREAM_ERROR,
     _poller_loop,
     _poller_tick,
     _portfolio_subscribers,
@@ -30,6 +33,7 @@ from src.graphql.streaming import (
     unsubscribe_portfolio,
     unsubscribe_symbol,
 )
+from src.performance import queries as performance_queries
 from src.performance.schemas import PortfolioPerformanceResponse
 
 CANNED_QUOTE = {
@@ -304,9 +308,15 @@ async def test_poller_loop_ticks_and_survives_errors() -> None:
     assert calls >= 2
 
 
-def _canned_valuation(market_value: float = 1200.0) -> PortfolioPerformanceResponse:
+PID = "11111111-1111-1111-1111-111111111111"
+OTHER_PID = "22222222-2222-2222-2222-222222222222"
+
+
+def _canned_valuation(
+    market_value: float = 1200.0, total_holdings: int = 0
+) -> PortfolioPerformanceResponse:
     return PortfolioPerformanceResponse(
-        portfolio_id="pid-1",
+        portfolio_id=PID,
         portfolio_name="Retirement",
         total_market_value=Decimal(str(market_value)),
         total_cost_basis=Decimal("1000"),
@@ -321,7 +331,7 @@ def _canned_valuation(market_value: float = 1200.0) -> PortfolioPerformanceRespo
         twr_end_date=None,
         twr_methodology="live-valuation",
         holdings=[],
-        total_holdings=0,
+        total_holdings=total_holdings,
         data_quality="complete",
         calculated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
     )
@@ -329,42 +339,88 @@ def _canned_valuation(market_value: float = 1200.0) -> PortfolioPerformanceRespo
 
 async def test_portfolio_valuation_replay_and_tick(_ws_token) -> None:
     """First yield == server compute; later yields == parsed pub/sub valuations."""
+    uid = decode_token(_ws_token).sub
+    channel = f"portfolio:stream:{PID}:{uid}"
     tick = _canned_valuation(1300.0).model_dump(mode="json")
     pubsub = _FakePubSub(
         messages=[
-            {"type": "subscribe", "channel": "portfolio:stream:pid-1"},
-            {"type": "message", "channel": "portfolio:stream:pid-1", "data": json.dumps(tick)},
+            {"type": "subscribe", "channel": channel},
+            {"type": "message", "channel": channel, "data": json.dumps(tick)},
         ]
     )
-    gen = Subscription().portfolio_valuation(_authed_info(_ws_token), "pid-1")
+    gen = Subscription().portfolio_valuation(_authed_info(_ws_token), PID)
     get_redis_patch, blacklist_patch = _patch_ws_redis(pubsub)
     with (
         get_redis_patch,
         blacklist_patch,
         patch(
             "src.graphql.schema.fetch_portfolio_by_id",
-            new=AsyncMock(return_value={"id": "pid-1"}),
+            new=AsyncMock(return_value={"id": PID}),
         ),
         patch(
             "src.graphql.schema.get_portfolio_valuation",
             new=AsyncMock(return_value=_canned_valuation(1200.0)),
-        ),
+        ) as mock_valuation,
     ):
         first = await anext(gen)
-        assert pubsub.subscribed == ["portfolio:stream:pid-1"]
+        assert pubsub.subscribed == [channel]
+        # The token's user is what the valuation — and ownership check — run as.
+        mock_valuation.assert_awaited_once_with(PID, uid)
         assert float(first.total_market_value) == 1200.0
         second = await anext(gen)
         assert float(second.total_market_value) == 1300.0
         with pytest.raises(StopAsyncIteration):
             await anext(gen)
-    assert pubsub.unsubscribed == ["portfolio:stream:pid-1"]
+    assert pubsub.unsubscribed == [channel]
     assert pubsub.closed
-    assert "pid-1" not in _portfolio_subscribers  # cleanup drained the refcount
+    assert (PID, uid) not in _portfolio_subscribers  # cleanup drained the refcount
+
+
+async def test_portfolio_valuation_terminates_when_ownership_is_lost(_ws_token) -> None:
+    """The poller's sentinel ends the stream instead of leaving stale data open."""
+    uid = decode_token(_ws_token).sub
+    channel = f"portfolio:stream:{PID}:{uid}"
+    pubsub = _FakePubSub(
+        messages=[
+            {
+                "type": "message",
+                "channel": channel,
+                "data": json.dumps({PORTFOLIO_STREAM_ERROR: "Portfolio not found"}),
+            }
+        ]
+    )
+    gen = Subscription().portfolio_valuation(_authed_info(_ws_token), PID)
+    get_redis_patch, blacklist_patch = _patch_ws_redis(pubsub)
+    with (
+        get_redis_patch,
+        blacklist_patch,
+        patch(
+            "src.graphql.schema.fetch_portfolio_by_id",
+            new=AsyncMock(return_value={"id": PID}),
+        ),
+        patch(
+            "src.graphql.schema.get_portfolio_valuation",
+            new=AsyncMock(return_value=_canned_valuation()),
+        ),
+    ):
+        await anext(gen)  # replay
+        with pytest.raises(GraphQLError, match="Portfolio not found"):
+            await anext(gen)
+    assert (PID, uid) not in _portfolio_subscribers
+
+
+async def test_portfolio_valuation_rejects_non_uuid_id(_ws_token) -> None:
+    """A non-UUID id must be rejected before it reaches an asyncpg ::uuid cast."""
+    gen = Subscription().portfolio_valuation(_authed_info(_ws_token), "not-a-uuid")
+    get_redis_patch, blacklist_patch = _patch_ws_redis(_FakePubSub())
+    with get_redis_patch, blacklist_patch:
+        with pytest.raises(GraphQLError, match="Invalid portfolio id"):
+            await anext(gen)
 
 
 async def test_portfolio_valuation_rejects_unowned_portfolio(_ws_token) -> None:
     """Ownership is verified before subscribing — no data for other users."""
-    gen = Subscription().portfolio_valuation(_authed_info(_ws_token), "pid-x")
+    gen = Subscription().portfolio_valuation(_authed_info(_ws_token), PID)
     get_redis_patch, blacklist_patch = _patch_ws_redis(_FakePubSub())
     with (
         get_redis_patch,
@@ -397,19 +453,19 @@ async def test_portfolio_valuation_ws_auth_rejects_missing_or_invalid_token(cont
 
 
 def test_portfolio_unsubscribe_refcount() -> None:
-    subscribe_portfolio("pid-1", "user-1")
-    subscribe_portfolio("pid-1", "user-1")
-    assert _portfolio_subscribers == {"pid-1": ("user-1", 2)}
-    unsubscribe_portfolio("pid-1")
-    assert _portfolio_subscribers == {"pid-1": ("user-1", 1)}
-    unsubscribe_portfolio("pid-1")
+    subscribe_portfolio(PID, "user-1")
+    subscribe_portfolio(PID, "user-1")
+    assert _portfolio_subscribers == {(PID, "user-1"): 2}
+    unsubscribe_portfolio(PID, "user-1")
+    assert _portfolio_subscribers == {(PID, "user-1"): 1}
+    unsubscribe_portfolio(PID, "user-1")
     assert _portfolio_subscribers == {}
-    unsubscribe_portfolio("pid-1")  # unknown portfolio: no KeyError
+    unsubscribe_portfolio(PID, "user-1")  # unknown key: no KeyError
     assert _portfolio_subscribers == {}
 
 
 async def test_poller_tick_publishes_portfolio_valuation() -> None:
-    subscribe_portfolio("pid-1", "user-1")
+    subscribe_portfolio(PID, "user-1")
     fake = _FakeRedis(_FakePubSub())
     with (
         patch(
@@ -419,18 +475,59 @@ async def test_poller_tick_publishes_portfolio_valuation() -> None:
         patch("src.graphql.streaming.get_redis", new=AsyncMock(return_value=fake)),
     ):
         await _poller_tick()
-    assert [channel for channel, _ in fake.published] == ["portfolio:stream:pid-1"]
+    assert [channel for channel, _ in fake.published] == [f"portfolio:stream:{PID}:user-1"]
     assert json.loads(fake.published[0][1])["total_market_value"] == 1200.0
 
 
-async def test_poller_tick_skips_failed_portfolio() -> None:
-    """A DB/valuation failure must not stop other portfolios or raise."""
-    subscribe_portfolio("pid-1", "user-1")
+async def test_poller_tick_skips_failed_portfolio_but_publishes_others() -> None:
+    """One failing valuation must not silence the rest of the tick."""
+    subscribe_portfolio(PID, "user-1")
+    subscribe_portfolio(OTHER_PID, "user-1")
+
+    async def fake_valuation(portfolio_id: str, user_id: str):
+        if portfolio_id == PID:
+            raise RuntimeError("db down")
+        return _canned_valuation(1300.0)
+
     fake = _FakeRedis(_FakePubSub())
     with (
         patch(
             "src.graphql.streaming.get_portfolio_valuation",
-            new=AsyncMock(side_effect=RuntimeError("db down")),
+            new=AsyncMock(side_effect=fake_valuation),
+        ),
+        patch("src.graphql.streaming.get_redis", new=AsyncMock(return_value=fake)),
+    ):
+        await _poller_tick()
+    assert [channel for channel, _ in fake.published] == [f"portfolio:stream:{OTHER_PID}:user-1"]
+
+
+async def test_poller_tick_ownership_lost_sends_error_and_drops() -> None:
+    subscribe_portfolio(PID, "user-1")
+    fake = _FakeRedis(_FakePubSub())
+    with (
+        patch(
+            "src.graphql.streaming.get_portfolio_valuation",
+            new=AsyncMock(side_effect=HTTPException(status_code=404, detail="Portfolio not found")),
+        ),
+        patch("src.graphql.streaming.get_redis", new=AsyncMock(return_value=fake)),
+    ):
+        await _poller_tick()
+    assert fake.published[0][0] == f"portfolio:stream:{PID}:user-1"
+    assert PORTFOLIO_STREAM_ERROR in json.loads(fake.published[0][1])
+    assert _portfolio_subscribers == {}  # dead subscription no longer polled
+
+
+async def test_poller_tick_skips_unpriced_valuation() -> None:
+    """A provider outage must not publish a zero valuation over a good one."""
+    subscribe_portfolio(PID, "user-1")
+    unpriced = _canned_valuation(0.0, total_holdings=2).model_copy(
+        update={"total_market_value": None}
+    )
+    fake = _FakeRedis(_FakePubSub())
+    with (
+        patch(
+            "src.graphql.streaming.get_portfolio_valuation",
+            new=AsyncMock(return_value=unpriced),
         ),
         patch("src.graphql.streaming.get_redis", new=AsyncMock(return_value=fake)),
     ):
@@ -438,9 +535,31 @@ async def test_poller_tick_skips_failed_portfolio() -> None:
     assert fake.published == []
 
 
+async def test_poller_tick_publish_failure_does_not_abort_others() -> None:
+    subscribe_portfolio(PID, "user-1")
+    subscribe_portfolio(OTHER_PID, "user-1")
+
+    class _FlakyRedis(_FakeRedis):
+        async def publish(self, channel: str, payload: str) -> int:
+            if channel == f"portfolio:stream:{PID}:user-1":
+                raise RuntimeError("redis down")
+            return await super().publish(channel, payload)
+
+    fake = _FlakyRedis(_FakePubSub())
+    with (
+        patch(
+            "src.graphql.streaming.get_portfolio_valuation",
+            new=AsyncMock(return_value=_canned_valuation(1200.0)),
+        ),
+        patch("src.graphql.streaming.get_redis", new=AsyncMock(return_value=fake)),
+    ):
+        await _poller_tick()
+    assert [channel for channel, _ in fake.published] == [f"portfolio:stream:{OTHER_PID}:user-1"]
+
+
 async def test_poller_tick_handles_symbols_and_portfolios() -> None:
     subscribe_symbol("AAPL")
-    subscribe_portfolio("pid-1", "user-1")
+    subscribe_portfolio(PID, "user-1")
     fake = _FakeRedis(_FakePubSub())
     with (
         patch(
@@ -456,5 +575,53 @@ async def test_poller_tick_handles_symbols_and_portfolios() -> None:
         await _poller_tick()
     assert {channel for channel, _ in fake.published} == {
         "quote:stream:AAPL",
-        "portfolio:stream:pid-1",
+        f"portfolio:stream:{PID}:user-1",
     }
+
+
+async def test_get_portfolio_valuation_rejects_non_uuid() -> None:
+    with pytest.raises(HTTPException):
+        await performance_queries.get_portfolio_valuation("not-a-uuid", "user-1")
+
+
+async def test_get_portfolio_valuation_rejects_unowned() -> None:
+    verify = AsyncMock(return_value=None)
+    with patch("src.performance.queries.verify_portfolio_ownership", new=verify):
+        with pytest.raises(HTTPException):
+            await performance_queries.get_portfolio_valuation(PID, "user-1")
+    verify.assert_awaited_once_with(PID, "user-1")
+
+
+async def test_get_portfolio_valuation_empty_portfolio() -> None:
+    verify = AsyncMock(return_value={"id": PID, "name": "Empty"})
+    get_holdings = AsyncMock(return_value=[])
+    get_cash = AsyncMock(return_value=Decimal("5"))
+    with (
+        patch("src.performance.queries.verify_portfolio_ownership", new=verify),
+        patch("src.performance.queries.get_holdings", new=get_holdings),
+        patch("src.performance.queries.get_free_cash_balance", new=get_cash),
+    ):
+        resp = await performance_queries.get_portfolio_valuation(PID, "user-1")
+    verify.assert_awaited_once_with(PID, "user-1")
+    get_holdings.assert_awaited_once_with(PID)
+    assert resp.portfolio_id == PID
+    assert resp.total_holdings == 0
+    assert resp.free_cash_balance == Decimal("5")
+
+
+async def test_get_portfolio_valuation_uses_canonical_id() -> None:
+    """UUID casing from the client must not fork reads or registry keys."""
+    canonical = PID.upper()
+    verify = AsyncMock(return_value={"id": canonical, "name": "P"})
+    get_holdings = AsyncMock(return_value=[])
+    with (
+        patch("src.performance.queries.verify_portfolio_ownership", new=verify),
+        patch("src.performance.queries.get_holdings", new=get_holdings),
+        patch(
+            "src.performance.queries.get_free_cash_balance",
+            new=AsyncMock(return_value=Decimal("0")),
+        ),
+    ):
+        resp = await performance_queries.get_portfolio_valuation(PID, "user-1")
+    get_holdings.assert_awaited_once_with(canonical)
+    assert resp.portfolio_id == canonical

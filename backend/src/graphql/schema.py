@@ -30,14 +30,15 @@ from strawberry.extensions import (
     MaxAliasesLimiter,
     ParserCache,
     QueryDepthLimiter,
-    ValidationCache,
 )
 
 from src.auth.utils import decode_token
 from src.cache.redis import get_redis, is_token_blacklisted
 from src.graphql.extensions import QueryTimeout
 from src.graphql.streaming import (
+    PORTFOLIO_STREAM_ERROR,
     _fetch_with_timeout,
+    portfolio_channel,
     subscribe_portfolio,
     subscribe_symbol,
     unsubscribe_portfolio,
@@ -92,6 +93,14 @@ def _as_datetime(value: Any) -> datetime | None:
     if isinstance(value, str):
         return datetime.fromisoformat(value)
     return value
+
+
+def _validated_portfolio_id(value: str) -> str:
+    """Reject non-UUID ids before they reach an asyncpg ``::uuid`` cast."""
+    try:
+        return str(UUID(value))
+    except (ValueError, AttributeError):
+        raise GraphQLError("Invalid portfolio id")
 
 
 @strawberry.enum
@@ -478,7 +487,7 @@ class Query:
     @strawberry.field
     async def portfolio(self, info: strawberry.Info, id: strawberry.ID) -> Portfolio | None:
         # None → null (no existence leak; no HTTP 404 in GraphQL).
-        row = await fetch_portfolio_by_id(str(id), info.context["user_id"])
+        row = await fetch_portfolio_by_id(_validated_portfolio_id(str(id)), info.context["user_id"])
         return Portfolio.from_row(row) if row is not None else None
 
     @strawberry.field
@@ -555,13 +564,14 @@ class Subscription:
         params = info.context.get("connection_params") or {}
         token = (params.get("authToken") or "").removeprefix("Bearer ").strip()
         user_id = await _validate_ws_token(token)
-        pid = str(portfolio_id)
 
-        if await fetch_portfolio_by_id(pid, user_id) is None:
+        row = await fetch_portfolio_by_id(_validated_portfolio_id(str(portfolio_id)), user_id)
+        if row is None:
             raise GraphQLError("Forbidden")
+        pid = str(row["id"])  # canonical casing, so the registry key is stable
 
         subscribe_portfolio(pid, user_id)
-        channel = f"portfolio:stream:{pid}"
+        channel = portfolio_channel(pid, user_id)
         pubsub = None
         try:
             redis = await get_redis()
@@ -575,18 +585,27 @@ class Subscription:
                 raise GraphQLError("Forbidden")
             yield _to_portfolio_valuation(first)
             async for message in pubsub.listen():
-                if message.get("type") == "message":
-                    yield _to_portfolio_valuation(
-                        PortfolioPerformanceResponse.model_validate(json.loads(message["data"]))
-                    )
+                if message.get("type") != "message":
+                    continue
+                payload = json.loads(message["data"])
+                if PORTFOLIO_STREAM_ERROR in payload:
+                    # Ownership lost after subscribe — end the stream rather
+                    # than leaving the client on stale data.
+                    raise GraphQLError(payload[PORTFOLIO_STREAM_ERROR])
+                # Re-check the token each tick: expiry/blacklist closes the stream.
+                await _validate_ws_token(token)
+                yield _to_portfolio_valuation(PortfolioPerformanceResponse.model_validate(payload))
         finally:
             try:
                 if pubsub is not None:
-                    await pubsub.unsubscribe(channel)
-                    await pubsub.aclose()
+                    try:
+                        await pubsub.unsubscribe(channel)
+                    finally:
+                        await pubsub.aclose()
             except Exception:
                 logger.warning("ws_pubsub_close_failed", portfolio_id=pid)
-            unsubscribe_portfolio(pid)
+            finally:
+                unsubscribe_portfolio(pid, user_id)
 
 
 schema = strawberry.Schema(
@@ -596,9 +615,8 @@ schema = strawberry.Schema(
         lambda: QueryDepthLimiter(max_depth=GRAPHQL_MAX_DEPTH),
         lambda: MaxAliasesLimiter(max_alias_count=GRAPHQL_MAX_ALIASES),
         lambda: QueryTimeout(seconds=GRAPHQL_QUERY_TIMEOUT_SECONDS),
-        # Mobile clients resend identical documents — cache parse + validation.
+        # Mobile clients resend identical documents — parse once.
         lambda: ParserCache(),
-        lambda: ValidationCache(),
     ],
 )
 

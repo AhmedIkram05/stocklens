@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 
 import strawberry
-from strawberry.extensions import MaxAliasesLimiter, QueryDepthLimiter
+from strawberry.extensions import MaxAliasesLimiter, ParserCache, QueryDepthLimiter
 
 from src.graphql.extensions import QueryTimeout
 
@@ -99,4 +99,12 @@ async def test_query_timeout_allows_fast_resolver() -> None:
 def test_production_schema_registers_hardening_extensions() -> None:
     from src.graphql.schema import schema
 
-    assert len(schema.extensions) == 5
+    extensions = [factory() for factory in schema.extensions]
+    assert {type(extension) for extension in extensions} == {
+        QueryDepthLimiter,
+        MaxAliasesLimiter,
+        QueryTimeout,
+        ParserCache,
+    }
+    timeout = next(e for e in extensions if isinstance(e, QueryTimeout))
+    assert timeout.seconds == 30
