@@ -48,6 +48,7 @@ query PortfolioDetail($id: ID!) {
       portfolioId
       portfolioName
       totalMarketValue
+      totalCostBasis
       totalUnrealisedPl
       totalUnrealisedPlPct
       dayChange
@@ -92,7 +93,7 @@ export function toPortfolioPerformance(p: DetailPortfolio['performance']): Portf
     portfolio_id: p.portfolioId,
     portfolio_name: p.portfolioName,
     total_market_value: p.totalMarketValue ?? null,
-    total_cost_basis: p.holdings.reduce((s, h) => s + h.shares * h.averageCostBasis, 0),
+    total_cost_basis: p.totalCostBasis,
     total_unrealised_pl: p.totalUnrealisedPl ?? null,
     total_unrealised_pl_pct: p.totalUnrealisedPlPct ?? null,
     day_change: p.dayChange ?? null,
@@ -129,7 +130,9 @@ export type { DetailPortfolio };
  * Map a server-computed live valuation onto the rendered `PortfolioPerformance`.
  *
  * The valuation omits TWR (it needs stored history, which a 60s tick cannot
- * afford), so those fields are preserved from the last full fetch.
+ * afford), so those fields are preserved from the last full fetch. When the
+ * provider cannot price every holding the server sends null totals — keep the
+ * last known totals rather than blanking the screen.
  */
 export function applyValuation(
   performance: PortfolioPerformance,
@@ -137,12 +140,12 @@ export function applyValuation(
 ): PortfolioPerformance {
   return {
     ...performance,
-    total_market_value: valuation.totalMarketValue,
+    total_market_value: valuation.totalMarketValue ?? performance.total_market_value,
     total_cost_basis: valuation.totalCostBasis,
-    total_unrealised_pl: valuation.totalUnrealisedPl,
-    total_unrealised_pl_pct: valuation.totalUnrealisedPlPct,
-    day_change: valuation.dayChange,
-    day_change_pct: valuation.dayChangePct,
+    total_unrealised_pl: valuation.totalUnrealisedPl ?? performance.total_unrealised_pl,
+    total_unrealised_pl_pct: valuation.totalUnrealisedPlPct ?? performance.total_unrealised_pl_pct,
+    day_change: valuation.dayChange ?? performance.day_change,
+    day_change_pct: valuation.dayChangePct ?? performance.day_change_pct,
     free_cash_balance: valuation.freeCashBalance,
     holdings: valuation.holdings.map((h) => ({
       ticker: h.ticker,

@@ -1,10 +1,11 @@
 /**
  * subscriptionClient.ts
  *
- * Singleton graphql-ws client for the `marketQuote` subscription feed.
- * graphql-ws multiplexes N tickers over ONE shared socket + reconnects
- * natively; a fresh token is supplied via `connectionParams` on every
- * (re)connect. Singleton avoids the per-call `createClient` socket leak.
+ * Singleton graphql-ws client for the GraphQL subscription feed: per-ticker
+ * `marketQuote` and per-portfolio `portfolioValuation`. graphql-ws multiplexes
+ * N subscriptions over ONE shared socket + reconnects natively; a fresh token
+ * is supplied via `connectionParams` on every (re)connect. The singleton avoids
+ * the per-call `createClient` socket leak.
  */
 
 import { createClient, type Client } from 'graphql-ws';

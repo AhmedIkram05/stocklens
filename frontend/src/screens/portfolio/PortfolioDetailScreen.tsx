@@ -120,7 +120,16 @@ export default function PortfolioDetailScreen() {
               : null;
             if (!fresh) return null;
             if (!prev) return fresh;
-            return valuationRef.current ? applyValuation(fresh, valuationRef.current) : fresh;
+            const valuation = valuationRef.current;
+            if (!valuation) return fresh;
+            // A tick captured before a trade/deposit must not resurrect old
+            // positions: only overlay when the position set matches the fetch.
+            const samePositions =
+              valuation.holdings.length === fresh.holdings.length &&
+              valuation.holdings.every(
+                (h) => fresh.holdings.find((f) => f.ticker === h.ticker)?.shares === h.shares,
+              );
+            return samePositions ? applyValuation(fresh, valuation) : fresh;
           });
       } catch (err: any) {
         if (!silent) setError(err?.message || 'Failed to load portfolio performance');
@@ -143,9 +152,14 @@ export default function PortfolioDetailScreen() {
 
   // One server-computed valuation stream replaces the per-ticker fan-out.
   useEffect(() => {
+    // Route params can change while this instance is reused — drop the previous
+    // portfolio's last tick so it cannot be overlaid on the new one.
+    valuationRef.current = null;
+    setLastTickAt(null);
     return subscribePortfolioValuation(portfolioId, (valuation) => {
+      if (!mountedRef.current) return;
       valuationRef.current = valuation;
-      if (valuation.calculatedAt) setLastTickAt(valuation.calculatedAt);
+      setLastTickAt(valuation.calculatedAt);
       setPerformance((prev) => (prev ? applyValuation(prev, valuation) : prev));
     });
   }, [portfolioId]);
@@ -291,7 +305,7 @@ export default function PortfolioDetailScreen() {
         )}
 
         <Text style={[styles.freshnessText, { color: theme.textSecondary }]}>
-          Prices updated {relativeTime(lastTickAt ?? performance.calculated_at)}
+          Valuation updated {relativeTime(lastTickAt ?? performance.calculated_at)}
         </Text>
 
         <View style={styles.sectionHeader}>

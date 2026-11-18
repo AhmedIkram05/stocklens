@@ -103,4 +103,21 @@ describe('applyValuation', () => {
     expect(result.twr_annualised).toBe(6.1);
     expect(result.twr_methodology).toBe('cash-flow-based');
   });
+
+  it('keeps the last known totals when the server cannot price the portfolio', () => {
+    const result = applyValuation(performance, {
+      ...valuation,
+      totalMarketValue: null,
+      totalUnrealisedPl: null,
+      totalUnrealisedPlPct: null,
+      dayChange: null,
+      dayChangePct: null,
+      dataQuality: 'partial',
+    });
+
+    expect(result.total_market_value).toBe(1000);
+    expect(result.total_unrealised_pl).toBe(200);
+    expect(result.day_change).toBe(10);
+    expect(result.data_quality).toBe('partial');
+  });
 });

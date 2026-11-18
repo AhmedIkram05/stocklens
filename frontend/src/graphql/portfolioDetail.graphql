@@ -6,6 +6,7 @@ query PortfolioDetail($id: ID!) {
       portfolioId
       portfolioName
       totalMarketValue
+      totalCostBasis
       totalUnrealisedPl
       totalUnrealisedPlPct
       dayChange

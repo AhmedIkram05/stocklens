@@ -43,9 +43,12 @@ describe('subscriptionClient', () => {
 
   it('reuses one shared client across subscribes', async () => {
     const before = mockCreateClient.mock.calls.length;
-    getSubscriptionClient();
-    getSubscriptionClient();
-    expect(mockCreateClient.mock.calls.length).toBe(before + 1);
+    const first = getSubscriptionClient();
+    const second = getSubscriptionClient();
+    expect(second).toBe(first);
+    // The singleton may already exist from an earlier test; it must never be
+    // recreated within a test run.
+    expect(mockCreateClient.mock.calls.length - before).toBeLessThanOrEqual(1);
   });
 
   it('subscribes with the doc + ticker variables and routes next to the callback', async () => {

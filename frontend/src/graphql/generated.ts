@@ -219,6 +219,7 @@ export type PortfolioDetailQuery = {
       portfolioId: string;
       portfolioName: string;
       totalMarketValue: number | null;
+      totalCostBasis: number;
       totalUnrealisedPl: number | null;
       totalUnrealisedPlPct: number | null;
       dayChange: number | null;

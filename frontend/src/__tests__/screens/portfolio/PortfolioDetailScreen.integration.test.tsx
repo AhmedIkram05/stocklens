@@ -97,6 +97,7 @@ const mockGqlPerformance = {
   portfolioId: '1',
   portfolioName: 'Test Portfolio',
   totalMarketValue: 15000,
+  totalCostBasis: 10000,
   totalUnrealisedPl: 5000,
   totalUnrealisedPlPct: 50,
   dayChange: 100,
@@ -499,6 +500,60 @@ describe('PortfolioDetailScreen', () => {
     // The valuation must survive the completed fetch, not be replaced by it.
     expect(getByText('£190.00')).toBeTruthy();
     expect(queryByText('£180.00')).toBeNull();
+    // TWR is not in the valuation payload — it must survive both tick + fetch.
+    expect(getByText('+0.45%')).toBeTruthy();
+  });
+
+  it('does not overlay a stale valuation across a position change', async () => {
+    const { getByText, queryByText, root } = await renderWithProviders(<PortfolioDetailScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
+
+    await waitFor(() => expect(getByText('Test Portfolio')).toBeTruthy());
+
+    const onNext = mockedSubscribe.mock.calls[0][1] as (v: PortfolioValuationPayload) => void;
+    await act(async () => {
+      onNext(mockValuation());
+    });
+    await waitFor(() => expect(getByText('£190.00')).toBeTruthy());
+
+    // A trade happened: the refetch now returns MSFT only.
+    mockedGraphqlRequest.mockResolvedValue({
+      portfolio: {
+        id: '1',
+        name: 'Test Portfolio',
+        performance: {
+          ...mockGqlPerformance,
+          holdings: [
+            {
+              ticker: 'MSFT',
+              shares: 5,
+              averageCostBasis: 700,
+              currentPrice: 750,
+              currency: 'USD',
+              marketValue: 3750,
+              costBasis: 3500,
+              unrealisedPl: 250,
+              unrealisedPlPct: 7.14,
+              dayChange: -10,
+              dayChangePct: -1.3,
+              portfolioWeightPct: 100,
+            },
+          ],
+        },
+      },
+    });
+
+    const sv = root?.queryAll((el) => 'refreshControl' in el.props)[0];
+    await act(async () => {
+      sv!.props.refreshControl.props.onRefresh();
+    });
+    await waitFor(() => expect(getByText('MSFT')).toBeTruthy());
+
+    // The pre-trade valuation must not resurrect AAPL or its price.
+    expect(queryByText('AAPL')).toBeNull();
+    expect(queryByText('£190.00')).toBeNull();
+    expect(getByText('£750.00')).toBeTruthy();
   });
 
   it('ignores out-of-order fetch responses', async () => {
