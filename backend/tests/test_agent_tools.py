@@ -14,6 +14,7 @@ Regression coverage for the Round-2 review fixes:
 from __future__ import annotations
 
 import json
+import threading
 from datetime import date, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -681,6 +682,25 @@ class TestGetLSTMForecast:
             )
         data = json.loads(result_str)
         assert data["prediction"] == "UP"
+
+    async def test_predict_runs_off_event_loop(self):
+        """Agent inference must not block the event loop (BE-D14)."""
+        main_thread = threading.get_ident()
+        seen: dict[str, int] = {}
+
+        def _fake_predict(*args, **kwargs):
+            seen["thread"] = threading.get_ident()
+            return {"ticker": "AAPL", "prediction": "UP", "confidence": 0.6}
+
+        ohlcv = [{"date": date(2024, 1, 1), "adjusted_close": 1}]
+        with (
+            patch("src.market.repository.get_ohlcv", new=AsyncMock(return_value=ohlcv)),
+            patch("src.prediction.service.prediction_service") as mock_ps,
+        ):
+            mock_ps.predict.side_effect = _fake_predict
+            await TOOLS["get_lstm_forecast"].ainvoke({"ticker": "AAPL", "user_id": USER_ID})
+
+        assert seen["thread"] != main_thread
 
     async def test_no_data(self):
         with patch("src.market.repository.get_ohlcv", new=AsyncMock(return_value=[])):
