@@ -248,6 +248,32 @@ class TestRefresh:
         assert resp2.status_code == 401
         assert "revoked" in resp2.json()["detail"].lower()
 
+    async def test_refresh_inactive_user(self, client: AsyncClient):
+        """A deactivated account cannot rotate its refresh token."""
+        from src.database.connection import connection_ctx
+
+        reg = await client.post(
+            "/auth/register",
+            json={
+                "email": "inactive-refresh@example.com",
+                "password": "SecurePass123!",
+                "full_name": "Inactive",
+            },
+        )
+        old_refresh = reg.json()["tokens"]["refresh_token"]
+        async with connection_ctx() as conn:
+            await conn.execute(
+                "UPDATE users SET is_active = false WHERE email = $1",
+                "inactive-refresh@example.com",
+            )
+
+        response = await client.post(
+            "/auth/refresh",
+            json={"refresh_token": old_refresh},
+        )
+        assert response.status_code == 401
+        assert "inactive" in response.json()["detail"].lower()
+
     async def test_refresh_invalid_token(self, client: AsyncClient):
         """Refreshing with a garbage token returns 401."""
         response = await client.post(

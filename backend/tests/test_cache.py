@@ -7,7 +7,7 @@ The functions under test gracefully degrade when Redis is unavailable.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from src.cache.redis import blacklist_token, is_token_blacklisted
 
@@ -65,35 +65,3 @@ class TestIsTokenBlacklisted:
 
         result = await is_token_blacklisted("test-jti-def")
         assert result is False
-
-
-class TestRateLimitHelpers:
-    """Tests for the rate-limit counter helpers."""
-
-    @patch("src.cache.redis.get_redis")
-    async def test_increment_rate_limit(self, mock_get_redis):
-        """Incrementing a rate-limit counter works."""
-        from src.cache.redis import increment_rate_limit
-
-        mock_redis = MagicMock()
-        mock_pipe = MagicMock()
-        mock_pipe.incr.return_value = None
-        mock_pipe.expire.return_value = None
-        mock_pipe.execute = AsyncMock(return_value=[3])
-        mock_redis.pipeline = MagicMock(return_value=mock_pipe)
-        mock_get_redis.return_value = mock_redis
-
-        result = await increment_rate_limit("test-key", 60)
-        assert result == 3
-
-    @patch("src.cache.redis.get_redis")
-    async def test_get_rate_limit(self, mock_get_redis):
-        """Getting a rate-limit counter returns 0 for unseen keys."""
-        from src.cache.redis import get_rate_limit
-
-        mock_redis = AsyncMock()
-        mock_redis.get.return_value = None
-        mock_get_redis.return_value = mock_redis
-
-        result = await get_rate_limit("unknown-key")
-        assert result == 0

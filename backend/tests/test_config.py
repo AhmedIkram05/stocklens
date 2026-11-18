@@ -208,3 +208,31 @@ class TestSettingsDerivedValues:
             assert s.ENVIRONMENT == "development"
         finally:
             os.chdir(old_cwd)
+
+
+def test_env_var_only_production_deploy(tmp_path):
+    """A production deploy with no .env file must still start."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    backend = Path(__file__).resolve().parents[1]
+    env = {
+        **os.environ,
+        "ENVIRONMENT": "production",
+        "JWT_SECRET_KEY": "test-secret",
+        "PYTHONPATH": str(backend),
+    }
+    # Fresh interpreter: the removed guard ran at import time, so an in-process
+    # Settings() call would not exercise it.
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from src.config import settings; assert settings.ENVIRONMENT == 'production'",
+        ],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+    )

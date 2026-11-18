@@ -370,6 +370,7 @@ Index("idx_refresh_tokens_user", refresh_tokens.c.user_id)
 # Refresh tokens — hash lookup (already unique on column but Alembic
 # prefers an explicit index declaration for autogen)
 Index("idx_refresh_tokens_hash", refresh_tokens.c.token_hash, unique=True)
+Index("idx_refresh_tokens_expires_at", refresh_tokens.c.expires_at)
 
 # Transactions — spending_category lookup
 Index("idx_transactions_spending_category", transactions.c.spending_category_id)

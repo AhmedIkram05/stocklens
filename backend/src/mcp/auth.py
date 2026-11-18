@@ -922,6 +922,11 @@ async def oauth_token(request: Request):
         token_hash = hash_token(rjti, user_id)
         async with connection_ctx() as conn:
             await conn.execute(
+                "DELETE FROM refresh_tokens "
+                "WHERE user_id = $1::uuid AND expires_at < now() - interval '1 day'",
+                user_id,
+            )
+            await conn.execute(
                 "INSERT INTO refresh_tokens "
                 "(user_id, token_hash, expires_at) "
                 "VALUES ($1::uuid, $2, to_timestamp($3))",
@@ -992,6 +997,13 @@ async def oauth_token(request: Request):
                 )
             raise HTTPException(status_code=401, detail="Refresh token revoked — re-login required")
 
+        async with connection_ctx() as conn:
+            active = await conn.fetchval(
+                "SELECT is_active FROM users WHERE id = $1::uuid", payload.sub
+            )
+        if not active:
+            raise HTTPException(status_code=401, detail="Account is inactive")
+
         # Rotate
         from src.cache.redis import blacklist_token
 
@@ -1002,6 +1014,11 @@ async def oauth_token(request: Request):
         rdecoded = decode_token(new_refresh)
         new_hash = hash_token(new_rjti, payload.sub)
         async with connection_ctx() as conn:
+            await conn.execute(
+                "DELETE FROM refresh_tokens "
+                "WHERE user_id = $1::uuid AND expires_at < now() - interval '1 day'",
+                payload.sub,
+            )
             await conn.execute(
                 "INSERT INTO refresh_tokens "
                 "(user_id, token_hash, expires_at) "
