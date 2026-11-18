@@ -24,6 +24,8 @@ import strawberry
 import structlog
 from fastapi import HTTPException
 from graphql.error import GraphQLError
+from strawberry.extensions import SchemaExtension
+from strawberry.types.graphql import OperationType
 
 from src.auth.utils import decode_token
 from src.cache.redis import get_redis, is_token_blacklisted
@@ -470,7 +472,11 @@ class Subscription:
             # subscribe would otherwise be missed.
             await pubsub.subscribe(channel)
             # Last-value replay (fetch-if-miss; cache+setex doubles as the replay store).
-            yield _to_quote(await _fetch_with_timeout(ticker))
+            # A provider timeout must fall through to pubsub, not kill the stream.
+            try:
+                yield _to_quote(await _fetch_with_timeout(ticker))
+            except Exception:
+                logger.warning("ws_replay_failed", symbol=ticker, exc_info=True)
             async for message in pubsub.listen():
                 if message.get("type") == "message":
                     yield _to_quote(json.loads(message["data"]))
@@ -484,7 +490,21 @@ class Subscription:
             unsubscribe_symbol(ticker)
 
 
-schema = strawberry.Schema(query=Query, subscription=Subscription)
+class WebSocketOperationGuard(SchemaExtension):
+    """Reject queries/mutations sent over WebSocket; only subscriptions belong there."""
+
+    def on_validate(self):
+        ctx = self.execution_context
+        if ctx.context.get("ws") and ctx.operation_type != OperationType.SUBSCRIPTION:
+            raise GraphQLError("Only subscriptions are supported over WebSocket")
+        yield
+
+
+schema = strawberry.Schema(
+    query=Query,
+    subscription=Subscription,
+    extensions=[WebSocketOperationGuard],
+)
 
 # Re-exported for tests (patch targets live in this namespace).
 __all__ = [
