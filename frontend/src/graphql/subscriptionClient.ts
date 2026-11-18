@@ -47,6 +47,19 @@ export function getSubscriptionClient(): Client {
   return sharedClient;
 }
 
+/**
+ * Drop the shared socket so the next subscribe re-runs `connectionParams`.
+ * Needed after an auth error: an open socket keeps its original token, so a
+ * new subscription on it would be rejected again.
+ */
+export function resetSubscriptionClient(): void {
+  if (sharedClient) {
+    const client = sharedClient;
+    sharedClient = null;
+    Promise.resolve(client.dispose()).catch(() => undefined);
+  }
+}
+
 export function subscribeMarketQuote(
   ticker: string,
   onNext: (quote: MarketQuotePayload) => void,

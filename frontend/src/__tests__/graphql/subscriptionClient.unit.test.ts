@@ -9,6 +9,7 @@
 
 import {
   getSubscriptionClient,
+  resetSubscriptionClient,
   subscribeMarketQuote,
   subscribePortfolioValuation,
   MARKET_QUOTE_SUBSCRIPTION,
@@ -140,6 +141,17 @@ describe('subscriptionClient', () => {
 
     sink.next({ data: null });
     expect(onNext).not.toHaveBeenCalled();
+  });
+
+  it('reset disposes the shared socket so the next subscribe reconnects', () => {
+    getSubscriptionClient();
+    const before = mockCreateClient.mock.calls.length;
+
+    resetSubscriptionClient();
+    expect(disposeFn).toHaveBeenCalled();
+
+    getSubscriptionClient();
+    expect(mockCreateClient.mock.calls.length).toBe(before + 1);
   });
 
   it('portfolio valuation cleanup calls unsubscribe', () => {

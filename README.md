@@ -155,7 +155,7 @@ One typed read graph for the RN app (schema committed at `schema.graphql`, types
 | REST API            | 70+ REST endpoints across 15 routers, plus the mounted MCP/OAuth/JWKS surface                                                                            |
 | GraphQL facade      | Query (portfolios, portfolio, market_quote) + market_quote & portfolioValuation subscriptions · committed schema.graphql + pinned codegen + drift guards |
 | Backend tests       | **74 files · 1,573 functions** (93 MCP, 29 GraphQL) - pytest + pytest-asyncio + xdist, 90% line-coverage gate                                            |
-| Frontend tests      | **82 files · 844+ assertions** - branches≥75%, functions≥80%, lines≥90%                                                                                  |
+| Frontend tests      | **87 files · 877+ tests** - branches≥75%, functions≥80%, lines≥90%                                                                                       |
 | MCP server          | 16 tools + 2 resources + 1 prompt · OAuth 2.1 PKCE S256 · RS256/JWKS · 93 tests                                                                          |
 | ML model            | Global LSTM: 2 layers (hidden=112, dropout=0.45), 17 features, 5-seed prob ensemble, 30 Optuna trials (per-epoch pruning)                                |
 | Model performance   | Directional accuracy **53.17%** vs 50% directional chance · +2.3pp over HGB baseline · real-return long-only Sharpe **~2.9 @ 10bps**                     |

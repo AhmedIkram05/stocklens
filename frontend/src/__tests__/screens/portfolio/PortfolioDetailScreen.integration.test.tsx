@@ -556,6 +556,56 @@ describe('PortfolioDetailScreen', () => {
     expect(getByText('£750.00')).toBeTruthy();
   });
 
+  it('ignores a stale tick that arrives after a position change', async () => {
+    const { getByText, queryByText, root } = await renderWithProviders(<PortfolioDetailScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
+
+    await waitFor(() => expect(getByText('Test Portfolio')).toBeTruthy());
+
+    // Trade happened: the refetch returns MSFT only.
+    mockedGraphqlRequest.mockResolvedValue({
+      portfolio: {
+        id: '1',
+        name: 'Test Portfolio',
+        performance: {
+          ...mockGqlPerformance,
+          holdings: [
+            {
+              ticker: 'MSFT',
+              shares: 5,
+              averageCostBasis: 700,
+              currentPrice: 750,
+              currency: 'USD',
+              marketValue: 3750,
+              costBasis: 3500,
+              unrealisedPl: 250,
+              unrealisedPlPct: 7.14,
+              dayChange: -10,
+              dayChangePct: -1.3,
+              portfolioWeightPct: 100,
+            },
+          ],
+        },
+      },
+    });
+
+    const sv = root?.queryAll((el) => 'refreshControl' in el.props)[0];
+    await act(async () => {
+      sv!.props.refreshControl.props.onRefresh();
+    });
+    await waitFor(() => expect(getByText('MSFT')).toBeTruthy());
+
+    // A tick from before the trade arrives late — it must be ignored.
+    const onNext = mockedSubscribe.mock.calls[0][1] as (v: PortfolioValuationPayload) => void;
+    await act(async () => {
+      onNext(mockValuation());
+    });
+
+    expect(getByText('MSFT')).toBeTruthy();
+    expect(queryByText('AAPL')).toBeNull();
+  });
+
   it('ignores out-of-order fetch responses', async () => {
     const { getByText, queryByText, root } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },

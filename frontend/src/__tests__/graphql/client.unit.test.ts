@@ -100,7 +100,7 @@ describe('toPortfolioPerformance', () => {
       portfolioId: 'pid-1',
       portfolioName: 'Retirement',
       totalMarketValue: 2100,
-      totalCostBasis: 1500,
+      totalCostBasis: 1400,
       totalUnrealisedPl: 600,
       totalUnrealisedPlPct: 40,
       dayChange: 50,
@@ -135,7 +135,8 @@ describe('toPortfolioPerformance', () => {
     expect(result.portfolio_id).toBe('pid-1');
     expect(result.portfolio_name).toBe('Retirement');
     expect(result.total_market_value).toBe(2100);
-    expect(result.total_cost_basis).toBe(1500); // server field, not re-derived
+    // Server-provided (not 10 × 150 = 1500), proving the mapper does not re-derive.
+    expect(result.total_cost_basis).toBe(1400);
     expect(result.twr_annualised).toBe(6.1);
     expect(result.twr_methodology).toBe('twr');
     expect(result.total_holdings).toBe(1);
