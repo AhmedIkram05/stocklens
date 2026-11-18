@@ -50,12 +50,12 @@ problems surfaced in review:
 
 ### 3. Bound request cost
 
-| Limit             | Value | Why                                        |
-| ----------------- | ----- | ------------------------------------------ |
-| Max query depth   | 10    | Schema's deepest legal query is ~4         |
-| Max aliases       | 50    | Blocks alias-amplification                 |
-| Execute timeout   | 30s   | Query/mutation only — subscriptions exempt |
-| Parser/validation | cache | Mobile clients resend identical documents  |
+| Limit           | Value | Why                                        |
+| --------------- | ----- | ------------------------------------------ |
+| Max query depth | 10    | Schema's deepest legal query is ~4         |
+| Max aliases     | 50    | Blocks alias-amplification                 |
+| Execute timeout | 30s   | Query/mutation only — subscriptions exempt |
+| Parser cache    | yes   | Mobile clients resend identical documents  |
 
 Backing off a request returns a normal GraphQL error (`Query timed out`,
 `exceeds maximum operation depth`), not a 500.
@@ -64,6 +64,9 @@ Backing off a request returns a normal GraphQL error (`Query timed out`,
 
 - One subscription replaces N per-ticker streams; derived values are FX-correct
   and computed once per portfolio per tick.
+- Streams are keyed by `(portfolio_id, user_id)` with canonical UUID casing, so
+  a transfer cannot deliver one user's data to another. Ownership is re-checked
+  every tick and the poller publishes a terminal sentinel if it is lost.
 - Per tick: one ownership check, one holdings read, one cash-balance read, and
   Redis-cached quotes per portfolio. Acceptable at current scale; noted in code.
 - The 60s cadence and ~15-minute Yahoo delay are unchanged: still

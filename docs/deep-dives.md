@@ -540,7 +540,7 @@ flowchart LR
 | N+1                   | List query preloads children via 3 batched reads + 1 bulk compute into `info.context`; each batch helper asserted called exactly once per query                                                                            |
 | `market_quote`        | Ticker uppercased + regex-validated; provider failure → `Quote temporarily unavailable` (REST-503 parity message)                                                                                                          |
 | `portfolio_valuation` | Ownership re-checked on every tick; reuses `compute_holding_performance` (FX-aware) and skips TWR/OHLCV. Cache replay on connect, then pub/sub ticks                                                                       |
-| Request limits        | Depth 10, 50 aliases, 30s execute timeout (subscriptions exempt), parser/validation caches — Strawberry extension factories                                                                                                |
+| Request limits        | Depth 10, 50 aliases, 30s execute timeout (subscriptions exempt), parser cache — Strawberry extension factories                                                                                                            |
 | WS auth               | HTTP and WS share one `context_getter` branched on connection type; WS carries no headers, so auth is per-subscription via `connection_params.authToken` (decode + blacklist, no DB fetch — market data isn't user-scoped) |
 | Stream                | Last-value replay first (subscribe-before-read, no tick gap), then pub/sub ticks; at-most-once per tick                                                                                                                    |
 | Scalars               | Money `float`, ids `ID`, ISO dates; Strawberry auto-camelCases fields — the RN mapper converts back to the REST snake_case shape                                                                                           |
@@ -975,7 +975,7 @@ StockLens/
 │   │   ├── components/               # Reusable UI components
 │   │   ├── hooks/                    # Custom React hooks
 │   │   ├── services/                 # API client, auth, storage
-│   │   ├── graphql/                  # Codegen client: .graphql docs, generated.ts, quoteMerge
+│   │   ├── graphql/                  # Codegen client: .graphql docs, generated.ts, applyValuation
 │   │   ├── store/                    # Zustand state management
 │   │   └── utils/                    # Helpers, formatters
 │   └── __tests__/                    # 82 test files, 844+ assertions

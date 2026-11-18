@@ -163,7 +163,7 @@ One typed read graph for the RN app (schema committed at `schema.graphql`, types
 | Infrastructure      | Terraform: 14 modules / 164 resources · 7 Docker services · ECS Fargate ARM64 on Graviton                                                                |
 | CI/CD               | 9 parallel CI jobs · 8-job, 5-stage deploy · Checkov + tfsec + Gitleaks + Trivy + hadolint + weekly CodeQL                                               |
 | Security            | OIDC (zero long-lived AWS creds) · WAF + OWASP CRS · three-tier security groups · pip-audit / npm-audit / cargo-audit                                    |
-| Documentation       | 10 ADRs · MCP guide + live evidence · 21 demo assets (7 PNG, 2 GIF, 12 MP4)                                                                              |
+| Documentation       | 11 ADRs · MCP guide + live evidence · 21 demo assets (7 PNG, 2 GIF, 12 MP4)                                                                              |
 
 ## Demos
 
@@ -245,7 +245,7 @@ Every non-trivial design choice is recorded as an Architecture Decision Record (
 | **Focal loss for classification**                     | Cross-entropy, weighted CE                    | Focal loss (γ=1.19, tuned via Optuna; pt computed from unweighted CE so class weights don't skew the focal factor) emphasizes hard misclassifications in imbalanced market regimes |
 | **Evidently for drift**                               | whylogs, Alibi Detect, custom                 | Evidently's PSI/KS/JSD suite covers distribution, feature, and model drift in one library; lightweight, Airflow-native                                                             |
 
-All 10 ADRs with full rationale: [docs/adr/](docs/adr/).
+All 11 ADRs with full rationale: [docs/adr/](docs/adr/).
 
 ## Deep Dives
 

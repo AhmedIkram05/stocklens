@@ -1,5 +1,8 @@
 # Implementation Plan: GraphQL Read Facade over a Shared Read Layer (ADR 010, Phase 7)
 
+> Historical plan. Current state is the Phase 8 appendix at the bottom plus
+> ADR-011; where they differ, Phase 8 wins.
+
 Retrofit a read-only GraphQL layer onto the StockLens FastAPI backend: mechanically extract router-private read helpers into per-domain query modules (shared by REST routers and new Strawberry resolvers), implement the promised 1-min Redis quote cache (`get_quote`), expose `Query { portfolios, portfolio(id), market_quote }` + a `market_quote(ticker)` WebSocket subscription fed by a 60s poller via Redis pub/sub, convert ONE frontend screen (PortfolioDetailScreen) from 1 REST poll to 1 GraphQL query + live quote stream via committed-schema codegen, and document the REST=commands / GraphQL=reads split in README. No MCP/agent/write-path changes.
 
 ## Locked decisions honored (do not re-litigate)
@@ -720,8 +723,8 @@ Added after the Phase 7 close-out review (see ADR-011). No REST surface changed.
    TWR — that stays on `portfolio.performance`). Replaces the per-ticker
    `marketQuote` fan-out on `PortfolioDetailScreen`; `quoteMerge.ts` is deleted.
    `marketQuote` remains as a generic primitive.
-3. **Request hardening.** Depth 10, 50 aliases, 30s execute timeout, parser and
-   validation caches — all Strawberry extension factories. The timeout applies
+3. **Request hardening.** Depth 10, 50 aliases, 30s execute timeout, parser
+   cache — all Strawberry extension factories. The timeout applies
    to `on_execute` only, so subscriptions are unaffected.
 
 Verification: backend tests for valuation math, resolver auth/ownership/replay,
