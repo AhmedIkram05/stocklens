@@ -1464,6 +1464,158 @@ class TestRouterHelpers:
         mock_fetch.assert_not_called()
         assert result["AAPL"] == (Decimal("200.50"), Decimal("198.25"))
 
+    async def test_historical_performance_skips_live_quotes(self, mocker):
+        """A historical period must not be rewritten with today's quote (BE-M31)."""
+        from uuid import UUID
+
+        from src.performance.queries import get_portfolio_performance
+
+        mocker.patch(
+            "src.performance.queries.verify_portfolio_ownership",
+            new=mocker.AsyncMock(return_value={"name": "P"}),
+        )
+        mocker.patch(
+            "src.performance.queries.get_holdings",
+            new=mocker.AsyncMock(
+                return_value=[
+                    {
+                        "ticker": "AAPL",
+                        "shares": Decimal("10"),
+                        "average_cost_basis": Decimal("100"),
+                        "average_cost_basis_gbp": Decimal("100"),
+                        "currency": "GBP",
+                        "fx_rate_to_gbp": Decimal("1"),
+                    }
+                ]
+            ),
+        )
+        mocker.patch(
+            "src.performance.queries.get_transactions_sorted",
+            new=mocker.AsyncMock(
+                return_value=[
+                    {
+                        "ticker": "AAPL",
+                        "type": "BUY",
+                        "shares": Decimal("10"),
+                        "total_amount_gbp": Decimal("1000"),
+                        "date": date(2024, 1, 1),
+                    }
+                ]
+            ),
+        )
+        mocker.patch(
+            "src.performance.queries.get_cash_flows_sorted",
+            new=mocker.AsyncMock(return_value=[]),
+        )
+        mocker.patch(
+            "src.performance.queries.current_fx_rates",
+            new=mocker.AsyncMock(return_value={"AAPL": Decimal("1")}),
+        )
+        mocker.patch(
+            "src.performance.queries._ensure_ohlcv_coverage",
+            new=mocker.AsyncMock(),
+        )
+        mocker.patch(
+            "src.performance.queries.build_price_map",
+            new=mocker.AsyncMock(
+                return_value={
+                    "AAPL": {
+                        date(2024, 1, 1): Decimal("100"),
+                        date(2024, 6, 28): Decimal("110"),
+                    }
+                }
+            ),
+        )
+        live = mocker.patch(
+            "src.performance.queries.fetch_live_quotes",
+            new=mocker.AsyncMock(return_value={}),
+        )
+
+        result = await get_portfolio_performance(
+            portfolio_id=UUID("11111111-1111-1111-1111-111111111111"),
+            user_id="22222222-2222-2222-2222-222222222222",
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 6, 30),
+        )
+
+        live.assert_not_called()
+        assert result.twr == Decimal("0.1")
+
+    async def test_ensure_ohlcv_window_skips_covered_range(self, mocker):
+        """No provider call when both ends of the requested window are stored."""
+        from src.performance.queries import _ensure_ohlcv_window
+
+        mocker.patch(
+            "src.performance.queries.get_earliest_ohlcv_date",
+            new=mocker.AsyncMock(return_value=date(2024, 1, 1)),
+        )
+        mocker.patch(
+            "src.performance.queries.get_latest_ohlcv_date",
+            new=mocker.AsyncMock(return_value=date(2024, 6, 28)),
+        )
+        fetch = mocker.patch(
+            "src.performance.queries.fetch_ohlcv",
+            new=mocker.AsyncMock(),
+        )
+
+        await _ensure_ohlcv_window("AAPL", date(2024, 1, 1), date(2024, 6, 30))
+
+        fetch.assert_not_called()
+
+    async def test_ensure_ohlcv_window_backfills_missing_range(self, mocker):
+        """A cold ticker is fetched for the requested window and stored (BE-M32)."""
+        from src.performance.queries import _ensure_ohlcv_window
+
+        mocker.patch(
+            "src.performance.queries.get_earliest_ohlcv_date",
+            new=mocker.AsyncMock(return_value=None),
+        )
+        mocker.patch(
+            "src.performance.queries.get_latest_ohlcv_date",
+            new=mocker.AsyncMock(return_value=None),
+        )
+        rows = [{"date": date(2024, 1, 2), "adjusted_close": Decimal("100")}]
+        fetch = mocker.patch(
+            "src.performance.queries.fetch_ohlcv",
+            new=mocker.AsyncMock(return_value=rows),
+        )
+        upsert = mocker.patch(
+            "src.performance.queries.upsert_ohlcv",
+            new=mocker.AsyncMock(return_value=1),
+        )
+
+        await _ensure_ohlcv_window("AAPL", date(2024, 1, 1), date(2024, 6, 30))
+
+        fetch.assert_awaited_once_with(
+            "AAPL", start_date=date(2024, 1, 1), end_date=date(2024, 6, 30)
+        )
+        upsert.assert_awaited_once_with("AAPL", rows)
+
+    async def test_ensure_ohlcv_window_swallows_provider_failure(self, mocker):
+        """A provider failure must not fail the performance request (BE-M32)."""
+        from src.performance.queries import _ensure_ohlcv_window
+
+        mocker.patch(
+            "src.performance.queries.get_earliest_ohlcv_date",
+            new=mocker.AsyncMock(return_value=None),
+        )
+        mocker.patch(
+            "src.performance.queries.get_latest_ohlcv_date",
+            new=mocker.AsyncMock(return_value=None),
+        )
+        mocker.patch(
+            "src.performance.queries.fetch_ohlcv",
+            new=mocker.AsyncMock(side_effect=TimeoutError("provider down")),
+        )
+        upsert = mocker.patch(
+            "src.performance.queries.upsert_ohlcv",
+            new=mocker.AsyncMock(return_value=1),
+        )
+
+        await _ensure_ohlcv_window("AAPL", date(2024, 1, 1), date(2024, 6, 30))
+
+        upsert.assert_not_called()
+
 
 class TestComputePortfolioDailyReturns:
     """Tests for the compute_portfolio_daily_returns helper."""
@@ -1510,7 +1662,8 @@ class TestComputePortfolioDailyReturns:
                 date(2024, 6, 2): Decimal("110"),
             },
         }
-        # Add a BUY on day 1 to seed initial holdings (current starts empty)
+        # A BUY on the first trading day is a flow: it is applied after that
+        # day's pre-trade valuation, so day 1 has no return.
         txns = [
             {"ticker": "AAPL", "type": "BUY", "shares": Decimal("10"), "date": date(2024, 6, 1)},
         ]
@@ -1525,6 +1678,65 @@ class TestComputePortfolioDailyReturns:
         # 10*110 - 10*100 / 10*100 = 0.1
         assert returns[0] == Decimal("0.1")
         assert dates == [date(2024, 6, 1), date(2024, 6, 2)]
+
+    def test_pre_start_buy_is_seeded(self):
+        """A position opened before the window still produces returns (BE-D9)."""
+        from src.performance.queries import compute_portfolio_daily_returns
+
+        pm = {
+            "AAPL": {
+                date(2024, 6, 1): Decimal("100"),
+                date(2024, 6, 2): Decimal("110"),
+            },
+        }
+        txns = [
+            {"ticker": "AAPL", "type": "BUY", "shares": Decimal("10"), "date": date(2024, 5, 1)},
+        ]
+        dates, returns = compute_portfolio_daily_returns(
+            holdings=[{"ticker": "AAPL", "shares": 10}],
+            transactions=txns,
+            price_map=pm,
+            start_date=date(2024, 6, 1),
+            end_date=date(2024, 6, 2),
+        )
+        assert dates == [date(2024, 6, 1), date(2024, 6, 2)]
+        assert len(returns) == 1
+        assert float(returns[0]) == pytest.approx(0.1, rel=1e-9)
+
+    def test_missing_exchange_day_uses_prior_price(self):
+        """A ticker-specific holiday must not value the holding at zero (BE-D10)."""
+        from src.performance.queries import compute_portfolio_daily_returns
+
+        pm = {
+            "AAPL": {
+                date(2024, 6, 1): Decimal("100"),
+                date(2024, 6, 3): Decimal("110"),
+            },
+            "MSFT": {
+                date(2024, 6, 1): Decimal("200"),
+                date(2024, 6, 2): Decimal("200"),
+                date(2024, 6, 3): Decimal("200"),
+            },
+        }
+        txns = [
+            {"ticker": "AAPL", "type": "BUY", "shares": Decimal("10"), "date": date(2024, 6, 1)},
+            {"ticker": "MSFT", "type": "BUY", "shares": Decimal("5"), "date": date(2024, 6, 1)},
+        ]
+        dates, returns = compute_portfolio_daily_returns(
+            holdings=[
+                {"ticker": "AAPL", "shares": 10},
+                {"ticker": "MSFT", "shares": 5},
+            ],
+            transactions=txns,
+            price_map=pm,
+            start_date=date(2024, 6, 1),
+            end_date=date(2024, 6, 3),
+        )
+        assert dates == [date(2024, 6, 1), date(2024, 6, 2), date(2024, 6, 3)]
+        # Day 2 carries AAPL's prior close (100), so a one-ticker holiday is a
+        # flat day, not a fake -50% followed by +110%.
+        assert float(returns[0]) == pytest.approx(0.0, abs=1e-12)
+        assert float(returns[1]) == pytest.approx(0.05, rel=1e-9)
 
     def test_with_buy_transaction(self):
         """BUY transaction mid-period increases shares."""
@@ -1740,6 +1952,22 @@ class TestComputePortfolioDailyReturns:
             live_quotes={"AAPL": (Decimal("110"), Decimal("100"))},
         )
         assert float(live_returns[0]) == pytest.approx(0.10, abs=1e-12)
+
+
+class TestCumulativeSeries:
+    """Tests for the benchmark cumulative-return series."""
+
+    def test_dates_are_the_returns_own_dates(self):
+        """Each point uses its return's date, not the next day's (BE-D1)."""
+        from src.performance.queries import _cumulative_series
+
+        dates = [date(2024, 1, 2), date(2024, 1, 3)]
+        returns = [Decimal("0.1"), Decimal("-0.05")]
+        series = _cumulative_series(dates, returns)
+
+        assert [point["date"] for point in series] == ["2024-01-02", "2024-01-03"]
+        assert series[0]["value"] == pytest.approx(0.1)
+        assert series[1]["value"] == pytest.approx(0.045)
 
 
 class TestBenchmarkExceptionHandler:
