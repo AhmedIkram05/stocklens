@@ -496,7 +496,11 @@ class WebSocketOperationGuard(SchemaExtension):
     def on_validate(self):
         ctx = self.execution_context
         if ctx.context.get("ws") and ctx.operation_type != OperationType.SUBSCRIPTION:
-            raise GraphQLError("Only subscriptions are supported over WebSocket")
+            # Record it so the transport sends a GraphQL error; raising here
+            # aborts the stream with a bare "complete" message.
+            ctx.pre_execution_errors = [
+                GraphQLError("Only subscriptions are supported over WebSocket")
+            ]
         yield
 
 
