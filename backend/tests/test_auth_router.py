@@ -43,6 +43,8 @@ class _FakeRefreshConn:
                 return None  # rowcount 0 → replay path
             self.tokens[token_hash] = True
             return True  # rowcount 1 → mint path
+        if "SELECT is_active FROM users" in query:
+            return True
         if "SELECT revoked FROM refresh_tokens" in query:
             (token_hash,) = args
             if token_hash not in self.tokens:
@@ -54,6 +56,8 @@ class _FakeRefreshConn:
         if "UPDATE refresh_tokens SET revoked = true WHERE user_id" in query:
             self.revoked_all_for.append(args[0])
             return "UPDATE 0"
+        if "DELETE FROM refresh_tokens" in query:
+            return "DELETE 0"
         if "INSERT INTO refresh_tokens" in query:
             self.new_inserts.append(args)
             return "INSERT 0 1"
