@@ -79,22 +79,8 @@ async def health() -> dict:
 
 @router.get("/cascade/health", tags=["receipts"])
 async def cascade_health() -> dict:
-    """Cascade-specific health check — Bedrock + Redis + threshold config."""
-    checks: dict[str, str] = {}
-
-    # Bedrock: invoke with minimal prompt
-    try:
-        from langchain_aws import ChatBedrock  # noqa: PLC0415
-
-        llm = ChatBedrock(
-            model_id=settings.BEDROCK_MODEL_ID,
-            region_name=settings.AWS_REGION,
-            model_kwargs={"temperature": 0, "max_tokens": 10},
-        )
-        await llm.ainvoke("Respond with OK")
-        checks["bedrock"] = "ok"
-    except Exception:
-        checks["bedrock"] = "unavailable"
+    """Cascade health — static config check, no paid model invocation."""
+    checks: dict[str, str] = {"bedrock": "configured" if settings.BEDROCK_MODEL_ID else "unset"}
 
     # Redis: ping
     try:
@@ -103,7 +89,9 @@ async def cascade_health() -> dict:
     except Exception:
         checks["redis"] = "unavailable"
 
-    status_flag = "healthy" if all(v == "ok" for v in checks.values()) else "degraded"
+    status_flag = (
+        "healthy" if checks["bedrock"] != "unset" and checks.get("redis") == "ok" else "degraded"
+    )
 
     return {
         "status": status_flag,
@@ -154,12 +142,23 @@ async def scan_receipt(
         )
 
     # ── Read with size guard ────────────────────────────────────────────────
-    image_bytes = await file.read()
-    if len(image_bytes) > MAX_FILE_SIZE:
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_FILE_SIZE + 64 * 1024:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=f"File size exceeds maximum of {MAX_FILE_SIZE // (1024 * 1024)} MB",
         )
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await file.read(1024 * 1024):
+        total += len(chunk)
+        if total > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File size exceeds maximum of {MAX_FILE_SIZE // (1024 * 1024)} MB",
+            )
+        chunks.append(chunk)
+    image_bytes = b"".join(chunks)
 
     logger.info(
         "receipt_received",

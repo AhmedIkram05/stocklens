@@ -30,7 +30,9 @@ from strawberry.extensions import (
     MaxAliasesLimiter,
     ParserCache,
     QueryDepthLimiter,
+    SchemaExtension,
 )
+from strawberry.types.graphql import OperationType
 
 from src.auth.utils import decode_token
 from src.cache.redis import get_redis, is_token_blacklisted
@@ -543,7 +545,11 @@ class Subscription:
             # subscribe would otherwise be missed.
             await pubsub.subscribe(channel)
             # Last-value replay (fetch-if-miss; cache+setex doubles as the replay store).
-            yield _to_quote(await _fetch_with_timeout(ticker))
+            # A provider timeout must fall through to pubsub, not kill the stream.
+            try:
+                yield _to_quote(await _fetch_with_timeout(ticker))
+            except Exception:
+                logger.warning("ws_replay_failed", symbol=ticker, exc_info=True)
             async for message in pubsub.listen():
                 if message.get("type") == "message":
                     yield _to_quote(json.loads(message["data"]))
@@ -612,6 +618,20 @@ class Subscription:
                 unsubscribe_portfolio(pid, user_id)
 
 
+class WebSocketOperationGuard(SchemaExtension):
+    """Reject queries/mutations sent over WebSocket; only subscriptions belong there."""
+
+    def on_validate(self):
+        ctx = self.execution_context
+        if ctx.context.get("ws") and ctx.operation_type != OperationType.SUBSCRIPTION:
+            # Record it so the transport sends a GraphQL error; raising here
+            # aborts the stream with a bare "complete" message.
+            ctx.pre_execution_errors = [
+                GraphQLError("Only subscriptions are supported over WebSocket")
+            ]
+        yield
+
+
 schema = strawberry.Schema(
     query=Query,
     subscription=Subscription,
@@ -621,6 +641,7 @@ schema = strawberry.Schema(
         lambda: QueryTimeout(seconds=GRAPHQL_QUERY_TIMEOUT_SECONDS),
         # Mobile clients resend identical documents — parse once.
         lambda: ParserCache(),
+        lambda: WebSocketOperationGuard(),
     ],
 )
 

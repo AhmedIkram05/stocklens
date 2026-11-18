@@ -730,6 +730,35 @@ async def test_mcp_legacy_initialize_still_green(client: AsyncClient, auth_heade
     assert r.json()["result"]["serverInfo"]["name"] == "stocklens"
 
 
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_initialize_rejects_unknown_protocol_version(
+    client: AsyncClient, auth_headers: dict[str, str]
+):
+    r = await client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": "1999-01-01"},
+        },
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["error"]["code"] == -32022
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_rejects_non_object_message(client: AsyncClient, auth_headers: dict[str, str]):
+    r = await client.post(
+        "/mcp",
+        json=[1, "x"],
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    assert [item["error"]["code"] for item in r.json()] == [-32600, -32600]
+
+
 def test_request_version_helper():
     from src.mcp.server import _request_version
 

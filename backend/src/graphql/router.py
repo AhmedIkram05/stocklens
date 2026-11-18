@@ -37,7 +37,7 @@ async def get_graphql_context(request: HTTPConnection) -> dict:
         # ponytail: anonymous handshake context — WS auth lives in the
         # subscription resolver; handshake not rate limited either
         # (slowapi has no WS support). Revisit if abuse appears.
-        return {"request": request, "user_id": None, "children": {}}
+        return {"request": request, "user_id": None, "children": {}, "ws": True}
     assert isinstance(request, Request)
     # Same primitives as Depends(get_current_user) — identical 401 behaviour.
     current_user = await get_current_user(request=request, credentials=await _bearer(request))

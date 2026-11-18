@@ -308,6 +308,16 @@ async def test_poller_loop_ticks_and_survives_errors() -> None:
     assert calls >= 2
 
 
+@pytest.mark.asyncio
+async def test_ws_query_is_rejected() -> None:
+    """Non-subscription operations over WebSocket are refused."""
+    from src.graphql.schema import schema
+
+    result = await schema.execute("query { __typename }", context_value={"ws": True})
+    assert result.errors
+    assert "Only subscriptions" in result.errors[0].message
+
+
 PID = "11111111-1111-1111-1111-111111111111"
 OTHER_PID = "22222222-2222-2222-2222-222222222222"
 
