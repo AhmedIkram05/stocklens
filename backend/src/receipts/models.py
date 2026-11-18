@@ -7,6 +7,7 @@ and the FastAPI router.
 
 import datetime as _dt
 from typing import Any, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Literal
@@ -52,7 +53,7 @@ class ReceiptCreate(BaseModel):
 
     merchant_name: Optional[str] = None
     total_amount: Optional[DecimalAsFloat] = None
-    category_id: Optional[str] = None
+    category_id: Optional[UUID] = None
     ocr_raw_text: Optional[str] = None
     ocr_confidence: Optional[float] = None
     line_items: Optional[list[dict]] = None
@@ -67,7 +68,7 @@ class ReceiptUpdate(BaseModel):
 
     merchant_name: Optional[str] = None
     total_amount: Optional[DecimalAsFloat] = None
-    category_id: Optional[str] = None
+    category_id: Optional[UUID] = None
     ocr_raw_text: Optional[str] = None
     ocr_confidence: Optional[float] = None
     line_items: Optional[list[dict]] = None

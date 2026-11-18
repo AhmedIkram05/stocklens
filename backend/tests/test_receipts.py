@@ -77,6 +77,16 @@ class TestCreateReceipt:
         assert response.status_code == 201
         assert response.json()["line_items"] is not None
 
+    async def test_create_rejects_non_uuid_category(
+        self, client: httpx.AsyncClient, auth_headers: dict[str, str]
+    ):
+        response = await client.post(
+            "/receipts",
+            json={"total_amount": "1.00", "category_id": "not-a-uuid"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+
 
 # ── List ────────────────────────────────────────────────────────────────────
 
@@ -253,16 +263,16 @@ class TestHealthEndpoints:
         assert "bedrock_configured" in data
 
     @patch("src.receipts.router.get_redis", new_callable=AsyncMock)
-    async def test_cascade_health_degraded_bedrock(
+    async def test_cascade_health_static_bedrock(
         self, mock_redis, client: httpx.AsyncClient, auth_headers: dict[str, str]
     ):
-        """Bedrock fails (no AWS creds in CI) -> degraded. Redis mocked ok."""
+        """Health reports config without invoking Bedrock."""
         mock_redis.return_value.ping = AsyncMock(return_value=True)
         response = await client.get("/receipts/cascade/health", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        # In test env bedrock will fail (no AWS creds)
-        assert data["status"] == "degraded"
+        assert data["status"] == "healthy"
+        assert data["checks"]["bedrock"] == "configured"
         assert data["checks"]["redis"] == "ok"
         assert "cascade_threshold" in data
 
