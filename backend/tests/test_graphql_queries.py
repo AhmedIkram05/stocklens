@@ -183,6 +183,12 @@ class TestNestingShape:
     ):
         """One list query returns children + performance with REST-identical values."""
         _mock_live_quotes(mocker)
+        # Keep this parity test offline: OHLCV bootstrap is covered in
+        # test_performance. Without stored prices TWR stays undefined.
+        mocker.patch(
+            "src.performance.queries._ensure_ohlcv_coverage",
+            new=AsyncMock(),
+        )
         pid = await _create_portfolio(client, auth_headers)
         await _seed_holding(pid)
         await _seed_txn_and_cash_flow(pid)

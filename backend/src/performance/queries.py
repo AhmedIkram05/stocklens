@@ -24,9 +24,16 @@ from src.database.connection import connection_ctx
 from src.market.fx import current_fx_rates
 from src.market.provider import fetch_ohlcv
 from src.market.quotes import get_quote
-from src.market.repository import get_earliest_ohlcv_date, get_ohlcv_batch, upsert_ohlcv
+from src.market.repository import (
+    get_earliest_ohlcv_date,
+    get_latest_ohlcv_date,
+    get_ohlcv_batch,
+    upsert_ohlcv,
+)
 from src.market.router import refresh_ohlcv_if_stale
 from src.performance.calculations import (
+    _get_closest_price,
+    _sorted_price_dates,
     align_daily_return_series,
     compute_benchmark_comparison,
     compute_portfolio_performance,
@@ -134,6 +141,63 @@ async def build_price_map(
             r["date"]: r["adjusted_close"] for r in rows if r["adjusted_close"] is not None
         }
     return price_map
+
+
+# Cap concurrent coverage fetches so a 20-holding portfolio cannot fan out one
+# yfinance download per holding at once. Each miss fetches only the requested
+# window, never the provider's 20-year default.
+_COVERAGE_CONCURRENCY = 4
+_COVERAGE_TIMEOUT = 10.0  # seconds per ticker; provider retries can take minutes
+_COVERAGE_TOTAL_TIMEOUT = 10.0  # whole-coverage budget for one request
+
+
+async def _ensure_ohlcv_window(ticker: str, start_date: date, end_date: date) -> None:
+    """Fetch and store *ticker*'s OHLCV only when the requested window is missing.
+
+    ``build_price_map`` reads stored rows only, so a ticker never opened via
+    ``/market/ohlcv`` produced an empty series and a silently partial portfolio
+    (BE-M32). Check both ends of the window so a shallow cache is backfilled and
+    a stale one is refreshed. Provider/DB failures are logged, never fatal: the
+    caller still gets whatever prices are already stored.
+    """
+    try:
+        earliest = await get_earliest_ohlcv_date(ticker)
+        latest = await get_latest_ohlcv_date(ticker)
+        reference_end = min(end_date, datetime.now(timezone.utc).date())
+        if (
+            earliest is not None
+            and latest is not None
+            and earliest <= start_date
+            # Weekend/holiday tolerance: Friday's close covers a Monday request.
+            and latest >= reference_end - timedelta(days=3)
+        ):
+            return
+        rows = await asyncio.wait_for(
+            fetch_ohlcv(ticker, start_date=start_date, end_date=end_date),
+            timeout=_COVERAGE_TIMEOUT,
+        )
+        if rows:
+            await upsert_ohlcv(ticker, rows)
+    except Exception as exc:
+        logger.warning("ohlcv_window_fetch_failed", ticker=ticker, error=str(exc), exc_info=True)
+
+
+async def _ensure_ohlcv_coverage(tickers: list[str], start_date: date, end_date: date) -> None:
+    """Ensure every ticker has prices for the requested window, bounded parallel."""
+    semaphore = asyncio.Semaphore(_COVERAGE_CONCURRENCY)
+    unique = list(dict.fromkeys(tickers))
+
+    async def _one(ticker: str) -> None:
+        async with semaphore:
+            await _ensure_ohlcv_window(ticker, start_date, end_date)
+
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*(_one(ticker) for ticker in unique)),
+            timeout=_COVERAGE_TOTAL_TIMEOUT,
+        )
+    except Exception as exc:
+        logger.warning("ohlcv_coverage_incomplete", error=str(exc), exc_info=True)
 
 
 # Cap concurrent live-quote fetches (each cache-miss offloads to the default
@@ -279,6 +343,7 @@ async def get_bulk_portfolio_performance(
 
     if all_tickers:
         tickers = list(all_tickers)
+        await _ensure_ohlcv_coverage(tickers, start_date, end_date)
         price_map = await build_price_map(tickers, start_date, end_date)
         live_quotes = await fetch_live_quotes(tickers)
 
@@ -396,6 +461,7 @@ async def get_portfolio_performance(
     # exists, so a historical end_date still uses today's rate for FX.
     fx_rates = await current_fx_rates(holdings)
 
+    await _ensure_ohlcv_coverage(tickers, start_date, end_date)
     price_map = await build_price_map(tickers, start_date, end_date)
 
     # Live intraday quotes only belong to a period that ends today; applying
@@ -417,6 +483,21 @@ async def get_portfolio_performance(
         live_quotes=live_quotes,
         fx_rates=fx_rates,
     )
+
+
+def _cumulative_series(dates: list[date], returns: list[Decimal]) -> list[dict[str, Any]]:
+    """Link daily returns into a cumulative series keyed by the return's own date.
+
+    ``align_daily_return_series`` returns ``dates[i]`` as the day ``returns[i]``
+    was realised, so indexing ``dates[i + 1]`` raised IndexError on the final
+    element (BE-D1).
+    """
+    cum = Decimal(1)
+    series: list[dict[str, Any]] = []
+    for i, r in enumerate(returns):
+        cum *= Decimal(1) + r
+        series.append({"date": str(dates[i]), "value": float(cum - 1)})
+    return series
 
 
 async def get_benchmark_comparison(
@@ -463,18 +544,36 @@ async def get_benchmark_comparison(
     # refresh_ohlcv_if_stale only checks recency (1-3 days), not depth.
     # yfinance defaults to 1 year when start_date=None, so longer periods
     # may need a wider fetch.
-    await refresh_ohlcv_if_stale(benchmark)
+    # Bound the provider calls: the shared retry chain can wait minutes. A
+    # timeout leaves whatever is already stored for the comparison.
+    try:
+        await asyncio.wait_for(refresh_ohlcv_if_stale(benchmark), timeout=_COVERAGE_TIMEOUT)
+    except TimeoutError:
+        logger.warning("benchmark_refresh_timeout", benchmark=benchmark)
     earliest = await get_earliest_ohlcv_date(benchmark)
     logger.info(
         "coverage_check", benchmark=benchmark, earliest=str(earliest), start_date=str(start_date)
     )
     if earliest is None or earliest > start_date:
-        rows = await fetch_ohlcv(benchmark, start_date=start_date, end_date=end_date)
+        try:
+            rows = await asyncio.wait_for(
+                fetch_ohlcv(benchmark, start_date=start_date, end_date=end_date),
+                timeout=_COVERAGE_TIMEOUT,
+            )
+        except Exception as exc:
+            logger.warning(
+                "benchmark_coverage_fetch_failed",
+                benchmark=benchmark,
+                error=str(exc),
+                exc_info=True,
+            )
+            rows = []
         logger.info("coverage_fetch", benchmark=benchmark, rows_fetched=len(rows))
         if rows:
             inserted = await upsert_ohlcv(benchmark, rows)
             logger.info("coverage_upsert", benchmark=benchmark, rows_inserted=inserted)
 
+    await _ensure_ohlcv_coverage(tickers, start_date, end_date)
     price_map = await build_price_map(all_tickers, start_date, end_date, limit=50000)
 
     if not price_map.get(benchmark):
@@ -531,14 +630,6 @@ async def get_benchmark_comparison(
     )
 
     # Build cumulative return series for charting (shared x-axis)
-    def _cumulative_series(dates: list[date], returns: list[Decimal]) -> list[dict[str, Any]]:
-        cum = Decimal(1)
-        series: list[dict[str, Any]] = []
-        for i, r in enumerate(returns):
-            cum *= Decimal(1) + r
-            series.append({"date": str(dates[i + 1]), "value": float(cum - 1)})
-        return series
-
     portfolio_cum = _cumulative_series(common_dates, portfolio_aligned)
     benchmark_cum = _cumulative_series(common_dates, benchmark_aligned)
 
@@ -586,13 +677,33 @@ def compute_portfolio_daily_returns(
         txns_by_date[t["date"]].append(t)
 
     last_day = trading_days[-1]
+    sorted_price_dates = _sorted_price_dates(price_map)
+    current: dict[str, Decimal] = {}
+
+    def _apply(txn: dict) -> None:
+        ticker = txn["ticker"]
+        if txn["type"] == "BUY":
+            current[ticker] = current.get(ticker, Decimal(0)) + txn["shares"]
+        else:
+            current[ticker] = current.get(ticker, Decimal(0)) - txn["shares"]
+            if current[ticker] <= 0:
+                del current[ticker]
+
+    # Seed positions opened before the window. Without this a buy-and-hold
+    # portfolio has no holdings on any day and reports an all-zero series
+    # (BE-D9). Trades on the first trading day stay in the loop as flows.
+    for txn in transactions:
+        if txn["date"] < trading_days[0]:
+            _apply(txn)
 
     def _price_at(ticker: str, day_: date) -> Optional[Decimal]:
         if live_quotes and day_ == last_day:
             quote = live_quotes.get(ticker)
             if quote is not None:
                 return quote[0]
-        return price_map.get(ticker, {}).get(day_)
+        # Closest prior price: a ticker-specific holiday must not value the
+        # holding at zero and manufacture a fake -x%/+x% pair (BE-D10).
+        return _get_closest_price(price_map, ticker, day_, sorted_price_dates)
 
     def _value_at(day_: date) -> Decimal:
         """Market value of the current holdings at ``day_``'s prices (GBP)."""
@@ -605,7 +716,6 @@ def compute_portfolio_daily_returns(
         return total
 
     daily_returns: list[Decimal] = []
-    current: dict[str, Decimal] = {}
     previous_value = Decimal(0)
 
     for i, day in enumerate(trading_days):
@@ -627,13 +737,7 @@ def compute_portfolio_daily_returns(
         # post-trade valuation becomes the next day's base, so a trade's cash
         # value cancels out of the return series.
         for txn in txns_by_date.get(day, []):
-            ticker = txn["ticker"]
-            if txn["type"] == "BUY":
-                current[ticker] = current.get(ticker, Decimal(0)) + txn["shares"]
-            else:
-                current[ticker] = current.get(ticker, Decimal(0)) - txn["shares"]
-                if current[ticker] <= 0:
-                    del current[ticker]
+            _apply(txn)
 
         previous_value = _value_at(day)
 
