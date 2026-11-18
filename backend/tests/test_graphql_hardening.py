@@ -97,7 +97,7 @@ async def test_query_timeout_allows_fast_resolver() -> None:
 
 
 def test_production_schema_registers_hardening_extensions() -> None:
-    from src.graphql.schema import schema
+    from src.graphql.schema import WebSocketOperationGuard, schema
 
     extensions = [factory() for factory in schema.extensions]
     assert {type(extension) for extension in extensions} == {
@@ -105,6 +105,7 @@ def test_production_schema_registers_hardening_extensions() -> None:
         MaxAliasesLimiter,
         QueryTimeout,
         ParserCache,
+        WebSocketOperationGuard,
     }
     timeout = next(e for e in extensions if isinstance(e, QueryTimeout))
     assert timeout.seconds == 30
