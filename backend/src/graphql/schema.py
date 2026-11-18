@@ -1,6 +1,8 @@
 """
-GraphQL read facade — Strawberry types + resolvers, plus the ``market_quote``
-subscription (60s poller → Redis pub/sub; near-real-time, never "live").
+GraphQL read facade — Strawberry types + resolvers, plus two subscriptions:
+``marketQuote(ticker)`` (per-ticker) and ``portfolioValuation(portfolioId)``
+(server-computed portfolio totals + holdings; replaces client-side quote
+merging). Both are 60s-poller → Redis pub/sub: near-real-time, never "live".
 
 Scalar policy (REST JSON parity): money = float (Decimal coerced),
 ids = strawberry.ID, dates/datetimes = ISO-8601, enums = strawberry.enum.
@@ -24,14 +26,24 @@ import strawberry
 import structlog
 from fastapi import HTTPException
 from graphql.error import GraphQLError
-from strawberry.extensions import SchemaExtension
+from strawberry.extensions import (
+    MaxAliasesLimiter,
+    ParserCache,
+    QueryDepthLimiter,
+    SchemaExtension,
+)
 from strawberry.types.graphql import OperationType
 
 from src.auth.utils import decode_token
 from src.cache.redis import get_redis, is_token_blacklisted
+from src.graphql.extensions import QueryTimeout
 from src.graphql.streaming import (
+    PORTFOLIO_STREAM_ERROR,
     _fetch_with_timeout,
+    portfolio_channel,
+    subscribe_portfolio,
     subscribe_symbol,
+    unsubscribe_portfolio,
     unsubscribe_symbol,
 )
 from src.market import quotes as market_quotes
@@ -44,6 +56,7 @@ from src.performance.queries import (
     get_cash_flows_sorted,
     get_holdings,
     get_portfolio_performance,
+    get_portfolio_valuation,
     get_transactions_sorted,
 )
 from src.performance.schemas import (
@@ -53,6 +66,12 @@ from src.performance.schemas import (
 from src.portfolios.queries import fetch_portfolio_by_id, fetch_portfolios_from_db
 
 logger = structlog.get_logger(__name__)
+
+# Request-scoped limits. Subscriptions are exempt from the timeout: they are
+# long-lived streams, not request work.
+GRAPHQL_MAX_DEPTH = 10
+GRAPHQL_MAX_ALIASES = 50
+GRAPHQL_QUERY_TIMEOUT_SECONDS = 30
 
 
 def _f(value: Any) -> float | None:
@@ -76,6 +95,14 @@ def _as_datetime(value: Any) -> datetime | None:
     if isinstance(value, str):
         return datetime.fromisoformat(value)
     return value
+
+
+def _validated_portfolio_id(value: str) -> str:
+    """Reject non-UUID ids before they reach an asyncpg ``::uuid`` cast."""
+    try:
+        return str(UUID(value))
+    except (ValueError, AttributeError):
+        raise GraphQLError("Invalid portfolio id")
 
 
 @strawberry.enum
@@ -263,6 +290,48 @@ def _to_portfolio_performance(resp: PortfolioPerformanceResponse) -> PortfolioPe
 
 
 @strawberry.type
+class PortfolioValuation:
+    """Live, quote-driven portfolio view — totals + holdings, no TWR.
+
+    TWR needs a year of stored history and must not run on a 60s tick; clients
+    keep the TWR from the initial ``portfolio.performance`` query.
+    """
+
+    portfolio_id: strawberry.ID
+    portfolio_name: str
+    total_market_value: float | None
+    total_cost_basis: float
+    total_unrealised_pl: float | None
+    total_unrealised_pl_pct: float | None
+    day_change: float | None
+    day_change_pct: float | None
+    free_cash_balance: float
+    holdings: list[HoldingPerformance]
+    total_holdings: int
+    data_quality: str
+    calculated_at: datetime
+
+
+def _to_portfolio_valuation(resp: PortfolioPerformanceResponse) -> PortfolioValuation:
+    perf = _to_portfolio_performance(resp)
+    return PortfolioValuation(
+        portfolio_id=perf.portfolio_id,
+        portfolio_name=perf.portfolio_name,
+        total_market_value=perf.total_market_value,
+        total_cost_basis=perf.total_cost_basis,
+        total_unrealised_pl=perf.total_unrealised_pl,
+        total_unrealised_pl_pct=perf.total_unrealised_pl_pct,
+        day_change=perf.day_change,
+        day_change_pct=perf.day_change_pct,
+        free_cash_balance=perf.free_cash_balance,
+        holdings=perf.holdings,
+        total_holdings=perf.total_holdings,
+        data_quality=perf.data_quality,
+        calculated_at=perf.calculated_at,
+    )
+
+
+@strawberry.type
 class CumulativeReturn:
     date: date
     value: float
@@ -420,7 +489,7 @@ class Query:
     @strawberry.field
     async def portfolio(self, info: strawberry.Info, id: strawberry.ID) -> Portfolio | None:
         # None → null (no existence leak; no HTTP 404 in GraphQL).
-        row = await fetch_portfolio_by_id(str(id), info.context["user_id"])
+        row = await fetch_portfolio_by_id(_validated_portfolio_id(str(id)), info.context["user_id"])
         return Portfolio.from_row(row) if row is not None else None
 
     @strawberry.field
@@ -436,10 +505,13 @@ class Query:
         return _to_quote(q)
 
 
-async def _validate_ws_token(token: str) -> None:
-    """WS auth: same primitives as ``get_current_user`` minus the DB user fetch
-    (market data is not user-scoped). Raises ``GraphQLError("Forbidden")`` on
-    any failure — expired/missing/blacklisted/non-access token."""
+async def _validate_ws_token(token: str) -> str:
+    """WS auth: same primitives as ``get_current_user`` minus the DB user fetch.
+
+    Returns the token's ``sub`` (user id) so portfolio-scoped subscriptions can
+    verify ownership. Raises ``GraphQLError("Forbidden")`` on any failure —
+    expired/missing/blacklisted/non-access token.
+    """
     try:
         payload = decode_token(token)
         blacklisted = await is_token_blacklisted(payload.jti)
@@ -447,6 +519,7 @@ async def _validate_ws_token(token: str) -> None:
         raise GraphQLError("Forbidden")
     if payload.type != "access" or blacklisted:
         raise GraphQLError("Forbidden")
+    return str(payload.sub)
 
 
 @strawberry.type
@@ -489,6 +562,61 @@ class Subscription:
                 logger.warning("ws_pubsub_close_failed", symbol=ticker)
             unsubscribe_symbol(ticker)
 
+    @strawberry.subscription
+    async def portfolio_valuation(
+        self, info: strawberry.Info, portfolio_id: strawberry.ID
+    ) -> AsyncGenerator[PortfolioValuation, None]:
+        """Server-computed live valuation for one portfolio (~15-min-delayed data)."""
+        params = info.context.get("connection_params") or {}
+        token = (params.get("authToken") or "").removeprefix("Bearer ").strip()
+        user_id = await _validate_ws_token(token)
+
+        row = await fetch_portfolio_by_id(_validated_portfolio_id(str(portfolio_id)), user_id)
+        if row is None:
+            raise GraphQLError("Forbidden")
+        pid = str(row["id"])  # canonical casing, so the registry key is stable
+
+        subscribe_portfolio(pid, user_id)
+        channel = portfolio_channel(pid, user_id)
+        pubsub = None
+        try:
+            redis = await get_redis()
+            pubsub = redis.pubsub()
+            # Subscribe before the replay compute — a tick published in between
+            # would otherwise be missed.
+            await pubsub.subscribe(channel)
+            try:
+                first = await get_portfolio_valuation(pid, user_id)
+            except HTTPException:
+                raise GraphQLError("Forbidden")
+            if first.data_quality == "complete":
+                yield _to_portfolio_valuation(first)
+            async for message in pubsub.listen():
+                if message.get("type") != "message":
+                    continue
+                payload = json.loads(message["data"])
+                if PORTFOLIO_STREAM_ERROR in payload:
+                    # Ownership lost after subscribe — end the stream rather
+                    # than leaving the client on stale data.
+                    raise GraphQLError(payload[PORTFOLIO_STREAM_ERROR])
+                # Re-check the token each tick: expiry/blacklist closes the stream.
+                await _validate_ws_token(token)
+                valuation = PortfolioPerformanceResponse.model_validate(payload)
+                if valuation.data_quality != "complete":
+                    continue
+                yield _to_portfolio_valuation(valuation)
+        finally:
+            try:
+                if pubsub is not None:
+                    try:
+                        await pubsub.unsubscribe(channel)
+                    finally:
+                        await pubsub.aclose()
+            except Exception:
+                logger.warning("ws_pubsub_close_failed", portfolio_id=pid)
+            finally:
+                unsubscribe_portfolio(pid, user_id)
+
 
 class WebSocketOperationGuard(SchemaExtension):
     """Reject queries/mutations sent over WebSocket; only subscriptions belong there."""
@@ -507,7 +635,14 @@ class WebSocketOperationGuard(SchemaExtension):
 schema = strawberry.Schema(
     query=Query,
     subscription=Subscription,
-    extensions=[WebSocketOperationGuard],
+    extensions=[
+        lambda: QueryDepthLimiter(max_depth=GRAPHQL_MAX_DEPTH),
+        lambda: MaxAliasesLimiter(max_alias_count=GRAPHQL_MAX_ALIASES),
+        lambda: QueryTimeout(seconds=GRAPHQL_QUERY_TIMEOUT_SECONDS),
+        # Mobile clients resend identical documents — parse once.
+        lambda: ParserCache(),
+        lambda: WebSocketOperationGuard(),
+    ],
 )
 
 # Re-exported for tests (patch targets live in this namespace).
@@ -518,5 +653,6 @@ __all__ = [
     "get_benchmark_comparison",
     "get_bulk_portfolio_performance",
     "get_portfolio_performance",
+    "get_portfolio_valuation",
     "schema",
 ]

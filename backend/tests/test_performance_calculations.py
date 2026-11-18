@@ -22,6 +22,7 @@ from src.performance.calculations import (
     align_daily_return_series,
     compute_benchmark_comparison,
     compute_holding_performance,
+    compute_live_valuation,
     compute_portfolio_performance,
 )
 
@@ -797,3 +798,129 @@ class TestTWRChain:
             transactions, cash_flows, price_map, date(2024, 1, 1), date(2024, 12, 31)
         )
         assert twr == pytest.approx(Decimal("-0.4"), abs=Decimal("1e-9"))
+
+
+class TestComputeLiveValuation:
+    """Tests for compute_live_valuation — quote-driven, TWR-free valuation."""
+
+    @staticmethod
+    def _holding(ticker: str = "AAPL", **overrides):
+        row = {
+            "ticker": ticker,
+            "shares": Decimal("10"),
+            "average_cost_basis": Decimal("100"),
+            "average_cost_basis_gbp": Decimal("100"),
+            "currency": "GBP",
+        }
+        row.update(overrides)
+        return row
+
+    def test_totals_and_weights_from_live_quotes(self):
+        resp = compute_live_valuation(
+            portfolio_id="pid-1",
+            portfolio_name="Retirement",
+            holdings_data=[self._holding()],
+            live_quotes={"AAPL": (Decimal("120"), Decimal("118"))},
+            fx_rates={"AAPL": Decimal("1")},
+            free_cash_balance=Decimal("50"),
+        )
+
+        assert resp.total_market_value == Decimal("1200")
+        assert resp.total_cost_basis == Decimal("1000")
+        assert resp.total_unrealised_pl == Decimal("200")
+        assert resp.total_unrealised_pl_pct == Decimal("20")
+        assert resp.day_change == Decimal("20")
+        assert float(resp.day_change_pct) == pytest.approx(100 * 2 / 118)
+        assert resp.holdings[0].portfolio_weight_pct == Decimal("100")
+        assert resp.free_cash_balance == Decimal("50")
+        assert resp.total_holdings == 1
+        assert resp.data_quality == "complete"
+        assert resp.twr is None
+        assert resp.twr_methodology == "live-valuation"
+
+    def test_applies_fx_and_stored_gbp_cost_basis(self):
+        """Native-currency quote is converted before market value is computed."""
+        resp = compute_live_valuation(
+            portfolio_id="pid-1",
+            portfolio_name="P",
+            holdings_data=[
+                self._holding(
+                    currency="USD",
+                    average_cost_basis=Decimal("100"),
+                    average_cost_basis_gbp=Decimal("80"),
+                )
+            ],
+            live_quotes={"AAPL": (Decimal("120"), Decimal("118"))},
+            fx_rates={"AAPL": Decimal("0.8")},
+            free_cash_balance=Decimal("0"),
+        )
+
+        holding = resp.holdings[0]
+        assert holding.current_price == Decimal("96")  # 120 * 0.8
+        assert holding.market_value == Decimal("960")
+        assert holding.cost_basis == Decimal("800")  # 10 * stored GBP cost basis
+        assert holding.unrealised_pl == Decimal("160")
+        assert holding.day_change == Decimal("16")  # 10 * (96 - 94.4)
+
+    def test_missing_quote_marks_partial_and_nulls_value(self):
+        resp = compute_live_valuation(
+            portfolio_id="pid-1",
+            portfolio_name="P",
+            holdings_data=[self._holding("AAPL"), self._holding("MSFT")],
+            live_quotes={"AAPL": (Decimal("120"), Decimal("118"))},
+            fx_rates={"AAPL": Decimal("1"), "MSFT": Decimal("1")},
+            free_cash_balance=Decimal("0"),
+        )
+
+        assert resp.data_quality == "partial"
+        assert resp.total_market_value == Decimal("1200")
+        # Full cost basis minus a partial market value would understate P&L.
+        assert resp.total_unrealised_pl is None
+        assert resp.total_unrealised_pl_pct is None
+        msft = next(h for h in resp.holdings if h.ticker == "MSFT")
+        assert msft.market_value is None
+        assert msft.unrealised_pl is None
+
+    def test_no_live_prices_nulls_totals(self):
+        resp = compute_live_valuation(
+            portfolio_id="pid-1",
+            portfolio_name="P",
+            holdings_data=[self._holding("AAPL")],
+            live_quotes={},
+            fx_rates={"AAPL": Decimal("1")},
+            free_cash_balance=Decimal("0"),
+        )
+
+        assert resp.total_market_value is None
+        assert resp.total_unrealised_pl is None
+        assert resp.day_change is None
+        assert resp.data_quality == "partial"
+
+    def test_fx_unknown_marks_partial(self):
+        """A non-GBP holding valued at rate 1 must not report complete quality."""
+        resp = compute_live_valuation(
+            portfolio_id="pid-1",
+            portfolio_name="P",
+            holdings_data=[self._holding(currency="USD")],
+            live_quotes={"AAPL": (Decimal("120"), Decimal("118"))},
+            fx_rates={"AAPL": Decimal("1")},
+            free_cash_balance=Decimal("0"),
+        )
+
+        assert resp.data_quality == "partial"
+
+    def test_empty_portfolio(self):
+        resp = compute_live_valuation(
+            portfolio_id="pid-1",
+            portfolio_name="Empty",
+            holdings_data=[],
+            live_quotes={},
+            fx_rates={},
+            free_cash_balance=Decimal("25"),
+        )
+
+        assert resp.holdings == []
+        assert resp.total_holdings == 0
+        assert resp.total_market_value == Decimal("0")
+        assert resp.day_change is None
+        assert resp.data_quality == "complete"

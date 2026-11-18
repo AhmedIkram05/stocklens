@@ -1,17 +1,19 @@
 /**
  * subscriptionClient.ts
  *
- * Singleton graphql-ws client for the `marketQuote` subscription feed.
- * graphql-ws multiplexes N tickers over ONE shared socket + reconnects
- * natively; a fresh token is supplied via `connectionParams` on every
- * (re)connect. Singleton avoids the per-call `createClient` socket leak.
+ * Singleton graphql-ws client for the GraphQL subscription feed: per-ticker
+ * `marketQuote` and per-portfolio `portfolioValuation`. graphql-ws multiplexes
+ * N subscriptions over ONE shared socket + reconnects natively; a fresh token
+ * is supplied via `connectionParams` on every (re)connect. The singleton avoids
+ * the per-call `createClient` socket leak.
  */
 
 import { createClient, type Client } from 'graphql-ws';
 import { API_BASE_URL, apiService } from '../services/api';
-import type { MarketQuoteSubscription } from './generated';
+import type { MarketQuoteSubscription, PortfolioValuationSubscription } from './generated';
 
 export type MarketQuotePayload = MarketQuoteSubscription['marketQuote'];
+export type PortfolioValuationPayload = PortfolioValuationSubscription['portfolioValuation'];
 
 /** Runtime document string for codegen's `MarketQuote` operation (kept in sync by eye). */
 export const MARKET_QUOTE_SUBSCRIPTION = `
@@ -45,6 +47,19 @@ export function getSubscriptionClient(): Client {
   return sharedClient;
 }
 
+/**
+ * Drop the shared socket so the next subscribe re-runs `connectionParams`.
+ * Needed after an auth error: an open socket keeps its original token, so a
+ * new subscription on it would be rejected again.
+ */
+export function resetSubscriptionClient(): void {
+  if (sharedClient) {
+    const client = sharedClient;
+    sharedClient = null;
+    Promise.resolve(client.dispose()).catch(() => undefined);
+  }
+}
+
 export function subscribeMarketQuote(
   ticker: string,
   onNext: (quote: MarketQuotePayload) => void,
@@ -66,6 +81,68 @@ export function subscribeMarketQuote(
   );
   // NOTE: do NOT dispose the shared client per subscription — graphql-ws multiplexes
   // N subscriptions over ONE socket. Dispose only on app teardown / logout.
+  return () => {
+    unsubscribe();
+  };
+}
+
+/** Runtime document string for codegen's `PortfolioValuation` operation (kept in sync by eye). */
+export const PORTFOLIO_VALUATION_SUBSCRIPTION = `
+subscription PortfolioValuation($portfolioId: ID!) {
+  portfolioValuation(portfolioId: $portfolioId) {
+    portfolioId
+    portfolioName
+    totalMarketValue
+    totalCostBasis
+    totalUnrealisedPl
+    totalUnrealisedPlPct
+    dayChange
+    dayChangePct
+    freeCashBalance
+    totalHoldings
+    dataQuality
+    calculatedAt
+    holdings {
+      ticker
+      shares
+      averageCostBasis
+      currentPrice
+      currency
+      marketValue
+      costBasis
+      unrealisedPl
+      unrealisedPlPct
+      dayChange
+      dayChangePct
+      portfolioWeightPct
+    }
+  }
+}
+`;
+
+/**
+ * One server-computed valuation stream per portfolio. Replaces the per-ticker
+ * fan-out plus client-side merging: the holdings' derived values arrive already
+ * FX-converted and summed, so the screen just overlays the payload.
+ */
+export function subscribePortfolioValuation(
+  portfolioId: string,
+  onNext: (valuation: PortfolioValuationPayload) => void,
+  onError?: (err: unknown) => void,
+): () => void {
+  const client = getSubscriptionClient();
+  const unsubscribe = client.subscribe(
+    { query: PORTFOLIO_VALUATION_SUBSCRIPTION, variables: { portfolioId } },
+    {
+      next: (result) => {
+        const valuation = (result as { data?: { portfolioValuation?: PortfolioValuationPayload } })
+          ?.data?.portfolioValuation;
+        if (valuation) onNext(valuation);
+      },
+      error: onError ?? (() => {}),
+      complete: () => {},
+    },
+  );
   return () => {
     unsubscribe();
   };

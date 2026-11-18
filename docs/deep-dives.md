@@ -500,7 +500,7 @@ flowchart LR
 
     subgraph GQL["FastAPI /graphql"]
         RES[Resolvers<br/>ownership once<br/>at Portfolio]
-        SUB[market_quote<br/>subscription]
+        SUB[marketQuote +<br/>portfolioValuation<br/>subscriptions]
         POLL[60s poller<br/>refcount registry]
     end
 
@@ -534,26 +534,28 @@ flowchart LR
 
 **Resolver contract:**
 
-| Area           | Rule                                                                                                                                                                                                                       |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ownership      | Verified once at Portfolio resolution; children scope by `portfolio_id` (CONTEXT.md constraint #7)                                                                                                                         |
-| N+1            | List query preloads children via 3 batched reads + 1 bulk compute into `info.context`; each batch helper asserted called exactly once per query                                                                            |
-| `market_quote` | Ticker uppercased + regex-validated; provider failure → `Quote temporarily unavailable` (REST-503 parity message)                                                                                                          |
-| WS auth        | HTTP and WS share one `context_getter` branched on connection type; WS carries no headers, so auth is per-subscription via `connection_params.authToken` (decode + blacklist, no DB fetch — market data isn't user-scoped) |
-| Stream         | Last-value replay first (subscribe-before-read, no tick gap), then pub/sub ticks; at-most-once per tick                                                                                                                    |
-| Scalars        | Money `float`, ids `ID`, ISO dates; Strawberry auto-camelCases fields — the RN mapper converts back to the REST snake_case shape                                                                                           |
+| Area                  | Rule                                                                                                                                                                                                                       |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ownership             | Verified once at Portfolio resolution; children scope by `portfolio_id` (CONTEXT.md constraint #7)                                                                                                                         |
+| N+1                   | List query preloads children via 3 batched reads + 1 bulk compute into `info.context`; each batch helper asserted called exactly once per query                                                                            |
+| `market_quote`        | Ticker uppercased + regex-validated; provider failure → `Quote temporarily unavailable` (REST-503 parity message)                                                                                                          |
+| `portfolio_valuation` | Ownership re-checked on every tick; reuses `compute_holding_performance` (FX-aware) and skips TWR/OHLCV. Cache replay on connect, then pub/sub ticks                                                                       |
+| Request limits        | Depth 10, 50 aliases, 30s execute timeout (subscriptions exempt), parser cache — Strawberry extension factories                                                                                                            |
+| WS auth               | HTTP and WS share one `context_getter` branched on connection type; WS carries no headers, so auth is per-subscription via `connection_params.authToken` (decode + blacklist, no DB fetch — market data isn't user-scoped) |
+| Stream                | Last-value replay first (subscribe-before-read, no tick gap), then pub/sub ticks; at-most-once per tick                                                                                                                    |
+| Scalars               | Money `float`, ids `ID`, ISO dates; Strawberry auto-camelCases fields — the RN mapper converts back to the REST snake_case shape                                                                                           |
 
-**Frontend** (`graphql-codegen` from committed root `schema.graphql`, never live introspection): `client.ts` (typed POST + query doc + camelCase→snake_case mapper), `subscriptionClient.ts` (singleton `graphql-ws`, Bearer `connectionParams`), `quoteMerge.ts` (pure CONTEXT.md-formula recompute on each tick). `PortfolioDetailScreen` went from 1 REST call + 30s blind poll to 1 query + live quote stream (`setInterval` deleted).
+**Frontend** (`graphql-codegen` from committed root `schema.graphql`, never live introspection): `client.ts` (typed POST + query doc + camelCase→snake_case mappers, including `applyValuation`), `subscriptionClient.ts` (singleton `graphql-ws`, Bearer `connectionParams`). `PortfolioDetailScreen` reads one query plus one `portfolioValuation` stream; the per-tick math that used to live client-side (`quoteMerge.ts`) is gone because the server computes and FX-converts it.
 
 **As-built deviations from the plan** (honest record):
 
-| Plan said                        | As built (why)                                                                                     |
-| -------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Docs/queries in snake_case       | Schema is camelCase (Strawberry default) — docs written in camelCase + client-side mapper          |
-| `Depends(get_current_user)` ctx  | 500'd every WS handshake (spike-proven) → manual-auth branch on connection type                    |
-| `compute_*_response` split       | Single wrapper per route (resolvers re-verify ownership anyway)                                    |
-| Tests at `src/graphql/*.test.ts` | Repo `__tests__/**/*.unit.test.ts` convention                                                      |
-| Raw byte drift diff              | Committed file is prettier-normalized (header + formatting) — drift check normalizes first (below) |
+| Plan said                        | As built (why)                                                                                                 |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Docs/queries in snake_case       | Schema is camelCase (Strawberry default) — docs written in camelCase + client-side mapper                      |
+| `Depends(get_current_user)` ctx  | 500'd every WS handshake (spike-proven) → manual-auth branch on connection type                                |
+| `compute_*_response` split       | Single wrapper per route (resolvers re-verify ownership anyway)                                                |
+| Tests at `src/graphql/*.test.ts` | Repo `__tests__/**/*.unit.test.ts` convention                                                                  |
+| Raw byte drift diff              | Parsed-schema comparison in `test_graphql_schema_sync.py`; CI regenerates `generated.ts` and fails on any diff |
 
 **Verification (Phase 7 close):** 5 new backend suites (queries 14 / subscriptions 15 / quote-cache 5 / portfolio-queries 5 / performance-queries 7 tests), 24 new frontend tests; full backend 1,567 passed, coverage 93.06% (gate 90%); `ruff`, `tsc`, ESLint, `prettier --check .` clean; codegen green.
 
@@ -973,7 +975,7 @@ StockLens/
 │   │   ├── components/               # Reusable UI components
 │   │   ├── hooks/                    # Custom React hooks
 │   │   ├── services/                 # API client, auth, storage
-│   │   ├── graphql/                  # Codegen client: .graphql docs, generated.ts, quoteMerge
+│   │   ├── graphql/                  # Codegen client: .graphql docs, generated.ts, applyValuation
 │   │   ├── store/                    # Zustand state management
 │   │   └── utils/                    # Helpers, formatters
 │   └── __tests__/                    # 82 test files, 844+ assertions

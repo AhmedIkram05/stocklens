@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -21,10 +21,14 @@ import {
   graphqlRequest,
   PORTFOLIO_DETAIL_QUERY,
   toPortfolioPerformance,
+  applyValuation,
 } from '../../graphql/client';
 import type { PortfolioDetailQuery } from '../../graphql/generated';
-import { subscribeMarketQuote, type MarketQuotePayload } from '../../graphql/subscriptionClient';
-import { applyQuoteToPerformance, applyQuotesToPerformance } from '../../graphql/quoteMerge';
+import {
+  resetSubscriptionClient,
+  subscribePortfolioValuation,
+  type PortfolioValuationPayload,
+} from '../../graphql/subscriptionClient';
 import { formatCurrency } from '../../utils/formatters';
 
 type PortfolioDetailRouteProp = RouteProp<PortfolioStackParamList, 'PortfolioDetail'>;
@@ -32,6 +36,16 @@ type PortfolioDetailNavigationProp = StackNavigationProp<
   PortfolioStackParamList,
   'PortfolioDetail'
 >;
+
+function positionsMatch(
+  positions: Array<{ ticker: string; shares: number }>,
+  holdings: Array<{ ticker: string; shares: number }>,
+): boolean {
+  return (
+    positions.length === holdings.length &&
+    holdings.every((h) => positions.find((p) => p.ticker === h.ticker)?.shares === h.shares)
+  );
+}
 
 const formatPercent = (value: number | null | undefined) => {
   if (value == null) return 'N/A';
@@ -90,9 +104,15 @@ export default function PortfolioDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [lastTickAt, setLastTickAt] = useState<string | null>(null);
   const mountedRef = useRef(true);
-  // Latest tick per ticker — a completed fetch cannot see websocket ticks,
-  // so they are folded back onto each fresh snapshot (N10).
-  const quotesRef = useRef(new Map<string, MarketQuotePayload>());
+  // Latest server valuation — a completed fetch can be older than a websocket
+  // tick, so it is folded back onto each fresh snapshot (N10).
+  const valuationRef = useRef<PortfolioValuationPayload | null>(null);
+  // Positions the current snapshot was fetched with — a tick may only overlay a
+  // snapshot whose positions are unchanged (a trade must win over a stale tick).
+  const positionsRef = useRef<Array<{ ticker: string; shares: number }> | null>(null);
+  const [streamAttempt, setStreamAttempt] = useState(0);
+  const retryAttemptRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchSeqRef = useRef(0);
 
   const fetchPerformance = useCallback(
@@ -110,14 +130,21 @@ export default function PortfolioDetailScreen() {
         const data = await graphqlRequest<PortfolioDetailQuery>(PORTFOLIO_DETAIL_QUERY, {
           id: portfolioId,
         });
+        const fresh = data.portfolio ? toPortfolioPerformance(data.portfolio.performance) : null;
+        if (fresh) {
+          positionsRef.current = fresh.holdings.map(({ ticker, shares }) => ({ ticker, shares }));
+        }
         if (mountedRef.current && seq === fetchSeqRef.current)
           setPerformance((prev) => {
-            const fresh = data.portfolio
-              ? toPortfolioPerformance(data.portfolio.performance)
-              : null;
             if (!fresh) return null;
             if (!prev) return fresh;
-            return applyQuotesToPerformance(fresh, [...quotesRef.current.values()]);
+            const valuation = valuationRef.current;
+            if (!valuation) return fresh;
+            // A tick captured before a trade/deposit must not resurrect old
+            // positions: only overlay when the position set matches the fetch.
+            return positionsMatch(positionsRef.current ?? [], valuation.holdings)
+              ? applyValuation(fresh, valuation)
+              : fresh;
           });
       } catch (err: any) {
         if (!silent) setError(err?.message || 'Failed to load portfolio performance');
@@ -138,26 +165,49 @@ export default function PortfolioDetailScreen() {
     };
   }, []);
 
-  const tickerKey = useMemo(
-    () =>
-      (performance?.holdings ?? [])
-        .filter((h) => h.shares > 0)
-        .map((h) => h.ticker)
-        .sort()
-        .join('|'),
-    [performance?.holdings],
-  );
+  // Route params can change while this instance is reused — drop the previous
+  // portfolio's last tick so it cannot be overlaid on the new one.
   useEffect(() => {
-    if (!tickerKey) return;
-    const unsubs = tickerKey.split('|').map((t) =>
-      subscribeMarketQuote(t, (quote) => {
-        if (quote.timestamp) setLastTickAt(quote.timestamp);
-        quotesRef.current.set(t, quote);
-        setPerformance((prev) => (prev ? applyQuoteToPerformance(prev, quote) : prev));
-      }),
+    valuationRef.current = null;
+    positionsRef.current = null;
+    retryAttemptRef.current = 0;
+    setLastTickAt(null);
+  }, [portfolioId]);
+
+  // One server-computed valuation stream replaces the per-ticker fan-out.
+  useEffect(() => {
+    const unsubscribe = subscribePortfolioValuation(
+      portfolioId,
+      (valuation) => {
+        if (!mountedRef.current) return;
+        if (valuation.dataQuality !== 'complete') return;
+        const positions = positionsRef.current;
+        if (positions && !positionsMatch(positions, valuation.holdings)) return;
+        retryAttemptRef.current = 0;
+        valuationRef.current = valuation;
+        setLastTickAt(valuation.calculatedAt);
+        setPerformance((prev) => (prev ? applyValuation(prev, valuation) : prev));
+      },
+      () => {
+        // Auth expiry/transport error: force a fresh socket so connectionParams
+        // re-reads the token, then resubscribe with capped backoff.
+        resetSubscriptionClient();
+        retryAttemptRef.current += 1;
+        const delay = Math.min(5_000 * retryAttemptRef.current, 60_000);
+        retryTimerRef.current = setTimeout(() => {
+          if (mountedRef.current) setStreamAttempt((n) => n + 1);
+        }, delay);
+      },
     );
-    return () => unsubs.forEach((u) => u());
-  }, [portfolioId, tickerKey]);
+
+    return () => {
+      unsubscribe();
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, [portfolioId, streamAttempt]);
 
   useFocusEffect(
     useCallback(() => {
@@ -300,7 +350,7 @@ export default function PortfolioDetailScreen() {
         )}
 
         <Text style={[styles.freshnessText, { color: theme.textSecondary }]}>
-          Prices updated {relativeTime(lastTickAt ?? performance.calculated_at)}
+          Valuation updated {relativeTime(lastTickAt ?? performance.calculated_at)}
         </Text>
 
         <View style={styles.sectionHeader}>

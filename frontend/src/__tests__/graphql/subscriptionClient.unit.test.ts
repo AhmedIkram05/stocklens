@@ -9,8 +9,11 @@
 
 import {
   getSubscriptionClient,
+  resetSubscriptionClient,
   subscribeMarketQuote,
+  subscribePortfolioValuation,
   MARKET_QUOTE_SUBSCRIPTION,
+  PORTFOLIO_VALUATION_SUBSCRIPTION,
 } from '@/graphql/subscriptionClient';
 import { createClient } from 'graphql-ws';
 import * as SecureStore from 'expo-secure-store';
@@ -41,9 +44,12 @@ describe('subscriptionClient', () => {
 
   it('reuses one shared client across subscribes', async () => {
     const before = mockCreateClient.mock.calls.length;
-    getSubscriptionClient();
-    getSubscriptionClient();
-    expect(mockCreateClient.mock.calls.length).toBe(before + 1);
+    const first = getSubscriptionClient();
+    const second = getSubscriptionClient();
+    expect(second).toBe(first);
+    // The singleton may already exist from an earlier test; it must never be
+    // recreated within a test run.
+    expect(mockCreateClient.mock.calls.length - before).toBeLessThanOrEqual(1);
   });
 
   it('subscribes with the doc + ticker variables and routes next to the callback', async () => {
@@ -104,5 +110,56 @@ describe('subscriptionClient', () => {
       connectionParams: () => Promise<unknown>;
     };
     await expect(opts.connectionParams()).resolves.toEqual({});
+  });
+
+  it('subscribes portfolio valuation with the portfolio id and routes next', () => {
+    const onNext = jest.fn();
+    subscribePortfolioValuation('pid-1', onNext);
+
+    expect(subscribeFn).toHaveBeenCalledTimes(1);
+    const [payload, sink] = subscribeFn.mock.calls[0] as unknown as [
+      unknown,
+      { next: (q: unknown) => void },
+    ];
+    expect(payload).toEqual({
+      query: PORTFOLIO_VALUATION_SUBSCRIPTION,
+      variables: { portfolioId: 'pid-1' },
+    });
+
+    const valuation = { portfolioId: 'pid-1', totalMarketValue: 1200 };
+    sink.next({ data: { portfolioValuation: valuation } });
+    expect(onNext).toHaveBeenCalledWith(valuation);
+  });
+
+  it('ignores valuation envelopes without data', () => {
+    const onNext = jest.fn();
+    subscribePortfolioValuation('pid-1', onNext);
+    const [, sink] = subscribeFn.mock.calls[0] as unknown as [
+      unknown,
+      { next: (q: unknown) => void },
+    ];
+
+    sink.next({ data: null });
+    expect(onNext).not.toHaveBeenCalled();
+  });
+
+  it('reset disposes the shared socket so the next subscribe reconnects', () => {
+    getSubscriptionClient();
+    const before = mockCreateClient.mock.calls.length;
+
+    resetSubscriptionClient();
+    expect(disposeFn).toHaveBeenCalled();
+
+    getSubscriptionClient();
+    expect(mockCreateClient.mock.calls.length).toBe(before + 1);
+  });
+
+  it('portfolio valuation cleanup calls unsubscribe', () => {
+    const cleanup = subscribePortfolioValuation('pid-1', jest.fn());
+
+    cleanup();
+
+    expect(unsubscribeFn).toHaveBeenCalledTimes(1);
+    expect(disposeFn).not.toHaveBeenCalled();
   });
 });
