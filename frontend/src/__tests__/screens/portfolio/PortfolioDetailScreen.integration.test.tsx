@@ -4,7 +4,10 @@ import { act, fireEvent, waitFor } from '@testing-library/react-native';
 import PortfolioDetailScreen from '@/screens/portfolio/PortfolioDetailScreen';
 import { renderWithProviders } from '../../utils';
 import { graphqlRequest } from '@/graphql/client';
-import { subscribeMarketQuote } from '@/graphql/subscriptionClient';
+import {
+  subscribePortfolioValuation,
+  type PortfolioValuationPayload,
+} from '@/graphql/subscriptionClient';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
 jest.mock('@/graphql/client', () => {
@@ -16,7 +19,7 @@ jest.mock('@/graphql/client', () => {
 });
 
 jest.mock('@/graphql/subscriptionClient', () => ({
-  subscribeMarketQuote: jest.fn(() => jest.fn()),
+  subscribePortfolioValuation: jest.fn(() => jest.fn()),
 }));
 
 jest.mock('@react-navigation/native', () => {
@@ -31,7 +34,7 @@ jest.mock('@react-navigation/native', () => {
 });
 
 const mockedGraphqlRequest = graphqlRequest as jest.MockedFunction<typeof graphqlRequest>;
-const mockedSubscribe = subscribeMarketQuote as jest.Mock;
+const mockedSubscribe = subscribePortfolioValuation as jest.Mock;
 const mockedUseNavigation = useNavigation as jest.MockedFunction<typeof useNavigation>;
 const mockedUseRoute = useRoute as jest.MockedFunction<typeof useRoute>;
 
@@ -142,6 +145,51 @@ const mockGqlPerformance = {
 const mockGqlResponse = {
   portfolio: { id: '1', name: 'Test Portfolio', performance: mockGqlPerformance },
 };
+
+const mockValuation = (): PortfolioValuationPayload => ({
+  portfolioId: '1',
+  portfolioName: 'Test Portfolio',
+  totalMarketValue: 15900,
+  totalCostBasis: 10000,
+  totalUnrealisedPl: 5900,
+  totalUnrealisedPlPct: 59,
+  dayChange: 105,
+  dayChangePct: 0.7,
+  freeCashBalance: 1000,
+  totalHoldings: 2,
+  dataQuality: 'complete',
+  calculatedAt: new Date().toISOString(),
+  holdings: [
+    {
+      ticker: 'AAPL',
+      shares: 10,
+      averageCostBasis: 150,
+      currentPrice: 190,
+      currency: 'USD',
+      marketValue: 1900,
+      costBasis: 1500,
+      unrealisedPl: 400,
+      unrealisedPlPct: 26.67,
+      dayChange: 100,
+      dayChangePct: 5.5,
+      portfolioWeightPct: 12,
+    },
+    {
+      ticker: 'TSLA',
+      shares: 5,
+      averageCostBasis: 700,
+      currentPrice: 750,
+      currency: 'USD',
+      marketValue: 3750,
+      costBasis: 3500,
+      unrealisedPl: 250,
+      unrealisedPlPct: 7.14,
+      dayChange: -10,
+      dayChangePct: -1.3,
+      portfolioWeightPct: 25,
+    },
+  ],
+});
 
 describe('PortfolioDetailScreen', () => {
   let navigateSpy: jest.Mock;
@@ -389,61 +437,55 @@ describe('PortfolioDetailScreen', () => {
     expect(dashes.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('subscribes to a live quote stream per holding ticker', async () => {
+  it('subscribes to one portfolio valuation stream', async () => {
     const { getByText } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     await waitFor(() => expect(getByText('Test Portfolio')).toBeTruthy());
 
-    const tickers = mockedSubscribe.mock.calls.map((c) => (c[0] as string).toUpperCase()).sort();
-    expect(tickers).toEqual(['AAPL', 'TSLA']);
+    expect(mockedSubscribe).toHaveBeenCalledTimes(1);
+    expect(mockedSubscribe.mock.calls[0][0]).toBe('1');
   });
 
-  it('applies quote ticks to the rendered prices', async () => {
+  it('applies a valuation payload to the rendered prices', async () => {
     const { getByText } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     await waitFor(() => expect(getByText('Test Portfolio')).toBeTruthy());
 
-    const aaplCall = mockedSubscribe.mock.calls.find((c) => c[0] === 'AAPL');
-    expect(aaplCall).toBeTruthy();
-    const onNext = aaplCall![1] as (q: unknown) => void;
-
-    // AAPL 10 shares @ 180 → tick @ 190 with prev close 179.
-    const { act } = require('@testing-library/react-native');
+    const onNext = mockedSubscribe.mock.calls[0][1] as (v: PortfolioValuationPayload) => void;
     await act(async () => {
-      onNext({ ticker: 'AAPL', price: 190, previousClose: 179 });
+      onNext(mockValuation());
     });
 
     await waitFor(() => expect(getByText('£190.00')).toBeTruthy());
+    expect(getByText('£15,900.00')).toBeTruthy();
   });
 
-  it('unsubscribes all quote streams on unmount', async () => {
+  it('unsubscribes the valuation stream on unmount', async () => {
     const { getByText, unmount } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     await waitFor(() => expect(getByText('Test Portfolio')).toBeTruthy());
 
-    const cleanups = mockedSubscribe.mock.results.map((r) => r.value as jest.Mock);
-    expect(cleanups.length).toBeGreaterThanOrEqual(2);
+    const cleanup = mockedSubscribe.mock.results[0].value as jest.Mock;
     await unmount();
-    cleanups.forEach((c) => expect(c).toHaveBeenCalled());
+    expect(cleanup).toHaveBeenCalled();
   });
 
-  it('refetch merges accumulated quote ticks instead of wiping them', async () => {
+  it('refetch keeps the latest valuation instead of wiping it', async () => {
     const { getByText, queryByText, root } = await renderWithProviders(<PortfolioDetailScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
     await waitFor(() => expect(getByText('Test Portfolio')).toBeTruthy());
 
-    const aaplCall = mockedSubscribe.mock.calls.find((c) => c[0] === 'AAPL');
-    const onNext = aaplCall![1] as (q: unknown) => void;
+    const onNext = mockedSubscribe.mock.calls[0][1] as (v: PortfolioValuationPayload) => void;
     await act(async () => {
-      onNext({ ticker: 'AAPL', price: 190, previousClose: 179 });
+      onNext(mockValuation());
     });
     await waitFor(() => expect(getByText('£190.00')).toBeTruthy());
 
@@ -454,7 +496,7 @@ describe('PortfolioDetailScreen', () => {
     });
     await waitFor(() => expect(mockedGraphqlRequest).toHaveBeenCalledTimes(2));
 
-    // The tick must survive the completed fetch, not be replaced by it.
+    // The valuation must survive the completed fetch, not be replaced by it.
     expect(getByText('£190.00')).toBeTruthy();
     expect(queryByText('£180.00')).toBeNull();
   });

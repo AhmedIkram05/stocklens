@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -21,10 +21,13 @@ import {
   graphqlRequest,
   PORTFOLIO_DETAIL_QUERY,
   toPortfolioPerformance,
+  applyValuation,
 } from '../../graphql/client';
 import type { PortfolioDetailQuery } from '../../graphql/generated';
-import { subscribeMarketQuote, type MarketQuotePayload } from '../../graphql/subscriptionClient';
-import { applyQuoteToPerformance, applyQuotesToPerformance } from '../../graphql/quoteMerge';
+import {
+  subscribePortfolioValuation,
+  type PortfolioValuationPayload,
+} from '../../graphql/subscriptionClient';
 import { formatCurrency } from '../../utils/formatters';
 
 type PortfolioDetailRouteProp = RouteProp<PortfolioStackParamList, 'PortfolioDetail'>;
@@ -90,9 +93,9 @@ export default function PortfolioDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [lastTickAt, setLastTickAt] = useState<string | null>(null);
   const mountedRef = useRef(true);
-  // Latest tick per ticker — a completed fetch cannot see websocket ticks,
-  // so they are folded back onto each fresh snapshot (N10).
-  const quotesRef = useRef(new Map<string, MarketQuotePayload>());
+  // Latest server valuation — a completed fetch can be older than a websocket
+  // tick, so it is folded back onto each fresh snapshot (N10).
+  const valuationRef = useRef<PortfolioValuationPayload | null>(null);
   const fetchSeqRef = useRef(0);
 
   const fetchPerformance = useCallback(
@@ -117,7 +120,7 @@ export default function PortfolioDetailScreen() {
               : null;
             if (!fresh) return null;
             if (!prev) return fresh;
-            return applyQuotesToPerformance(fresh, [...quotesRef.current.values()]);
+            return valuationRef.current ? applyValuation(fresh, valuationRef.current) : fresh;
           });
       } catch (err: any) {
         if (!silent) setError(err?.message || 'Failed to load portfolio performance');
@@ -138,26 +141,14 @@ export default function PortfolioDetailScreen() {
     };
   }, []);
 
-  const tickerKey = useMemo(
-    () =>
-      (performance?.holdings ?? [])
-        .filter((h) => h.shares > 0)
-        .map((h) => h.ticker)
-        .sort()
-        .join('|'),
-    [performance?.holdings],
-  );
+  // One server-computed valuation stream replaces the per-ticker fan-out.
   useEffect(() => {
-    if (!tickerKey) return;
-    const unsubs = tickerKey.split('|').map((t) =>
-      subscribeMarketQuote(t, (quote) => {
-        if (quote.timestamp) setLastTickAt(quote.timestamp);
-        quotesRef.current.set(t, quote);
-        setPerformance((prev) => (prev ? applyQuoteToPerformance(prev, quote) : prev));
-      }),
-    );
-    return () => unsubs.forEach((u) => u());
-  }, [portfolioId, tickerKey]);
+    return subscribePortfolioValuation(portfolioId, (valuation) => {
+      valuationRef.current = valuation;
+      if (valuation.calculatedAt) setLastTickAt(valuation.calculatedAt);
+      setPerformance((prev) => (prev ? applyValuation(prev, valuation) : prev));
+    });
+  }, [portfolioId]);
 
   useFocusEffect(
     useCallback(() => {
