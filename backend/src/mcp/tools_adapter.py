@@ -23,6 +23,11 @@ from src.agent.tools import get_all_tools
 
 logger = structlog.get_logger(__name__)
 
+
+class ToolInvocationError(RuntimeError):
+    """Raised when a tool fails, so callers can mark the result as an error."""
+
+
 # Fields injected from auth context — never exposed in MCP schema.
 _INJECTED = {"user_id", "portfolio_id"}
 
@@ -302,4 +307,4 @@ async def invoke_tool(
         # Log full detail server-side; return an opaque error to the client —
         # raw exception text leaks DB constraint names and internal paths.
         logger.exception("mcp_tool_invoke_failed", tool=name, error=str(e))
-        return json.dumps({"error": "Internal error processing tool call"}, default=str)
+        raise ToolInvocationError("Internal error processing tool call") from e

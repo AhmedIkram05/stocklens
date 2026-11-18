@@ -181,6 +181,13 @@ async def _handle_initialize(ctx: _RpcContext) -> dict:
             ctx.msg_id,
         )
     proto = ctx.params.get("protocolVersion", _LEGACY_VERSION)
+    if proto not in SUPPORTED_VERSIONS:
+        return _error(
+            -32022,
+            "Unsupported protocol version",
+            ctx.msg_id,
+            {"supported": SUPPORTED_VERSIONS, "requested": proto},
+        )
     logger.info(
         "mcp_initialize",
         client=ctx.params.get("clientInfo", {}).get("name", "unknown"),
@@ -349,7 +356,10 @@ _METHOD_HANDLERS: dict[str, Callable[[_RpcContext], Awaitable[dict | None]]] = {
 
 
 @mcp_router.post("/mcp")
-@limiter.limit(settings.RATE_LIMIT_MCP)
+@limiter.limit(
+    settings.RATE_LIMIT_MCP,
+    cost=lambda request: getattr(request.state, "mcp_batch_size", 1),
+)
 async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
     """MCP JSON-RPC over Streamable HTTP — stateless 2026-07-28 core with dual-version.
 
@@ -375,10 +385,15 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
     responses: list[dict] = []
 
     for msg in messages:
+        if not isinstance(msg, dict):
+            responses.append(_error(-32600, "Invalid Request"))
+            continue
         jsonrpc = msg.get("jsonrpc")
         method = msg.get("method")
         msg_id = msg.get("id")
         params = msg.get("params") or {}
+        if not isinstance(params, dict):
+            params = {}
 
         if jsonrpc != "2.0" or not method:
             responses.append(_error(-32600, "Invalid Request", msg_id))

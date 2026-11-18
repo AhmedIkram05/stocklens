@@ -11,7 +11,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.mcp.tools_adapter import get_mcp_tools, get_tool_names, invoke_tool
+from src.mcp.tools_adapter import (
+    ToolInvocationError,
+    get_mcp_tools,
+    get_tool_names,
+    invoke_tool,
+)
 
 
 def test_tool_names_sorted_and_16():
@@ -104,7 +109,7 @@ async def test_invoke_tool_portfolio_injection():
 
 
 @pytest.mark.asyncio
-async def test_invoke_tool_error_returns_json():
+async def test_invoke_tool_error_raises():
     mock_tool = MagicMock()
     mock_tool.name = "get_market_quote"
     mock_tool.args_schema = None
@@ -113,11 +118,8 @@ async def test_invoke_tool_error_returns_json():
     mock_tool.ainvoke = AsyncMock(side_effect=RuntimeError("yfinance down"))
 
     with patch("src.mcp.tools_adapter._load_tools", return_value={"get_market_quote": mock_tool}):
-        result = await invoke_tool("get_market_quote", {"ticker": "AAPL"}, user_id="u1")
-        data = json.loads(result)
-        # Opaque to the client — raw exception text stays server-side.
-        assert data["error"] == "Internal error processing tool call"
-        assert "yfinance down" not in result
+        with pytest.raises(ToolInvocationError, match="Internal error"):
+            await invoke_tool("get_market_quote", {"ticker": "AAPL"}, user_id="u1")
 
 
 def test_strip_injected_removes_required():
