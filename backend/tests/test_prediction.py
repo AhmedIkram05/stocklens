@@ -8,6 +8,7 @@ Seeds OHLCV data via upsert_ohlcv where needed.
 from __future__ import annotations
 
 import json
+import threading
 from datetime import date, timedelta
 from unittest.mock import AsyncMock, patch
 
@@ -127,6 +128,33 @@ class TestPredictSuccess:
         assert data["model_version"] == "1"
         assert data["cached"] is False
         assert "predicted_at" in data
+
+    async def test_predict_runs_off_event_loop(
+        self,
+        client: AsyncClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """Torch inference must not block the event loop (BE-D14)."""
+        main_thread = threading.get_ident()
+        seen: dict[str, int] = {}
+
+        def _fake_predict(*args, **kwargs):
+            seen["thread"] = threading.get_ident()
+            return _MOCK_PREDICT_RESULT
+
+        with (
+            patch("src.prediction.router.prediction_service.is_loaded", return_value=True),
+            patch(
+                "src.prediction.router.prediction_service.predict",
+                side_effect=_fake_predict,
+            ),
+            patch("src.prediction.router.get_redis", return_value=None),
+            patch("src.prediction.router.fetch_ohlcv", return_value=_make_ohlcv_rows(100)),
+        ):
+            response = await client.get("/predict/AAPL", headers=auth_headers)
+
+        assert response.status_code == 200
+        assert seen["thread"] != main_thread
 
     async def test_ticker_uppercased(
         self,

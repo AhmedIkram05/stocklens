@@ -919,7 +919,9 @@ async def get_lstm_forecast(
         if not ohlcv_rows:
             return json.dumps({"error": f"No OHLCV data for {ticker.upper()}"})
 
-        result = prediction_service.predict(ticker.upper(), ohlcv_rows=ohlcv_rows)
+        result = await asyncio.to_thread(
+            prediction_service.predict, ticker.upper(), ohlcv_rows=ohlcv_rows
+        )
         if not result:
             return json.dumps({"error": f"No forecast available for {ticker.upper()}"})
         return json.dumps(dict(result), default=str)

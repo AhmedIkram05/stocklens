@@ -9,6 +9,7 @@ Registered in main.py under prefix /predict.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timezone
 
@@ -90,7 +91,9 @@ async def predict(
 
     # Run prediction (with SPY data for cross-sectional features)
     try:
-        result = prediction_service.predict(ticker, rows, spy_ohlcv_rows=spy_rows)
+        result = await asyncio.to_thread(
+            prediction_service.predict, ticker, rows, spy_ohlcv_rows=spy_rows
+        )
     except Exception as exc:
         logger.exception("prediction_failed", ticker=ticker, error=str(exc))
         raise HTTPException(
