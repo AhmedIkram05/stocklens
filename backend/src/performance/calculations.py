@@ -702,3 +702,75 @@ def align_daily_return_series(
         [portfolio_by_date[d] for d in common_dates],
         [benchmark_by_date[d] for d in common_dates],
     )
+
+
+def compute_live_valuation(
+    portfolio_id: str,
+    portfolio_name: str,
+    holdings_data: list[dict[str, Any]],
+    live_quotes: dict[str, tuple[Decimal, Decimal]],
+    fx_rates: Optional[dict[str, Decimal]],
+    free_cash_balance: Decimal,
+) -> PortfolioPerformanceResponse:
+    """Quote-driven valuation for the ``portfolioValuation`` subscription.
+
+    Reuses the full-performance holding math but skips TWR: TWR needs a year of
+    stored price history and must not run on a 60s tick. ``live_quotes`` holds
+    ``{ticker: (price, previous_close)}`` in the holding's native currency.
+    """
+    latest_prices = {t: p for t, (p, _) in live_quotes.items() if p is not None}
+    previous_closes = {t: pc for t, (_, pc) in live_quotes.items() if pc is not None}
+    holdings_perf, total_market_value, total_cost_basis, holdings_with_prices = (
+        _compute_holdings_metrics(holdings_data, latest_prices, previous_closes, fx_rates)
+    )
+
+    fx_unknown = _fx_unknown_tickers(holdings_data, fx_rates)
+    if fx_unknown:
+        logger.warning("fx_unknown_holdings_valued_at_rate_1", tickers=fx_unknown)
+
+    priced_all = holdings_with_prices == len(holdings_perf)
+    if not holdings_perf:
+        market_value: Decimal | None = Decimal(0)
+        total_unrealised_pl = None
+        total_unrealised_pl_pct = None
+        day_change = None
+        day_change_pct = None
+        data_quality = "complete"
+    else:
+        # Partial pricing must not masquerade as a full valuation: report the
+        # value of what could be priced, but leave P&L undefined rather than
+        # subtracting the full cost basis from a partial total.
+        market_value = total_market_value if holdings_with_prices else None
+        if priced_all:
+            total_unrealised_pl, total_unrealised_pl_pct = _portfolio_pl(
+                total_market_value, total_cost_basis
+            )
+        else:
+            total_unrealised_pl = None
+            total_unrealised_pl_pct = None
+        day_change, day_change_pct, day_change_count = _total_day_change(holdings_perf)
+        if not day_change_count:
+            day_change = None
+            day_change_pct = None
+        data_quality = "complete" if priced_all and not fx_unknown else "partial"
+
+    return PortfolioPerformanceResponse(
+        portfolio_id=portfolio_id,
+        portfolio_name=portfolio_name,
+        total_market_value=market_value,
+        total_cost_basis=total_cost_basis,
+        total_unrealised_pl=total_unrealised_pl,
+        total_unrealised_pl_pct=total_unrealised_pl_pct,
+        day_change=day_change,
+        day_change_pct=day_change_pct,
+        free_cash_balance=free_cash_balance,
+        twr=None,
+        twr_annualised=None,
+        twr_start_date=None,
+        twr_end_date=None,
+        twr_methodology="live-valuation",
+        holdings=holdings_perf,
+        total_holdings=len(holdings_perf),
+        data_quality=data_quality,
+        calculated_at=datetime.now(timezone.utc),
+    )

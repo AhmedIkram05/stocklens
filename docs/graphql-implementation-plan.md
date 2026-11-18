@@ -1,5 +1,8 @@
 # Implementation Plan: GraphQL Read Facade over a Shared Read Layer (ADR 010, Phase 7)
 
+> Historical plan. Current state is the Phase 8 appendix at the bottom plus
+> ADR-011; where they differ, Phase 8 wins.
+
 Retrofit a read-only GraphQL layer onto the StockLens FastAPI backend: mechanically extract router-private read helpers into per-domain query modules (shared by REST routers and new Strawberry resolvers), implement the promised 1-min Redis quote cache (`get_quote`), expose `Query { portfolios, portfolio(id), market_quote }` + a `market_quote(ticker)` WebSocket subscription fed by a 60s poller via Redis pub/sub, convert ONE frontend screen (PortfolioDetailScreen) from 1 REST poll to 1 GraphQL query + live quote stream via committed-schema codegen, and document the REST=commands / GraphQL=reads split in README. No MCP/agent/write-path changes.
 
 ## Locked decisions honored (do not re-litigate)
@@ -703,3 +706,28 @@ Verified against current consumers (Detail = single `portfolioService.getPerform
 - [ ] PortfolioDetailScreen renders from ONE GraphQL query + live ticks replace the 30s blind poll (codegen types from committed schema.graphql;network tab: one POST /graphql + WS frames while focused;no REST polling;typecheck + jest green..
 - [ ] README "Why GraphQL + REST here?" documents the split + caveat;CONTEXT.md + ADR 010 referenced, not re-planned..
 - [ ] Full Definition-of-Done checklist (§6.3) passes;git diff touches only the files enumerated in this plan..
+
+---
+
+## Phase 8 (post-close): drift guards, server-side valuation, request limits
+
+Added after the Phase 7 close-out review (see ADR-011). No REST surface changed.
+
+1. **Deterministic codegen.** `codegen.yml` pins `avoidOptionals: true` and
+   `skipTypename: true`; `generated.ts` is regenerated from the lockfile
+   toolchain. `backend/tests/test_graphql_schema_sync.py` parse-compares
+   `schema.py` with `schema.graphql`, and the CI lint job regenerates
+   `generated.ts` and fails on any diff.
+2. **`portfolioValuation(portfolioId)` subscription.** One stream per portfolio
+   carrying FX-correct holdings + totals from the shared performance math (no
+   TWR — that stays on `portfolio.performance`). Replaces the per-ticker
+   `marketQuote` fan-out on `PortfolioDetailScreen`; `quoteMerge.ts` is deleted.
+   `marketQuote` remains as a generic primitive.
+3. **Request hardening.** Depth 10, 50 aliases, 30s execute timeout, parser
+   cache — all Strawberry extension factories. The timeout applies
+   to `on_execute` only, so subscriptions are unaffected.
+
+Verification: backend tests for valuation math, resolver auth/ownership/replay,
+poller fan-out, and each limit; frontend unit + integration tests for the new
+subscription and the valuation overlay. Full backend suite runs in CI (Postgres
+service); frontend suite + `tsc` + ESLint + Prettier run locally and in CI.

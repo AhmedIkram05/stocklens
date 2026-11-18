@@ -1,0 +1,30 @@
+subscription PortfolioValuation($portfolioId: ID!) {
+  portfolioValuation(portfolioId: $portfolioId) {
+    portfolioId
+    portfolioName
+    totalMarketValue
+    totalCostBasis
+    totalUnrealisedPl
+    totalUnrealisedPlPct
+    dayChange
+    dayChangePct
+    freeCashBalance
+    totalHoldings
+    dataQuality
+    calculatedAt
+    holdings {
+      ticker
+      shares
+      averageCostBasis
+      currentPrice
+      currency
+      marketValue
+      costBasis
+      unrealisedPl
+      unrealisedPlPct
+      dayChange
+      dayChangePct
+      portfolioWeightPct
+    }
+  }
+}

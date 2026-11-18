@@ -40,6 +40,13 @@ jobs:
           node node_modules/prettier/bin/prettier.cjs --version
           node node_modules/prettier/bin/prettier.cjs --check .
       - run: ./node_modules/.bin/eslint frontend/src/
+      - name: GraphQL codegen drift
+        # schema.graphql + *.graphql are the codegen source for generated.ts.
+        # A hand edit or a stale regeneration must fail here, not at runtime.
+        run: |
+          npm run graphql:codegen
+          node node_modules/prettier/bin/prettier.cjs --write frontend/src/graphql/generated.ts
+          git diff --exit-code -- frontend/src/graphql/generated.ts
 
   typecheck:
     name: TypeScript
