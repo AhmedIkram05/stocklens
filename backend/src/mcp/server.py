@@ -22,6 +22,8 @@ from typing import Any, NamedTuple
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from limits import parse
+from slowapi.util import get_remote_address
 
 from src.config import settings
 from src.limiter import limiter
@@ -56,6 +58,8 @@ _PROTO_META_KEY = "io.modelcontextprotocol/protocolVersion"
 # Upper bound on JSON-RPC messages per batch request — one POST must not be
 # able to enqueue thousands of serial DB-backed tool calls.
 _MAX_MCP_BATCH_SIZE = 50
+_MAX_MCP_BODY_BYTES = 1_000_000
+_MCP_RATE_LIMIT = parse(settings.RATE_LIMIT_MCP)
 
 
 def _request_version(params: dict) -> str | None:
@@ -355,12 +359,39 @@ _METHOD_HANDLERS: dict[str, Callable[[_RpcContext], Awaitable[dict | None]]] = {
 }
 
 
+async def _mcp_request_body(
+    request: Request,
+    payload: McpPrincipal = Depends(verify_mcp_token),
+) -> tuple[Any, McpPrincipal]:
+    """Read the JSON-RPC body after auth, bounded so a chunked POST cannot OOM."""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > _MAX_MCP_BODY_BYTES:
+        raise HTTPException(status_code=413, detail="Request body too large")
+
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > _MAX_MCP_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="Request body too large")
+    try:
+        return json.loads(raw), payload
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body") from None
+
+
+def _mcp_rate_limited(request: Request, cost: int) -> bool:
+    """Charge the per-message limit, falling back to in-memory on storage errors."""
+    key = get_remote_address(request)
+    try:
+        allowed = limiter.limiter.hit(_MCP_RATE_LIMIT, key, cost=cost)
+    except Exception:
+        logger.warning("mcp_rate_limit_storage_unavailable", exc_info=True)
+        allowed = limiter._fallback_limiter.hit(_MCP_RATE_LIMIT, key, cost=cost)
+    return not allowed
+
+
 @mcp_router.post("/mcp")
-@limiter.limit(
-    settings.RATE_LIMIT_MCP,
-    cost=lambda request: getattr(request.state, "mcp_batch_size", 1),
-)
-async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
+async def mcp_post(request: Request, parsed=Depends(_mcp_request_body)):
     """MCP JSON-RPC over Streamable HTTP — stateless 2026-07-28 core with dual-version.
 
     Spec: https://modelcontextprotocol.io/specification/2026-07-28 (server/discover,
@@ -368,11 +399,7 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
     Supports both single JSON-RPC object and batch; returns JSON or SSE stream
     depending on Accept header (ponytail: JSON first, SSE when requested).
     """
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
-
+    body, payload = parsed
     # Batch support
     is_batch = isinstance(body, list)
     messages = body if is_batch else [body]
@@ -382,6 +409,8 @@ async def mcp_post(request: Request, payload=Depends(verify_mcp_token)):
             detail=f"Batch too large: {len(messages)} messages exceeds the "
             f"{_MAX_MCP_BATCH_SIZE}-message limit",
         )
+    if _mcp_rate_limited(request, len(messages)):
+        return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
     responses: list[dict] = []
 
     for msg in messages:

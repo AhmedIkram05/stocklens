@@ -255,7 +255,7 @@ async def invoke_tool(
     """Invoke a canonical tool with auth-injected context.
 
     Returns the tool's JSON string output (already json.dumps'd by the tool).
-    Raises KeyError if tool not found; propagates tool exceptions as JSON error.
+    Raises KeyError if the tool is unknown and ToolInvocationError if it fails.
 
     ponytail: one adapter, not 16 wrappers — same path as AgentService graph.
     """

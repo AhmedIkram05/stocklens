@@ -411,6 +411,57 @@ async def test_mcp_batch_request(client: AsyncClient, auth_headers: dict[str, st
 
 
 @pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_rejects_oversized_body(client: AsyncClient, auth_headers: dict[str, str]):
+    r = await client.post(
+        "/mcp",
+        content=b"x" * 1_000_001,
+        headers={**auth_headers, "content-type": "application/json"},
+    )
+    assert r.status_code == 413
+    assert "too large" in r.json()["detail"].lower()
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_rejects_chunked_body_over_limit(
+    client: AsyncClient, auth_headers: dict[str, str]
+):
+    async def chunks():
+        yield b"x" * 600_000
+        yield b"x" * 600_000
+
+    r = await client.post(
+        "/mcp",
+        content=chunks(),
+        headers={**auth_headers, "content-type": "application/json"},
+    )
+    assert r.status_code == 413
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_rate_limit_returns_429(client: AsyncClient, auth_headers: dict[str, str]):
+    with patch("src.mcp.server.limiter.limiter.hit", return_value=False):
+        r = await client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "id": 1, "method": "ping"},
+            headers=auth_headers,
+        )
+    assert r.status_code == 429
+    assert "rate limit" in r.json()["detail"].lower()
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_rate_limit_charges_batch_size(client: AsyncClient, auth_headers: dict[str, str]):
+    batch = [
+        {"jsonrpc": "2.0", "id": 1, "method": "ping"},
+        {"jsonrpc": "2.0", "id": 2, "method": "ping"},
+    ]
+    with patch("src.mcp.server.limiter.limiter.hit", return_value=True) as hit:
+        r = await client.post("/mcp", json=batch, headers=auth_headers)
+    assert r.status_code == 200
+    assert hit.call_args.kwargs["cost"] == 2
+
+
+@pytest.mark.usefixtures("_seed_categories")
 async def test_mcp_sse_get_requires_auth(client: AsyncClient):
     r = await client.get("/mcp")
     assert r.status_code == 401
