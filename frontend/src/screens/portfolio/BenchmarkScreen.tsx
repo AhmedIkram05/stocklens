@@ -73,25 +73,20 @@ function ReturnChart({
   const dateIndex = new Map(allDates.map((d, i) => [d, i]));
   const n = allDates.length;
 
-  const toPoints = (series: ChartPoint[]): { x: number; y: number }[] => {
-    const values = series.map((s) => s.value);
-    if (values.length === 0) return [];
-    const min = Math.min(0, ...values);
-    const max = Math.max(0, ...values);
-    const range = max - min || 1;
-    return series.map((s) => ({
-      x: padL + ((dateIndex.get(s.date) ?? 0) / (n - 1)) * innerW,
-      y: padT + (1 - (s.value - min) / range) * innerH,
-    }));
-  };
-
-  const portfolioPts = toPoints(portfolio);
-  const benchmarkPts = toPoints(benchmark);
-
   const allVals = [...portfolio.map((p) => p.value), ...benchmark.map((b) => b.value)];
   const minVal = Math.min(0, ...allVals);
   const maxVal = Math.max(0, ...allVals);
   const range = maxVal - minVal || 1;
+
+  // Both lines must share one scale, or the visual comparison is meaningless.
+  const toPoints = (series: ChartPoint[]): { x: number; y: number }[] =>
+    series.map((s) => ({
+      x: padL + ((dateIndex.get(s.date) ?? 0) / (n - 1)) * innerW,
+      y: padT + (1 - (s.value - minVal) / range) * innerH,
+    }));
+
+  const portfolioPts = toPoints(portfolio);
+  const benchmarkPts = toPoints(benchmark);
 
   const yTicks = 5;
   const yTickValues = Array.from({ length: yTicks + 1 }, (_, i) => minVal + (range * i) / yTicks);
@@ -287,13 +282,15 @@ export default function BenchmarkScreen() {
               {/* Stat cards row */}
               <View style={[styles.statRow, { marginTop: sectionVerticalSpacing }]}>
                 <StatCard
-                  value={alpha != null ? `${alpha >= 0 ? '+' : ''}${alpha.toFixed(2)}%` : 'N/A'}
+                  value={
+                    alpha != null ? `${alpha >= 0 ? '+' : ''}${(alpha * 100).toFixed(2)}%` : 'N/A'
+                  }
                   label="Alpha"
                   subtitle={periodLabel(period)}
                   variant={alpha != null && alpha >= 0 ? 'green' : 'white'}
                 />
                 <StatCard
-                  value={te != null ? `${Math.abs(te).toFixed(2)}%` : 'N/A'}
+                  value={te != null ? `${Math.abs(te * 100).toFixed(2)}%` : 'N/A'}
                   label="Tracking Error"
                   variant="white"
                 />
@@ -323,7 +320,9 @@ export default function BenchmarkScreen() {
                       },
                     ]}
                   >
-                    {data.portfolio_return != null ? `${data.portfolio_return.toFixed(2)}%` : 'N/A'}
+                    {data.portfolio_return != null
+                      ? `${(data.portfolio_return * 100).toFixed(2)}%`
+                      : 'N/A'}
                   </AppText>
                 </View>
                 <View style={styles.returnDivider} />
@@ -342,7 +341,9 @@ export default function BenchmarkScreen() {
                       },
                     ]}
                   >
-                    {data.benchmark_return != null ? `${data.benchmark_return.toFixed(2)}%` : 'N/A'}
+                    {data.benchmark_return != null
+                      ? `${(data.benchmark_return * 100).toFixed(2)}%`
+                      : 'N/A'}
                   </AppText>
                 </View>
               </View>

@@ -52,6 +52,10 @@ function isTokenExpired(token: string): boolean {
  * promise, ensuring only one refresh call reaches the server.
  */
 let refreshPromise: Promise<boolean> | null = null;
+// Any token write (login/logout) invalidates refreshes that started earlier.
+let refreshEpoch = 0;
+// Distinguishes "server rejected the refresh" from "network unreachable".
+let refreshNetworkError = false;
 
 /**
  * Start (or join) the in-flight token refresh.
@@ -62,16 +66,24 @@ let refreshPromise: Promise<boolean> | null = null;
  * late 401 start a second refresh with the just-rotated token, whose failure
  * branch deleted the fresh tokens (forced logout on a burst of 401s).
  */
+function refreshFailureError(): Error {
+  return refreshNetworkError
+    ? new ApiError(0, 'Network unavailable')
+    : new ApiAuthError('Session expired');
+}
+
 function beginRefresh(): Promise<boolean> {
   if (!refreshPromise) {
-    refreshPromise = refreshTokens().finally(() => {
+    const epoch = refreshEpoch;
+    refreshPromise = refreshTokens(epoch).finally(() => {
       refreshPromise = null;
     });
   }
   return refreshPromise;
 }
 
-async function refreshTokens(): Promise<boolean> {
+async function refreshTokens(epoch: number): Promise<boolean> {
+  refreshNetworkError = false;
   try {
     const refreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
     if (!refreshToken) return false;
@@ -83,17 +95,26 @@ async function refreshTokens(): Promise<boolean> {
     });
 
     if (!response.ok) {
-      // Server rejected the refresh — clear everything
-      await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
-      await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+      // Only a definitive rejection ends the session. 5xx/429/captive-portal
+      // responses are transient, like a network failure.
+      if (![400, 401, 403].includes(response.status)) {
+        refreshNetworkError = true;
+        return false;
+      }
+      if (epoch === refreshEpoch) {
+        await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+        await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+      }
       return false;
     }
 
     const data = await response.json();
+    if (epoch !== refreshEpoch) return false;
     await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, data.access_token);
     await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, data.refresh_token);
     return true;
   } catch {
+    refreshNetworkError = true;
     return false;
   }
 }
@@ -183,8 +204,10 @@ export async function api<T = unknown>(endpoint: string, options: ApiOptions = {
 
       if (refreshed) {
         accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
+      } else if (refreshNetworkError) {
+        throw new ApiError(0, 'Network unavailable');
       } else {
-        throw new ApiAuthError('Session expired');
+        throw refreshFailureError();
       }
     }
 
@@ -222,7 +245,7 @@ export async function api<T = unknown>(endpoint: string, options: ApiOptions = {
       return retryResponse.status === 204 ? (undefined as unknown as T) : retryResponse.json();
     }
 
-    throw new ApiAuthError('Session expired');
+    throw refreshFailureError();
   }
 
   // ── Error handling ──
@@ -276,7 +299,7 @@ export const apiService = {
         if (refreshed) {
           accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
         } else {
-          throw new ApiAuthError('Session expired');
+          throw refreshFailureError();
         }
       }
       if (accessToken) {
@@ -312,7 +335,7 @@ export const apiService = {
         return retryResponse.status === 204 ? (undefined as unknown as T) : retryResponse.json();
       }
 
-      throw new ApiAuthError('Session expired');
+      throw refreshFailureError();
     }
 
     if (!response.ok) {
@@ -347,11 +370,13 @@ export const apiService = {
   getRefreshToken: () => SecureStore.getItemAsync(REFRESH_TOKEN_KEY),
 
   setTokens: async (accessToken: string, refreshToken: string) => {
+    refreshEpoch += 1;
     await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken);
     await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken);
   },
 
   clearTokens: async () => {
+    refreshEpoch += 1;
     await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
     await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
   },

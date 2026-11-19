@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -38,6 +38,8 @@ export default function TradeScreen() {
   const [sharesText, setSharesText] = useState('');
   const [localMode, setLocalMode] = useState<'buy' | 'sell'>(mode);
   const [quote, setQuote] = useState<QuoteData | null>(null);
+  const [quoteTicker, setQuoteTicker] = useState<string | null>(null);
+  const quoteSeq = useRef(0);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [holdings, setHoldings] = useState<Holding[]>([]);
@@ -77,17 +79,22 @@ export default function TradeScreen() {
   const handleFetchQuote = useCallback(async () => {
     const trimmed = ticker.trim().toUpperCase();
     if (!trimmed) return;
+    const seq = ++quoteSeq.current;
     setQuoteLoading(true);
     setQuoteError(null);
     setQuote(null);
+    setQuoteTicker(null);
     try {
       const data = await marketService.getQuote(trimmed);
+      if (seq !== quoteSeq.current) return;
       setQuote(data);
+      setQuoteTicker(trimmed);
     } catch (err) {
+      if (seq !== quoteSeq.current) return;
       const message = err instanceof ApiError ? err.message : 'Could not fetch quote';
       setQuoteError(message);
     } finally {
-      setQuoteLoading(false);
+      if (seq === quoteSeq.current) setQuoteLoading(false);
     }
   }, [ticker]);
 
@@ -113,6 +120,7 @@ export default function TradeScreen() {
     ticker.trim().length > 0 &&
     shares > 0 &&
     quote !== null &&
+    quoteTicker === ticker.trim().toUpperCase() &&
     !quoteLoading &&
     !holdingsLoading &&
     !getValidationError();
@@ -203,7 +211,11 @@ export default function TradeScreen() {
               placeholder="AAPL"
               placeholderTextColor={theme.textSecondary}
               value={ticker}
-              onChangeText={(t) => setTicker(t.toUpperCase())}
+              onChangeText={(t) => {
+                setTicker(t.toUpperCase());
+                setQuote(null);
+                setQuoteTicker(null);
+              }}
               onBlur={handleFetchQuote}
               autoCapitalize="characters"
               autoCorrect={false}

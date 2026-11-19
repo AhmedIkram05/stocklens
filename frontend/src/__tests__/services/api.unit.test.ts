@@ -109,6 +109,17 @@ describe('api()', () => {
     expect(fetchMock.mock.calls[1][0]).toContain('/me');
   });
 
+  it('keeps tokens and throws ApiError when the refresh network is unreachable', async () => {
+    setExpiredToken();
+    setRefreshToken();
+    fetchMock.mockRejectOnce(new TypeError('Network request failed'));
+
+    const err = await api('/me').catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).not.toBeInstanceOf(ApiAuthError);
+    expect(await SecureStore.getItemAsync(REFRESH_TOKEN_KEY)).toBe('refresh-token-val');
+  });
+
   it('throws ApiAuthError when pre-emptive refresh fails', async () => {
     setExpiredToken();
     SecureStore.setItemAsync(REFRESH_TOKEN_KEY, ''); // no refresh token

@@ -246,7 +246,7 @@ describe('PortfolioDetailScreen', () => {
 
     expect(getByText('£100.00 (+0.67%)')).toBeTruthy();
     expect(getByText('£5,000.00 (+50.00%)')).toBeTruthy();
-    expect(getByText('+0.45%')).toBeTruthy();
+    expect(getByText('+45.00%')).toBeTruthy();
   });
 
   it('renders holdings table with data', async () => {
@@ -501,7 +501,7 @@ describe('PortfolioDetailScreen', () => {
     expect(getByText('£190.00')).toBeTruthy();
     expect(queryByText('£180.00')).toBeNull();
     // TWR is not in the valuation payload — it must survive both tick + fetch.
-    expect(getByText('+0.45%')).toBeTruthy();
+    expect(getByText('+45.00%')).toBeTruthy();
   });
 
   it('does not overlay a stale valuation across a position change', async () => {

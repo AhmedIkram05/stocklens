@@ -64,18 +64,32 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
   const saveAndNavigate = useCallback(
     async (amount: number, ocrText: string | null, photoUri: string | null) => {
       try {
-        const created = await receiptService.create({
-          receipt_image_s3_key: photoUri ?? undefined,
-          total_amount: amount,
-          ocr_raw_text: ocrText || '',
-        });
-        if (created && created.id) {
+        const pending = pendingRef.current.scanResponse;
+        let receiptId: string | undefined;
+        if (pending) {
+          // The scan already inserted a draft; correct it instead of creating
+          // a second receipt (which would double-count the spend).
+          await receiptService.update(pending.id, {
+            receipt_image_s3_key: photoUri ?? undefined,
+            total_amount: amount,
+            ocr_raw_text: ocrText || '',
+          });
+          receiptId = pending.id;
+        } else {
+          const created = await receiptService.create({
+            receipt_image_s3_key: photoUri ?? undefined,
+            total_amount: amount,
+            ocr_raw_text: ocrText || '',
+          });
+          receiptId = created?.id;
+        }
+        if (receiptId) {
           try {
-            emit('receipts-changed', { id: created.id });
+            emit('receipts-changed', { id: receiptId });
           } catch (e) {}
           resetWorkflowState();
           navigation.navigate('ReceiptDetails' as any, {
-            receiptId: created.id,
+            receiptId,
             totalAmount: amount,
             date: new Date().toISOString(),
             image: photoUri ?? undefined,

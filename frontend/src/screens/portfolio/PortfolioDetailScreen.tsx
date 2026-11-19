@@ -333,7 +333,7 @@ export default function PortfolioDetailScreen() {
                 { color: isTwrPositive ? brandColors.green : brandColors.red },
               ]}
             >
-              {formatPercent(twr)}
+              {formatPercent(twr != null ? twr * 100 : twr)}
             </Text>
             <Text style={[styles.metricSub, { color: theme.textSecondary }]}>
               {twr_start_date && twr_end_date ? `${twr_start_date} → ${twr_end_date}` : ''}

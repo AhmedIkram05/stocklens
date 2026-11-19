@@ -35,6 +35,12 @@ function formatCurrency(value: unknown, suffix = 'GBP'): string {
   return `${numeric.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${suffix}`;
 }
 
+function formatFractionPct(value: unknown): string {
+  const numeric = numberValue(value);
+  if (numeric == null) return '—';
+  return formatPct(numeric * 100);
+}
+
 function formatPct(value: unknown): string {
   const numeric = numberValue(value);
   if (numeric == null) return '—';
@@ -198,21 +204,21 @@ function SectorExposureRenderer({ data }: { data: any }) {
 function PortfolioPerformanceRenderer({ data }: { data: any }) {
   const twr = numberValue(data.twr);
   const twrAnn = numberValue(data.twr_annualised);
-  const gain = numberValue(data.total_gain_loss);
-  const gainPct = numberValue(data.total_gain_loss_pct);
+  const gain = numberValue(data.total_unrealised_pl ?? data.total_gain_loss);
+  const gainPct = numberValue(data.total_unrealised_pl_pct ?? data.total_gain_loss_pct);
   return (
     <View style={styles.metricsGrid}>
       {twr != null && (
         <MetricBox
           label="TWR"
-          value={formatPct(twr)}
+          value={formatFractionPct(twr)}
           highlight={twr >= 0 ? 'positive' : 'negative'}
         />
       )}
       {twrAnn != null && (
         <MetricBox
           label="Ann. TWR"
-          value={formatPct(twrAnn)}
+          value={formatFractionPct(twrAnn)}
           highlight={twrAnn >= 0 ? 'positive' : 'negative'}
         />
       )}
@@ -260,17 +266,17 @@ function BenchmarkComparisonRenderer({ data }: { data: any }) {
   const alpha = numberValue(data.excess_return_alpha);
   return (
     <View style={styles.card}>
-      <KeyValueRow label="Portfolio Return" value={formatPct(data.portfolio_return)} />
+      <KeyValueRow label="Portfolio Return" value={formatFractionPct(data.portfolio_return)} />
       <KeyValueRow
         label={`${data.benchmark_ticker ?? 'Benchmark'} Return`}
-        value={formatPct(data.benchmark_return)}
+        value={formatFractionPct(data.benchmark_return)}
       />
       <KeyValueRow
         label="Alpha"
-        value={formatPct(alpha)}
+        value={formatFractionPct(alpha)}
         highlight={alpha != null ? (alpha >= 0 ? 'positive' : 'negative') : undefined}
       />
-      <KeyValueRow label="Tracking Error" value={formatPct(data.tracking_error)} />
+      <KeyValueRow label="Tracking Error" value={formatFractionPct(data.tracking_error)} />
       <KeyValueRow label="Info Ratio" value={formatFixed(data.information_ratio, 2)} />
     </View>
   );
@@ -435,13 +441,16 @@ function QuoteRenderer({ data }: { data: any }) {
     <View style={styles.card}>
       <Text style={styles.cardTitle}>{data.ticker}</Text>
       <Text style={[styles.quotePrice, { color: isUp ? '#10b981' : '#FF3B30' }]}>
-        {formatCurrency(data.price)}
+        {formatCurrency(data.price, data.currency ?? 'GBP')}
       </Text>
       <Text style={[styles.quoteChange, { color: isUp ? '#10b981' : '#FF3B30' }]}>
         {change != null ? `${isUp ? '+' : ''}${formatFixed(change, 2)}` : '—'} (
         {formatPct(changePct)})
       </Text>
-      <KeyValueRow label="Prev Close" value={formatCurrency(data.previous_close)} />
+      <KeyValueRow
+        label="Prev Close"
+        value={formatCurrency(data.previous_close, data.currency ?? 'GBP')}
+      />
       <KeyValueRow label="Volume" value={formatNumber(data.volume)} />
     </View>
   );
@@ -508,7 +517,7 @@ function NewsRenderer({ data }: { data: any }) {
 
 function LstmForecastRenderer({ data }: { data: any }) {
   const { theme } = useTheme();
-  const pred = data.prediction as string | undefined;
+  const pred = (data.direction ?? data.prediction) as string | undefined;
   const conf = numberValue(data.confidence);
   const color = pred === 'UP' ? '#10b981' : pred === 'DOWN' ? '#FF3B30' : '#6b7280'; // FLAT → gray
   return (

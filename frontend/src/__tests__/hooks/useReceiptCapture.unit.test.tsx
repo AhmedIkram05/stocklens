@@ -245,7 +245,7 @@ describe('useReceiptCapture', () => {
     expect(Alert.alert).toHaveBeenCalledWith('Scan Error', 'Scan failed');
   });
 
-  it('handles manual entry submission', async () => {
+  it('updates the scanned draft instead of creating a second receipt', async () => {
     const { result } = await createHookResult();
     const amount = 22.5;
     const ocrText = 'MANUAL ENTRY TEST';
@@ -296,13 +296,14 @@ describe('useReceiptCapture', () => {
     });
 
     // Verify calls
-    expect(mockedReceiptService.create).toHaveBeenCalledWith({
+    expect(mockedReceiptService.update).toHaveBeenCalledWith('scan-mock-123', {
       receipt_image_s3_key: photoUri,
       total_amount: amount,
       ocr_raw_text: ocrText,
     });
+    expect(mockedReceiptService.create).not.toHaveBeenCalled();
 
-    expect(mockedEmit).toHaveBeenCalledWith('receipts-changed', { id: 'created-456' });
+    expect(mockedEmit).toHaveBeenCalledWith('receipts-changed', { id: 'scan-mock-123' });
     expect(navigationMock.navigate).toHaveBeenCalled();
     // resetWorkflowState is called internally (verified by state being reset)
     // onResetCamera is called via the mock
