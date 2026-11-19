@@ -379,6 +379,17 @@ async def _mcp_request_body(
         raise HTTPException(status_code=400, detail="Invalid JSON body") from None
 
 
+def _mcp_rate_limited(request: Request, cost: int) -> bool:
+    """Charge the per-message limit, falling back to in-memory on storage errors."""
+    key = get_remote_address(request)
+    try:
+        allowed = limiter.limiter.hit(_MCP_RATE_LIMIT, key, cost=cost)
+    except Exception:
+        logger.warning("mcp_rate_limit_storage_unavailable", exc_info=True)
+        allowed = limiter._fallback_limiter.hit(_MCP_RATE_LIMIT, key, cost=cost)
+    return not allowed
+
+
 @mcp_router.post("/mcp")
 async def mcp_post(request: Request, parsed=Depends(_mcp_request_body)):
     """MCP JSON-RPC over Streamable HTTP — stateless 2026-07-28 core with dual-version.
@@ -392,14 +403,14 @@ async def mcp_post(request: Request, parsed=Depends(_mcp_request_body)):
     # Batch support
     is_batch = isinstance(body, list)
     messages = body if is_batch else [body]
-    if not limiter.limiter.hit(_MCP_RATE_LIMIT, get_remote_address(request), cost=len(messages)):
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
     if is_batch and len(messages) > _MAX_MCP_BATCH_SIZE:
         raise HTTPException(
             status_code=400,
             detail=f"Batch too large: {len(messages)} messages exceeds the "
             f"{_MAX_MCP_BATCH_SIZE}-message limit",
         )
+    if _mcp_rate_limited(request, len(messages)):
+        return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
     responses: list[dict] = []
 
     for msg in messages:

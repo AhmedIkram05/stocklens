@@ -422,6 +422,34 @@ async def test_mcp_rejects_oversized_body(client: AsyncClient, auth_headers: dic
 
 
 @pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_rejects_chunked_body_over_limit(
+    client: AsyncClient, auth_headers: dict[str, str]
+):
+    async def chunks():
+        yield b"x" * 600_000
+        yield b"x" * 600_000
+
+    r = await client.post(
+        "/mcp",
+        content=chunks(),
+        headers={**auth_headers, "content-type": "application/json"},
+    )
+    assert r.status_code == 413
+
+
+@pytest.mark.usefixtures("_seed_categories")
+async def test_mcp_rate_limit_returns_429(client: AsyncClient, auth_headers: dict[str, str]):
+    with patch("src.mcp.server.limiter.limiter.hit", return_value=False):
+        r = await client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "id": 1, "method": "ping"},
+            headers=auth_headers,
+        )
+    assert r.status_code == 429
+    assert "rate limit" in r.json()["detail"].lower()
+
+
+@pytest.mark.usefixtures("_seed_categories")
 async def test_mcp_rate_limit_charges_batch_size(client: AsyncClient, auth_headers: dict[str, str]):
     batch = [
         {"jsonrpc": "2.0", "id": 1, "method": "ping"},
