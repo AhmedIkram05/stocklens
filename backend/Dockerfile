@@ -61,7 +61,7 @@ FROM rust-builder AS wheel-source
 # on first import instead; runtime cost is negligible vs build cost.
 FROM python:3.15-slim AS builder
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.10.0 /uv /bin/uv
 ENV UV_COMPILE_BYTECODE=0
 
 WORKDIR /app

@@ -52,7 +52,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv (fast Rust-based pip replacement)
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.10.0 /uv /bin/uv
 
 # Layer 1: torch alone — huge download, cached independently so other dep
 # changes don't force a re-download. UV_COMPILE_BYTECODE=0 avoids 13m QEMU
