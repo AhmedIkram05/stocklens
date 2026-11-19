@@ -68,7 +68,13 @@ def resolve_tickers(explicit: str | None) -> list[str]:
     else:
         raw = os.environ.get("TRAINING_TICKERS", "").strip()
     if raw:
-        tickers = [t.strip().upper() for t in raw.split(",") if t.strip()]
+        if raw.strip().upper() == "ALL":
+            sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+            from ml.config import _ALL_SP500  # noqa: E402
+
+            tickers = list(_ALL_SP500)
+        else:
+            tickers = [t.strip().upper() for t in raw.split(",") if t.strip()]
     else:
         # Lazy import: ML_CONFIG reads TRAINING_TICKERS at import time, so the
         # env var must already be set by the caller (DAG sets it per-process).
@@ -160,7 +166,13 @@ def insert_rows(conn, rows: list[dict]) -> None:
         INSERT INTO ohlcv_prices
             (ticker, date, open, high, low, close, adjusted_close, volume)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (ticker, date) DO NOTHING
+        ON CONFLICT (ticker, date) DO UPDATE SET
+            open = COALESCE(EXCLUDED.open, ohlcv_prices.open),
+            high = COALESCE(EXCLUDED.high, ohlcv_prices.high),
+            low = COALESCE(EXCLUDED.low, ohlcv_prices.low),
+            close = COALESCE(EXCLUDED.close, ohlcv_prices.close),
+            adjusted_close = COALESCE(EXCLUDED.adjusted_close, ohlcv_prices.adjusted_close),
+            volume = COALESCE(EXCLUDED.volume, ohlcv_prices.volume)
     """
     cur = conn.cursor()
     try:
@@ -205,6 +217,8 @@ def main(dsn: str | None = None, tickers: str | None = None, years: int | None =
                 print(f"  FAIL {ticker}: {e}")
                 failed += 1
                 continue
+            today = datetime.now(timezone.utc).date()
+            rows = [r for r in rows if r["date"] < today]
             if not rows:
                 print(f"  EMPTY {ticker}")
                 failed += 1
@@ -221,7 +235,7 @@ def main(dsn: str | None = None, tickers: str | None = None, years: int | None =
         conn.close()
 
     print(f"\nDone! {total} rows total, {failed}/{len(universe)} failed")
-    if failed == len(universe):
+    if total == 0 or failed / len(universe) > 0.1:
         raise SystemExit(1)
 
 
