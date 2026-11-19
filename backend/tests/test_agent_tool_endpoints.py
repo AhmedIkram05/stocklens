@@ -409,7 +409,7 @@ class TestSectorExposure:
         "src.agent.tool_endpoints.market_values_gbp",
         new=AsyncMock(return_value={"AAPL": Decimal("1800")}),
     )
-    @patch("src.agent.tool_endpoints.yf")
+    @patch("src.market.fundamentals.yf")
     async def test_returns_sector_breakdown(self, mock_yf, client, auth_headers):
         mock_yf.Ticker.return_value = _mock_ticker_info()
         auth_user_id = await _get_auth_user_id()
@@ -429,7 +429,7 @@ class TestSectorExposure:
         "src.agent.tool_endpoints.market_values_gbp",
         new=AsyncMock(return_value={"ZZZ": Decimal("500")}),
     )
-    @patch("src.agent.tool_endpoints.yf")
+    @patch("src.market.fundamentals.yf")
     async def test_unknown_sector_fallback(self, mock_yf, client, auth_headers):
         """Ticker with no sector info falls back to 'Unknown' and still sums."""
         mock = MagicMock()
@@ -467,7 +467,7 @@ class TestDiversificationScore:
         "src.agent.tool_endpoints.market_values_gbp",
         new=AsyncMock(return_value={"AAPL": Decimal("1800")}),
     )
-    @patch("src.agent.tool_endpoints.yf")
+    @patch("src.market.fundamentals.yf")
     async def test_single_holding_scores_low(self, mock_yf, client, auth_headers):
         mock_yf.Ticker.return_value = _mock_ticker_info()
         auth_user_id = await _get_auth_user_id()
@@ -490,7 +490,7 @@ class TestDiversificationScore:
         "src.agent.tool_endpoints.market_values_gbp",
         new=AsyncMock(return_value={"AAPL": Decimal("1800"), "MSFT": Decimal("1800")}),
     )
-    @patch("src.agent.tool_endpoints.yf")
+    @patch("src.market.fundamentals.yf")
     async def test_multi_holding_scores_higher_and_effective(self, mock_yf, client, auth_headers):
         """Two equal-weighted holdings => effective_holdings 2, lower top exposure."""
         mock_yf.Ticker.return_value = _mock_ticker_info()
@@ -518,7 +518,7 @@ class TestDiversificationScore:
         async with connection_ctx() as conn:
             await _seed_holding(conn, pid, "AAPL", 10, 180.0)
         with (
-            patch("src.agent.tool_endpoints.yf", mock_yf),
+            patch("src.market.fundamentals.yf", mock_yf),
             patch(
                 "src.agent.tool_endpoints.market_values_gbp",
                 new=AsyncMock(return_value={"AAPL": Decimal("1800")}),
