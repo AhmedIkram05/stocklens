@@ -1,11 +1,15 @@
+import * as Crypto from 'expo-crypto';
 import forge from 'node-forge';
 
 const b64enc = (s: string) => forge.util.encode64(s);
 const b64dec = (s: string) => forge.util.decode64(s);
 
+const bytesToBinary = (bytes: Uint8Array): string =>
+  Array.from(bytes, (b) => String.fromCharCode(b)).join('');
+
 /** Generate a cryptographically secure 256-bit key (base64). */
-export function generateKeyBase64(): string {
-  return b64enc(forge.random.getBytesSync(32));
+export async function generateKeyBase64(): Promise<string> {
+  return b64enc(bytesToBinary(await Crypto.getRandomBytesAsync(32)));
 }
 
 /** Heuristic check whether a string looks like the AES-GCM JSON payload. */
@@ -28,7 +32,7 @@ export function isEncryptedPayload(str: string): boolean {
 /** AES-256-GCM encrypt a UTF-8 string; returns JSON with base64 iv/ct/tag. */
 export async function encryptString(plain: string, keyBase64: string): Promise<string> {
   const key = b64dec(keyBase64);
-  const iv = forge.random.getBytesSync(12);
+  const iv = bytesToBinary(await Crypto.getRandomBytesAsync(12));
   const cipher = forge.cipher.createCipher('AES-GCM', key);
   cipher.start({ iv, tagLength: 128 });
   cipher.update(forge.util.createBuffer(plain, 'utf8'));
