@@ -54,7 +54,7 @@ export default function LoginScreen() {
       startLockGrace();
 
       try {
-        await promptEnableDeviceAuth(email, password);
+        await promptEnableDeviceAuth();
       } catch (e) {}
     } catch (error: unknown) {
       let errorMessage = 'An error occurred signing in. Please try again.';

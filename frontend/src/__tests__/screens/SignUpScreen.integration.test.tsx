@@ -113,7 +113,7 @@ describe('SignUpScreen', () => {
     });
 
     expect(startLockGrace).toHaveBeenCalled();
-    expect(mockedPrompt).toHaveBeenCalledWith('jane@example.com', 'secret1');
+    expect(mockedPrompt).toHaveBeenCalledWith();
   });
 
   it('navigates back to login from footer CTA', async () => {

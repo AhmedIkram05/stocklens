@@ -74,7 +74,7 @@ describe('LoginScreen', () => {
     });
 
     expect(startLockGrace).toHaveBeenCalled();
-    expect(mockedPrompt).toHaveBeenCalledWith('demo@example.com', 's3cret!');
+    expect(mockedPrompt).toHaveBeenCalledWith();
   });
 
   it('navigates to SignUp screen from footer CTA', async () => {
