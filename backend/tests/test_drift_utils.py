@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
+from src.config import settings
 from src.drift.utils import build_s3_key, generate_presigned_url, upload_report_to_s3
 
 
@@ -22,7 +23,7 @@ class TestUploadReportToS3:
         """Returns True when upload succeeds."""
         result = upload_report_to_s3("/tmp/report.html", "drift_reports/2024-01-01/report.html")
         assert result is True
-        mock_boto_client.assert_called_once_with("s3")
+        mock_boto_client.assert_called_once_with("s3", region_name=settings.AWS_REGION)
         mock_boto_client.return_value.upload_file.assert_called_once_with(
             "/tmp/report.html",
             "my-bucket",

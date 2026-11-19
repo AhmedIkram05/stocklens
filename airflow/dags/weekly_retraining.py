@@ -207,7 +207,7 @@ def _run_drift_detection(**context) -> None:
         EvidentlyReporter,  # type: ignore[import-untyped]
     )
     from drift.repository import (  # type: ignore[import-untyped]
-        create_drift_metric,
+        create_drift_metrics,
         generate_drift_run_id,
     )
     from drift.router import (  # type: ignore[import-untyped]
@@ -272,8 +272,7 @@ def _run_drift_detection(**context) -> None:
         )
 
         # Persist metrics
-        for metric in result["metrics"]:
-            await create_drift_metric(drift_run_id=drift_run_id, **metric)
+        await create_drift_metrics(drift_run_id, result["metrics"])
 
         # Generate Evidently report & upload to S3
         if reference_dist:

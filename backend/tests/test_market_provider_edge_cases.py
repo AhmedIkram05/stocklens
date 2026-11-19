@@ -100,10 +100,31 @@ class TestIsRetryable:
     def test_value_error(self):
         assert _is_retryable(ValueError("bad value")) is False
 
-    def test_http_error(self):
-        from requests.exceptions import HTTPError
+    def _http_error(self, status: int | None):
+        from types import SimpleNamespace
 
-        assert _is_retryable(HTTPError("429 rate limit")) is True
+        from yfinance._http import HTTPError
+
+        exc = HTTPError("http error")
+        exc.response = None if status is None else SimpleNamespace(status_code=status)
+        return exc
+
+    def test_http_429_retryable(self):
+        assert _is_retryable(self._http_error(429)) is True
+
+    def test_http_500_retryable(self):
+        assert _is_retryable(self._http_error(503)) is True
+
+    def test_http_404_not_retryable(self):
+        assert _is_retryable(self._http_error(404)) is False
+
+    def test_http_without_response_not_retryable(self):
+        assert _is_retryable(self._http_error(None)) is False
+
+    def test_rate_limit_retryable(self):
+        from yfinance.exceptions import YFRateLimitError
+
+        assert _is_retryable(YFRateLimitError()) is True
 
     def test_generic_exception_not_retryable(self):
         assert _is_retryable(RuntimeError("something else")) is False

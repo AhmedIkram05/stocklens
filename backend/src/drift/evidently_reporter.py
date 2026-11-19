@@ -14,6 +14,8 @@ from typing import Any
 import pandas as pd
 import structlog
 
+from src.config import settings
+
 _EVIDENTLY_AVAILABLE: bool = True
 try:
     from evidently import Report  # noqa: F401
@@ -64,7 +66,7 @@ class EvidentlyReporter:
             columns=list(reference_df.select_dtypes(include=["number"]).columns),
             num_method="psi",
             cat_method="psi",
-            threshold=0.05,
+            threshold=settings.DRIFT_ALERT_PSI_THRESHOLD,
         )
         report = Report(metrics=[preset])  # type: ignore[name-defined]  # noqa: F821
         result = report.run(reference_data=reference_df, current_data=current_df)

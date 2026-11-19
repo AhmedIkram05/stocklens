@@ -53,6 +53,38 @@ async def create_drift_metric(
         return row["id"]
 
 
+async def create_drift_metrics(drift_run_id: str, metrics: list[dict]) -> int:
+    """Insert a run's metrics in one round-trip. Returns the row count."""
+    if not metrics:
+        return 0
+    async with connection_ctx() as conn:
+        await conn.executemany(
+            """
+            INSERT INTO drift_metrics
+                (drift_run_id, ticker, model_version, metric_type, feature_name,
+                 drift_score, alert_triggered, reference_period, current_period,
+                 details)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            """,
+            [
+                (
+                    drift_run_id,
+                    m["ticker"],
+                    m["model_version"],
+                    m["metric_type"],
+                    m["feature_name"],
+                    m["drift_score"],
+                    m["alert_triggered"],
+                    m.get("reference_period"),
+                    m.get("current_period"),
+                    m.get("details"),
+                )
+                for m in metrics
+            ],
+        )
+    return len(metrics)
+
+
 async def get_latest_drift_summary() -> dict:
     """Get a summary of the most recent drift run.
 
