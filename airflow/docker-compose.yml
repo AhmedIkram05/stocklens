@@ -13,6 +13,7 @@ x-airflow-common: &airflow-common
     MODEL_ARTIFACT_DIR: /model_artifacts/champion
     AWS_REGION: eu-west-2
     ENVIRONMENT: development
+    JWT_SECRET_KEY: local-dev-only-not-a-secret
     PYTHONPATH: /app:/opt/airflow/dags
   volumes:
     - ./dags:/opt/airflow/dags

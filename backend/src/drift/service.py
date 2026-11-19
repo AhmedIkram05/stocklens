@@ -6,6 +6,7 @@ import json
 import math
 
 import numpy as np
+import pandas as pd
 import structlog
 from scipy.stats import ks_2samp
 
@@ -366,3 +367,53 @@ class DriftDetector:
                 "tickers_without_predictions": skipped_tickers,
             },
         }
+
+
+def _build_reference_dataframe(reference_dist: dict) -> pd.DataFrame | None:
+    """Build a pandas DataFrame from reference distribution histograms."""
+    feature_histograms = reference_dist.get("feature_histograms", {})
+    if not feature_histograms:
+        return None
+
+    n_samples = min(
+        min(
+            (len(v.get("values", [])) for v in feature_histograms.values()),
+            default=100,
+        ),
+        1000,
+    )
+
+    data: dict[str, list[float]] = {}
+    for feature_name, hist in feature_histograms.items():
+        values = hist.get("values", [])
+        if len(values) >= n_samples:
+            data[feature_name] = list(values[:n_samples])
+
+    if not data:
+        return None
+
+    return pd.DataFrame(data)
+
+
+def _build_current_dataframe(
+    prediction_logs: dict[str, list[dict]],
+) -> pd.DataFrame | None:
+    """Build a pandas DataFrame from recent prediction_log entries."""
+    all_rows: list[dict[str, float]] = []
+
+    for ticker, logs in prediction_logs.items():
+        for entry in logs:
+            features_data = decode_jsonb_dict(entry.get("features"))
+            stats = decode_jsonb_dict(features_data.get("stats"))
+            if stats and "means" in stats:
+                row: dict[str, float] = {}
+                for i, value in enumerate(stats["means"]):
+                    if i < len(FEATURE_NAMES):
+                        row[FEATURE_NAMES[i]] = value
+                if row:
+                    all_rows.append(row)
+
+    if not all_rows:
+        return None
+
+    return pd.DataFrame(all_rows)
