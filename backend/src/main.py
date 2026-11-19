@@ -253,21 +253,6 @@ async def health():
     return {"status": "ok", "environment": settings.ENVIRONMENT}
 
 
-@app.middleware("http")
-async def _mcp_batch_size(request: Request, call_next):
-    """Expose the JSON-RPC batch size so the MCP limiter charges per message."""
-    if request.url.path == "/mcp" and request.method == "POST":
-        length = request.headers.get("content-length")
-        if length and length.isdigit() and int(length) > 1_000_000:
-            return JSONResponse({"detail": "Request too large"}, status_code=413)
-        try:
-            body = await request.json()
-            request.state.mcp_batch_size = len(body) if isinstance(body, list) else 1
-        except Exception:
-            request.state.mcp_batch_size = 1
-    return await call_next(request)
-
-
 @app.exception_handler(DatabaseUnavailableError)
 async def _database_unavailable(request: Request, exc: DatabaseUnavailableError):
     return JSONResponse({"detail": "Database unavailable"}, status_code=503)
