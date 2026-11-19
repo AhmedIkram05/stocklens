@@ -29,10 +29,23 @@ resource "aws_iam_role_policy_attachment" "rds_monitoring" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
 }
 
+data "aws_caller_identity" "current" {}
+
 resource "aws_kms_key" "rds_pi" {
   description             = "${var.app_name} RDS Performance Insights ${var.environment}"
   enable_key_rotation     = true
   deletion_window_in_days = 7
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "EnableRoot"
+      Effect    = "Allow"
+      Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
+      Action    = "kms:*"
+      Resource  = "*"
+    }]
+  })
 }
 
 resource "aws_db_instance" "main" {
