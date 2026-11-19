@@ -10,13 +10,13 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ChatRequest(BaseModel):
     """Request body for POST /agent/chat."""
 
-    message: str
+    message: str = Field(..., min_length=1, max_length=8000)
     conversation_id: UUID | None = None  # None = new conversation
 
 

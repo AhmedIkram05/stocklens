@@ -104,7 +104,9 @@ class AgentService:
                 "ORDER BY created_at DESC LIMIT 1",
                 user_id,
             )
-        return str(row["id"]) if row else ""
+        # The nil UUID keeps $1::uuid valid; every query then returns no row
+        # and the tool reports "portfolio not found" instead of raising DataError.
+        return str(row["id"]) if row else str(UUID(int=0))
 
     # ── State management ─────────────────────────────────────────────────
 

@@ -539,6 +539,13 @@ class TestProcessMessageIntegration:
         return emitted
 
 
+class TestResolvePortfolioId:
+    async def test_missing_portfolio_returns_nil_uuid(self):
+        svc = AgentService()
+        resolved = await svc._resolve_portfolio_id(str(uuid4()))
+        assert resolved == "00000000-0000-0000-0000-000000000000"
+
+
 class TestServiceCRUD:
     async def test_list_conversations(self):
         svc = AgentService()

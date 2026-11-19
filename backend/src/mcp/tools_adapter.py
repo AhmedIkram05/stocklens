@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from uuid import UUID
 
 import structlog
 
@@ -226,8 +227,8 @@ async def get_prompt(name: str, arguments: dict[str, Any] | None, user_id: str) 
 async def resolve_portfolio_id(user_id: str, explicit: str | None = None) -> str:
     """Resolve portfolio_id: explicit arg or user's default (first created).
 
-    Returns "" if user has no portfolios — caller should surface
-    "Portfolio not found" via tool response rather than 4xx.
+    Returns the nil UUID if the user has no portfolios, so ``$1::uuid`` binds
+    and the tool surfaces "Portfolio not found" instead of raising DataError.
     """
     if explicit:
         return explicit
@@ -240,10 +241,10 @@ async def resolve_portfolio_id(user_id: str, explicit: str | None = None) -> str
                 "ORDER BY created_at ASC LIMIT 1",
                 user_id,
             )
-        return str(row["id"]) if row else ""
+        return str(row["id"]) if row else str(UUID(int=0))
     except Exception:
         logger.warning("portfolio_resolve_failed", user_id=user_id[:8])
-        return ""
+        return str(UUID(int=0))
 
 
 async def invoke_tool(
