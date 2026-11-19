@@ -342,7 +342,7 @@ async def test_resolve_portfolio_db_error():
 
     with patch("src.database.connection.connection_ctx", side_effect=Exception("db down")):
         pid = await resolve_portfolio_id("user-1")
-        assert pid == ""
+        assert pid == "00000000-0000-0000-0000-000000000000"
 
 
 @pytest.mark.asyncio
