@@ -9,6 +9,26 @@ resource "aws_db_subnet_group" "main" {
   subnet_ids  = var.private_subnet_ids
 }
 
+data "aws_iam_policy_document" "rds_monitoring_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["monitoring.rds.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "rds_monitoring" {
+  name               = "${var.app_name}-rds-monitoring-${var.environment}"
+  assume_role_policy = data.aws_iam_policy_document.rds_monitoring_assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "rds_monitoring" {
+  role       = aws_iam_role.rds_monitoring.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+}
+
 resource "aws_db_instance" "main" {
   # checkov:skip=CKV_AWS_118:dev — no enhanced monitoring; add monitoring_role_arn in prod
   # checkov:skip=CKV_AWS_161:dev — IAM DB auth not enabled; enable in prod
@@ -38,7 +58,7 @@ resource "aws_db_instance" "main" {
   multi_az = true
 
   # Backups
-  backup_retention_period = 1
+  backup_retention_period = var.environment == "production" ? 14 : 7
   backup_window           = "03:00-04:00"
   maintenance_window      = "sun:04:00-sun:05:00"
   copy_tags_to_snapshot   = true
@@ -51,8 +71,9 @@ resource "aws_db_instance" "main" {
   # Logs & monitoring
   enabled_cloudwatch_logs_exports = ["postgresql"]
   auto_minor_version_upgrade      = true
-  monitoring_interval             = 0
-  performance_insights_enabled    = false
+  monitoring_interval             = 60
+  monitoring_role_arn             = aws_iam_role.rds_monitoring.arn
+  performance_insights_enabled    = true
   storage_encrypted               = true
 
   parameter_group_name = "default.postgres18"
