@@ -29,7 +29,12 @@ resource "aws_iam_role_policy_attachment" "rds_monitoring" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
 }
 
-# checkov:skip=CKV_AWS_354:dev — Performance Insights stays on the AWS-managed key; a CMK adds cost
+resource "aws_kms_key" "rds_pi" {
+  description             = "${var.app_name} RDS Performance Insights ${var.environment}"
+  enable_key_rotation     = true
+  deletion_window_in_days = 7
+}
+
 resource "aws_db_instance" "main" {
   # checkov:skip=CKV_AWS_118:dev — no enhanced monitoring; add monitoring_role_arn in prod
   # checkov:skip=CKV_AWS_161:dev — IAM DB auth not enabled; enable in prod
@@ -75,6 +80,7 @@ resource "aws_db_instance" "main" {
   monitoring_interval             = 60
   monitoring_role_arn             = aws_iam_role.rds_monitoring.arn
   performance_insights_enabled    = true
+  performance_insights_kms_key_id = aws_kms_key.rds_pi.arn
   storage_encrypted               = true
 
   parameter_group_name = "default.postgres18"
