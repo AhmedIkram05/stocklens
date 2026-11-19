@@ -174,8 +174,8 @@ describe('PortfolioPerformanceRenderer', () => {
     const data = {
       twr: 0.0523,
       twr_annualised: 0.105,
-      total_gain_loss: 2500,
-      total_gain_loss_pct: 5.23,
+      total_unrealised_pl: 2500,
+      total_unrealised_pl_pct: 5.23,
     };
     const { getByText } = await renderWithProviders(
       renderToolResult('get_portfolio_performance', data),
@@ -390,20 +390,20 @@ describe('NewsRenderer', () => {
 
 describe('LstmForecastRenderer', () => {
   it('renders UP prediction badge', async () => {
-    const data = { ticker: 'AAPL', prediction: 'UP', confidence: 0.72, model_version: 'v2' };
+    const data = { ticker: 'AAPL', direction: 'UP', confidence: 0.72, model_version: 'v2' };
     const { getByText } = await renderWithProviders(renderToolResult('get_lstm_forecast', data));
     expect(getByText('UP')).toBeTruthy();
     expect(getByText(/72%/)).toBeTruthy();
   });
 
   it('renders DOWN prediction', async () => {
-    const data = { ticker: 'AAPL', prediction: 'DOWN', confidence: 0.65 };
+    const data = { ticker: 'AAPL', direction: 'DOWN', confidence: 0.65 };
     const { getByText } = await renderWithProviders(renderToolResult('get_lstm_forecast', data));
     expect(getByText('DOWN')).toBeTruthy();
   });
 
   it('renders FLAT prediction', async () => {
-    const data = { ticker: 'AAPL', prediction: 'FLAT', confidence: 0.55 };
+    const data = { ticker: 'AAPL', direction: 'FLAT', confidence: 0.55 };
     const { getByText } = await renderWithProviders(renderToolResult('get_lstm_forecast', data));
     expect(getByText('FLAT')).toBeTruthy();
   });
