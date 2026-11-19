@@ -17,13 +17,15 @@ from decimal import Decimal
 from typing import Any, Optional
 
 import yfinance as yf
-from requests.exceptions import HTTPError
+from curl_cffi.requests.exceptions import RequestException
 from tenacity import (
     retry,
     retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
+from yfinance._http import HTTPError
+from yfinance.exceptions import YFRateLimitError
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +36,13 @@ logger = logging.getLogger(__name__)
 
 
 def _is_retryable(exc: BaseException) -> bool:
-    """Return True for errors that deserve a retry (incl. 429 rate-limit)."""
-    return isinstance(exc, (ConnectionError, TimeoutError, HTTPError))
+    """Retry only transient failures: transport, rate limit, and 5xx."""
+    if isinstance(exc, HTTPError):
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        return status == 429 or (status is not None and status >= 500)
+    if isinstance(exc, (ConnectionError, TimeoutError, YFRateLimitError, RequestException)):
+        return True
+    return False
 
 
 @retry(

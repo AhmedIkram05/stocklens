@@ -25,6 +25,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.database.connection import connection_ctx
 from src.market.fx import current_fx_rates
+from src.market.news import normalise_articles
 from src.market.quotes import market_values_gbp
 from src.market.repository import get_ohlcv
 
@@ -860,25 +861,7 @@ async def get_market_news(
     @_yf_retry
     def _fetch_news(t: str, limit: int) -> list:
         tk = yf.Ticker(t)
-        news = tk.news or []
-        articles = []
-        for article in news[:limit]:
-            articles.append(
-                {
-                    "title": article.get("title"),
-                    "publisher": article.get("publisher"),
-                    "link": article.get("link"),
-                    "published_date": (
-                        datetime.fromtimestamp(
-                            article.get("providerPublishTime", 0), tz=timezone.utc
-                        ).isoformat()
-                        if article.get("providerPublishTime")
-                        else None
-                    ),
-                    "summary": article.get("summary"),
-                }
-            )
-        return articles
+        return normalise_articles(tk.news or [], limit)
 
     loop = asyncio.get_running_loop()
     articles = await loop.run_in_executor(None, _fetch_news, ticker.upper(), max_articles)

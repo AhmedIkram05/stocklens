@@ -31,6 +31,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from src.auth.dependencies import get_current_user
 from src.auth.schemas import UserInDB
 from src.database.connection import connection_ctx
+from src.market.news import normalise_articles
 from src.market.quotes import market_values_gbp
 
 logger = logging.getLogger(__name__)
@@ -257,26 +258,7 @@ async def market_news(
     @_yf_retry
     def _fetch_news(t: str, limit: int) -> list[dict]:
         tk = yf.Ticker(t)
-        news = tk.news or []
-        articles = []
-        for article in news[:limit]:
-            articles.append(
-                {
-                    "ticker": t,
-                    "title": article.get("title"),
-                    "publisher": article.get("publisher"),
-                    "link": article.get("link"),
-                    "published_date": (
-                        datetime.fromtimestamp(
-                            article["providerPublishTime"], tz=timezone.utc
-                        ).isoformat()
-                        if article.get("providerPublishTime")
-                        else None
-                    ),
-                    "summary": article.get("summary"),
-                }
-            )
-        return articles
+        return [{**a, "ticker": t} for a in normalise_articles(tk.news or [], limit)]
 
     loop = asyncio.get_running_loop()
     results = await asyncio.gather(
