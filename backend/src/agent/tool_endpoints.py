@@ -24,13 +24,15 @@ from decimal import Decimal
 from typing import Any
 
 import yfinance as yf
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.auth.dependencies import get_current_user
 from src.auth.schemas import UserInDB
+from src.config import settings
 from src.database.connection import connection_ctx
+from src.limiter import limiter
 from src.market.news import normalise_articles
 from src.market.quotes import market_values_gbp
 
@@ -66,14 +68,6 @@ def _to_float(val: Any, default: float = 0.0) -> float:
         return default
 
 
-@_yf_retry
-def _fetch_ticker_sector(t: str) -> tuple[str, str]:
-    """Fetch sector for a ticker via yfinance."""
-    info = yf.Ticker(t).info
-    sector = info.get("sector", "Unknown")
-    return t, sector if sector else "Unknown"
-
-
 # ── Schemas ────────────────────────────────────────────────────────────────
 
 
@@ -91,7 +85,9 @@ class CompareTickersRequest(BaseModel):
 
 
 @router.get("/spending-analysis/{portfolio_id}")
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def spending_analysis(
+    request: Request,
     portfolio_id: str,
     months: int = Query(6, ge=1, le=60, description="Months to look back"),
     current_user: UserInDB = Depends(get_current_user),
@@ -204,7 +200,9 @@ async def spending_analysis(
 
 
 @router.get("/ticker-info/{ticker}")
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def ticker_info(
+    request: Request,
     ticker: str,
     current_user: UserInDB = Depends(get_current_user),
 ):
@@ -241,7 +239,9 @@ async def ticker_info(
 
 
 @router.get("/market-news")
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def market_news(
+    request: Request,
     tickers: str = Query(..., description="Comma-separated ticker symbols, e.g. AAPL,MSFT"),
     max_articles: int = Query(5, ge=1, le=10),
     current_user: UserInDB = Depends(get_current_user),
@@ -287,7 +287,9 @@ async def market_news(
 
 
 @router.get("/sector-exposure/{portfolio_id}")
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def sector_exposure(
+    request: Request,
     portfolio_id: str,
     current_user: UserInDB = Depends(get_current_user),
 ):
@@ -311,17 +313,14 @@ async def sector_exposure(
     unique_tickers = list({r["ticker"] for r in rows})
     sector_map: dict[str, str] = {}
 
-    loop = asyncio.get_running_loop()
-    results = await asyncio.gather(
-        *[loop.run_in_executor(None, _fetch_ticker_sector, t) for t in unique_tickers],
-        return_exceptions=True,
-    )
-    for result in results:
-        if isinstance(result, tuple):
-            t, sector = result
+    from src.market.fundamentals import get_sector
+
+    results = await asyncio.gather(*[get_sector(t) for t in unique_tickers], return_exceptions=True)
+    for t, sector in zip(unique_tickers, results):
+        if isinstance(sector, str):
             sector_map[t] = sector
-        elif isinstance(result, Exception):
-            logger.warning("sector_fetch_failed", exc_info=result)
+        elif isinstance(sector, Exception):
+            logger.warning("sector_fetch_failed", exc_info=sector)
 
     sector_values: dict[str, float] = {}
     sector_tickers: dict[str, list[str]] = {}
@@ -349,7 +348,9 @@ async def sector_exposure(
 
 
 @router.get("/diversification-score/{portfolio_id}")
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def diversification_score(
+    request: Request,
     portfolio_id: str,
     current_user: UserInDB = Depends(get_current_user),
 ):
@@ -399,24 +400,23 @@ async def diversification_score(
     sector_hhi_score = max(0.0, 40.0 * (1.0 - min(1.0, hhi / 2500.0)))
 
     # 3. Top holding weight (20%): lower top weight = better
-    top_weight = weights_decimal[0] if weights_decimal else 1.0
+    top_weight = max(weights_decimal) if weights_decimal else 1.0
     top_weight_score = max(0.0, 20.0 * (1.0 - top_weight))
 
     # 4. Sector proxy correlation (20%): fetch sectors via yfinance, compute HHI over sectors
     unique_tickers = list({v["ticker"] for v in values})
 
-    loop = asyncio.get_running_loop()
+    from src.market.fundamentals import get_sector
+
     sector_results = await asyncio.gather(
-        *[loop.run_in_executor(None, _fetch_ticker_sector, t) for t in unique_tickers],
-        return_exceptions=True,
+        *[get_sector(t) for t in unique_tickers], return_exceptions=True
     )
     sector_map: dict[str, str] = {}
-    for sr in sector_results:
-        if isinstance(sr, tuple):
-            t, s = sr
-            sector_map[t] = s
-        elif isinstance(sr, Exception):
-            logger.warning("sector_fetch_failed_diversification", exc_info=sr)
+    for t, sector in zip(unique_tickers, sector_results):
+        if isinstance(sector, str):
+            sector_map[t] = sector
+        elif isinstance(sector, Exception):
+            logger.warning("sector_fetch_failed_diversification", exc_info=sector)
 
     sector_weights: dict[str, float] = {}
     for v in values:
@@ -478,7 +478,9 @@ async def diversification_score(
 
 
 @router.get("/dividend-insights/{ticker}")
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def dividend_insights(
+    request: Request,
     ticker: str,
     current_user: UserInDB = Depends(get_current_user),
 ):
@@ -520,7 +522,9 @@ async def dividend_insights(
 
 
 @router.post("/compare-tickers")
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def compare_tickers(
+    request: Request,
     body: CompareTickersRequest,
     current_user: UserInDB = Depends(get_current_user),
 ):

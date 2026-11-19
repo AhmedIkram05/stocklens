@@ -119,7 +119,7 @@ class TestGetPortfolioSummary:
             "exchange": "NASDAQ",
         }
 
-        with patch("src.market.provider.fetch_quote", new=AsyncMock(return_value=fake_quote)):
+        with patch("src.market.quotes.fetch_quote", new=AsyncMock(return_value=fake_quote)):
             result_str = await TOOLS["get_portfolio_summary"].ainvoke(
                 {"portfolio_id": TEST_PORTFOLIO, "user_id": USER_ID}
             )
@@ -175,7 +175,7 @@ class TestGetSectorExposure:
             await _seed_holding(conn, "MSFT", 10, 100.0)
 
         with (
-            patch("src.agent.tools.yf") as mock_yf,
+            patch("src.market.fundamentals.yf") as mock_yf,
             patch(
                 "src.agent.tools.market_values_gbp",
                 new=AsyncMock(return_value={"AAPL": Decimal("1000"), "MSFT": Decimal("1000")}),
@@ -199,7 +199,7 @@ class TestGetSectorExposure:
             await _seed_holding(conn, "AAPL", 10, 100.0)  # cost 1000
 
         with (
-            patch("src.agent.tools.yf") as mock_yf,
+            patch("src.market.fundamentals.yf") as mock_yf,
             patch(
                 "src.agent.tools.market_values_gbp",
                 new=AsyncMock(return_value={"AAPL": Decimal("2500")}),
@@ -361,7 +361,7 @@ class TestGetPortfolioPerformance:
                 return_value=perf_model,
             ),
             patch(
-                "src.market.provider.fetch_quote",
+                "src.market.quotes.fetch_quote",
                 new=AsyncMock(return_value={"price": Decimal("1")}),
             ),
             patch("src.market.repository.get_ohlcv_batch", new=AsyncMock(return_value={})),
@@ -419,7 +419,7 @@ class TestCompareToBenchmark:
                 return_value=comparison_model,
             ),
             patch(
-                "src.market.provider.fetch_quote",
+                "src.market.quotes.fetch_quote",
                 new=AsyncMock(
                     return_value={"price": Decimal("120"), "previous_close": Decimal("118")}
                 ),
@@ -527,7 +527,7 @@ class TestCompareToBenchmark:
                 side_effect=_capture_comparison,
             ),
             patch(
-                "src.market.provider.fetch_quote",
+                "src.market.quotes.fetch_quote",
                 new=AsyncMock(
                     return_value={"price": Decimal("100"), "previous_close": Decimal("100")}
                 ),
@@ -582,7 +582,7 @@ class TestGetMarketOHLCV:
 class TestGetMarketQuote:
     async def test_returns_quote(self):
         fake = {"ticker": "AAPL", "price": Decimal("150"), "currency": "USD"}
-        with patch("src.market.provider.fetch_quote", new=AsyncMock(return_value=fake)):
+        with patch("src.market.quotes.fetch_quote", new=AsyncMock(return_value=fake)):
             result_str = await TOOLS["get_market_quote"].ainvoke(
                 {"ticker": "AAPL", "user_id": USER_ID}
             )
@@ -591,7 +591,7 @@ class TestGetMarketQuote:
         assert float(data["price"]) == 150.0
 
     async def test_no_quote(self):
-        with patch("src.market.provider.fetch_quote", new=AsyncMock(return_value=None)):
+        with patch("src.market.quotes.fetch_quote", new=AsyncMock(return_value=None)):
             result_str = await TOOLS["get_market_quote"].ainvoke(
                 {"ticker": "ZZZ", "user_id": USER_ID}
             )
@@ -845,7 +845,7 @@ class TestGetSectorExposureErrors:
             await _seed_holding(conn, "MSFT", 10, 100.0)
 
         with (
-            patch("src.agent.tools.yf") as mock_yf,
+            patch("src.market.fundamentals.yf") as mock_yf,
             patch(
                 "src.agent.tools.market_values_gbp",
                 new=AsyncMock(return_value={"AAPL": Decimal("1000"), "MSFT": Decimal("1000")}),
@@ -895,7 +895,7 @@ class TestGetPortfolioPerformanceErrors:
                 return_value=perf_model,
             ),
             patch(
-                "src.market.provider.fetch_quote",
+                "src.market.quotes.fetch_quote",
                 new=AsyncMock(return_value={"price": Decimal("1")}),
             ),
             patch(
@@ -921,7 +921,7 @@ class TestGetPortfolioPerformanceErrors:
                 side_effect=RuntimeError("compute bug"),
             ),
             patch(
-                "src.market.provider.fetch_quote",
+                "src.market.quotes.fetch_quote",
                 new=AsyncMock(return_value={"price": Decimal("1")}),
             ),
             patch(
@@ -990,7 +990,7 @@ class TestCompareToBenchmarkErrors:
                 side_effect=RuntimeError("perf crash"),
             ),
             patch(
-                "src.market.provider.fetch_quote",
+                "src.market.quotes.fetch_quote",
                 new=AsyncMock(return_value={"price": Decimal("1")}),
             ),
             patch(
@@ -1037,7 +1037,7 @@ class TestCompareToBenchmarkErrors:
                 side_effect=RuntimeError("comparison crash"),
             ),
             patch(
-                "src.market.provider.fetch_quote",
+                "src.market.quotes.fetch_quote",
                 new=AsyncMock(return_value={"price": Decimal("1")}),
             ),
             patch(
@@ -1113,7 +1113,7 @@ class TestGetMarketQuoteErrors:
     async def test_fetch_quote_exception(self):
         """fetch_quote raises → error JSON returned."""
         with patch(
-            "src.market.provider.fetch_quote",
+            "src.market.quotes.fetch_quote",
             new=AsyncMock(side_effect=RuntimeError("Quote provider down")),
         ):
             result_str = await TOOLS["get_market_quote"].ainvoke(

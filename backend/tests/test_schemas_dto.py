@@ -236,6 +236,17 @@ class TestChatRequest:
         obj = ChatRequest(message="Hello", conversation_id=cid)
         assert obj.conversation_id == cid
 
+    def test_message_bounds(self):
+        import pytest
+        from pydantic import ValidationError
+
+        from src.agent.schemas import ChatRequest
+
+        with pytest.raises(ValidationError):
+            ChatRequest(message="")
+        with pytest.raises(ValidationError):
+            ChatRequest(message="x" * 8001)
+
 
 class TestToolCallEvent:
     def test_construction(self):

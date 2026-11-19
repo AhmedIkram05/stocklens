@@ -50,6 +50,29 @@ def _decimal_to_float(val: Any) -> float:
     return 0.0
 
 
+async def _cached_live_quotes(
+    tickers: list[str],
+) -> dict[str, tuple[Decimal, Decimal]]:
+    """Cached quotes with a concurrency cap, for performance endpoints."""
+    from src.market.quotes import get_quote
+
+    sem = asyncio.Semaphore(8)
+
+    async def _one(t: str) -> tuple[str, tuple[Decimal, Decimal] | None]:
+        async with sem:
+            try:
+                q = await asyncio.wait_for(get_quote(t), 10)
+                return t, (Decimal(str(q["price"])), Decimal(str(q["previous_close"])))
+            except Exception:
+                return t, None
+
+    quotes: dict[str, tuple[Decimal, Decimal]] = {}
+    for r in await asyncio.gather(*[_one(t) for t in tickers], return_exceptions=True):
+        if isinstance(r, tuple) and r[1] is not None:
+            quotes[r[0]] = r[1]
+    return quotes
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Portfolio tools (3)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -108,38 +131,15 @@ async def get_portfolio_summary(
 
         holding_count = len(holdings_rows)
 
-    # Compute cost basis + market value from live quotes (fallback to cost basis)
-    from src.market.provider import fetch_quote as _fetch_quote
-
-    async def _q(t: str) -> tuple[str, Decimal | None]:
-        try:
-            q = await _fetch_quote(t)
-            return t, Decimal(str(q["price"]))
-        except Exception:
-            return t, None
-
-    live_prices: dict[str, Decimal] = {}
-    if holdings_rows:
-        for r in await asyncio.gather(
-            *[_q(h["ticker"]) for h in holdings_rows], return_exceptions=True
-        ):
-            if isinstance(r, tuple) and r[1] is not None:
-                live_prices[r[0]] = r[1]
-
-    fx_rates = await current_fx_rates(holdings_rows)
-
-    total_cost_basis = Decimal(0)
-    total_market_value = Decimal(0)
-    for h in holdings_rows:
-        shares = Decimal(str(h["shares"]))
-        fx = fx_rates[h["ticker"]]
-        cost = Decimal(str(h["average_cost_basis_gbp"])) * shares
-        total_cost_basis += cost
-        price = live_prices.get(h["ticker"])
-        if price is not None:
-            total_market_value += price * fx * shares
-        else:
-            total_market_value += cost
+    values = await market_values_gbp(holdings_rows)
+    total_cost_basis = sum(
+        (
+            Decimal(str(h["average_cost_basis_gbp"])) * Decimal(str(h["shares"]))
+            for h in holdings_rows
+        ),
+        Decimal(0),
+    )
+    total_market_value = sum(values.values(), Decimal(0))
 
     unrealised_pl = total_market_value - total_cost_basis
 
@@ -237,21 +237,12 @@ async def get_sector_exposure(
     unique_tickers = list({r["ticker"] for r in rows})
     sector_map: dict[str, str] = {}
 
-    @_yf_retry
-    def _fetch_sector(t: str) -> tuple[str, str]:
-        info = yf.Ticker(t).info
-        sector = info.get("sector", "Unknown")
-        return t, sector if sector else "Unknown"
+    from src.market.fundamentals import get_sector
 
-    loop = asyncio.get_running_loop()
-    results = await asyncio.gather(
-        *[loop.run_in_executor(None, _fetch_sector, t) for t in unique_tickers],
-        return_exceptions=True,
-    )
-    for result in results:
-        if isinstance(result, tuple):
-            t, sector = result
-            sector_map[t] = sector
+    results = await asyncio.gather(*[get_sector(t) for t in unique_tickers], return_exceptions=True)
+    for t, result in zip(unique_tickers, results):
+        if isinstance(result, str):
+            sector_map[t] = result
         elif isinstance(result, Exception):
             logger.warning("sector_fetch_failed", exc_info=result)
 
@@ -302,7 +293,6 @@ async def get_portfolio_performance(
     from datetime import date as _date
     from decimal import Decimal as _Decimal
 
-    from src.market.provider import fetch_quote as _fetch_quote
     from src.market.repository import get_ohlcv_batch as _get_ohlcv_batch
     from src.performance.calculations import compute_portfolio_performance
 
@@ -377,18 +367,7 @@ async def get_portfolio_performance(
             r["date"]: r["adjusted_close"] for r in rows if r["adjusted_close"] is not None
         }
 
-    # Live quotes
-    async def _q(t: str) -> tuple[str, tuple[_Decimal, _Decimal] | None]:
-        try:
-            q = await _fetch_quote(t)
-            return t, (q["price"], q["previous_close"])
-        except Exception:
-            return t, None
-
-    live_quotes: dict[str, tuple[_Decimal, _Decimal]] = {}
-    for r in await asyncio.gather(*[_q(t) for t in tickers], return_exceptions=True):
-        if isinstance(r, tuple) and r[1] is not None:
-            live_quotes[r[0]] = r[1]
+    live_quotes = await _cached_live_quotes(tickers)
 
     fx_rates = await current_fx_rates(holdings_data)
 
@@ -436,7 +415,6 @@ async def compare_to_benchmark(
     from datetime import timedelta as _timedelta
     from decimal import Decimal as _Decimal
 
-    from src.market.provider import fetch_quote as _fetch_quote
     from src.market.repository import get_ohlcv_batch as _get_ohlcv_batch
     from src.performance.calculations import (
         compute_benchmark_comparison,
@@ -506,20 +484,7 @@ async def compare_to_benchmark(
     if not price_map.get(benchmark_ticker):
         return json.dumps({"error": f"No price data for benchmark {benchmark_ticker}"})
 
-    # Live quotes
-    async def _q(t: str) -> tuple[str, tuple[_Decimal, _Decimal] | None]:
-        try:
-            q = await _fetch_quote(t)
-            return t, (q["price"], q["previous_close"])
-        except Exception:
-            return t, None
-
-    live_quotes: dict[str, tuple[_Decimal, _Decimal]] = {}
-    for r in await asyncio.gather(
-        *[_q(h["ticker"]) for h in holdings_data], return_exceptions=True
-    ):
-        if isinstance(r, tuple) and r[1] is not None:
-            live_quotes[r[0]] = r[1]
+    live_quotes = await _cached_live_quotes([h["ticker"] for h in holdings_data])
 
     fx_rates = await current_fx_rates(holdings_data)
 
@@ -760,7 +725,7 @@ async def get_market_ohlcv(
         return json.dumps({"error": "Invalid date format. Use YYYY-MM-DD."})
 
     try:
-        rows = await get_ohlcv(ticker.upper(), start_date=start, end_date=end)
+        rows = await get_ohlcv(ticker.upper(), start_date=start, end_date=end, limit=250)
         return json.dumps(
             {"ticker": ticker.upper(), "data_points": len(rows), "ohlcv": rows}, default=str
         )
@@ -783,10 +748,16 @@ async def get_market_quote(
     Complementary tools: get_market_ohlcv (for historical data),
     get_ticker_info (for company profile).
     """
-    from src.market.provider import fetch_quote
+    from src.market.quotes import get_quote
 
     try:
-        quote = await fetch_quote(ticker.upper())
+        raw_quote = await get_quote(ticker.upper())
+        if not raw_quote:
+            return json.dumps({"error": f"No quote data available for {ticker.upper()}"})
+        quote = dict(raw_quote)
+        for key in ("price", "previous_close", "change", "change_pct"):
+            if quote.get(key) is not None:
+                quote[key] = Decimal(str(quote[key]))
         if not quote:
             return json.dumps({"error": f"No quote data available for {ticker.upper()}"})
         return json.dumps(dict(quote), default=str)
@@ -901,9 +872,17 @@ async def get_lstm_forecast(
         ohlcv_rows = await _get_ohlcv(ticker.upper(), start_date=start, end_date=end, limit=500)
         if not ohlcv_rows:
             return json.dumps({"error": f"No OHLCV data for {ticker.upper()}"})
+        spy_rows = None
+        try:
+            spy_rows = await _get_ohlcv("SPY", start_date=start, end_date=end, limit=500)
+        except Exception:
+            logger.warning("spy_data_fetch_failed ticker=%s", ticker, exc_info=True)
 
         result = await asyncio.to_thread(
-            prediction_service.predict, ticker.upper(), ohlcv_rows=ohlcv_rows
+            prediction_service.predict,
+            ticker.upper(),
+            ohlcv_rows=ohlcv_rows,
+            spy_ohlcv_rows=spy_rows,
         )
         if not result:
             return json.dumps({"error": f"No forecast available for {ticker.upper()}"})

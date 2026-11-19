@@ -271,3 +271,24 @@ async def refresh_token(client: AsyncClient, auth_headers: dict[str, str]) -> st
     )
     assert response.status_code == 200
     return response.json()["tokens"]["refresh_token"]
+
+
+@pytest.fixture(autouse=True)
+def _clear_sector_cache():
+    """Sector lookups are process-cached; tests patch yfinance per case."""
+    from src.market.fundamentals import _sector_sync
+
+    _sector_sync.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_quote_cache(monkeypatch):
+    """Keep the module-level Redis quote cache out of unrelated tests."""
+    from unittest.mock import AsyncMock
+
+    from src.market import quotes
+
+    fake = AsyncMock()
+    fake.get = AsyncMock(return_value=None)
+    fake.setex = AsyncMock()
+    monkeypatch.setattr(quotes, "get_redis", AsyncMock(return_value=fake))
