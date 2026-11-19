@@ -292,6 +292,9 @@ def drift_stack(monkeypatch):
     async def _create_drift_metric(**_kwargs):
         state.metric_calls.append(_kwargs)
 
+    async def _create_drift_metrics(_drift_run_id, metrics):
+        state.metric_calls.extend(metrics)
+
     def _upload(path, key):
         state.upload_calls.append((path, key))
 
@@ -302,6 +305,7 @@ def drift_stack(monkeypatch):
         monkeypatch,
         "drift.repository",
         create_drift_metric=_create_drift_metric,
+        create_drift_metrics=_create_drift_metrics,
         generate_drift_run_id=lambda: "run-1",
     )
     _register_fake_module(

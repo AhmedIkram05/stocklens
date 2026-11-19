@@ -22,7 +22,7 @@ class TestTriggerDriftRun:
     @patch("src.drift.router.build_s3_key")
     @patch("src.drift.router._build_current_dataframe")
     @patch("src.drift.router._build_reference_dataframe")
-    @patch("src.drift.router.create_drift_metric")
+    @patch("src.drift.router.create_drift_metrics")
     @patch("src.drift.router.DriftDetector.compute_drift")
     @patch("src.drift.router.connection_ctx")
     @patch("src.drift.router.generate_drift_run_id")
@@ -93,6 +93,8 @@ class TestTriggerDriftRun:
         assert data["total_metrics"] == 1
         assert data["alerts_triggered"] == 0
         assert data["overall_drift_verdict"] == "stable"
+        mock_create_metric.assert_awaited_once()
+        assert mock_create_metric.call_args.args[0] == "test-run-123"
 
     async def test_requires_auth(self, client: AsyncClient):
         response = await client.post("/drift/run", json={"tickers": ["AAPL"]})
@@ -154,6 +156,8 @@ class TestTriggerDriftRun:
         assert response.status_code == 200
         # Should have portfolio tickers + SPY
         assert "SPY" in response.json()["tickers_monitored"]
+        holdings_sql = mock_conn.fetch.call_args_list[0].args[0]
+        assert "p.user_id" in holdings_sql
 
 
 class TestGetDriftSummary:
@@ -397,7 +401,7 @@ class TestReportGenerationPath:
     @patch("src.drift.router.build_s3_key")
     @patch("src.drift.router._build_current_dataframe")
     @patch("src.drift.router._build_reference_dataframe")
-    @patch("src.drift.router.create_drift_metric")
+    @patch("src.drift.router.create_drift_metrics")
     @patch("src.drift.router.DriftDetector.compute_drift")
     @patch("src.drift.router.connection_ctx")
     @patch("src.drift.router.generate_drift_run_id")
@@ -475,7 +479,7 @@ class TestReportGenerationPath:
     @patch("src.drift.router._get_reporter")
     @patch("src.drift.router._build_current_dataframe")
     @patch("src.drift.router._build_reference_dataframe")
-    @patch("src.drift.router.create_drift_metric")
+    @patch("src.drift.router.create_drift_metrics")
     @patch("src.drift.router.DriftDetector.compute_drift")
     @patch("src.drift.router.connection_ctx")
     @patch("src.drift.router.generate_drift_run_id")
@@ -625,3 +629,9 @@ class TestReportGenerationPath:
             call_args = mock_warn.call_args
             assert "drift_alerts_triggered" in call_args[0]
             assert call_args[1]["alerts"] == 1
+
+
+class TestListRunsValidation:
+    async def test_limit_is_bounded(self, client: AsyncClient, auth_headers: dict[str, str]):
+        response = await client.get("/drift/runs?limit=100000", headers=auth_headers)
+        assert response.status_code == 422

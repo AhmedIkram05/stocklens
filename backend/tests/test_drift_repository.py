@@ -6,8 +6,11 @@ Uses real database via connection_ctx() with per-test transaction rollback.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from src.drift.repository import (
     create_drift_metric,
+    create_drift_metrics,
     generate_drift_run_id,
     get_drift_report_by_run,
     get_latest_drift_summary,
@@ -325,3 +328,40 @@ class TestGetDriftReportByRun:
         report = await get_drift_report_by_run(run_id)
         assert report[0]["ticker"] == "AAPL"
         assert report[1]["ticker"] == "MSFT"
+
+
+class TestCreateDriftMetrics:
+    async def test_executemany_uses_run_id(self, monkeypatch):
+        import src.drift.repository as repo
+
+        conn = type("Conn", (), {"rows": None})()
+
+        async def executemany(sql, rows):
+            conn.rows = rows
+
+        conn.executemany = executemany
+
+        @asynccontextmanager
+        async def fake_ctx():
+            yield conn
+
+        monkeypatch.setattr(repo, "connection_ctx", fake_ctx)
+        n = await create_drift_metrics(
+            "run-1",
+            [
+                {
+                    "ticker": "AAPL",
+                    "model_version": "v1",
+                    "metric_type": "psi",
+                    "feature_name": "log_ret_1d",
+                    "drift_score": 0.1,
+                    "alert_triggered": False,
+                }
+            ],
+        )
+        assert n == 1
+        assert conn.rows[0][0] == "run-1"
+        assert conn.rows[0][1] == "AAPL"
+
+    async def test_empty_list_returns_zero_without_connecting(self):
+        assert await create_drift_metrics("run-1", []) == 0

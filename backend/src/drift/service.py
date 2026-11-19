@@ -51,6 +51,10 @@ def compute_psi(reference: np.ndarray, current: np.ndarray, bins: int = 10) -> f
     edges = np.unique(edges)
     if len(edges) < 2:
         return 0.0
+    # Include production values outside the reference range instead of
+    # silently dropping them as np.histogram does.
+    edges[0] = min(edges[0], lo)
+    edges[-1] = max(edges[-1], hi)
 
     ref_counts, _ = np.histogram(reference, bins=edges)
     cur_counts, _ = np.histogram(current, bins=edges)
@@ -274,6 +278,8 @@ class DriftDetector:
                         )
                         edges = np.unique(edges)
                         if len(edges) >= 2:
+                            edges[0] = min(edges[0], lo)
+                            edges[-1] = max(edges[-1], hi)
                             ref_h, _ = np.histogram(ref_array, bins=edges)
                             cur_h, _ = np.histogram(cur_array, bins=edges)
                             js = compute_js_divergence(ref_h, cur_h)

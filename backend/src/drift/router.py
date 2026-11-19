@@ -13,13 +13,13 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.auth.dependencies import get_current_user_id
 from src.database.connection import connection_ctx
 from src.drift.evidently_reporter import EvidentlyReporter
 from src.drift.repository import (
-    create_drift_metric,
+    create_drift_metrics,
     generate_drift_run_id,
     get_drift_report_by_run,
     get_latest_drift_summary,
@@ -68,8 +68,13 @@ async def trigger_drift_run(
     tickers = request.tickers
     if not tickers:
         async with connection_ctx() as conn:
-            rows = await conn.fetch("SELECT DISTINCT ticker FROM holdings")
-            tickers = [r["ticker"] for r in rows] + ["SPY"]
+            rows = await conn.fetch(
+                "SELECT DISTINCT h.ticker FROM holdings h "
+                "JOIN portfolios p ON p.id = h.portfolio_id "
+                "WHERE p.user_id = $1::uuid",
+                user_id,
+            )
+            tickers = list(dict.fromkeys([r["ticker"] for r in rows] + ["SPY"]))
 
     # 2. Fetch reference distribution from champion model
     async with connection_ctx() as conn:
@@ -128,12 +133,7 @@ async def trigger_drift_run(
 
     # 5. Persist metrics to DB
     report_s3_key = None
-    for metric in drift_result["metrics"]:
-        await create_drift_metric(
-            drift_run_id=drift_run_id,
-            **{k: v for k, v in metric.items() if k != "details"},
-            details=metric.get("details"),
-        )
+    await create_drift_metrics(drift_run_id, drift_result["metrics"])
 
     # 6. Generate Evidently report if requested
     report_url = None
@@ -195,8 +195,8 @@ async def get_drift_summary(
 
 @router.get("/runs")
 async def list_recent_runs(
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(default=20, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     user_id: str = Depends(get_current_user_id),
 ) -> list[dict]:
     """List recent drift detection runs with aggregated metrics."""

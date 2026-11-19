@@ -22,7 +22,7 @@ def upload_report_to_s3(local_path: str, s3_key: str) -> bool:
         return False
 
     try:
-        s3 = boto3.client("s3")
+        s3 = boto3.client("s3", region_name=settings.AWS_REGION)
         s3.upload_file(local_path, settings.DRIFT_REPORT_S3_BUCKET, s3_key)
         logger.info(
             "drift_report_uploaded_to_s3",
@@ -49,7 +49,7 @@ def generate_presigned_url(s3_key: str, expires_in: int = 604800) -> str | None:
         return None
 
     try:
-        s3 = boto3.client("s3")
+        s3 = boto3.client("s3", region_name=settings.AWS_REGION)
         return s3.generate_presigned_url(
             "get_object",
             Params={"Bucket": settings.DRIFT_REPORT_S3_BUCKET, "Key": s3_key},

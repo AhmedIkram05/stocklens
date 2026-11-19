@@ -456,3 +456,10 @@ class TestExtractMeanVectors:
     def test_missing_or_corrupt_features(self):
         logs = [{}, {"features": None}, {"features": "not-json"}]
         assert extract_mean_vectors(logs) == []
+
+
+class TestPSIOutOfRange:
+    def test_values_outside_reference_range_are_not_dropped(self):
+        ref = np.arange(10, dtype=float)
+        cur = np.array([0, 1, 2, 3, 4, 100, 100, 100, 100, 100], dtype=float)
+        assert compute_psi(ref, cur) > 0.25
