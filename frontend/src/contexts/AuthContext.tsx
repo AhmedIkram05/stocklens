@@ -19,7 +19,13 @@ import { useTheme } from './ThemeContext';
 import { authService } from '@/services/auth';
 import { apiService } from '@/services/api';
 import type { UserProfile as AuthUserProfile } from '@/services/auth';
-import { authenticateDevice, isDeviceAuthAvailable, isDeviceEnabled } from '@/hooks/useDeviceAuth';
+import {
+  authenticateDevice,
+  clearDeviceCredentials,
+  isDeviceAuthAvailable,
+  isDeviceEnabled,
+  setDeviceEnabled,
+} from '@/hooks/useDeviceAuth';
 
 // ── Backward-compatible profile type ──────────────────────────────────────────
 // Screens still reference `uid` (aliased to `id`) and `first_name` (aliased to
@@ -130,6 +136,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const initAuth = async () => {
       try {
+        await clearDeviceCredentials().catch(() => {});
         const token = await apiService.getAccessToken();
         if (!token) {
           if (!cancelled) setLoading(false);
@@ -140,6 +147,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (!cancelled) {
           if (profile) {
             setUser(_buildProfile(profile));
+            if (await isDeviceEnabled()) {
+              if (!cancelled) setLocked(true);
+            }
           } else {
             // getProfile returns null only when a 401 survived a refresh
             // attempt — the session is definitively dead, so clear tokens.
@@ -288,6 +298,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       await authService.signOut();
+      await setDeviceEnabled(false).catch(() => {});
+      await clearDeviceCredentials();
       setUser(null);
       setLocked(false);
       setMode('light');

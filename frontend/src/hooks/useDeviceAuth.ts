@@ -1,24 +1,18 @@
-/** Device auth utilities (biometrics/passcode helpers and secure credential storage). */
+/** Device auth utilities (biometrics/passcode helpers). */
 
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 
 const DEVICE_ENABLED_KEY = 'device_enabled';
-const DEVICE_CREDENTIALS_KEY = 'device_credentials';
+// Legacy key from when the account password was stored on device. Deleted on sight.
+const LEGACY_CREDENTIALS_KEY = 'device_credentials';
 
 /** Check whether device authentication (passcode/biometrics) is available. */
 export async function isDeviceAuthAvailable(): Promise<boolean> {
   try {
-    const hasHardware = await LocalAuthentication.hasHardwareAsync();
-
-    // Tests and many device checks only assert hardware presence; treat a
-    // positive hardware response as sufficient for availability. More
-    // granular checks (enrollment, supported types) remain possible but are
-    // not required for the unit tests and can produce inconsistent results on
-    // emulators.
-    if (hasHardware) return true;
-
-    return false;
+    const level = await LocalAuthentication.getEnrolledLevelAsync();
+    // SECRET = passcode-only; BIOMETRIC_* = enrolled biometrics.
+    return level !== LocalAuthentication.SecurityLevel.NONE;
   } catch (e) {
     return false;
   }
@@ -43,32 +37,9 @@ export async function authenticateDevice(
   }
 }
 
-/** Store email/password securely for device unlock (Keychain/Keystore). */
-export async function saveDeviceCredentials(email: string, password: string): Promise<void> {
-  const payload = JSON.stringify({ email, password });
-  await SecureStore.setItemAsync(DEVICE_CREDENTIALS_KEY, payload, {
-    keychainAccessible: SecureStore.ALWAYS_THIS_DEVICE_ONLY,
-  });
-  await SecureStore.setItemAsync(DEVICE_ENABLED_KEY, '1', {
-    keychainAccessible: SecureStore.ALWAYS_THIS_DEVICE_ONLY,
-  });
-}
-
-/** Retrieve stored device unlock credentials, or null when absent. */
-export async function getDeviceCredentials(): Promise<{ email: string; password: string } | null> {
-  try {
-    const raw = await SecureStore.getItemAsync(DEVICE_CREDENTIALS_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch (e) {
-    return null;
-  }
-}
-
-/** Remove stored device credentials and disable device auth. */
+/** Remove the legacy stored account password, if present. */
 export async function clearDeviceCredentials(): Promise<void> {
-  await SecureStore.deleteItemAsync(DEVICE_CREDENTIALS_KEY);
-  await SecureStore.deleteItemAsync(DEVICE_ENABLED_KEY);
+  await SecureStore.deleteItemAsync(LEGACY_CREDENTIALS_KEY);
 }
 
 /** Enable or disable device-auth by setting/clearing the enabled flag. */
@@ -78,7 +49,7 @@ export async function setDeviceEnabled(enabled: boolean): Promise<void> {
     return;
   }
   await SecureStore.setItemAsync(DEVICE_ENABLED_KEY, '1', {
-    keychainAccessible: SecureStore.ALWAYS_THIS_DEVICE_ONLY,
+    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
   });
 }
 
@@ -95,8 +66,6 @@ export async function isDeviceEnabled(): Promise<boolean> {
 export default {
   isDeviceAuthAvailable,
   authenticateDevice,
-  saveDeviceCredentials,
-  getDeviceCredentials,
   clearDeviceCredentials,
   setDeviceEnabled,
   isDeviceEnabled,

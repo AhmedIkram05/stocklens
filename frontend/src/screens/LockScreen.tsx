@@ -4,7 +4,7 @@
  * Device-passcode unlock screen shown when returning from background.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Alert, TouchableOpacity } from 'react-native';
 import ScreenContainer from '../components/ScreenContainer';
 import FormInput from '../components/FormInput';
@@ -18,6 +18,7 @@ import { authService } from '../services/auth';
 import { brandColors } from '../contexts/ThemeContext';
 import { radii, spacing, typography } from '../styles/theme';
 import { useTheme } from '../contexts/ThemeContext';
+import { isDeviceAuthAvailable, isDeviceEnabled } from '../hooks/useDeviceAuth';
 
 /** Lock screen for device/passcode unlock. */
 export default function LockScreen() {
@@ -28,6 +29,18 @@ export default function LockScreen() {
   const [loading, setLoading] = useState(false);
   const accountEmail = (user && user.email) || userProfile?.email || '';
   const [forgotDisabled, setForgotDisabled] = useState(false);
+  const [deviceUnlock, setDeviceUnlock] = useState(true);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const [available, enabled] = await Promise.all([isDeviceAuthAvailable(), isDeviceEnabled()]);
+      if (mounted) setDeviceUnlock(available && enabled);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const handleForgotFromLock = async () => {
     if (forgotDisabled) return;
     if (!accountEmail) {
@@ -126,18 +139,20 @@ export default function LockScreen() {
           ) : null}
         </PageHeader>
 
-        <SecondaryButton
-          onPress={handleDeviceAuth}
-          disabled={loading}
-          accessibilityLabel="Unlock with device passcode"
-          style={styles.deviceButton}
-          textStyle={{ color: brandColors.white }}
-        >
-          {loading ? 'Unlocking…' : 'Unlock with Device Passcode'}
-        </SecondaryButton>
+        {deviceUnlock ? (
+          <SecondaryButton
+            onPress={handleDeviceAuth}
+            disabled={loading}
+            accessibilityLabel="Unlock with device passcode"
+            style={styles.deviceButton}
+            textStyle={{ color: brandColors.white }}
+          >
+            {loading ? 'Unlocking…' : 'Unlock with Device Passcode'}
+          </SecondaryButton>
+        ) : null}
 
         <Text style={[styles.or, { color: theme.textSecondary }]}>
-          Or enter your account password
+          {deviceUnlock ? 'Or enter your account password' : 'Enter your account password'}
         </Text>
 
         <FormInput

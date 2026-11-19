@@ -63,7 +63,7 @@ export default function SignUpScreen() {
       startLockGrace();
 
       try {
-        await promptEnableDeviceAuth(email, password);
+        await promptEnableDeviceAuth();
       } catch (e) {}
     } catch (error: unknown) {
       let errorMessage = 'An error occurred during sign up';

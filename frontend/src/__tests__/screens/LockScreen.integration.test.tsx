@@ -17,6 +17,11 @@ jest.mock('@/services/auth', () => ({
   },
 }));
 
+jest.mock('@/hooks/useDeviceAuth', () => ({
+  isDeviceAuthAvailable: jest.fn(async () => true),
+  isDeviceEnabled: jest.fn(async () => true),
+}));
+
 const alertSpy = jest.spyOn(Alert, 'alert');
 
 describe('LockScreen', () => {

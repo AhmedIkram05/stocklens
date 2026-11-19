@@ -38,11 +38,11 @@ jest.mock('@/services/api', () => ({
 
 jest.mock('@/hooks/useDeviceAuth', () => ({
   isDeviceAuthAvailable: jest.fn(async () => true),
-  isDeviceEnabled: jest.fn(async () => true),
+  isDeviceEnabled: jest.fn(async () => false),
   authenticateDevice: jest.fn(async () => ({ success: true })),
   saveDeviceCredentials: jest.fn(),
   getDeviceCredentials: jest.fn(),
-  clearDeviceCredentials: jest.fn(),
+  clearDeviceCredentials: jest.fn(async () => {}),
   setDeviceEnabled: jest.fn(),
 }));
 
@@ -59,6 +59,8 @@ describe('AuthContext', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     jest.clearAllMocks();
+    const { isDeviceEnabled } = require('@/hooks/useDeviceAuth');
+    isDeviceEnabled.mockResolvedValue(false);
   });
 
   // Mock return values
@@ -100,6 +102,28 @@ describe('AuthContext', () => {
     ).rejects.toThrow('useAuth must be used within an AuthProvider');
   });
 
+  it('locks on cold start when device auth is enabled', async () => {
+    const { authService } = require('@/services/auth');
+    const { apiService } = require('@/services/api');
+    const { isDeviceEnabled } = require('@/hooks/useDeviceAuth');
+    isDeviceEnabled.mockResolvedValue(true);
+    apiService.getAccessToken.mockResolvedValue('valid-token');
+    authService.getProfile.mockResolvedValue({
+      id: 'u1',
+      email: 'a@b.com',
+      display_name: 'User',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    const { result } = await renderHook(() => useAuth(), {
+      wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider>,
+    });
+    await act(async () => {});
+
+    expect(result.current.locked).toBe(true);
+  });
+
   /**
    * Test: Device unlock flow
    * Validates that app unlocks when native device authentication succeeds.
@@ -139,8 +163,10 @@ describe('AuthContext', () => {
       await result.current.signOutUser();
     });
 
-    // Verify lock state is reset (unlocked)
+    // Verify lock state is reset (unlocked) and device unlock is disabled
     expect(result.current.locked).toBe(false);
+    const { setDeviceEnabled } = require('@/hooks/useDeviceAuth');
+    expect(setDeviceEnabled).toHaveBeenCalledWith(false);
   });
 
   /**
@@ -654,6 +680,8 @@ describe('AuthContext', () => {
       expect(result.current.locked).toBe(false);
 
       // Unlock with device auth — clears the pending delay timer
+      const { isDeviceEnabled } = require('@/hooks/useDeviceAuth');
+      isDeviceEnabled.mockResolvedValue(true);
       await act(async () => {
         await result.current.unlockWithDeviceAuth();
       });

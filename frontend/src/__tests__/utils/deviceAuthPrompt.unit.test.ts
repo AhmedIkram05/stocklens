@@ -8,8 +8,8 @@ import * as deviceAuth from '@/hooks/useDeviceAuth';
 
 jest.mock('@/hooks/useDeviceAuth', () => ({
   isDeviceAuthAvailable: jest.fn(),
-  saveDeviceCredentials: jest.fn(),
-  clearDeviceCredentials: jest.fn(),
+  setDeviceEnabled: jest.fn(),
+  clearDeviceCredentials: jest.fn(async () => {}),
 }));
 
 const { promptEnableDeviceAuth } = require('@/utils/deviceAuthPrompt');
@@ -26,7 +26,7 @@ describe('deviceAuthPrompt', () => {
   it('returns false when device auth hardware unavailable', async () => {
     mockedDeviceAuth.isDeviceAuthAvailable.mockResolvedValue(false);
 
-    const result = await promptEnableDeviceAuth('user@example.com', 'pass123');
+    const result = await promptEnableDeviceAuth();
 
     expect(result).toBe(false);
     expect(alertSpy).not.toHaveBeenCalled();
@@ -34,9 +34,9 @@ describe('deviceAuthPrompt', () => {
 
   it('shows prompt when device auth available and saves on acceptance', async () => {
     mockedDeviceAuth.isDeviceAuthAvailable.mockResolvedValue(true);
-    mockedDeviceAuth.saveDeviceCredentials.mockResolvedValue(undefined);
+    mockedDeviceAuth.setDeviceEnabled.mockResolvedValue(undefined);
 
-    const promptPromise = promptEnableDeviceAuth('user@example.com', 'secret');
+    const promptPromise = promptEnableDeviceAuth();
 
     await new Promise((resolve) => setImmediate(resolve));
 
@@ -55,17 +55,14 @@ describe('deviceAuthPrompt', () => {
 
     const result = await promptPromise;
 
-    expect(mockedDeviceAuth.saveDeviceCredentials).toHaveBeenCalledWith(
-      'user@example.com',
-      'secret',
-    );
+    expect(mockedDeviceAuth.setDeviceEnabled).toHaveBeenCalledWith(true);
     expect(result).toBe(true);
   });
 
   it('returns false when user declines (presses No)', async () => {
     mockedDeviceAuth.isDeviceAuthAvailable.mockResolvedValue(true);
 
-    const resultPromise = promptEnableDeviceAuth('test@example.com', 'pass123');
+    const resultPromise = promptEnableDeviceAuth();
 
     await new Promise((resolve) => setImmediate(resolve));
 

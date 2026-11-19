@@ -9,8 +9,6 @@ import * as SecureStore from 'expo-secure-store';
 import {
   isDeviceAuthAvailable,
   authenticateDevice,
-  saveDeviceCredentials,
-  getDeviceCredentials,
   clearDeviceCredentials,
   setDeviceEnabled,
   isDeviceEnabled,
@@ -18,15 +16,16 @@ import {
 
 jest.mock('expo-local-authentication', () => ({
   hasHardwareAsync: jest.fn(),
+  getEnrolledLevelAsync: jest.fn(),
   authenticateAsync: jest.fn(),
-  supportedAuthenticationTypesAsync: jest.fn(),
+  SecurityLevel: { NONE: 0, SECRET: 1, BIOMETRIC_WEAK: 2, BIOMETRIC_STRONG: 3 },
 }));
 
 jest.mock('expo-secure-store', () => ({
   setItemAsync: jest.fn(),
   getItemAsync: jest.fn(),
   deleteItemAsync: jest.fn(),
-  ALWAYS_THIS_DEVICE_ONLY: 'ALWAYS_THIS_DEVICE_ONLY',
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'WHEN_UNLOCKED_THIS_DEVICE_ONLY',
 }));
 
 const mockedLocalAuth = LocalAuthentication as jest.Mocked<typeof LocalAuthentication>;
@@ -44,24 +43,26 @@ describe('useDeviceAuth', () => {
    * - Tests both positive and negative hardware combinations.
    */
   describe('isDeviceAuthAvailable', () => {
-    it('returns true when hardware exists', async () => {
+    it('returns true for a passcode-only device', async () => {
       mockedLocalAuth.hasHardwareAsync.mockResolvedValue(true);
+      mockedLocalAuth.getEnrolledLevelAsync.mockResolvedValue(1 as any);
 
       const result = await isDeviceAuthAvailable();
 
       expect(result).toBe(true);
     });
 
-    it('returns false when hardware missing', async () => {
-      mockedLocalAuth.hasHardwareAsync.mockResolvedValue(false);
+    it('returns false when nothing is enrolled', async () => {
+      mockedLocalAuth.hasHardwareAsync.mockResolvedValue(true);
+      mockedLocalAuth.getEnrolledLevelAsync.mockResolvedValue(0 as any);
 
       const result = await isDeviceAuthAvailable();
 
       expect(result).toBe(false);
     });
 
-    it('returns false when hardware check throws', async () => {
-      mockedLocalAuth.hasHardwareAsync.mockRejectedValue(new Error('denied'));
+    it('returns false when the level check throws', async () => {
+      mockedLocalAuth.getEnrolledLevelAsync.mockRejectedValue(new Error('denied'));
 
       const result = await isDeviceAuthAvailable();
 
@@ -109,50 +110,14 @@ describe('useDeviceAuth', () => {
     });
   });
 
-  /**
-   * Credential storage helpers
-   * - Ensures credentials are securely saved/retrieved via SecureStore
-   * - Ensures clearing credentials also removes the enabled flag
-   */
-  describe('credential storage', () => {
-    it('saves and retrieves credentials securely', async () => {
-      await saveDeviceCredentials('user@example.com', 'pass123');
-
-      // Verify SecureStore called with serialized credentials and proper options
-      expect(mockedSecureStore.setItemAsync).toHaveBeenCalledWith(
-        'device_credentials',
-        JSON.stringify({ email: 'user@example.com', password: 'pass123' }),
-        { keychainAccessible: SecureStore.ALWAYS_THIS_DEVICE_ONLY },
-      );
-
-      // Simulate stored value and verify retrieval parsing
-      mockedSecureStore.getItemAsync.mockResolvedValue(
-        JSON.stringify({ email: 'user@example.com', password: 'pass123' }),
-      );
-
-      const result = await getDeviceCredentials();
-
-      expect(result).toEqual({ email: 'user@example.com', password: 'pass123' });
-    });
-
-    it('returns null when getDeviceCredentials throws', async () => {
-      mockedSecureStore.getItemAsync.mockRejectedValue(new Error('decryption failed'));
-
-      const result = await getDeviceCredentials();
-
-      expect(result).toBeNull();
-    });
-
-    it('clears credentials and disables device auth', async () => {
+  describe('legacy credential cleanup', () => {
+    it('deletes the legacy stored password key', async () => {
       await clearDeviceCredentials();
-
       expect(mockedSecureStore.deleteItemAsync).toHaveBeenCalledWith('device_credentials');
-      expect(mockedSecureStore.deleteItemAsync).toHaveBeenCalledWith('device_enabled');
     });
 
     it('disables device auth by deleting the enabled flag', async () => {
       await setDeviceEnabled(false);
-
       expect(mockedSecureStore.deleteItemAsync).toHaveBeenCalledWith('device_enabled');
     });
   });
