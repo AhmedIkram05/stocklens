@@ -63,7 +63,7 @@ class _Completed:
 
 def _install_asyncpg(monkeypatch, connect):
     module = types.ModuleType("asyncpg")
-    setattr(module, "connect", connect)
+    module.connect = connect
     monkeypatch.setitem(sys.modules, "asyncpg", module)
     return module
 
@@ -298,31 +298,50 @@ def drift_stack(monkeypatch):
     def _upload(path, key):
         state.upload_calls.append((path, key))
 
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test/test")
+
     _register_fake_module(
-        monkeypatch, "drift.evidently_reporter", EvidentlyReporter=_Reporter
+        monkeypatch, "src.drift.evidently_reporter", EvidentlyReporter=_Reporter
     )
     _register_fake_module(
         monkeypatch,
-        "drift.repository",
+        "src.drift.repository",
         create_drift_metric=_create_drift_metric,
         create_drift_metrics=_create_drift_metrics,
         generate_drift_run_id=lambda: "run-1",
     )
     _register_fake_module(
         monkeypatch,
-        "drift.router",
+        "src.drift.router",
         _build_current_dataframe=lambda _logs: object(),
         _build_reference_dataframe=lambda _ref: object(),
     )
-    _register_fake_module(monkeypatch, "drift.service", DriftDetector=_Detector)
     _register_fake_module(
         monkeypatch,
-        "drift.utils",
+        "src.drift.service",
+        DriftDetector=_Detector,
+        _build_current_dataframe=lambda _logs: object(),
+        _build_reference_dataframe=lambda _ref: object(),
+    )
+    _register_fake_module(
+        monkeypatch,
+        "src.drift.utils",
         build_s3_key=lambda rid, name: f"{rid}/{name}",
         upload_report_to_s3=_upload,
     )
+
+    async def _init_pool(_dsn):
+        return None
+
+    async def _close_pool():
+        return None
+
     _register_fake_module(
-        monkeypatch, "src.database.connection", connection_ctx=lambda: _Ctx()
+        monkeypatch,
+        "src.database.connection",
+        connection_ctx=lambda: _Ctx(),
+        init_pool=_init_pool,
+        close_pool=_close_pool,
     )
     return state
 

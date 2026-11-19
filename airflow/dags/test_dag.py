@@ -13,8 +13,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from airflow.hooks.base import BaseHook
 from airflow.models import DagBag
+from airflow.sdk.bases.hook import BaseHook
 
 from dags import weekly_retraining
 
@@ -46,6 +46,15 @@ def test_dag_structure(dag) -> None:
     """Verify the weekly retraining DAG has expected tasks."""
     assert len(dag.tasks) >= 6, f"Expected ≥6 tasks, got {len(dag.tasks)}"
     assert dag.schedule == "0 6 * * 1", f"Expected weekly schedule, got {dag.schedule}"
+
+
+def test_skip_path_reaches_drift(dag) -> None:
+    """A skipped retrain must still run drift detection and cleanup."""
+    assert "run_drift_detection" in dag.get_task("skip_retraining").downstream_task_ids
+    assert (
+        dag.get_task("run_drift_detection").trigger_rule
+        == "none_failed_min_one_success"
+    )
 
 
 def test_dag_default_args(dag) -> None:

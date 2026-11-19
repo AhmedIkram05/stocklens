@@ -23,7 +23,7 @@ locals {
   # R4: MLflow / Airflow connection strings
   mlflow_db_uri = "postgresql://${module.database.db_username}:${module.secrets.db_password_value}@${module.database.db_address}:5432/${module.database.db_name}"
 
-  airflow_db_uri = "postgresql+psycopg2://${module.database.db_username}:${module.secrets.db_password_value}@${module.database.db_address}:5432/${module.database.db_name}"
+  airflow_db_uri = "postgresql+psycopg2://${module.database.db_username}:${module.secrets.db_password_value}@${module.database.db_address}:5432/${module.database.db_name}?options=-csearch_path%3Dairflow"
 
   mlflow_artifact_root = "s3://${module.s3.mlflow_artifacts_bucket_name}/mlflow/"
 

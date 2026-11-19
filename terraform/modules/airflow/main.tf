@@ -58,6 +58,10 @@ locals {
         value = var.airflow_sql_alchemy_conn
       },
       {
+        name  = "AIRFLOW__DATABASE__SQL_ALCHEMY_SCHEMA"
+        value = "airflow"
+      },
+      {
         name  = "AIRFLOW__CORE__LOAD_EXAMPLES"
         value = "False"
       },
@@ -84,21 +88,16 @@ locals {
         value = "/opt/airflow/dags"
       },
       {
-        name  = "AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL"
+        name  = "AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL"
         value = "30"
       },
       {
-        name  = "AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL"
+        name  = "AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL"
         value = "300"
       },
       {
-        name  = "AIRFLOW__SCHEDULER__PARSING_PROCESSES"
+        name  = "AIRFLOW__DAG_PROCESSOR__PARSING_PROCESSES"
         value = "2"
-      },
-      # Standalone DAG processor (Airflow 3.x — required for DAG parsing)
-      {
-        name  = "AIRFLOW__SCHEDULER__STANDALONE_DAG_PROCESSOR"
-        value = "True"
       },
       # Database connection pooling for stability
       {
@@ -228,9 +227,9 @@ resource "aws_ecs_task_definition" "webserver" {
 
   container_definitions = jsonencode([merge(
     local.airflow_container,
-    # ponytail: drop shared alembic_version table so Airflow's db migrate
-    # starts fresh without conflicting with backend's alembic state.
-    { entryPoint = ["sh", "-c"], command = ["python3 /opt/airflow/scripts/drop_alembic_version.py && airflow db migrate && exec airflow api-server"] }
+    # Airflow gets its own schema so its alembic_version cannot collide
+    # with the backend's public schema.
+    { entryPoint = ["sh", "-c"], command = ["python3 /opt/airflow/scripts/create_airflow_schema.py && airflow db migrate && bash /opt/airflow/scripts/init_airflow_variables.sh && exec airflow api-server"] }
 
   )])
 
@@ -254,9 +253,9 @@ resource "aws_ecs_task_definition" "scheduler" {
 
   container_definitions = jsonencode([merge(
     local.airflow_container,
-    # ponytail: drop shared alembic_version table so Airflow's db migrate
-    # starts fresh without conflicting with backend's alembic state.
-    { entryPoint = ["sh", "-c"], command = ["python3 /opt/airflow/scripts/drop_alembic_version.py && airflow db migrate && (airflow dag-processor &) && exec airflow scheduler"] }
+    # Airflow gets its own schema so its alembic_version cannot collide
+    # with the backend's public schema.
+    { entryPoint = ["sh", "-c"], command = ["python3 /opt/airflow/scripts/create_airflow_schema.py && airflow db migrate && bash /opt/airflow/scripts/init_airflow_variables.sh && (airflow dag-processor &) && exec airflow scheduler"] }
   )])
 
   tags = {
@@ -351,6 +350,10 @@ resource "aws_ecs_task_definition" "trigger_retrain" {
           value = var.airflow_sql_alchemy_conn
         },
         {
+          name  = "AIRFLOW__DATABASE__SQL_ALCHEMY_SCHEMA"
+          value = "airflow"
+        },
+        {
           name  = "AWS_REGION"
           value = var.aws_region
         },
@@ -443,7 +446,7 @@ resource "aws_ecs_task_definition" "ml_training" {
       environment = [
         {
           name  = "DATABASE_URL"
-          value = var.airflow_sql_alchemy_conn
+          value = var.database_url
         },
         {
           name  = "MLFLOW_TRACKING_URI"

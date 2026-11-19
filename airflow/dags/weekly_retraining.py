@@ -26,10 +26,13 @@ import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 
-from airflow.models import DAG
-from airflow.operators.empty import EmptyOperator
-from airflow.operators.python import BranchPythonOperator, PythonOperator
 from airflow.providers.amazon.aws.operators.ecs import EcsRunTaskOperator
+from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.providers.standard.operators.python import (
+    BranchPythonOperator,
+    PythonOperator,
+)
+from airflow.sdk import DAG
 
 # ── Default arguments ──────────────────────────────────────────────────────────
 default_args = {
@@ -54,7 +57,7 @@ INGEST_BUFFER_YEARS = 2
 
 def _pg_conn():
     """The stocklens DB connection from postgres_default."""
-    from airflow.hooks.base import BaseHook
+    from airflow.sdk.bases.hook import BaseHook
 
     return BaseHook.get_connection("postgres_default")
 
@@ -86,6 +89,7 @@ def _run_ingest(**context) -> None:
     result = subprocess.run(
         [sys.executable, script, "--years", str(years)],
         env=env,
+        check=False,
         capture_output=True,
         text=True,
         timeout=90 * 60,  # ~489 tickers x 2s delay + fetch time + retries headroom
@@ -169,7 +173,7 @@ def _check_new_ohlcv_data(**context) -> str:
 def v(key: str) -> str:
     from airflow.sdk import Variable
 
-    return Variable.get(key)
+    return Variable.get(key, default=os.environ.get(f"AIRFLOW_VAR_{key.upper()}", ""))
 
 
 def _detect_new_champion(**context) -> str:
@@ -203,27 +207,33 @@ def _run_drift_detection(**context) -> None:
 
     sys.path.insert(0, "/app")
 
-    from drift.evidently_reporter import (
+    from src.database.connection import (  # type: ignore[import-untyped]
+        close_pool,
+        connection_ctx,
+        init_pool,
+    )
+    from src.drift.evidently_reporter import (
         EvidentlyReporter,  # type: ignore[import-untyped]
     )
-    from drift.repository import (  # type: ignore[import-untyped]
+    from src.drift.repository import (  # type: ignore[import-untyped]
         create_drift_metrics,
         generate_drift_run_id,
     )
-    from drift.router import (  # type: ignore[import-untyped]
+    from src.drift.service import (  # type: ignore[import-untyped]
+        DriftDetector,
         _build_current_dataframe,
         _build_reference_dataframe,
     )
-    from drift.service import DriftDetector  # type: ignore[import-untyped]
-    from drift.utils import (  # type: ignore[import-untyped]
+    from src.drift.utils import (  # type: ignore[import-untyped]
         build_s3_key,
         upload_report_to_s3,
     )
-    from src.database.connection import connection_ctx  # type: ignore[import-untyped]
 
-    async def _run():
+    async def _run_inner():
         drift_run_id = generate_drift_run_id()
-        current_period = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d_%Y-%m-%d")
+        now = datetime.now(tz=timezone.utc)
+        lookback = now - timedelta(days=7)
+        current_period = f"{lookback:%Y-%m-%d}_{now:%Y-%m-%d}"
 
         # Get champion model
         async with connection_ctx() as conn:
@@ -242,16 +252,17 @@ def _run_drift_detection(**context) -> None:
             rows = await conn.fetch("SELECT DISTINCT ticker FROM holdings")
             tickers = [r["ticker"] for r in rows] + ["SPY"]
 
-        # Fetch prediction logs (last 7 days)
-        lookback = datetime.now(tz=timezone.utc) - timedelta(days=7)
+        # Fetch prediction logs (last 7 days) for this model only
         async with connection_ctx() as conn:
             log_rows = await conn.fetch(
                 """SELECT ticker, prediction, features, feature_stats, created_at
                    FROM prediction_log
                    WHERE ticker = ANY($1::varchar[]) AND created_at >= $2
+                     AND model_version = $3
                    ORDER BY created_at DESC""",
                 tickers,
                 lookback,
+                model_version,
             )
 
         prediction_logs: dict[str, list[dict]] = {t: [] for t in tickers}
@@ -288,6 +299,18 @@ def _run_drift_detection(**context) -> None:
             f"Drift complete: {result['alerts_triggered']} alerts, "
             f"max_psi={result['max_psi']:.4f}, max_js={result['max_js_divergence']:.4f}",
         )
+
+    async def _run():
+        dsn = (
+            os.environ.get("DATABASE_URL")
+            or os.environ.get("DATABASE_DSN")
+            or _pg_dsn()
+        )
+        await init_pool(dsn)
+        try:
+            await _run_inner()
+        finally:
+            await close_pool()
 
     asyncio.run(_run())
 
@@ -421,6 +444,7 @@ with DAG(
     run_drift = PythonOperator(
         task_id="run_drift_detection",
         python_callable=_run_drift_detection,
+        trigger_rule="none_failed_min_one_success",
     )
 
     # ── Task 5: Cleanup ──
@@ -432,4 +456,4 @@ with DAG(
     # ── Task dependencies ──
     ingest_universe >> check_data >> [train_challenger, skip_retraining]
     train_challenger >> detect_new_champion >> [capture_reference, skip_reference]
-    [capture_reference, skip_reference] >> run_drift >> cleanup
+    [capture_reference, skip_reference, skip_retraining] >> run_drift >> cleanup
