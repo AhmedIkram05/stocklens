@@ -45,7 +45,7 @@ FROM python:3.15-slim AS builder
 # .pyc is generated lazily on first import; fine for batch training jobs.
 ENV UV_COMPILE_BYTECODE=0
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.10.0 /uv /bin/uv
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
@@ -86,7 +86,7 @@ RUN groupadd -r mluser && useradd -r -g mluser -u 1000 mluser
 COPY --from=builder --chown=mluser:mluser /app/.venv /app/.venv
 
 # Copy uv for dep management
-COPY --from=ghcr.io/astral-sh/uv:latest --chown=mluser:mluser /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.10.0 --chown=mluser:mluser /uv /bin/uv
 
 WORKDIR /app
 COPY --chown=mluser:mluser . /app/ml/

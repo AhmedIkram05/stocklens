@@ -98,7 +98,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "receipts" {
       days_after_initiation = 7
     }
     expiration {
-      days = 90
+      days = 2190
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 30
     }
   }
 }
@@ -115,6 +118,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "mlflow_artifacts" {
     expiration {
       days = 90
     }
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
   }
 }
 
@@ -129,6 +135,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "drift_reports" {
     }
     expiration {
       days = 90
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 30
     }
   }
 }

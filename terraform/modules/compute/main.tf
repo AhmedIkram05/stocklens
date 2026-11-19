@@ -508,6 +508,10 @@ resource "aws_ecs_service" "main" {
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
 
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+
   deployment_minimum_healthy_percent = 100
   deployment_maximum_percent         = 200
 
