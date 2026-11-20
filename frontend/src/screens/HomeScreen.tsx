@@ -6,7 +6,7 @@
 
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl } from 'react-native';
-import { useNavigation, CompositeNavigationProp } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, CompositeNavigationProp } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { StackNavigationProp } from '@react-navigation/stack';
 
@@ -24,6 +24,7 @@ import useReceipts from '../hooks/useReceipts';
 import { ActivityIndicator } from 'react-native';
 import { formatCurrencyRounded } from '../utils/formatters';
 import { portfolioService } from '../services/portfolios';
+import { subscribe } from '../services/eventBus';
 
 import { useAuth } from '../contexts/AuthContext';
 import type { MainTabParamList, RootStackParamList } from '../navigation/types';
@@ -58,7 +59,12 @@ export default function HomeScreen() {
     };
   }, []);
 
-  const { receipts: allScans, loading: receiptsLoading, refetch } = useReceipts();
+  const {
+    receipts: allScans,
+    loading: receiptsLoading,
+    error: receiptsError,
+    refetch,
+  } = useReceipts();
 
   const [portfolioAgg, setPortfolioAgg] = useState<{
     total_market_value: number;
@@ -71,19 +77,16 @@ export default function HomeScreen() {
     try {
       const portfolios = await portfolioService.listPortfolios();
       if (portfolios.length === 0) {
+        setPortfolioAgg(null);
         setPortfolioLoading(false);
         return;
       }
-      const results = await Promise.allSettled(
-        portfolios.map((p) => portfolioService.getPerformance(p.id)),
-      );
+      const performances = await portfolioService.getBulkPerformance(portfolios.map((p) => p.id));
       let totalMV = 0;
       let totalPL = 0;
-      for (const r of results) {
-        if (r.status === 'fulfilled') {
-          totalMV += r.value.total_market_value ?? 0;
-          totalPL += r.value.total_unrealised_pl ?? 0;
-        }
+      for (const perf of Object.values(performances)) {
+        totalMV += perf.total_market_value ?? 0;
+        totalPL += perf.total_unrealised_pl ?? 0;
       }
       if (totalMV > 0) {
         setPortfolioAgg({ total_market_value: totalMV, total_unrealised_pl: totalPL });
@@ -95,9 +98,14 @@ export default function HomeScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    loadPortfolio();
-  }, [loadPortfolio]);
+  useFocusEffect(
+    useCallback(() => {
+      loadPortfolio();
+      return subscribe('historical-updated', () => {
+        loadPortfolio();
+      });
+    }, [loadPortfolio]),
+  );
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -164,6 +172,15 @@ export default function HomeScreen() {
         {receiptsLoading ? (
           <View style={{ padding: spacing.xl, alignItems: 'center' }}>
             <ActivityIndicator size="large" color="#888" />
+          </View>
+        ) : receiptsError && !hasScans ? (
+          <View style={{ padding: spacing.xl, alignItems: 'center' }}>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+              Could not load receipts.
+            </Text>
+            <TouchableOpacity onPress={handleRefresh} style={{ marginTop: spacing.md }}>
+              <Text style={{ color: theme.primary, fontWeight: '600' }}>Retry</Text>
+            </TouchableOpacity>
           </View>
         ) : hasScans ? (
           <>

@@ -22,9 +22,11 @@ jest.mock('@/hooks/useDecryptedImage', () => ({
 
 jest.mock('@react-navigation/native', () => {
   const actual = jest.requireActual('@react-navigation/native');
+  const actualReact = jest.requireActual('react');
   return {
     ...actual,
     useNavigation: jest.fn(),
+    useFocusEffect: (cb: () => void | (() => void)) => actualReact.useEffect(cb, []),
   };
 });
 
@@ -37,7 +39,7 @@ jest.mock('@/services/categories', () => ({
 jest.mock('@/services/portfolios', () => ({
   portfolioService: {
     listPortfolios: jest.fn(),
-    getPerformance: jest.fn(),
+    getBulkPerformance: jest.fn(),
   },
 }));
 
@@ -226,9 +228,8 @@ describe('HomeScreen', () => {
   it('shows portfolio section when portfolio data is available', async () => {
     const { portfolioService } = require('@/services/portfolios');
     portfolioService.listPortfolios.mockResolvedValue([{ id: 'p1', name: 'My Portfolio' }]);
-    portfolioService.getPerformance.mockResolvedValue({
-      total_market_value: 10000,
-      total_unrealised_pl: 500,
+    portfolioService.getBulkPerformance.mockResolvedValue({
+      p1: { total_market_value: 10000, total_unrealised_pl: 500 },
     });
 
     const navigateSpy = jest.fn();
@@ -258,9 +259,8 @@ describe('HomeScreen', () => {
   it('navigates to Portfolio tab when portfolio card is pressed', async () => {
     const { portfolioService } = require('@/services/portfolios');
     portfolioService.listPortfolios.mockResolvedValue([{ id: 'p1', name: 'My Portfolio' }]);
-    portfolioService.getPerformance.mockResolvedValue({
-      total_market_value: 10000,
-      total_unrealised_pl: 500,
+    portfolioService.getBulkPerformance.mockResolvedValue({
+      p1: { total_market_value: 10000, total_unrealised_pl: 500 },
     });
 
     const navigateSpy = jest.fn();
@@ -415,5 +415,18 @@ describe('HomeScreen', () => {
     await waitFor(() => {
       expect(refetchMock).toHaveBeenCalled();
     });
+  });
+
+  it('shows a retryable error instead of the empty state', async () => {
+    mockedUseReceipts.mockReturnValue({
+      receipts: [],
+      loading: false,
+      error: 'network down',
+      refetch: jest.fn(),
+    });
+
+    const { getByText } = await renderScreen();
+    expect(getByText('Could not load receipts.')).toBeTruthy();
+    expect(getByText('Retry')).toBeTruthy();
   });
 });
