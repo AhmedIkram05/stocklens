@@ -21,15 +21,22 @@ export function showConfirmationPrompt(
   handlers: Handlers,
   merchant?: string | null,
 ) {
-  const buttons: any[] = [
-    {
+  const parsedAmount =
+    typeof displayAmount === 'string' ? Number(displayAmount.replace(/[^0-9.-]/g, '')) : Number.NaN;
+  const hasDetectedAmount = Number.isFinite(parsedAmount) && parsedAmount > 0;
+
+  const buttons: any[] = [];
+  if (hasDetectedAmount) {
+    buttons.push({
       text: 'Confirm',
       onPress: () => {
         try {
           handlers.onConfirm();
         } catch (e) {}
       },
-    },
+    });
+  }
+  buttons.push(
     {
       text: 'Enter manually',
       onPress: () => {
@@ -46,13 +53,12 @@ export function showConfirmationPrompt(
         } catch (e) {}
       },
     },
-  ];
+  );
 
   const merchantLine = merchant && merchant.trim() ? `\nMerchant: ${merchant}` : '';
-  const message =
-    typeof displayAmount === 'string' && displayAmount.trim()
-      ? `We detected ${displayAmount} from this receipt.${merchantLine}`
-      : 'No amount detected. Enter the total manually or rescan the receipt.';
+  const message = hasDetectedAmount
+    ? `We detected ${displayAmount} from this receipt.${merchantLine}`
+    : 'No amount detected. Enter the total manually or rescan the receipt.';
 
   Alert.alert('Confirm scanned total', message, buttons, { cancelable: true });
 }

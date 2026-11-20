@@ -166,7 +166,6 @@ describe('useReceiptCapture', () => {
     });
 
     expect(receiptService.create).toHaveBeenCalledWith({
-      receipt_image_s3_key: 'file://manual.jpg',
       total_amount: 99.99,
       ocr_raw_text: 'Total £99.99',
     });

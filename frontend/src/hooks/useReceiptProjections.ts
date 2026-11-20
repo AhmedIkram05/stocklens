@@ -224,8 +224,8 @@ export default function useReceiptProjections(totalAmount: number) {
       setHistoricalRates((prev) => {
         const map: Record<string, Record<string, number>> = { ...prev };
         results.forEach((r: any) => {
-          if (!map[r.ticker]) map[r.ticker] = {};
-          if (r.total !== null && r.total !== undefined) map[r.ticker][period] = r.total as number;
+          if (r.total === null || r.total === undefined) return;
+          map[r.ticker] = { ...(map[r.ticker] ?? {}), [period]: r.total as number };
         });
         return map;
       });
@@ -288,6 +288,7 @@ export default function useReceiptProjections(totalAmount: number) {
 
   // Load window-specific future rates whenever the future period changes.
   const loadFutureRates = useCallback(async (period: string) => {
+    setFutureRates({});
     try {
       const results = await Promise.all(
         STOCK_PRESETS.map(async (s) => ({
@@ -301,7 +302,7 @@ export default function useReceiptProjections(totalAmount: number) {
       });
       setFutureRates(map);
     } catch {
-      // Keep previous rates on failure
+      // Leave empty so cards render unavailable rather than another period's rate.
     }
   }, []);
 

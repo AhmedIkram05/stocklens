@@ -6,7 +6,6 @@
  */
 
 import React from 'react';
-import '@testing-library/jest-native/extend-expect';
 import 'jest-fetch-mock';
 
 // ponytail: jest-fetch-mock promises resolve on microtasks that escape React's
@@ -26,11 +25,6 @@ const fetchMock = require('jest-fetch-mock');
 fetchMock.enableMocks();
 
 process.env.EXPO_PUBLIC_API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
-
-jest.mock('expo-constants', () => ({
-  manifest: { extra: {} },
-  expoConfig: { extra: {} },
-}));
 
 jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn(),
@@ -81,41 +75,6 @@ jest.mock('expo-secure-store', () => {
     deleteItemAsync: jest.fn(async (key: string) => {
       secureStoreData.delete(key);
     }),
-  };
-});
-
-jest.mock('expo-sqlite', () => {
-  const executeSql = jest.fn(
-    (statement: string, _params: unknown[] = [], success?: Function, error?: Function) => {
-      if (success) {
-        success({
-          rows: { _array: [], length: 0 },
-          rowsAffected: 0,
-          insertId: undefined,
-        });
-      }
-
-      if (error) {
-        error(null);
-      }
-    },
-  );
-
-  const transaction = jest.fn((callback: (tx: { executeSql: typeof executeSql }) => void) => {
-    const tx = { executeSql };
-    callback(tx);
-  });
-
-  const mockDb = {
-    transaction,
-    exec: jest.fn(),
-    runAsync: jest.fn(),
-    getAllAsync: jest.fn().mockResolvedValue([]),
-  };
-
-  return {
-    openDatabase: jest.fn(() => mockDb),
-    openDatabaseSync: jest.fn(() => mockDb),
   };
 });
 

@@ -55,6 +55,17 @@ describe('showConfirmationPrompt', () => {
     );
   });
 
+  it('omits Confirm for a zero total', () => {
+    showConfirmationPrompt('£0.00', {
+      onConfirm: jest.fn(),
+      onEnterManually: jest.fn(),
+      onRescan: jest.fn(),
+    });
+    expect(Alert.alert).toHaveBeenCalled();
+    const buttons = (Alert.alert as jest.Mock).mock.calls[0][2] as { text: string }[];
+    expect(buttons.some((b) => b.text === 'Confirm')).toBe(false);
+  });
+
   it('shows "No amount detected" when amount is empty', () => {
     showConfirmationPrompt('', {
       onConfirm: jest.fn(),
