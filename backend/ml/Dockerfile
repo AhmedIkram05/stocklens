@@ -1,8 +1,5 @@
-# Base image arg — override with --build-arg BASE_IMAGE=... for ARM64 CPU-only builds.
-ARG BASE_IMAGE=nvidia/cuda:12.4.1-runtime-ubuntu22.04
-
 # Stage 1: Rust native module builder
-# Use same Python version as runtime to ensure ABI-compatible wheel (cp314)
+# Use same Python version as runtime to ensure ABI-compatible wheel (cp315)
 FROM python:3.15-slim AS rust-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -50,32 +47,37 @@ COPY --from=ghcr.io/astral-sh/uv:0.10.0 /uv /bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 
-# Install CUDA-enabled PyTorch on x86_64 (GPU training); ARM64 only has CPU support
-RUN if [ "$(uname -m)" = "x86_64" ]; then \
-        pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu126; \
-    fi
-
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --index-strategy unsafe-best-match
 
+# Replace the CPU wheel from pyproject with the CUDA build inside the venv.
+# cu126's newest wheel for this interpreter is 2.14.1; the CPU lock may be newer.
+# ARM64 has no cu126 wheels and keeps the CPU wheel.
+RUN if [ "$(uname -m)" = "x86_64" ]; then \
+        uv pip install --python /app/.venv/bin/python --no-cache-dir \
+            --index-url https://pypi.org/simple \
+            --extra-index-url https://download.pytorch.org/whl/cu126 \
+            --index-strategy unsafe-best-match \
+            "torch==2.14.1+cu126"; \
+    fi
+
 # Install Rust native module into the virtual environment
 COPY --from=rust-builder /wheels /wheels
-RUN uv pip install --no-deps /wheels/features_engine*.whl
+RUN uv pip install --python /app/.venv/bin/python --no-deps /wheels/features_engine*.whl
 
-# Stage 3: Runtime image
-ARG BASE_IMAGE=nvidia/cuda:12.4.1-runtime-ubuntu22.04
-FROM ${BASE_IMAGE} AS runtime
+# Stage 3: Runtime image — same interpreter as the builder, so the venv works.
+FROM python:3.15-slim AS runtime
 
-# Install curl for healthcheck, python3, libgomp for torch parallelism
+# ECS GPU tasks need the NVIDIA runtime to expose the host driver.
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# curl for healthcheck, libgomp for torch parallelism.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    python3 \
-    python3-venv \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create virtual environment and copy from builder
-RUN python3 -m venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Non-root user — create before COPY so --chown can reference it.
