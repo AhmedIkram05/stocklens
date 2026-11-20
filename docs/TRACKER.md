@@ -495,7 +495,7 @@ Chronological implementation rounds from `docs/PHASE5_IMPLEMENTATION.md`. Each r
 - [ ] `checkov` + `tfsec` scan clean on sagemaker module
 - [x] **SageMaker provisioned endpoint deployed**: `stocklens-prediction-production-dev` `InService`; `/predict` routes via `PREDICTION_SERVING_BACKEND=sagemaker`
 - [x] **Redis TLS: `rediss://` configured for ElastiCache in `config.py`**
-- [x] **R7 GPU ML Training: ML Dockerfile uses `nvidia/cuda:12.4-runtime-ubuntu22.04` base + CUDA PyTorch index (cu121); x86_64 build**
+- [x] **R7 GPU ML Training: ML Dockerfile uses `python:3.15-slim` for build and runtime + cu126 PyTorch wheel (2.14.1) in the venv; AL2 GPU ECS AMI; x86_64 build**
 - [x] **R7 GPU ML Training: ECS task definition (g5.xlarge, 4 vCPU, 16 GB, 1 GPU, X86_64, EFS volumes for model artifacts + MLflow data)**
 - [x] **R7 GPU ML Training: EFS filesystem created with mount targets in private subnets; IAM role for ML training task with S3/KMS/Secrets/CloudWatch access**
 - [x] **R7 GPU ML Training: Airflow DAG uses `PythonOperator` + boto3 `ecs.run_task` (not `EcsRunTaskOperator` — see D12) targeting GPU task definition**
