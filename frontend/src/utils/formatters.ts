@@ -40,7 +40,7 @@ export function formatRelativeDate(isoDate?: string) {
     const d = new Date(isoDate);
     const now = new Date();
     const diffMs = now.getTime() - d.getTime();
-    const diffSec = Math.floor(diffMs / 1000);
+    const diffSec = Math.max(0, Math.floor(diffMs / 1000));
     const diffMin = Math.floor(diffSec / 60);
     const diffHours = Math.floor(diffMin / 60);
     const diffDays = Math.floor(diffHours / 24);
