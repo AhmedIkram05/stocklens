@@ -21,15 +21,24 @@ export function showConfirmationPrompt(
   handlers: Handlers,
   merchant?: string | null,
 ) {
-  const buttons: any[] = [
-    {
+  const hasDetectedAmount =
+    typeof displayAmount === 'string' &&
+    displayAmount.trim().length > 0 &&
+    !/no amount/i.test(displayAmount) &&
+    /\d/.test(displayAmount);
+
+  const buttons: any[] = [];
+  if (hasDetectedAmount) {
+    buttons.push({
       text: 'Confirm',
       onPress: () => {
         try {
           handlers.onConfirm();
         } catch (e) {}
       },
-    },
+    });
+  }
+  buttons.push(
     {
       text: 'Enter manually',
       onPress: () => {
@@ -46,7 +55,7 @@ export function showConfirmationPrompt(
         } catch (e) {}
       },
     },
-  ];
+  );
 
   const merchantLine = merchant && merchant.trim() ? `\nMerchant: ${merchant}` : '';
   const message =
