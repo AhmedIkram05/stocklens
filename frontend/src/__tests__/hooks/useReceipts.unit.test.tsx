@@ -17,15 +17,18 @@ jest.mock('@/services/eventBus', () => ({
   emit: jest.fn(),
 }));
 
-jest.mock('@react-navigation/native', () => ({
-  useFocusEffect: jest.fn((cb: () => void) => cb()),
-}));
+jest.mock('@react-navigation/native', () => {
+  const actualReact = jest.requireActual('react');
+  return {
+    useFocusEffect: (cb: () => void | (() => void)) => actualReact.useEffect(cb, []),
+  };
+});
 
 const mockedList = jest.requireMock('@/services/receipts').receiptService.listAll as jest.Mock;
 
 describe('useReceipts', () => {
   beforeEach(() => {
-    jest.resetAllMocks();
+    jest.clearAllMocks();
     jest.useFakeTimers();
   });
 

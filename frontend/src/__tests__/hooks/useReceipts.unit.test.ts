@@ -12,9 +12,12 @@ import { createApiReceipt } from '../fixtures';
 
 // useFocusEffect needs a NavigationContainer; the hook's focus-refetch isn't
 // under test here, so stub it to a no-op.
-jest.mock('@react-navigation/native', () => ({
-  useFocusEffect: jest.fn(),
-}));
+jest.mock('@react-navigation/native', () => {
+  const actualReact = jest.requireActual('react');
+  return {
+    useFocusEffect: (cb: () => void | (() => void)) => actualReact.useEffect(cb, []),
+  };
+});
 
 // Handler type used by the mocked event bus
 type ReceiptsChangedHandler = (payload?: Record<string, unknown>) => void;

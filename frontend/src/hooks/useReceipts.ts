@@ -41,10 +41,10 @@ export default function useReceipts() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  const loadedRef = useRef(false);
 
   const fetch = useCallback(async (opts: { silent?: boolean } = {}) => {
     if (!opts.silent) setLoading(true);
-    setError(null);
     try {
       const data = await receiptService.listAll();
       if (!mountedRef.current) return;
@@ -59,7 +59,8 @@ export default function useReceipts() {
         confidence: r.ocr_confidence != null ? Number(r.ocr_confidence) : undefined,
         categoryId: r.category_id ?? null,
       }));
-      setReceipts(mapped);
+      setReceipts((prev) => (JSON.stringify(prev) === JSON.stringify(mapped) ? prev : mapped));
+      setError(null);
     } catch (err: any) {
       if (mountedRef.current) setError(err?.message || String(err));
     } finally {
@@ -69,36 +70,31 @@ export default function useReceipts() {
 
   useEffect(() => {
     mountedRef.current = true;
-    fetch().catch(() => {});
 
     const unsub = subscribe('receipts-changed', async () => {
       await fetch({ silent: true });
     });
-
-    // Poll while mounted (keeps UI reasonably fresh); consumer can still control refresh
-    const id = setInterval(() => fetch({ silent: true }).catch(() => {}), 30000);
 
     return () => {
       mountedRef.current = false;
       try {
         unsub();
       } catch (e) {}
-      clearInterval(id);
     };
   }, [fetch]);
 
-  // Refetch immediately whenever the screen gains focus (e.g. returning from
-  // the scanner/details) so a freshly saved receipt appears without waiting
-  // for the 30s poll.
+  // Refetch on focus (returning from scanner/details) and poll only while
+  // focused, so hidden tabs do not keep hitting the API.
   useFocusEffect(
     useCallback(() => {
-      fetch({ silent: true }).catch(() => {});
+      fetch({ silent: loadedRef.current }).catch(() => {});
+      loadedRef.current = true;
+      const id = setInterval(() => fetch({ silent: true }).catch(() => {}), 30000);
+      return () => clearInterval(id);
     }, [fetch]),
   );
 
-  const refetch = useCallback(() => {
-    fetch({ silent: true }).catch(() => {});
-  }, [fetch]);
+  const refetch = useCallback(() => fetch({ silent: true }), [fetch]);
 
   return { receipts, loading, error, refetch } as const;
 }
