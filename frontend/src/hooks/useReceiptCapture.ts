@@ -157,7 +157,8 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
           photoUri: photoUri ?? null,
         };
 
-        const displayAmount = amount != null ? formatCurrencyGBP(amount) : 'No amount detected';
+        const displayAmount =
+          amount != null && amount > 0 ? formatCurrencyGBP(amount) : 'No amount detected';
 
         showConfirmationPrompt(displayAmount, {
           onConfirm: async () => {
