@@ -213,7 +213,7 @@ class TestGetBedrockClient:
     """Tests for _get_bedrock_client."""
 
     def test_returns_boto3_client(self):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
         with patch("boto3.client") as mock_client:
             mock_client.return_value = MagicMock(name="bedrock_client")
@@ -286,12 +286,8 @@ class TestClassifyWithBedrock:
 
         with patch("src.categories.merchant_map._get_bedrock_client") as mock_client:
             mock_instance = mock_client.return_value
-            mock_instance.invoke_model.return_value = {
-                "body": MagicMock(
-                    read=MagicMock(
-                        return_value=json.dumps({"content": [{"text": "Groceries"}]}).encode()
-                    )
-                )
+            mock_instance.converse.return_value = {
+                "output": {"message": {"content": [{"text": "Groceries"}]}}
             }
             from src.categories.merchant_map import classify_with_bedrock, load_categories
 
@@ -301,16 +297,12 @@ class TestClassifyWithBedrock:
             assert result.name == "Groceries"
 
     async def test_unrecognised_category_returns_none(self):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
         with patch("src.categories.merchant_map._get_bedrock_client") as mock_client:
             mock_instance = mock_client.return_value
-            mock_instance.invoke_model.return_value = {
-                "body": MagicMock(
-                    read=MagicMock(
-                        return_value=json.dumps({"content": [{"text": "NonExistent"}]}).encode()
-                    )
-                )
+            mock_instance.converse.return_value = {
+                "output": {"message": {"content": [{"text": "NonExistent"}]}}
             }
             from src.categories.merchant_map import classify_with_bedrock
 

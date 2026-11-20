@@ -313,14 +313,23 @@ def _clean_number(raw: str) -> Decimal | None:
 
 def parse_total(text: str) -> Decimal | None:
     # 1. Strict keyword patterns (original behaviour — fast path).
-    for pattern in TOTAL_PATTERNS:
+    for pattern in TOTAL_PATTERNS[:3]:
         matches = pattern.findall(text)
         for raw in reversed(matches):
             amount = _clean_number(raw)
             if amount is not None:
                 return amount
 
-    # 2. Fuzzy keyword scan — tolerate OCR corruption & multilingual labels.
+    # 2. Last currency-looking line, but never cash-tendered/change/tip.
+    for line in reversed(text.splitlines()):
+        if _NON_ITEM_LABEL.search(line):
+            continue
+        for raw in reversed(TOTAL_PATTERNS[3].findall(line)):
+            amount = _clean_number(raw)
+            if amount is not None:
+                return amount
+
+    # 3. Fuzzy keyword scan — tolerate OCR corruption & multilingual labels.
     #    On the matching line, take the last monetary value.
     for line in text.splitlines():
         if not _TOTAL_KEYWORD.search(line):

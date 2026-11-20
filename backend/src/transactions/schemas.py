@@ -16,8 +16,8 @@ from src.type_aliases import DecimalAsFloat
 class TransactionBase(BaseModel):
     ticker: str = Field(..., min_length=1, max_length=10)
     type: str = Field(..., pattern=r"^(BUY|SELL)$")
-    shares: DecimalAsFloat = Field(..., gt=0)
-    price_per_share: DecimalAsFloat = Field(..., ge=0)
+    shares: DecimalAsFloat = Field(..., gt=0, le=Decimal("999999999999.999999"))
+    price_per_share: DecimalAsFloat = Field(..., ge=0, le=Decimal("99999999.9999"))
     transaction_date: date
     notes: Optional[str] = None
 

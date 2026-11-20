@@ -17,7 +17,12 @@ from src.type_aliases import DecimalAsFloat
 class CashFlowCreate(BaseModel):
     """Request body for recording a new cash flow (deposit)."""
 
-    amount: Decimal = Field(..., gt=Decimal(0), description="Deposit amount (positive only)")
+    amount: Decimal = Field(
+        ...,
+        gt=Decimal(0),
+        le=Decimal("9999999999.99"),
+        description="Deposit amount (positive only)",
+    )
     source: str = Field("receipt", description="Source of deposit: 'receipt', 'manual', 'transfer'")
     source_id: Optional[UUID] = Field(None, description="ID of the source receipt, if applicable")
     notes: Optional[str] = None

@@ -34,7 +34,7 @@ from src.categories.merchant_map import resolve_category
 from src.config import settings
 from src.database.connection import connection_ctx
 from src.limiter import limiter
-from src.receipts.cache import get_enrich_status
+from src.receipts.cache import _text_hash, get_enrich_status
 from src.receipts.cascade import cascade_extract
 from src.receipts.models import (
     EnrichStatusResponse,
@@ -244,7 +244,7 @@ async def scan_receipt(
     # ── Log cascade decision ───────────────────────────────────────────
     await _log_cascade_decision(
         receipt_id=receipt_id,
-        raw_text_hash=cascade_result.raw_text[:16],
+        raw_text_hash=_text_hash(cascade_result.raw_text),
         regex_confidence=cascade_result.overall_confidence,
         llm_confidence=None,
         chosen_source=cascade_result.source,
@@ -603,10 +603,6 @@ async def update_receipt(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="At least one field must be provided for update",
         )
-
-    set_clauses.append(f"scanned_at = ${idx}")
-    params.append(existing["scanned_at"])
-    idx += 1
 
     query = (
         "UPDATE receipts SET "

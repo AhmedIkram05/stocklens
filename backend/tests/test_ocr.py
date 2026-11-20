@@ -51,6 +51,12 @@ class TestParseTotal:
     def test_empty_string(self):
         assert parse_total("") is None
 
+    def test_ignores_cash_and_change_fallback(self):
+        assert parse_total("TOTAL\nCASH £20.00\nCHANGE £11.50") is None
+
+    def test_total_still_wins_over_cash_and_change(self):
+        assert parse_total("TOTAL £8.50\nCASH £20.00\nCHANGE £11.50") == Decimal("8.50")
+
     def test_only_currency_symbol(self):
         """A lone currency symbol should not match."""
         text = "TESCO STORES LTD\nMilk 1.65\n£"

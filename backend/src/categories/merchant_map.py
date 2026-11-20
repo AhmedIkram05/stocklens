@@ -173,7 +173,7 @@ def _sanitise_merchant(merchant_name: str) -> str:
 
 
 def _build_bedrock_prompt(merchant_name: str, categories: list[CategoryRule]) -> str:
-    """Build a prompt for Claude Haiku to classify a merchant."""
+    """Build a prompt for the configured Bedrock model to classify a merchant."""
     category_names = "\n".join(f"- {c.name}: {c.description}" for c in categories)
 
     return (
@@ -186,7 +186,7 @@ def _build_bedrock_prompt(merchant_name: str, categories: list[CategoryRule]) ->
 
 
 async def classify_with_bedrock(merchant_name: str) -> Optional[CategoryRule]:
-    """Use Claude Haiku via Bedrock to classify the merchant into a category.
+    """Use the configured Bedrock model (Nova) via Converse to classify the merchant.
 
     This is a fallback when keyword matching fails. Returns ``None`` if
     Bedrock is unavailable or the response does not match a known category.
@@ -201,25 +201,14 @@ async def classify_with_bedrock(merchant_name: str) -> Optional[CategoryRule]:
     try:
         client = _get_bedrock_client()
 
-        body = json.dumps(
-            {
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 10,
-                "messages": [{"role": "user", "content": prompt}],
-            }
-        )
-
         response = await asyncio.to_thread(
-            client.invoke_model,
+            client.converse,
             modelId=settings.BEDROCK_MODEL_ID,
-            contentType="application/json",
-            accept="application/json",
-            body=body,
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig={"maxTokens": 10, "temperature": 0},
         )
-
-        result = response["body"].read().decode("utf-8")
-        data = json.loads(result)
-        category_name = data.get("content", [{}])[0].get("text", "").strip()
+        content = response.get("output", {}).get("message", {}).get("content", [])
+        category_name = "".join(b.get("text", "") for b in content).strip()
 
         # Match the returned name against known categories
         for cat in categories:
