@@ -33,10 +33,9 @@ from typing import Any
 
 import structlog
 
-from src.categories.seed import SEED_CATEGORIES
 from src.config import settings
 from src.receipts.llm_extractor import LLMExtractionResult, extract_with_llm, extract_with_vision
-from src.receipts.merchant_match import fuzzy_match_merchant
+from src.receipts.merchant_match import KNOWN_MERCHANTS, fuzzy_match_merchant
 from src.receipts.models import (
     CascadeResult,
     ExtractedItem,
@@ -48,8 +47,6 @@ from src.receipts.ocr import process_receipt
 logger = structlog.get_logger()
 
 # ── Known merchants loaded once at module load ───────────────────────────
-
-KNOWN_MERCHANTS: list[str] = [kw for cat in SEED_CATEGORIES for kw in cat["merchant_keywords"]]
 
 # ponytail: merchant at/above this conf was fuzzy-verified vs known merchants;
 # below it, the regex found a name but couldn't confirm it → worth an LLM check.

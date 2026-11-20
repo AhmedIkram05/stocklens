@@ -6,11 +6,10 @@ and the FastAPI router.
 """
 
 import datetime as _dt
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
-from typing_extensions import Literal
 
 from src.type_aliases import DecimalAsFloat
 
