@@ -98,7 +98,9 @@ data "aws_vpc" "this" {
 }
 
 data "aws_ssm_parameter" "ecs_agent_installed_ami" {
-  name = "/aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id"
+  # AL2 GPU variant ships the NVIDIA driver and container toolkit. AL2023 has
+  # no GPU-optimised ECS AMI, so the training task would start without a device.
+  name = "/aws/service/ecs/optimized-ami/amazon-linux-2/gpu/recommended/image_id"
 }
 
 resource "aws_launch_template" "ml_training_gpu" {
