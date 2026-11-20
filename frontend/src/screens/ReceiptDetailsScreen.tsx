@@ -31,6 +31,7 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import DangerButton from '../components/DangerButton';
 import ResponsiveContainer from '../components/ResponsiveContainer';
 import { receiptService } from '../services/receipts';
+import { clearCAGRcache } from '../services/projectionService';
 import { emit } from '../services/eventBus';
 import { formatCurrencyGBP, formatRelativeDate } from '../utils/formatters';
 import StockCard from '../components/StockCard';
@@ -148,6 +149,7 @@ export default function ReceiptDetailsScreen() {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
+    clearCAGRcache();
     await Promise.allSettled([
       loadReceiptDetail(),
       loadCategories(),

@@ -14,11 +14,8 @@ import { brandColors, useTheme } from '../contexts/ThemeContext';
 import { STOCK_PRESETS } from '../services/stockPresets';
 import { periodToYears, periodLabel } from '../constants/periods';
 import { subscribe } from '../services/eventBus';
-import {
-  getHistoricalCAGRFromToday,
-  getCombinedProjection,
-  getHistoricalCAGRForPeriod,
-} from '../services/projectionService';
+import { clearCAGRcache, getHistoricalCAGRForPeriod } from '../services/projectionService';
+import { predictionService } from '../services/prediction';
 import { formatCurrencyGBP } from '../utils/formatters';
 
 export type Prediction = { direction: 'UP' | 'FLAT' | 'DOWN'; rate: number; confidence: number };
@@ -27,9 +24,10 @@ export type Prediction = { direction: 'UP' | 'FLAT' | 'DOWN'; rate: number; conf
 export function buildInvestmentOptions(totalAmount: number, period: string) {
   const yrs = periodToYears(period);
   return STOCK_PRESETS.map((stock) => {
-    const futureValue = totalAmount * Math.pow(1 + stock.returnRate, yrs);
-    const gain = futureValue - totalAmount;
-    const percentReturn = (futureValue / totalAmount - 1) * 100;
+    const hasPrincipal = totalAmount > 0;
+    const futureValue = hasPrincipal ? totalAmount * Math.pow(1 + stock.returnRate, yrs) : 0;
+    const gain = hasPrincipal ? futureValue - totalAmount : 0;
+    const percentReturn = hasPrincipal ? (futureValue / totalAmount - 1) * 100 : 0;
     return { ...stock, futureValue, gain, percentReturn };
   });
 }
@@ -109,7 +107,12 @@ export function computeStockCardView({
     }
   }
 
-  const unavailable = Number.isNaN(computedFutureValue);
+  if (!(totalAmount > 0)) {
+    computedFutureValue = 0;
+    computedGain = 0;
+    computedPercentReturn = 0;
+  }
+  const unavailable = !(totalAmount > 0) || Number.isNaN(computedFutureValue);
   const futureDisplay = unavailable ? '—' : formatCurrencyGBP(computedFutureValue);
   const gainDisplay = unavailable ? '—' : formatCurrencyGBP(computedGain);
   const percentDisplay = unavailable ? 'N/A' : `${computedPercentReturn.toFixed(1)}%`;
@@ -210,7 +213,7 @@ export default function useReceiptProjections(totalAmount: number) {
     try {
       const promises = STOCK_PRESETS.map(async (s) => {
         try {
-          const cagr = await getHistoricalCAGRFromToday(s.ticker);
+          const cagr = await getHistoricalCAGRForPeriod(s.ticker, period);
           return { ticker: s.ticker, total: cagr };
         } catch (e: any) {
           return { ticker: s.ticker, total: null };
@@ -237,8 +240,10 @@ export default function useReceiptProjections(totalAmount: number) {
     loadHistoricalForYears(selectedYears).catch(() => {});
     const unsub = subscribe('historical-updated', (payload) => {
       // payload may contain symbol/interval; refresh if it's one of our tracked tickers
-      const updatedTicker = payload?.symbol as string | undefined;
-      if (!updatedTicker || STOCK_PRESETS.some((s) => s.ticker === updatedTicker)) {
+      const updatedTicker =
+        typeof payload?.symbol === 'string' ? payload.symbol.toUpperCase() : undefined;
+      if (updatedTicker && STOCK_PRESETS.some((s) => s.ticker === updatedTicker)) {
+        clearCAGRcache(updatedTicker);
         loadHistoricalForYears(selectedYears).catch(() => {});
       }
     });
@@ -252,12 +257,11 @@ export default function useReceiptProjections(totalAmount: number) {
     try {
       const results = await Promise.allSettled(
         STOCK_PRESETS.map(async (s) => {
-          const pred = await getCombinedProjection(s.ticker);
-          if (!pred) return null;
+          const pred = await predictionService.getPrediction(s.ticker);
           return {
             ticker: s.ticker,
             direction: pred.direction,
-            rate: pred.rate,
+            rate: 0,
             confidence: pred.confidence,
           };
         }),

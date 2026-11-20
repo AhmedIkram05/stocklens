@@ -10,7 +10,7 @@ import ReceiptDetailsScreen from '@/screens/ReceiptDetailsScreen';
 import { renderWithProviders } from '@/__tests__/utils/renderWithProviders';
 import { receiptService } from '@/services/receipts';
 import { emit, subscribe } from '@/services/eventBus';
-import { getHistoricalCAGRFromToday } from '@/services/projectionService';
+import { getHistoricalCAGRForPeriod } from '@/services/projectionService';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
 // Mock dependencies
@@ -23,8 +23,8 @@ jest.mock('@react-navigation/native');
 const mockedReceiptService = receiptService as jest.Mocked<typeof receiptService>;
 const mockedEmit = emit as jest.MockedFunction<typeof emit>;
 const mockedSubscribe = subscribe as jest.MockedFunction<typeof subscribe>;
-const mockedGetHistorical = getHistoricalCAGRFromToday as jest.MockedFunction<
-  typeof getHistoricalCAGRFromToday
+const mockedGetHistorical = getHistoricalCAGRForPeriod as jest.MockedFunction<
+  typeof getHistoricalCAGRForPeriod
 >;
 const mockedUseNavigation = useNavigation as jest.MockedFunction<typeof useNavigation>;
 const mockedUseRoute = useRoute as jest.MockedFunction<typeof useRoute>;
