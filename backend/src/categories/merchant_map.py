@@ -201,25 +201,14 @@ async def classify_with_bedrock(merchant_name: str) -> Optional[CategoryRule]:
     try:
         client = _get_bedrock_client()
 
-        body = json.dumps(
-            {
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 10,
-                "messages": [{"role": "user", "content": prompt}],
-            }
-        )
-
         response = await asyncio.to_thread(
-            client.invoke_model,
+            client.converse,
             modelId=settings.BEDROCK_MODEL_ID,
-            contentType="application/json",
-            accept="application/json",
-            body=body,
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig={"maxTokens": 10, "temperature": 0},
         )
-
-        result = response["body"].read().decode("utf-8")
-        data = json.loads(result)
-        category_name = data.get("content", [{}])[0].get("text", "").strip()
+        content = response.get("output", {}).get("message", {}).get("content", [])
+        category_name = "".join(b.get("text", "") for b in content).strip()
 
         # Match the returned name against known categories
         for cat in categories:
