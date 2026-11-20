@@ -13,6 +13,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import * as deviceAuth from '../hooks/useDeviceAuth';
 import { receiptService } from '../services/receipts';
+import { emit } from '../services/eventBus';
 import { spacing, typography } from '../styles/theme';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 
@@ -132,7 +133,7 @@ export default function SettingsScreen() {
   const handleClearData = () => {
     Alert.alert(
       'Clear All Data',
-      'Are you sure you want to delete all scanned receipts stored on this device? This action cannot be undone.',
+      'Are you sure you want to delete every receipt in your account? This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -141,10 +142,8 @@ export default function SettingsScreen() {
           onPress: async () => {
             try {
               await receiptService.deleteAll();
-              Alert.alert(
-                'Data cleared',
-                'All scanned receipts stored on this device have been permanently deleted.',
-              );
+              emit('receipts-changed', { action: 'deleted-all' });
+              Alert.alert('Data cleared', 'All receipts in your account have been deleted.');
             } catch (err: any) {
               Alert.alert(
                 'Error',

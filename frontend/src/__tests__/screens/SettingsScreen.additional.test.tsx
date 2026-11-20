@@ -162,7 +162,7 @@ describe('SettingsScreen edge cases', () => {
     await waitFor(() => {
       expect(alertSpy).toHaveBeenCalledWith(
         'Clear All Data',
-        'Are you sure you want to delete all scanned receipts stored on this device? This action cannot be undone.',
+        'Are you sure you want to delete every receipt in your account? This action cannot be undone.',
         expect.arrayContaining([
           expect.objectContaining({ text: 'Cancel', style: 'cancel' }),
           expect.objectContaining({
