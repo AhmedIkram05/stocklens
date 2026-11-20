@@ -297,7 +297,6 @@ describe('useReceiptCapture', () => {
 
     // Verify calls
     expect(mockedReceiptService.update).toHaveBeenCalledWith('scan-mock-123', {
-      receipt_image_s3_key: photoUri,
       total_amount: amount,
       ocr_raw_text: ocrText,
     });

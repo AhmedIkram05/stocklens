@@ -70,14 +70,12 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
           // The scan already inserted a draft; correct it instead of creating
           // a second receipt (which would double-count the spend).
           await receiptService.update(pending.id, {
-            receipt_image_s3_key: photoUri ?? undefined,
             total_amount: amount,
             ocr_raw_text: ocrText || '',
           });
           receiptId = pending.id;
         } else {
           const created = await receiptService.create({
-            receipt_image_s3_key: photoUri ?? undefined,
             total_amount: amount,
             ocr_raw_text: ocrText || '',
           });
@@ -160,16 +158,6 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
         };
 
         const displayAmount = amount != null ? formatCurrencyGBP(amount) : 'No amount detected';
-        // Save the photo URI back to the receipt so it shows on the home screen
-        if (photoUri) {
-          try {
-            await receiptService.update(result.id, {
-              receipt_image_s3_key: photoUri,
-            });
-          } catch (e) {
-            // non-critical — image still shows on details screen via nav params
-          }
-        }
 
         showConfirmationPrompt(displayAmount, {
           onConfirm: async () => {

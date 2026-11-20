@@ -33,11 +33,9 @@ export default function ScanScreen() {
   const facing: CameraType = 'back';
   const [permission, requestPermission] = useCameraPermissions();
   const [photo, setPhoto] = useState<string | null>(null);
-  const [, setPhotoBase64] = useState<string | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(true);
   const clearPhotoPreview = useCallback(() => {
     setPhoto(null);
-    setPhotoBase64(null);
   }, []);
   const capture = useReceiptCapture({
     navigation,
@@ -107,7 +105,6 @@ export default function ScanScreen() {
       try {
         const photo = await cameraRef.current.takePictureAsync({
           quality: 0.7,
-          base64: true,
         });
         setPhoto(photo.uri);
 
