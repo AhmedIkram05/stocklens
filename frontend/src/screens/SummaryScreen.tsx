@@ -7,7 +7,7 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import ScreenContainer from '../components/ScreenContainer';
 import PageHeader from '../components/PageHeader';
 import { brandColors, useTheme } from '../contexts/ThemeContext';
@@ -55,7 +55,7 @@ export default function SummaryScreen() {
   const [, setPortfolioError] = useState<string | null>(null);
   const portfolioLoadedRef = useRef(false);
 
-  const { receipts, loading: receiptsLoading, refetch } = useReceipts();
+  const { receipts, loading: receiptsLoading, error: receiptsError, refetch } = useReceipts();
   const [refreshing, setRefreshing] = useState(false);
 
   const loadSpendingAnalysis = useCallback(async () => {
@@ -601,6 +601,17 @@ export default function SummaryScreen() {
           <ResponsiveContainer maxWidth={screenWidth - contentHorizontalPadding * 2}>
             <View style={{ padding: spacing.xl, alignItems: 'center' }}>
               <ActivityIndicator size="large" color={theme.primary} />
+            </View>
+          </ResponsiveContainer>
+        ) : receiptsError && receiptsScanned === 0 ? (
+          <ResponsiveContainer maxWidth={screenWidth - contentHorizontalPadding * 2}>
+            <View style={{ padding: spacing.xl, alignItems: 'center' }}>
+              <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+                Could not load receipts.
+              </Text>
+              <TouchableOpacity onPress={handleRefresh} style={{ marginTop: spacing.md }}>
+                <Text style={{ color: theme.primary, fontWeight: '600' }}>Retry</Text>
+              </TouchableOpacity>
             </View>
           </ResponsiveContainer>
         ) : receiptsScanned === 0 && !spendingAnalysis ? (

@@ -186,4 +186,19 @@ describe('SummaryScreen', () => {
     await waitFor(() => expect(queryByText(/Instead of 3 receipts/)).toBeNull());
     await findByText(/Small frequent expenses/); // second insight's expandedContent
   });
+
+  it('shows a retryable error instead of the empty state', async () => {
+    mockedUseReceipts.mockReturnValue({
+      receipts: [],
+      loading: false,
+      error: 'network down',
+      refetch: jest.fn(),
+    });
+
+    const { getByText } = await renderWithProviders(<SummaryScreen />, {
+      providerOverrides: { withNavigation: false },
+    });
+    expect(getByText('Could not load receipts.')).toBeTruthy();
+    expect(getByText('Retry')).toBeTruthy();
+  });
 });
