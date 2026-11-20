@@ -102,6 +102,21 @@ export const receiptService = {
     return response.receipts;
   },
 
+  /** Fetch every page so totals and analytics are not capped at one page. */
+  async listAll(pageSize = 100): Promise<Receipt[]> {
+    const all: Receipt[] = [];
+    let offset = 0;
+    for (;;) {
+      const response = await apiService.get<ReceiptListResponse>(
+        `/receipts?limit=${pageSize}&offset=${offset}`,
+      );
+      all.push(...response.receipts);
+      offset += response.receipts.length;
+      if (response.receipts.length === 0 || offset >= response.total) break;
+    }
+    return all;
+  },
+
   /**
    * Get a single receipt by ID.
    *

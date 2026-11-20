@@ -1,6 +1,6 @@
 /**
  * Tests for `useReceipts` hook.
- * Verifies initial fetch via `receiptService.list()`, event-bus driven refresh,
+ * Verifies initial fetch via `receiptService.listAll()`, event-bus driven refresh,
  * polling behavior, data normalization for UI, and error/cleanup handling.
  */
 
@@ -22,7 +22,7 @@ type ReceiptsChangedHandler = (payload?: Record<string, unknown>) => void;
 // Mock the receipt service and event bus to avoid HTTP calls
 jest.mock('@/services/receipts', () => ({
   receiptService: {
-    list: jest.fn(),
+    listAll: jest.fn(),
   },
 }));
 
@@ -60,7 +60,7 @@ describe('useReceipts', () => {
       scanned_at: '2025-01-01T10:00:00Z',
       receipt_image_s3_key: 's3://key/1',
     });
-    mockedReceiptService.list.mockResolvedValueOnce([receipt1]);
+    mockedReceiptService.listAll.mockResolvedValueOnce([receipt1]);
 
     const { result, unmount } = await renderHook(() => useReceipts());
 
@@ -68,7 +68,7 @@ describe('useReceipts', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     // Verify initial fetch (no args — defaults handled by real impl)
-    expect(mockedReceiptService.list).toHaveBeenCalledWith();
+    expect(mockedReceiptService.listAll).toHaveBeenCalledWith();
     expect(result.current.receipts).toEqual([
       {
         id: '7',
@@ -89,7 +89,7 @@ describe('useReceipts', () => {
       total_amount: 99.99,
       scanned_at: '2025-01-05T12:00:00Z',
     });
-    mockedReceiptService.list.mockResolvedValueOnce([receipt2]);
+    mockedReceiptService.listAll.mockResolvedValueOnce([receipt2]);
 
     await act(async () => {
       await handlers[0]?.();
@@ -101,7 +101,7 @@ describe('useReceipts', () => {
     await act(async () => {
       jest.advanceTimersByTime(30000);
     });
-    expect(mockedReceiptService.list).toHaveBeenCalledTimes(3);
+    expect(mockedReceiptService.listAll).toHaveBeenCalledTimes(3);
 
     // Unmount should unsubscribe
     await unmount();
@@ -114,7 +114,7 @@ describe('useReceipts', () => {
    * Test: Error handling on fetch
    */
   it('captures fetch errors', async () => {
-    mockedReceiptService.list.mockRejectedValueOnce(new Error('boom'));
+    mockedReceiptService.listAll.mockRejectedValueOnce(new Error('boom'));
 
     const { result } = await renderHook(() => useReceipts());
 
