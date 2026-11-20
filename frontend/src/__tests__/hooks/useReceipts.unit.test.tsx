@@ -8,7 +8,7 @@ import useReceipts from '@/hooks/useReceipts';
 
 jest.mock('@/services/receipts', () => ({
   receiptService: {
-    list: jest.fn(),
+    listAll: jest.fn(),
   },
 }));
 
@@ -21,7 +21,7 @@ jest.mock('@react-navigation/native', () => ({
   useFocusEffect: jest.fn((cb: () => void) => cb()),
 }));
 
-const mockedList = jest.requireMock('@/services/receipts').receiptService.list as jest.Mock;
+const mockedList = jest.requireMock('@/services/receipts').receiptService.listAll as jest.Mock;
 
 describe('useReceipts', () => {
   beforeEach(() => {

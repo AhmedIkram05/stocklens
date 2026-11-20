@@ -16,6 +16,11 @@ import { PRESET_RATES } from '@/services/stockPresets';
 
 const mockedMarketService = marketService as jest.Mocked<typeof marketService>;
 
+beforeEach(() => {
+  projectionService.clearCAGRcache();
+  jest.clearAllMocks();
+});
+
 describe('projectionService.computeCAGRFromSeries', () => {
   it('calculates CAGR using first and last entries in the series', () => {
     const series = [
@@ -259,7 +264,7 @@ describe('projectionService.getCombinedProjection', () => {
     expect(proj).toBeNull();
   });
 
-  it('uses full-history CAGR when periodLabel not provided', async () => {
+  it('uses the 10-year window when periodLabel is not provided', async () => {
     (mockedPredictionService.getPrediction as jest.Mock).mockResolvedValue({
       direction: 'UP',
       confidence: 0.75,
@@ -274,6 +279,48 @@ describe('projectionService.getCombinedProjection', () => {
 
     expect(proj).not.toBeNull();
     expect(proj!.direction).toBe('UP');
-    expect(mockedMarketService.getOHLCV).toHaveBeenCalledWith('NVDA');
+    expect(mockedMarketService.getOHLCV).toHaveBeenCalledWith('NVDA', expect.any(String));
+  });
+});
+
+describe('projectionService CAGR cache', () => {
+  it('dedupes concurrent requests for the same ticker and period', async () => {
+    mockedMarketService.getOHLCV.mockResolvedValue([
+      { date: '2020-01-01', adjusted_close: 100 },
+      { date: '2021-01-01', adjusted_close: 110 },
+    ] as any);
+
+    await Promise.all([
+      projectionService.getHistoricalCAGRForPeriod('AAPL', '5Y'),
+      projectionService.getHistoricalCAGRForPeriod('AAPL', '5Y'),
+    ]);
+
+    expect(mockedMarketService.getOHLCV).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not repopulate the cache when cleared mid-flight', async () => {
+    let resolveRequest: (value: any) => void = () => {};
+    mockedMarketService.getOHLCV.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRequest = resolve;
+      }) as any,
+    );
+
+    const pending = projectionService.getHistoricalCAGRForPeriod('AAPL', '5Y');
+    projectionService.clearCAGRcache();
+    resolveRequest([
+      { date: '2020-01-01', adjusted_close: 100 },
+      { date: '2021-01-01', adjusted_close: 110 },
+    ]);
+    await pending;
+
+    mockedMarketService.getOHLCV.mockResolvedValueOnce([
+      { date: '2020-01-01', adjusted_close: 100 },
+      { date: '2021-01-01', adjusted_close: 120 },
+    ] as any);
+    const fresh = await projectionService.getHistoricalCAGRForPeriod('AAPL', '5Y');
+
+    expect(mockedMarketService.getOHLCV).toHaveBeenCalledTimes(2);
+    expect(fresh).toBeCloseTo(0.2, 2);
   });
 });

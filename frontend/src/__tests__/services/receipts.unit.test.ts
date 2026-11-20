@@ -200,3 +200,34 @@ describe('receiptService.checkHealth()', () => {
     await expect(receiptService.checkHealth()).rejects.toThrow();
   });
 });
+
+describe('receiptService.listAll()', () => {
+  beforeEach(async () => {
+    fetchMock.resetMocks();
+    await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+    setValidToken();
+  });
+
+  it('accumulates pages until the reported total', async () => {
+    fetchMock.mockResponseOnce(
+      JSON.stringify({ receipts: [{ id: '1' }], total: 2, limit: 1, offset: 0 }),
+    );
+    fetchMock.mockResponseOnce(
+      JSON.stringify({ receipts: [{ id: '2' }], total: 2, limit: 1, offset: 1 }),
+    );
+
+    const all = await receiptService.listAll(1);
+
+    expect(all.map((r) => r.id)).toEqual(['1', '2']);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops on an empty page even when total is larger', async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ receipts: [], total: 9, limit: 100, offset: 0 }));
+
+    const all = await receiptService.listAll(100);
+
+    expect(all).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});

@@ -63,6 +63,16 @@ describe('computeStockCardView', () => {
     expect(view.badgeColor).toBe(brandColors.green);
   });
 
+  it('zero principal renders the unavailable state instead of NaN', () => {
+    const view = computeStockCardView({
+      ...base,
+      totalAmount: 0,
+      futureRates: { NVDA: 0.1 },
+    });
+    expect(view.futureDisplay).toBe('—');
+    expect(view.percentDisplay).toBe('N/A');
+  });
+
   it('past mode uses the historical CAGR and flags the best performer', () => {
     const view = computeStockCardView({
       ...base,

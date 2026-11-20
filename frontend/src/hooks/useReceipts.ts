@@ -46,7 +46,7 @@ export default function useReceipts() {
     if (!opts.silent) setLoading(true);
     setError(null);
     try {
-      const data = await receiptService.list();
+      const data = await receiptService.listAll();
       if (!mountedRef.current) return;
       const mapped = data.map((r: any) => ({
         id: String(r.id),
