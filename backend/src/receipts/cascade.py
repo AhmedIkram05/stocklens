@@ -559,7 +559,7 @@ async def cascade_extract(
         Raw image bytes (JPEG, PNG, or HEIC).
     known_merchants:
         Optional list of known merchant keywords. Defaults to the module-level
-        list loaded from ``SEED_CATEGORIES``.
+        list from ``merchant_match``.
 
     Returns
     -------
