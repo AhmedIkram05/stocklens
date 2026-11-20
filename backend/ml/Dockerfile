@@ -53,8 +53,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Replace the CPU wheel from pyproject with the CUDA build inside the venv.
 # cu126's newest wheel for this interpreter is 2.14.1; the CPU lock may be newer.
 # ARM64 has no cu126 wheels and keeps the CPU wheel.
-RUN if [ "$(uname -m)" = "x86_64" ]; then \
-        uv pip install --python /app/.venv/bin/python --no-cache-dir \
+RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
+    if [ "$(uname -m)" = "x86_64" ]; then \
+        uv pip install --python /app/.venv/bin/python \
             --index-url https://pypi.org/simple \
             --extra-index-url https://download.pytorch.org/whl/cu126 \
             --index-strategy unsafe-best-match \
@@ -72,9 +73,8 @@ FROM python:3.15-slim AS runtime
 ENV NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
-# curl for healthcheck, libgomp for torch parallelism.
+# libgomp for torch parallelism.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
