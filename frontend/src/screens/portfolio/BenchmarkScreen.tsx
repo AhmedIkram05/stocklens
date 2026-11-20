@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, ScrollView, RefreshControl, TouchableOpacity, StyleSheet } from 'react-native';
 import Svg, { Polyline, Line, Text as SvgText } from 'react-native-svg';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import { useRoute, RouteProp, useIsFocused } from '@react-navigation/native';
 import BackButton from '../../components/BackButton';
 
 import ScreenContainer from '../../components/ScreenContainer';
@@ -194,6 +194,9 @@ export default function BenchmarkScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const mountedRef = useRef(true);
+  const [error, setError] = useState<string | null>(null);
+  const seqRef = useRef(0);
+  const loadSeqRef = useRef(0);
   const pollRef = useRef({ ticker: activeBenchmark, period });
 
   // Keep pollRef in sync with current params
@@ -201,6 +204,8 @@ export default function BenchmarkScreen() {
 
   const fetchBenchmark = useCallback(
     async (ticker: string, p: string, isRefresh = false, silent = false) => {
+      const seq = ++seqRef.current;
+      const loadSeq = silent ? null : ++loadSeqRef.current;
       if (!silent) {
         if (isRefresh) setRefreshing(true);
         else setLoading(true);
@@ -210,12 +215,14 @@ export default function BenchmarkScreen() {
         const endDate = new Date();
         const startDate = periodToStartDate(p, endDate);
         const result = await portfolioService.getBenchmark(portfolioId, ticker, startDate);
-        if (mountedRef.current) setData(result);
+        if (!mountedRef.current || seq !== seqRef.current) return;
+        setData(result);
+        setError(null);
       } catch (err) {
-        console.warn('benchmark fetch error:', err);
-        // keep stale data on refresh failure
+        if (!mountedRef.current || seq !== seqRef.current) return;
+        setError('Could not load benchmark data.');
       } finally {
-        if (!silent) {
+        if (loadSeq !== null && loadSeq === loadSeqRef.current) {
           setLoading(false);
           setRefreshing(false);
         }
@@ -225,21 +232,27 @@ export default function BenchmarkScreen() {
   );
 
   useEffect(() => {
+    setData(null);
     fetchBenchmark(activeBenchmark, period);
   }, [activeBenchmark, period, fetchBenchmark]);
 
-  // Silent 30s polling for intraday benchmark updates
   useEffect(() => {
     mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // Silent 30s polling only while the screen is focused.
+  const isFocused = useIsFocused();
+  useEffect(() => {
+    if (!isFocused) return;
     const id = setInterval(() => {
       const { ticker, period: p } = pollRef.current;
       fetchBenchmark(ticker, p, false, true).catch(() => {});
     }, 30000);
-    return () => {
-      mountedRef.current = false;
-      clearInterval(id);
-    };
-  }, [fetchBenchmark]);
+    return () => clearInterval(id);
+  }, [fetchBenchmark, isFocused]);
 
   const handleRefresh = useCallback(() => {
     fetchBenchmark(activeBenchmark, period, true);
@@ -274,6 +287,15 @@ export default function BenchmarkScreen() {
           {loading && !data && (
             <View style={styles.loadingBox}>
               <AppText style={{ color: theme.textSecondary }}>Loading...</AppText>
+            </View>
+          )}
+
+          {error && (
+            <View style={styles.loadingBox}>
+              <AppText style={{ color: theme.textSecondary }}>{error}</AppText>
+              <TouchableOpacity onPress={handleRefresh} style={{ marginTop: spacing.sm }}>
+                <AppText style={{ color: theme.primary, fontWeight: '600' }}>Retry</AppText>
+              </TouchableOpacity>
             </View>
           )}
 

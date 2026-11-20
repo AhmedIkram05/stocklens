@@ -43,6 +43,7 @@ jest.mock('@react-navigation/native', () => {
     useNavigation: jest.fn(),
     useRoute: jest.fn(),
     useFocusEffect: (cb: () => void) => actualReact.useEffect(cb, []),
+    useIsFocused: () => true,
   };
 });
 
@@ -213,8 +214,8 @@ describe('BenchmarkScreen', () => {
     });
   });
 
-  it('handles API error gracefully keeping stale data', async () => {
-    const { getByText } = await renderWithProviders(<BenchmarkScreen />, {
+  it('shows an error instead of stale data on ticker change', async () => {
+    const { getByText, queryByText } = await renderWithProviders(<BenchmarkScreen />, {
       providerOverrides: { withNavigation: false },
     });
 
@@ -226,7 +227,8 @@ describe('BenchmarkScreen', () => {
     await fireEvent.press(getByText('QQQ'));
 
     await waitFor(() => {
-      expect(getByText('+4.20%')).toBeTruthy();
+      expect(getByText('Could not load benchmark data.')).toBeTruthy();
     });
+    expect(queryByText('+4.20%')).toBeNull();
   });
 });
