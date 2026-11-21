@@ -13,6 +13,7 @@ Handles:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -160,7 +161,8 @@ class MLflowManager:
             name: Human-readable dataset name.
             context: Dataset role — ``"train"``, ``"val"``, or ``"test"``.
         """
-        dataset = mlflow.data.from_numpy(data, name=name)
+        digest = hashlib.sha256(data.ravel()[:10_000].tobytes()).hexdigest()
+        dataset = mlflow.data.from_numpy(data, name=name, digest=digest)
         mlflow.log_input(dataset, context=context)
 
     # ------------------------------------------------------------------
