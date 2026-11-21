@@ -240,6 +240,12 @@ async def debug_db(_user=Depends(require_active_user)):
         )
 
 
+@app.get("/health/live", tags=["system"])
+async def liveness():
+    """Liveness check — process is up; used by ECS and the load balancer."""
+    return {"status": "ok"}
+
+
 @app.get("/health", tags=["system"])
 async def health():
     """Health check — used by Docker and load balancers."""
