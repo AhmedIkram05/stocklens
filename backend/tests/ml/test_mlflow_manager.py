@@ -215,16 +215,13 @@ def test_log_model_returns_run_id_and_version() -> None:
     mlflow.start_run.return_value = FakeRun()
     mgr.start_run("test")
 
-    mock_client = MagicMock()
-    mock_client.search_model_versions.return_value = [
-        MagicMock(version="1"),
-        MagicMock(version="2"),
-    ]
-    mlflow.tracking.MlflowClient.return_value = mock_client
+    from types import SimpleNamespace
+
+    mlflow.pytorch.log_model.return_value = SimpleNamespace(registered_model_version=3)
 
     run_id, version = mgr.log_model(model)
     assert run_id == "run_abc"
-    assert version == "2"
+    assert version == "3"
 
 
 def test_enable_autologging_delegates() -> None:
