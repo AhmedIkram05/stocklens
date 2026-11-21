@@ -137,6 +137,29 @@ def binomial_one_sided_p(k: int, n: int, p0: float) -> float:
     return 0.5 * math.erfc(z / math.sqrt(2.0))
 
 
+def two_proportion_z_test(k1: int, n1: int, k2: int, n2: int) -> float:
+    """One-sided p-value that sample 2's rate exceeds sample 1's.
+
+    Uses the pooled proportion. Unlike ``binomial_one_sided_p``, the
+    champion's sampling error is included — the unpaired fallback must not
+    treat a measured champion DA as a known constant.
+
+    Args:
+        k1: Champion correct count, n1: champion directional count.
+        k2: Challenger correct count, n2: challenger directional count.
+    """
+    if n1 <= 0 or n2 <= 0:
+        return 1.0
+    p1 = k1 / n1
+    p2 = k2 / n2
+    pooled = (k1 + k2) / (n1 + n2)
+    se = math.sqrt(pooled * (1.0 - pooled) * (1.0 / n1 + 1.0 / n2))
+    if se == 0.0:
+        return 1.0
+    z = (p2 - p1) / se
+    return 0.5 * math.erfc(z / math.sqrt(2.0))
+
+
 def should_promote(
     champion_da: float | None,
     challenger_da: float,

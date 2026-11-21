@@ -253,6 +253,26 @@ def test_no_promote_when_no_directional_samples() -> None:
     assert result["reason"] == "no-directional-samples"
 
 
+def test_two_proportion_equal_samples_not_significant() -> None:
+    """Equal rates produce the vacuous one-sided p."""
+    from ml.promotion_stats import two_proportion_z_test
+
+    assert two_proportion_z_test(500, 1000, 500, 1000) == pytest.approx(0.5, abs=0.01)
+
+
+def test_two_proportion_large_gain_significant() -> None:
+    from ml.promotion_stats import two_proportion_z_test
+
+    assert two_proportion_z_test(1000, 2000, 1100, 2000) < 0.05
+
+
+def test_two_proportion_degenerate_inputs() -> None:
+    from ml.promotion_stats import two_proportion_z_test
+
+    assert two_proportion_z_test(0, 0, 5, 10) == 1.0
+    assert two_proportion_z_test(5, 10, 5, 0) == 1.0
+
+
 def test_binomial_p_value_sanity() -> None:
     """Sanity: landslide is significant, coin-flip is not."""
     from ml.promotion_stats import binomial_one_sided_p
