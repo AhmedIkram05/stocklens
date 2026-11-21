@@ -92,14 +92,23 @@ class MLflowManager:
         """Log hyperparameters to the active run."""
         mlflow.log_params(params)
 
-    def log_metrics(self, metrics: dict[str, float], step: Optional[int] = None) -> None:
-        """Log metrics to the active run.
+    def log_metrics(
+        self,
+        metrics: dict[str, float],
+        step: Optional[int] = None,
+        run_id: Optional[str] = None,
+    ) -> None:
+        """Log metrics to a run (active, or *run_id* after it ended).
 
         Args:
             metrics: Dict of metric name to value.
             step: Optional step (epoch) number.
+            run_id: Optional run to attach to; defaults to the active run.
         """
-        mlflow.log_metrics(metrics, step=step)
+        kwargs: dict[str, Any] = {"step": step}
+        if run_id is not None:
+            kwargs["run_id"] = run_id
+        mlflow.log_metrics(metrics, **kwargs)
 
     def log_artifact(self, local_path: str, artifact_path: Optional[str] = None) -> None:
         """Log a local file as an artifact.
@@ -223,7 +232,7 @@ class MLflowManager:
         # Move model to CPU for serialization (MPS tensors can't be pickled)
         model = model.cpu()
 
-        mlflow.pytorch.log_model(
+        info = mlflow.pytorch.log_model(
             pytorch_model=model,
             name=artifact_path,
             registered_model_name=registered_model_name,
@@ -231,15 +240,16 @@ class MLflowManager:
             signature=signature,
         )
 
-        # Get the registered model version via search (stages are deprecated in 3.x)
-        client = mlflow.tracking.MlflowClient()
-        versions = client.search_model_versions(
-            f"name='{registered_model_name}'",
-        )
-        if versions:
-            version = str(max(int(v.version) for v in versions))
-        else:
-            version = "1"
+        # Prefer the version the registration call returned; a max(version)
+        # query is a race when another run registers concurrently.
+        version = getattr(info, "registered_model_version", None)
+        if version is None:
+            client = mlflow.tracking.MlflowClient()
+            versions = client.search_model_versions(
+                f"name='{registered_model_name}'",
+            )
+            version = str(max(int(v.version) for v in versions)) if versions else "1"
+        version = str(version)
 
         run_id = self.active_run.info.run_id if self.active_run else "unknown"
         return run_id, version

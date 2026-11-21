@@ -160,6 +160,18 @@ def test_log_metrics_delegates() -> None:
     mlflow.log_metrics.assert_called_once_with(metrics, step=1)
 
 
+def test_log_metrics_after_run_end_targets_run_id() -> None:
+    """Gate metrics are written to the training run, not an implicit new run."""
+    from ml.mlflow_manager import MLflowManager
+
+    mgr = MLflowManager()
+    metrics = {"champion_directional_accuracy": 0.5}
+    mgr.log_metrics(metrics, run_id="run-123")
+    import mlflow
+
+    mlflow.log_metrics.assert_called_once_with(metrics, step=None, run_id="run-123")
+
+
 def test_log_artifact_delegates() -> None:
     """log_artifact calls mlflow.log_artifact."""
     from ml.mlflow_manager import MLflowManager
@@ -203,16 +215,13 @@ def test_log_model_returns_run_id_and_version() -> None:
     mlflow.start_run.return_value = FakeRun()
     mgr.start_run("test")
 
-    mock_client = MagicMock()
-    mock_client.search_model_versions.return_value = [
-        MagicMock(version="1"),
-        MagicMock(version="2"),
-    ]
-    mlflow.tracking.MlflowClient.return_value = mock_client
+    from types import SimpleNamespace
+
+    mlflow.pytorch.log_model.return_value = SimpleNamespace(registered_model_version=3)
 
     run_id, version = mgr.log_model(model)
     assert run_id == "run_abc"
-    assert version == "2"
+    assert version == "3"
 
 
 def test_enable_autologging_delegates() -> None:

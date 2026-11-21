@@ -886,6 +886,8 @@ async def run_pipeline() -> dict[str, Any]:
     champion_metrics = await mlflow_mgr.read_champion_metrics()
     challenger_da = test_metrics.get("directional_accuracy", 0.0)
     champion_da = champion_metrics.get("directional_accuracy", 0.0) if champion_metrics else None
+    champion_n = champion_metrics.get("n_directional") if champion_metrics else None
+    champion_k = champion_metrics.get("n_directional_correct") if champion_metrics else None
 
     decision = None
     gate_mode = "unpaired"
@@ -967,6 +969,8 @@ async def run_pipeline() -> dict[str, Any]:
             challenger_da,
             n_directional=test_metrics.get("n_directional"),
             n_correct=test_metrics.get("n_directional_correct"),
+            champion_n_directional=champion_n,
+            champion_n_correct=champion_k,
         )
     da_improvement = decision["improvement_pp"]
     promote = decision["promote"]
@@ -986,7 +990,7 @@ async def run_pipeline() -> dict[str, Any]:
         gate_metrics["champion_da_on_test"] = champion_da_on_test
     await loop.run_in_executor(
         None,
-        lambda: mlflow_mgr.log_metrics(gate_metrics),
+        lambda: mlflow_mgr.log_metrics(gate_metrics, run_id=run_id),
     )
     await loop.run_in_executor(
         None,
@@ -1005,11 +1009,9 @@ async def run_pipeline() -> dict[str, Any]:
     )
 
     if promote:
-        # Promotion: alias, disk, DB, reference distributions
-        await loop.run_in_executor(
-            None,
-            lambda: mlflow_mgr.set_champion_alias(version=model_version),
-        )
+        # Promotion order: disk, then DB, then registry alias. The paired gate
+        # re-scores the checkpoint on disk, so it must exist before the DB row
+        # names it; the alias is last because it is only a pointer.
         mlflow_mgr.save_champion_to_disk(
             trained_model,
             vocab=vocab,
@@ -1019,6 +1021,10 @@ async def run_pipeline() -> dict[str, Any]:
             ensemble_models=seed_models,
         )
         await _record_in_db(run_id, model_version, test_metrics)
+        await loop.run_in_executor(
+            None,
+            lambda: mlflow_mgr.set_champion_alias(version=model_version),
+        )
 
         # Compute and store reference distributions for drift detection
         # Uses pre-normalization training data only — full dataset would leak
