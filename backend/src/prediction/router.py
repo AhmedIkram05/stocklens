@@ -30,8 +30,6 @@ logger = structlog.get_logger()
 
 router = APIRouter()
 
-PREDICTION_CACHE_TTL = 21600  # 6 hours
-
 
 @router.get("/{ticker}", response_model=PredictionResponse)
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
@@ -122,7 +120,7 @@ async def predict(
         if r is not None:
             await r.setex(
                 cache_key,
-                PREDICTION_CACHE_TTL,
+                settings.PREDICTION_CACHE_TTL,
                 response.model_dump_json(exclude={"cached"}),
             )
     except Exception:
