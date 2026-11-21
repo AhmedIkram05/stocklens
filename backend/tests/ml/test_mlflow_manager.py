@@ -160,6 +160,18 @@ def test_log_metrics_delegates() -> None:
     mlflow.log_metrics.assert_called_once_with(metrics, step=1)
 
 
+def test_log_metrics_after_run_end_targets_run_id() -> None:
+    """Gate metrics are written to the training run, not an implicit new run."""
+    from ml.mlflow_manager import MLflowManager
+
+    mgr = MLflowManager()
+    metrics = {"champion_directional_accuracy": 0.5}
+    mgr.log_metrics(metrics, run_id="run-123")
+    import mlflow
+
+    mlflow.log_metrics.assert_called_once_with(metrics, step=None, run_id="run-123")
+
+
 def test_log_artifact_delegates() -> None:
     """log_artifact calls mlflow.log_artifact."""
     from ml.mlflow_manager import MLflowManager

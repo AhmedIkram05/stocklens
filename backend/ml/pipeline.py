@@ -986,7 +986,7 @@ async def run_pipeline() -> dict[str, Any]:
         gate_metrics["champion_da_on_test"] = champion_da_on_test
     await loop.run_in_executor(
         None,
-        lambda: mlflow_mgr.log_metrics(gate_metrics),
+        lambda: mlflow_mgr.log_metrics(gate_metrics, run_id=run_id),
     )
     await loop.run_in_executor(
         None,
