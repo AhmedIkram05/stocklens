@@ -301,6 +301,7 @@ def prepare_global_dataset(
         )
 
         if len(sequences) == 0:
+            logger.warning("No windows after features for ticker %s", ticker)
             continue
 
         all_sequences.append(sequences)
@@ -1038,7 +1039,7 @@ async def run_pipeline() -> dict[str, Any]:
         )
 
         ref = build_reference_from_training_data(
-            global_sequences=train_features_raw,
+            global_sequences=train_features_raw[:: ML_CONFIG.SEQUENCE_LENGTH],
             global_labels=train_labels_raw,
             feature_names=REF_FEATURE_NAMES,
         )
