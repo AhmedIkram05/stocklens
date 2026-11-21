@@ -36,7 +36,7 @@ class AgentState(TypedDict):
 def create_agent_graph(tools: list) -> StateGraph:
     """Build and return the uncompiled agent graph.
 
-    Uses DeepSeek V3.1 (via Bedrock Converse API) — supports tool use.
+    Uses the configured Bedrock model (Converse API) — supports tool use.
     No checkpointer: state persistence is handled manually via two-tier Redis+RDS.
     """
     model = ChatBedrockConverse(

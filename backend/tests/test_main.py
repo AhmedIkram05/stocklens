@@ -233,7 +233,12 @@ class TestLifespan:
 
 
 class TestHealthEndpoint:
-    """Test /health endpoint."""
+    """Test /health endpoints."""
+
+    def test_liveness_does_not_need_database(self):
+        response = TestClient(app).get("/health/live")
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
 
     async def test_health_endpoint_exists(self, client: AsyncClient):
         response = await client.get("/health")

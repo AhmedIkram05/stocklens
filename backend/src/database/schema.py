@@ -391,6 +391,7 @@ Index(
 
 # Conversations — user lookup
 Index("idx_conversations_user", conversations.c.user_id)
+Index("idx_conversations_user_updated", conversations.c.user_id, conversations.c.updated_at)
 
 # Agent conversations — conversation lookup
 Index("idx_agent_conversations_cid", agent_conversations.c.conversation_id)
