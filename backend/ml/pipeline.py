@@ -1009,11 +1009,9 @@ async def run_pipeline() -> dict[str, Any]:
     )
 
     if promote:
-        # Promotion: alias, disk, DB, reference distributions
-        await loop.run_in_executor(
-            None,
-            lambda: mlflow_mgr.set_champion_alias(version=model_version),
-        )
+        # Promotion order: disk, then DB, then registry alias. The paired gate
+        # re-scores the checkpoint on disk, so it must exist before the DB row
+        # names it; the alias is last because it is only a pointer.
         mlflow_mgr.save_champion_to_disk(
             trained_model,
             vocab=vocab,
@@ -1023,6 +1021,10 @@ async def run_pipeline() -> dict[str, Any]:
             ensemble_models=seed_models,
         )
         await _record_in_db(run_id, model_version, test_metrics)
+        await loop.run_in_executor(
+            None,
+            lambda: mlflow_mgr.set_champion_alias(version=model_version),
+        )
 
         # Compute and store reference distributions for drift detection
         # Uses pre-normalization training data only — full dataset would leak
