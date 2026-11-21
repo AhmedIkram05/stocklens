@@ -43,7 +43,7 @@ variable "container_image" {
 variable "airflow_image" {
   description = "ECR image tag for the Airflow container (e.g., account.dkr.ecr.eu-west-2.amazonaws.com/stocklens-dev:airflow-latest)"
   type        = string
-  default     = "apache/airflow:2.11.0"
+  default     = "apache/airflow:3.4.0"
 }
 
 variable "ml_training_image" {
