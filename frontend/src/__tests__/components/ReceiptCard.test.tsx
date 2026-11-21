@@ -3,35 +3,22 @@ import { fireEvent } from '@testing-library/react-native';
 import { renderWithProviders } from '@/__tests__/utils';
 import ReceiptCard from '@/components/ReceiptCard';
 
-const mockUseDecryptedImage = jest.fn();
-jest.mock('@/hooks/useDecryptedImage', () => ({
-  __esModule: true,
-  default: (...args: any[]) => mockUseDecryptedImage(...args),
-}));
-
 describe('ReceiptCard', () => {
-  beforeEach(() => {
-    mockUseDecryptedImage.mockReset();
-  });
-
   it('renders amount and label', async () => {
-    mockUseDecryptedImage.mockReturnValue(undefined);
     const { getByText } = await renderWithProviders(<ReceiptCard amount="$25.00" label="Coffee" />);
     expect(getByText('$25.00')).toBeTruthy();
     expect(getByText('Coffee')).toBeTruthy();
   });
 
   it('shows image when resolvedImage is available', async () => {
-    mockUseDecryptedImage.mockReturnValue('https://example.com/receipt.jpg');
     const { queryByTestId } = await renderWithProviders(
-      <ReceiptCard amount="$25.00" label="Coffee" image="encrypted-uri" />,
+      <ReceiptCard amount="$25.00" label="Coffee" image="https://example.com/receipt.jpg" />,
     );
     expect(queryByTestId('receipt-card-image')).toBeTruthy();
     expect(queryByTestId('receipt-card-placeholder')).toBeNull();
   });
 
   it('shows placeholder when no image', async () => {
-    mockUseDecryptedImage.mockReturnValue(undefined);
     const { queryByTestId } = await renderWithProviders(
       <ReceiptCard amount="$25.00" label="Coffee" />,
     );
@@ -40,7 +27,6 @@ describe('ReceiptCard', () => {
   });
 
   it('shows placeholder when image uri is undefined but resolvedImage is falsy', async () => {
-    mockUseDecryptedImage.mockReturnValue(undefined);
     const { getByTestId } = await renderWithProviders(
       <ReceiptCard amount="$25.00" label="Coffee" image={undefined} />,
     );
@@ -48,7 +34,6 @@ describe('ReceiptCard', () => {
   });
 
   it('shows time when provided', async () => {
-    mockUseDecryptedImage.mockReturnValue(undefined);
     const { getByText } = await renderWithProviders(
       <ReceiptCard amount="$25.00" label="Coffee" time="2 hours ago" />,
     );
@@ -56,7 +41,6 @@ describe('ReceiptCard', () => {
   });
 
   it('does not show time when not provided', async () => {
-    mockUseDecryptedImage.mockReturnValue(undefined);
     const { queryByText } = await renderWithProviders(
       <ReceiptCard amount="$25.00" label="Coffee" />,
     );
@@ -64,7 +48,6 @@ describe('ReceiptCard', () => {
   });
 
   it('shows category chip when category is provided', async () => {
-    mockUseDecryptedImage.mockReturnValue(undefined);
     const { getByText } = await renderWithProviders(
       <ReceiptCard amount="$25.00" label="Coffee" category="Food & Drink" />,
     );
@@ -72,7 +55,6 @@ describe('ReceiptCard', () => {
   });
 
   it('does not show category chip when category is null', async () => {
-    mockUseDecryptedImage.mockReturnValue(undefined);
     const { queryByText } = await renderWithProviders(
       <ReceiptCard amount="$25.00" label="Coffee" category={null} />,
     );
@@ -80,7 +62,6 @@ describe('ReceiptCard', () => {
   });
 
   it('shows source badge when source is provided', async () => {
-    mockUseDecryptedImage.mockReturnValue(undefined);
     const { getByText } = await renderWithProviders(
       <ReceiptCard amount="$25.00" label="Coffee" source="regex" />,
     );
@@ -88,7 +69,6 @@ describe('ReceiptCard', () => {
   });
 
   it('shows AI Enhanced badge for cascade source', async () => {
-    mockUseDecryptedImage.mockReturnValue(undefined);
     const { getByText } = await renderWithProviders(
       <ReceiptCard amount="$25.00" label="Coffee" source="cascade" />,
     );
@@ -96,7 +76,6 @@ describe('ReceiptCard', () => {
   });
 
   it('does not show source badge when source is not provided', async () => {
-    mockUseDecryptedImage.mockReturnValue(undefined);
     const { queryByText } = await renderWithProviders(
       <ReceiptCard amount="$25.00" label="Coffee" />,
     );
@@ -104,7 +83,6 @@ describe('ReceiptCard', () => {
   });
 
   it('calls onPress when pressed', async () => {
-    mockUseDecryptedImage.mockReturnValue(undefined);
     const onPress = jest.fn();
     const { getByTestId } = await renderWithProviders(
       <ReceiptCard amount="$25.00" label="Coffee" onPress={onPress} />,
@@ -114,7 +92,6 @@ describe('ReceiptCard', () => {
   });
 
   it('accepts custom style', async () => {
-    mockUseDecryptedImage.mockReturnValue(undefined);
     const { getByTestId } = await renderWithProviders(
       <ReceiptCard amount="$25.00" label="Coffee" style={{ marginTop: 10 }} />,
     );
