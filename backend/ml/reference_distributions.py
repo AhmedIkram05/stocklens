@@ -227,7 +227,10 @@ async def load_reference_from_db(conn: Any) -> dict[str, Any] | None:
     if row is None or row["metrics"] is None:
         return None
 
-    metrics = dict(row["metrics"])
+    metrics = row["metrics"]
+    if isinstance(metrics, str):
+        metrics = json.loads(metrics)
+    metrics = dict(metrics)
     ref = metrics.get("reference_distributions")
     if ref is None:
         logger.info("No reference distributions found in champion metrics")
