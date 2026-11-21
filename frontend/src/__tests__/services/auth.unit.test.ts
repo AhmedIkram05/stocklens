@@ -130,35 +130,6 @@ describe('authService', () => {
     });
   });
 
-  describe('isAuthenticated', () => {
-    it('returns true when profile fetch succeeds', async () => {
-      const SecureStore = require('expo-secure-store');
-      // Use a valid JWT shape so isTokenExpired doesn't pre-trigger a refresh
-      const payload = btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }));
-      await SecureStore.setItemAsync('stocklens_access_token', `header.${payload}.sig`);
-      fetchMock.mockResponseOnce(JSON.stringify(mockUser), { status: 200 });
-
-      const authed = await authService.isAuthenticated();
-
-      expect(authed).toBe(true);
-    });
-
-    it('returns false when no token exists', async () => {
-      const authed = await authService.isAuthenticated();
-      expect(authed).toBe(false);
-    });
-
-    it('returns false when profile returns null', async () => {
-      const SecureStore = require('expo-secure-store');
-      await SecureStore.setItemAsync('stocklens_access_token', 'stale-token');
-      fetchMock.mockResponseOnce('', { status: 401 });
-
-      const authed = await authService.isAuthenticated();
-
-      expect(authed).toBe(false);
-    });
-  });
-
   describe('forgotPassword', () => {
     it('sends POST /auth/forgot-password with email', async () => {
       fetchMock.mockResponseOnce(JSON.stringify({ message: 'Email sent' }), { status: 200 });

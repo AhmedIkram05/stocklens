@@ -125,24 +125,6 @@ export const authService = {
   },
 
   /**
-   * Check whether the user has a valid (non-expired) session.
-   *
-   * If the access token is expired, attempts a silent refresh before returning.
-   */
-  async isAuthenticated(): Promise<boolean> {
-    const token = await apiService.getAccessToken();
-    if (!token) return false;
-
-    // Check token presence + profile fetch to validate server-side
-    try {
-      const profile = await this.getProfile();
-      return profile !== null;
-    } catch {
-      return false;
-    }
-  },
-
-  /**
    * Request a password reset email.
    *
    * Always succeeds from the caller's perspective to avoid revealing whether

@@ -198,11 +198,4 @@ export const receiptService = {
    *
    * @returns Health status with individual component checks
    */
-  async checkHealth(): Promise<{
-    status: string;
-    checks: Record<string, string>;
-    cascade_threshold: number;
-  }> {
-    return apiService.get('/receipts/cascade/health');
-  },
 };
