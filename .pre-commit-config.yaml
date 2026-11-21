@@ -47,7 +47,7 @@ repos:
     hooks:
       - id: terraform-fmt
         name: Terraform Format
-        entry: bash -c 'terraform fmt -check'
+        entry: bash -c 'terraform fmt -check -recursive terraform/'
         language: system
         files: ^terraform/
         pass_filenames: false
