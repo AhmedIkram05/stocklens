@@ -273,6 +273,21 @@ def test_two_proportion_degenerate_inputs() -> None:
     assert two_proportion_z_test(5, 10, 5, 0) == 1.0
 
 
+def test_champion_counts_use_two_proportion_test() -> None:
+    """With both samples' counts, the gate uses the pooled two-proportion test."""
+    from ml.promotion_stats import should_promote
+
+    result = should_promote(
+        0.60,
+        0.65,
+        1000,
+        650,
+        champion_n_directional=1000,
+        champion_n_correct=600,
+    )
+    assert result["p_value"] == pytest.approx(0.01046, abs=1e-4)
+
+
 def test_binomial_p_value_sanity() -> None:
     """Sanity: landslide is significant, coin-flip is not."""
     from ml.promotion_stats import binomial_one_sided_p

@@ -886,6 +886,8 @@ async def run_pipeline() -> dict[str, Any]:
     champion_metrics = await mlflow_mgr.read_champion_metrics()
     challenger_da = test_metrics.get("directional_accuracy", 0.0)
     champion_da = champion_metrics.get("directional_accuracy", 0.0) if champion_metrics else None
+    champion_n = champion_metrics.get("n_directional") if champion_metrics else None
+    champion_k = champion_metrics.get("n_directional_correct") if champion_metrics else None
 
     decision = None
     gate_mode = "unpaired"
@@ -967,6 +969,8 @@ async def run_pipeline() -> dict[str, Any]:
             challenger_da,
             n_directional=test_metrics.get("n_directional"),
             n_correct=test_metrics.get("n_directional_correct"),
+            champion_n_directional=champion_n,
+            champion_n_correct=champion_k,
         )
     da_improvement = decision["improvement_pp"]
     promote = decision["promote"]

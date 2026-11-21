@@ -167,6 +167,8 @@ def should_promote(
     n_correct: int | None = None,
     min_pp: float = MIN_PP,
     alpha: float = ALPHA,
+    champion_n_directional: int | None = None,
+    champion_n_correct: int | None = None,
 ) -> dict:
     """Unpaired fallback gate. Pure function — no DB/MLflow, trivially testable.
 
@@ -213,7 +215,15 @@ def should_promote(
             "p_value": None,
             "reason": "no-directional-samples",
         }
-    p = binomial_one_sided_p(int(n_correct), int(n_directional), float(champion_da))
+    if champion_n_directional and champion_n_correct is not None and champion_n_directional > 0:
+        p = two_proportion_z_test(
+            int(champion_n_correct),
+            int(champion_n_directional),
+            int(n_correct),
+            int(n_directional),
+        )
+    else:
+        p = binomial_one_sided_p(int(n_correct), int(n_directional), float(champion_da))
     return {
         "promote": bool(p < alpha),
         "champion_da": champion_da,
