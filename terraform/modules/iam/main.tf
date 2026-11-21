@@ -528,10 +528,40 @@ resource "aws_iam_role" "sagemaker_execution" {
   })
 }
 
-# SageMaker needs ECR pull + CloudWatch logs.
-resource "aws_iam_role_policy_attachment" "sagemaker_execution_managed" {
+# SageMaker needs ECR pull + CloudWatch logs; no account-wide managed policy.
+resource "aws_iam_policy" "sagemaker_execution_base" {
+  name        = "${var.app_name}-sagemaker-execution-base-${var.environment}"
+  description = "ECR pull and CloudWatch logs for the SageMaker endpoint"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+        ]
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "sagemaker_execution_base" {
   role       = aws_iam_role.sagemaker_execution.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSageMakerFullAccess"
+  policy_arn = aws_iam_policy.sagemaker_execution_base.arn
 }
 
 # Champion model S3 read for the SageMaker container.
