@@ -244,9 +244,13 @@ resource "aws_iam_policy" "airflow_task_s3_kms_ecs" {
       },
       {
         # Run + poll the GPU training task via EcsRunTaskOperator
+        Effect   = "Allow"
+        Action   = ["ecs:RunTask"]
+        Resource = "arn:aws:ecs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:task-definition/${var.app_name}-airflow-${var.environment}-ml-training:*"
+      },
+      {
         Effect = "Allow"
         Action = [
-          "ecs:RunTask",
           "ecs:DescribeTasks",
           "ecs:DescribeTaskDefinition",
           "ecs:ListTasks",
@@ -528,10 +532,47 @@ resource "aws_iam_role" "sagemaker_execution" {
   })
 }
 
-# SageMaker needs ECR pull + CloudWatch logs.
-resource "aws_iam_role_policy_attachment" "sagemaker_execution_managed" {
+# SageMaker needs ECR pull + CloudWatch logs; no account-wide managed policy.
+resource "aws_iam_policy" "sagemaker_execution_base" {
+  name        = "${var.app_name}-sagemaker-execution-base-${var.environment}"
+  description = "ECR pull and CloudWatch logs for the SageMaker endpoint"
+
+  # checkov:skip=CKV_AWS_290:dev — SageMaker log delivery has no enumerable resource at plan time
+  # checkov:skip=CKV_AWS_355:dev — ecr:GetAuthorizationToken requires "*"; logs are service-created
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+        ]
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup"]
+        Resource = "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/sagemaker/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "sagemaker_execution_base" {
   role       = aws_iam_role.sagemaker_execution.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSageMakerFullAccess"
+  policy_arn = aws_iam_policy.sagemaker_execution_base.arn
 }
 
 # Champion model S3 read for the SageMaker container.
@@ -563,3 +604,4 @@ resource "aws_iam_role_policy_attachment" "sagemaker_execution_champion_s3" {
 }
 
 data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}

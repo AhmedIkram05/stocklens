@@ -330,7 +330,7 @@ jobs:
           terraform_version: '1.15'
       - name: Terraform fmt check
         run: |
-          terraform fmt -check -diff terraform/
+          terraform fmt -check -diff -recursive terraform/
 
   secrets:
     name: Secret Scan
