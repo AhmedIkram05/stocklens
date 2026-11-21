@@ -58,6 +58,7 @@ class TestCreateReceipt:
         assert float(data["total_amount"]) == 32.50
         assert "id" in data
         assert "created_at" in data
+        assert data["source"] is not None
 
     async def test_create_with_line_items(
         self, client: httpx.AsyncClient, auth_headers: dict[str, str]
