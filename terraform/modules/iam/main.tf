@@ -537,6 +537,8 @@ resource "aws_iam_policy" "sagemaker_execution_base" {
   name        = "${var.app_name}-sagemaker-execution-base-${var.environment}"
   description = "ECR pull and CloudWatch logs for the SageMaker endpoint"
 
+  # checkov:skip=CKV_AWS_290:dev — SageMaker log delivery has no enumerable resource at plan time
+  # checkov:skip=CKV_AWS_355:dev — ecr:GetAuthorizationToken requires "*"; logs are service-created
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -553,6 +555,11 @@ resource "aws_iam_policy" "sagemaker_execution_base" {
           "ecr:BatchGetImage",
         ]
         Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup"]
+        Resource = "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/sagemaker/*"
       },
       {
         Effect   = "Allow"

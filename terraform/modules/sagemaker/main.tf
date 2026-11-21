@@ -33,7 +33,7 @@ resource "aws_sagemaker_model" "prediction" {
     # Upgrade to SageMaker PyTorch Toolkit when throughput demands it.
     container_hostname = "${var.app_name}-prediction"
     # ponytail: construct tar.gz path from prefix — SageMaker model_data_url requires a tar.gz
-    model_data_url     = "${var.champion_s3_uri}/model.tar.gz"
+    model_data_url = "${var.champion_s3_uri}/model.tar.gz"
 
     environment = {
       ENVIRONMENT            = var.environment
@@ -100,7 +100,7 @@ resource "aws_sagemaker_endpoint_configuration" "prediction" {
     instance_type          = var.sagemaker_instance_type
 
     # Configurable timeouts (seconds) — solves the cold-start SLA
-    model_data_download_timeout_in_seconds         = var.sagemaker_model_download_timeout
+    model_data_download_timeout_in_seconds            = var.sagemaker_model_download_timeout
     container_startup_health_check_timeout_in_seconds = var.sagemaker_container_startup_timeout
   }
 
