@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import zlib
 from datetime import date, datetime, timedelta, timezone
 
 import asyncpg
@@ -76,13 +77,13 @@ def _gen_ohlcv(ticker: str) -> list[tuple]:
         if dt.weekday() >= 5:
             continue  # skip weekends
         jitter = (hi - lo) * 0.02
-        price += (hash(f"{ticker}{dt.isoformat()}") % 100 - 50) / 100 * jitter
+        price += (zlib.crc32(f"{ticker}{dt.isoformat()}".encode()) % 100 - 50) / 100 * jitter
         price = max(lo * 0.8, min(hi * 1.2, price))
         open_p = round(price - jitter * 0.5, 2)
         high = round(price + jitter * 0.8, 2)
         low = round(price - jitter * 0.8, 2)
         close = round(price + jitter * 0.1, 2)
-        volume = int(1_000_000 + hash(str(dt)) % 5_000_000)
+        volume = int(1_000_000 + zlib.crc32(str(dt).encode()) % 5_000_000)
         rows.append((ticker, dt, open_p, high, low, close, close, volume))
     return rows
 
