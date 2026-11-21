@@ -244,9 +244,13 @@ resource "aws_iam_policy" "airflow_task_s3_kms_ecs" {
       },
       {
         # Run + poll the GPU training task via EcsRunTaskOperator
+        Effect   = "Allow"
+        Action   = ["ecs:RunTask"]
+        Resource = "arn:aws:ecs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:task-definition/${var.app_name}-airflow-${var.environment}-ml-training:*"
+      },
+      {
         Effect = "Allow"
         Action = [
-          "ecs:RunTask",
           "ecs:DescribeTasks",
           "ecs:DescribeTaskDefinition",
           "ecs:ListTasks",
@@ -593,3 +597,4 @@ resource "aws_iam_role_policy_attachment" "sagemaker_execution_champion_s3" {
 }
 
 data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
