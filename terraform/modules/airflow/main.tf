@@ -121,10 +121,6 @@ locals {
         value = "30"
       },
       {
-        name  = "AIRFLOW__CORE__ENABLE_XCOM_PICKLING"
-        value = "True"
-      },
-      {
         name  = "AIRFLOW__SCHEDULER__SCHEDULER_HEARTBEAT_SEC"
         value = "10"
       },
