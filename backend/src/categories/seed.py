@@ -328,25 +328,9 @@ async def seed_categories() -> int:
 
     from src.database.connection import connection_ctx
 
-    # ponytail: ensure table exists even if alembic migration hasn't run yet
-    async with connection_ctx() as conn:
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS spending_categories (
-                id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-                name varchar(50) UNIQUE NOT NULL,
-                description varchar(255),
-                merchant_keywords jsonb,
-                associated_tickers jsonb
-            )
-        """)
-        await conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_categories_keywords
-            ON spending_categories USING gin (merchant_keywords)
-        """)
-
     count = 0
-    for cat in SEED_CATEGORIES:
-        async with connection_ctx() as conn:
+    async with connection_ctx() as conn:
+        for cat in SEED_CATEGORIES:
             row = await conn.fetchrow(
                 "SELECT 1 FROM spending_categories WHERE name = $1", cat["name"]
             )
