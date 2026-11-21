@@ -301,6 +301,7 @@ def prepare_global_dataset(
         )
 
         if len(sequences) == 0:
+            logger.warning("no_windows_after_features", ticker=ticker)
             continue
 
         all_sequences.append(sequences)
