@@ -78,7 +78,7 @@ describe('useReceipts', () => {
         label: expect.any(String),
         amount: 42.5,
         date: '2025-01-01T10:00:00Z',
-        time: '',
+        time: expect.any(String),
         image: 's3://key/1',
         categoryId: null,
         source: undefined,

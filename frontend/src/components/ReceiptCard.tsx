@@ -5,7 +5,6 @@
  */
 
 import React from 'react';
-import useDecryptedImage from '@/hooks/useDecryptedImage';
 import { View, Image, TouchableOpacity, StyleSheet, StyleProp, ViewStyle } from 'react-native';
 import AppText from './AppText';
 import { useTheme } from '../contexts/ThemeContext';
@@ -78,7 +77,7 @@ export default function ReceiptCard({
   categoryColor,
 }: Props) {
   const { theme } = useTheme();
-  const resolvedImage = useDecryptedImage(image);
+  const resolvedImage = image;
   const catColor = categoryColor ?? colorForCategory(category);
 
   return (

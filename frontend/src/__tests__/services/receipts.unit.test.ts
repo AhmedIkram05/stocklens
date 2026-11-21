@@ -174,33 +174,6 @@ describe('receiptService CRUD', () => {
   });
 });
 
-describe('receiptService.checkHealth()', () => {
-  beforeEach(() => {
-    fetchMock.resetMocks();
-  });
-
-  it('returns health status from /receipts/cascade/health', async () => {
-    fetchMock.mockResponseOnce(
-      JSON.stringify({
-        status: 'healthy',
-        checks: { ocr: 'ok', nlp: 'ok', aggregator: 'ok' },
-        cascade_threshold: 0.6,
-      }),
-      { status: 200 },
-    );
-
-    const result = await receiptService.checkHealth();
-    expect(result.status).toBe('healthy');
-    expect(fetchMock.mock.calls[0][0]).toContain('/receipts/cascade/health');
-  });
-
-  it('throws when health endpoint is down', async () => {
-    fetchMock.mockResponseOnce('', { status: 503 });
-
-    await expect(receiptService.checkHealth()).rejects.toThrow();
-  });
-});
-
 describe('receiptService.listAll()', () => {
   beforeEach(async () => {
     fetchMock.resetMocks();

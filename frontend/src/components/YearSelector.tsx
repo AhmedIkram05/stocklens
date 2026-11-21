@@ -25,14 +25,13 @@ type Props = {
 
 export default function YearSelector({ options, value, onChange, compact = false, style }: Props) {
   const { theme } = useTheme();
-  const containerWidthRef = useRef<number>(0);
-  const containerHeightRef = useRef<number>(0);
+  const [size, setSize] = useState({ width: 0, height: 0 });
   const animatedX = useRef(new Animated.Value(0)).current;
   const [measured, setMeasured] = useState(false);
 
   useEffect(() => {
     if (!measured) return;
-    const width = containerWidthRef.current;
+    const width = size.width;
     const pad = spacing.xs;
     const totalMargins = spacing.xs * options.length;
     const segmentWidth = (width - pad * 2 - totalMargins) / options.length;
@@ -44,10 +43,10 @@ export default function YearSelector({ options, value, onChange, compact = false
 
   const pad = spacing.xs;
   const segPadVert = compact ? spacing.xs : spacing.sm;
-  const width = containerWidthRef.current;
+  const width = size.width;
   const totalMargins = spacing.xs * options.length;
   const segmentWidth = width > 0 ? (width - pad * 2 - totalMargins) / options.length : 0;
-  const height = Math.max(compact ? 28 : 32, containerHeightRef.current - pad * 2);
+  const height = Math.max(compact ? 28 : 32, size.height - pad * 2);
 
   return (
     <View
@@ -64,8 +63,7 @@ export default function YearSelector({ options, value, onChange, compact = false
       ]}
       onLayout={(e) => {
         const { width: w, height: h } = e.nativeEvent.layout;
-        containerWidthRef.current = w;
-        containerHeightRef.current = h;
+        setSize((prev) => (prev.width === w && prev.height === h ? prev : { width: w, height: h }));
         const idx = options.indexOf(value);
         if (w > 0 && idx >= 0) {
           const padInner = spacing.xs;

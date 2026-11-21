@@ -94,6 +94,7 @@ class ReceiptInDB(BaseModel):
     transaction_date: Optional[_dt.date] = None
     scanned_at: _dt.datetime
     created_at: _dt.datetime
+    source: Optional[str] = None
 
     @classmethod
     def from_db_row(cls, row: dict[str, Any]) -> "ReceiptInDB":
@@ -129,6 +130,7 @@ class ReceiptResponse(BaseModel):
     transaction_date: Optional[_dt.date] = None
     scanned_at: _dt.datetime
     created_at: _dt.datetime
+    source: Optional[str] = None
 
 
 class ReceiptListResponse(BaseModel):

@@ -27,11 +27,6 @@ jest.mock('@/hooks/useBreakpoint', () => ({
   }),
 }));
 
-jest.mock('@/hooks/useDecryptedImage', () => ({
-  __esModule: true,
-  default: (src: string | null | undefined) => src ?? undefined,
-}));
-
 describe('OnboardingScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();

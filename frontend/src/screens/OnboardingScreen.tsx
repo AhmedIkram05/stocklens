@@ -75,6 +75,9 @@ const makeOHLCSeries = (count: number, start = 100) => {
   return res;
 };
 
+const AnimatedRect: any = Animated.createAnimatedComponent(Rect as any);
+const AnimatedLine: any = Animated.createAnimatedComponent(Line as any);
+
 export default function OnboardingScreen() {
   const navigation = useNavigation();
   const {
@@ -144,9 +147,6 @@ export default function OnboardingScreen() {
   const step = estStep;
   const bodyWidth = estBody;
   const computeXCenter = (i: number) => effectiveLeftPad + bodyWidth / 2 + step * i;
-
-  const AnimatedRect: any = Animated.createAnimatedComponent(Rect as any);
-  const AnimatedLine: any = Animated.createAnimatedComponent(Line as any);
 
   return (
     <ScreenContainer contentStyle={{ paddingVertical: sectionVerticalSpacing }}>

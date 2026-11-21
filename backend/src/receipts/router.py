@@ -391,7 +391,7 @@ async def _fetch_receipts_for_user(user_id: str, limit: int, offset: int) -> lis
         rows = await conn.fetch(
             "SELECT id, user_id, total_amount, merchant_name, category_id, "
             "ocr_raw_text, ocr_confidence, line_items, receipt_image_s3_key, "
-            "notes, transaction_date, scanned_at, created_at "
+            "notes, transaction_date, scanned_at, created_at, source "
             "FROM receipts WHERE user_id = $1::uuid "
             "ORDER BY scanned_at DESC "
             "LIMIT $2 OFFSET $3",
@@ -453,6 +453,7 @@ def _row_to_receipt_response(row: dict) -> ReceiptResponse:
         transaction_date=row.get("transaction_date"),
         scanned_at=row["scanned_at"],
         created_at=row["created_at"],
+        source=row.get("source"),
     )
 
 
@@ -485,7 +486,7 @@ async def create_receipt(
             "VALUES ($1::uuid, $2, $3, $4::uuid, $5, $6, $7::jsonb, $8, $9, $10, $11) "
             "RETURNING id, user_id, total_amount, merchant_name, category_id, "
             "ocr_raw_text, ocr_confidence, line_items, receipt_image_s3_key, "
-            "notes, transaction_date, scanned_at, created_at",
+            "notes, transaction_date, scanned_at, created_at, source",
             current_user.id,
             body.total_amount,
             body.merchant_name,
@@ -610,7 +611,7 @@ async def update_receipt(
         + f" WHERE id = ${idx}::uuid AND user_id = ${idx + 1}::uuid "
         "RETURNING id, user_id, total_amount, merchant_name, category_id, "
         "ocr_raw_text, ocr_confidence, line_items, receipt_image_s3_key, "
-        "notes, transaction_date, scanned_at, created_at"
+        "notes, transaction_date, scanned_at, created_at, source"
     )
     params.extend([receipt_id, current_user.id])
 

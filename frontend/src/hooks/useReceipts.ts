@@ -53,7 +53,12 @@ export default function useReceipts() {
         label: formatRelativeDate(r.scanned_at) || 'Receipt',
         amount: r.total_amount || 0,
         date: r.scanned_at || '',
-        time: '',
+        time: r.scanned_at
+          ? new Date(r.scanned_at).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+          : '',
         image: r.receipt_image_s3_key || undefined,
         source: r.source || undefined,
         confidence: r.ocr_confidence != null ? Number(r.ocr_confidence) : undefined,
