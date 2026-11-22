@@ -13,9 +13,8 @@ Tasks:
   2. check_new_ohlcv_data     — Branch: retrain only if the newest price date
      advanced >= 14 days past the champion's trained_at (staleness guard)
   3. train_challenger         — Run the ML training pipeline via ECS GPU task (EcsRunTaskOperator)
-  4. detect_new_champion      — If champion was promoted, recompute reference distributions
-  5. run_drift_detection      — PSI/KS/JS on portfolio tickers, Evidently report, S3 upload
-  6. cleanup                  — Prune old prediction_log (>90d) and drift_metrics (>365d)
+  4. run_drift_detection      — PSI/KS/JS on portfolio tickers, Evidently report, S3 upload
+  5. cleanup                  — Prune old prediction_log (>90d) and drift_metrics (>365d)
 """
 
 from __future__ import annotations
@@ -174,31 +173,6 @@ def v(key: str) -> str:
     from airflow.sdk import Variable
 
     return Variable.get(key, default=os.environ.get(f"AIRFLOW_VAR_{key.upper()}", ""))
-
-
-def _detect_new_champion(**context) -> str:
-    """Check if training promoted a new champion → recompute ref distributions."""
-    import asyncpg
-
-    dsn = _pg_dsn()
-
-    async def _check():
-        conn = await asyncpg.connect(dsn)
-        try:
-            row = await conn.fetchrow(
-                "SELECT trained_at FROM model_registry WHERE alias = 'champion'",
-            )
-            if row and row["trained_at"]:
-                trained_at = row["trained_at"]
-                tz = trained_at.tzinfo
-                now = datetime.now(tz=tz or timezone.utc)
-                if now - trained_at < timedelta(hours=6):
-                    return "capture_reference_distributions"
-            return "skip_reference_capture"
-        finally:
-            await conn.close()
-
-    return asyncio.run(_check())
 
 
 def _run_drift_detection(**context) -> None:
@@ -428,17 +402,6 @@ with DAG(
         do_xcom_push=True,
     )
 
-    # ── Branch: detect champion change ──
-    detect_new_champion = BranchPythonOperator(
-        task_id="detect_new_champion",
-        python_callable=_detect_new_champion,
-    )
-
-    skip_reference = EmptyOperator(task_id="skip_reference_capture")
-
-    # ── Task 3: Capture reference distributions (checkpoint — already done in pipeline) ──
-    capture_reference = EmptyOperator(task_id="capture_reference_distributions")
-
     # ── Task 4: Run drift detection ──
     run_drift = PythonOperator(
         task_id="run_drift_detection",
@@ -454,5 +417,4 @@ with DAG(
 
     # ── Task dependencies ──
     ingest_universe >> check_data >> [train_challenger, skip_retraining]
-    train_challenger >> detect_new_champion >> [capture_reference, skip_reference]
-    [capture_reference, skip_reference, skip_retraining] >> run_drift >> cleanup
+    [train_challenger, skip_retraining] >> run_drift >> cleanup
