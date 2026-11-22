@@ -1215,3 +1215,18 @@ def test_authorize_request_password_is_bounded():
             redirect_uri="https://example.com/callback",
             code_challenge="challenge",
         )
+
+
+def test_cimd_resolves_only_public_ips(monkeypatch):
+    """The fetch pins the resolved public IP; private answers are refused."""
+    import socket
+
+    from src.mcp.auth import _resolve_public_ip
+
+    public = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
+    private = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 443))]
+    monkeypatch.setattr("src.mcp.auth.socket.getaddrinfo", lambda *a, **k: public)
+    assert _resolve_public_ip("example.com") == "93.184.216.34"
+    monkeypatch.setattr("src.mcp.auth.socket.getaddrinfo", lambda *a, **k: private)
+    assert _resolve_public_ip("example.com") is None
+    assert _resolve_public_ip("localhost") is None
