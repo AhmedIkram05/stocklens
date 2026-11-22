@@ -14,10 +14,6 @@
 
 data "aws_caller_identity" "current" {}
 
-data "aws_secretsmanager_secret_version" "jwt_secret" {
-  secret_id = "stocklens-jwt-secret-${var.environment}"
-}
-
 # ── SageMaker model ───────────────────────────────────────────────────
 # Reuses the same ECR image as the ECS Fargate task, but overrides
 # the entrypoint to the SageMaker serving handler (backend/sagemaker/serve.py).
@@ -40,7 +36,6 @@ resource "aws_sagemaker_model" "prediction" {
       AWS_REGION             = var.aws_region
       CHAMPION_S3_URI        = var.champion_s3_uri
       SAGEMAKER_SERVING_PORT = "8080"
-      JWT_SECRET_KEY         = data.aws_secretsmanager_secret_version.jwt_secret.secret_string
     }
   }
 
