@@ -371,3 +371,12 @@ def test_binomial_edge_cases() -> None:
     assert binomial_one_sided_p(90, 100, 1.0) == 1.0  # degenerate p0
     assert binomial_one_sided_p(0, 100, 0.50) > 0.99  # zero successes ≈ certain
     assert binomial_one_sided_p(50, 100, 0.50) == pytest.approx(0.5, abs=0.05)
+
+
+def test_mcnemar_large_sample_uses_normal_approximation() -> None:
+    """Above 1000 discordant pairs the approximation must not enumerate."""
+    from ml.promotion_stats import mcnemar_exact
+
+    result = mcnemar_exact(1001, 1000)
+    assert result["p_value"] == 1.0
+    assert result["statistic_b"] == 1001

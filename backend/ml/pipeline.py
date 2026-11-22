@@ -49,7 +49,7 @@ from ml.labeling import compute_adaptive_labels, compute_forward_returns
 from ml.mlflow_manager import MLflowManager
 from ml.model import GlobalLSTM
 from ml.promotion_stats import decide_promotion_paired, should_promote
-from ml.train import train
+from ml.train import compute_class_weights, train
 from ml.utils import UNK_IDX, build_ticker_vocabulary, get_device, set_seed
 
 logger = logging.getLogger(__name__)
@@ -531,6 +531,11 @@ async def _run_lstm_pipeline(
         mlflow_mgr.log_dataset(test_data[1], name="test_labels", context="test")
 
         # --- Train one model per seed; select by smoothed VAL dir accuracy ---
+        train_class_weights = (
+            compute_class_weights(torch.as_tensor(train_data[1], dtype=torch.long)).to(device)
+            if ML_CONFIG.USE_CLASS_WEIGHTS
+            else None
+        )
         seed_results: list[dict[str, Any]] = []
         for seed_i in range(max(1, ML_CONFIG.N_SEEDS)):
             seed = 42 + seed_i
@@ -538,7 +543,12 @@ async def _run_lstm_pipeline(
             seed_model = _new_model()
             logger.info("Training LSTM (seed %d, %d/%d)", seed, seed_i + 1, ML_CONFIG.N_SEEDS)
             history = train(
-                seed_model, train_loader, val_loader, device=device, n_epochs=ML_CONFIG.EPOCHS
+                seed_model,
+                train_loader,
+                val_loader,
+                device=device,
+                n_epochs=ML_CONFIG.EPOCHS,
+                class_weights=train_class_weights,
             )
 
             # Sweep the abstention margin on VALIDATION data (never test):
