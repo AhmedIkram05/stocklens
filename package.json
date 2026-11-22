@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "main": "frontend/index.ts",
   "scripts": {
-    "start": "cd frontend && expo start",
-    "android": "cd frontend && expo start --android",
-    "ios": "cd frontend && expo start --ios",
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
     "graphql:codegen": "graphql-codegen --config codegen.yml",
     "typecheck": "tsc --noEmit",
     "test": "jest --config frontend/jest.config.js",

@@ -10,6 +10,7 @@ jest.mock('@/services/portfolios', () => ({
   portfolioService: {
     createPortfolio: jest.fn(),
     createCashFlow: jest.fn(),
+    deletePortfolio: jest.fn(),
   },
 }));
 
@@ -43,6 +44,7 @@ describe('CreatePortfolioScreen', () => {
     mockedUseNavigation.mockReturnValue({ goBack: goBackSpy } as any);
     mockedPortfolioService.createPortfolio.mockResolvedValue(mockCreatedPortfolio);
     mockedPortfolioService.createCashFlow.mockResolvedValue({} as any);
+    mockedPortfolioService.deletePortfolio.mockResolvedValue(undefined as any);
   });
 
   afterEach(() => {
@@ -215,5 +217,24 @@ describe('CreatePortfolioScreen', () => {
     });
 
     resolveCreate(mockCreatedPortfolio);
+  });
+
+  it('rolls back the portfolio when the deposit fails', async () => {
+    mockedPortfolioService.createCashFlow.mockRejectedValueOnce(new Error('deposit failed'));
+
+    const { getByPlaceholderText, getByText } = await renderWithProviders(
+      <CreatePortfolioScreen />,
+      { providerOverrides: { withNavigation: false } },
+    );
+
+    await fireEvent.changeText(getByPlaceholderText('My Portfolio'), 'Test Portfolio');
+    await fireEvent.changeText(getByPlaceholderText('0.00'), '1000');
+    await fireEvent.press(getByText('Create'));
+
+    await waitFor(() => expect(mockedPortfolioService.deletePortfolio).toHaveBeenCalledWith('1'));
+    expect(goBackSpy).not.toHaveBeenCalled();
+    expect(
+      getByText('Could not add the initial deposit. The portfolio was not created.'),
+    ).toBeTruthy();
   });
 });

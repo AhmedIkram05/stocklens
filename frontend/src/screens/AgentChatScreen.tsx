@@ -324,44 +324,37 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
     setFeedbackComment('');
   }, []);
 
-  const handleLoadConversation = useCallback(async (convId: string) => {
-    setShowHistory(false);
-    try {
-      const data = await agentService.getConversation(convId);
-      setMessages(
-        (data.messages ?? []).map((m: any) => ({
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-          reasoning: m.reasoning_steps?.thinking,
-          toolResults: (m.tools_used ?? [])
-            .filter((t: any) => t.status === 'completed' && t.result != null)
-            .map((t: any) => ({
-              toolName: t.name,
-              result: typeof t.result === 'string' ? { _raw: t.result } : t.result,
-            })),
-          createdAt: m.created_at ?? m.createdAt,
-        })),
-      );
-      setConversationId(convId);
-      setConversationTitle(data.conversation?.title ?? null);
-      // Restore feedback state from stored rating if available
-      const convData = data.conversation as any;
-      if (convData?.user_rating) {
-        setFeedbackSubmitted(true);
+  const handleLoadConversation = useCallback(
+    async (convId: string) => {
+      if (isLoading) return;
+      setShowHistory(false);
+      try {
+        const data = await agentService.getConversation(convId);
+        // agentService already maps reasoning/tool results to AgentMessage.
+        setMessages(data.messages ?? []);
+        setConversationId(convId);
+        setConversationTitle(data.conversation?.title ?? null);
+        // Restore feedback state from stored rating if available
+        const convData = data.conversation as any;
+        if (convData?.user_rating) {
+          setFeedbackSubmitted(true);
+        }
+        setTraceId('');
+      } catch {
+        Alert.alert('Error', 'Failed to load conversation.');
       }
-      setTraceId('');
-    } catch {
-      Alert.alert('Error', 'Failed to load conversation.');
-    }
-  }, []);
+    },
+    [isLoading],
+  );
 
   const handleNewChat = useCallback(() => {
+    if (isLoading) return;
     setMessages([]);
     setConversationId(undefined);
     setConversationTitle(null);
     setTraceId('');
     setFeedbackSubmitted(false);
-  }, []);
+  }, [isLoading]);
 
   const renderMessage = useCallback(
     ({ item }: { item: AgentMessage }) => <MessageBubble message={item} />,
@@ -421,6 +414,7 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
                   <View style={styles.headerRight}>
                     <TouchableOpacity
                       onPress={handleNewChat}
+                      disabled={isLoading}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       accessibilityLabel="New chat"
                       accessibilityRole="button"

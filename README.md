@@ -267,7 +267,7 @@ cp backend/.env.example backend/.env        # fill in the required keys
 
 docker compose up -d                        # PostgreSQL, Redis, MLflow, backend
 
-cd frontend && npm install
+npm install
 npx expo start                              # or: npx expo start --ios / --android
 ```
 

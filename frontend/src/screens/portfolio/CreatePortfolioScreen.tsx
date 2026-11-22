@@ -42,11 +42,13 @@ export default function CreatePortfolioScreen() {
     setLoading(true);
     setError(null);
 
+    let portfolioId: string | null = null;
     try {
       const portfolio = await portfolioService.createPortfolio({
         name: name.trim(),
         description: description.trim() || undefined,
       });
+      portfolioId = portfolio.id;
 
       const deposit = parseFloat(depositAmount.replace(/,/g, ''));
       if (depositAmount.trim().length > 0 && !isNaN(deposit) && deposit > 0) {
@@ -58,8 +60,14 @@ export default function CreatePortfolioScreen() {
       }
 
       navigation.goBack();
-    } catch (e) {
-      setError('Failed to create portfolio. Please try again.');
+    } catch {
+      if (portfolioId) {
+        // Do not leave a half-created portfolio behind: a retry would duplicate it.
+        await portfolioService.deletePortfolio(portfolioId).catch(() => {});
+        setError('Could not add the initial deposit. The portfolio was not created.');
+      } else {
+        setError('Failed to create portfolio. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

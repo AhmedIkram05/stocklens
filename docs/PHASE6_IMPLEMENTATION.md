@@ -1874,7 +1874,7 @@ const [chatVisible, setChatVisible] = useState(false);
 - [ ] `alembic current` shows `0008` as current revision
 - [ ] **Delete orphan migration** `backend/alembic/versions/af46e8a08234_create_spending_and_prediction_tables.py` (second root migration — blocks `alembic upgrade head`)
 - [ ] Verify only one head: `alembic heads` shows only `0008`
-- [ ] Frontend builds: `cd frontend && npx expo export --platform web --output-dir /tmp/test-build 2>&1`
+- [ ] Frontend builds: `npx expo export --platform web --output-dir /tmp/test-build 2>&1`
 
 ### After Round 1
 
