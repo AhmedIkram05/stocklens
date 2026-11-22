@@ -191,6 +191,7 @@ def train(
     min_delta: float = ML_CONFIG.MIN_DELTA,
     device: torch.device | None = None,
     epoch_callback: Callable[[int, dict[str, float]], None] | None = None,
+    class_weights: torch.Tensor | None = None,
 ) -> dict[str, list[float]]:
     """Full training loop with early stopping on smoothed directional accuracy.
 
@@ -236,14 +237,15 @@ def train(
         except Exception as e:
             logger.warning("torch.compile failed, continuing without: %s", e)
 
-    # Compute class weights from training data
-    all_labels = []
-    for _, labels, _ in train_loader:
-        all_labels.append(labels)
-    train_labels = torch.cat(all_labels)
-    class_weights = (
-        compute_class_weights(train_labels).to(device) if ML_CONFIG.USE_CLASS_WEIGHTS else None
-    )
+    # Compute class weights once per run; callers training several seeds pass
+    # the same tensor instead of re-walking the loader for each seed.
+    if ML_CONFIG.USE_CLASS_WEIGHTS and class_weights is None:
+        all_labels = []
+        for _, labels, _ in train_loader:
+            all_labels.append(labels)
+        class_weights = compute_class_weights(torch.cat(all_labels))
+    if class_weights is not None:
+        class_weights = class_weights.to(device)
 
     # Focal Loss with class weights — focuses on hard directional samples
     # instead of letting well-classified FLAT samples dominate the gradient.
