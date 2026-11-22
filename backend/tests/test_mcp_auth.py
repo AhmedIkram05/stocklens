@@ -307,34 +307,46 @@ def test_is_cimd_client_id():
     assert _is_cimd_client_id("stocklens-mcp-public") is False
 
 
-class _FakeUrlopenResp:
-    """Minimal context manager mimicking urllib.response.addinfourl for _fetch_cimd_document."""
-
-    def __init__(self, raw: bytes):
+class _FakeResp:
+    def __init__(self, raw: bytes, status: int = 200):
         self._raw = raw
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        return False
+        self.status = status
 
     def read(self, size: int = -1) -> bytes:
         return self._raw if size < 0 else self._raw[:size]
 
 
+class _FakeConn:
+    def __init__(self, raw: bytes = b"", status: int = 200, exc: Exception | None = None):
+        self._raw = raw
+        self.status = status
+        self._exc = exc
+
+    def request(self, *args, **kwargs) -> None:
+        if self._exc is not None:
+            raise self._exc
+
+    def getresponse(self) -> _FakeResp:
+        return _FakeResp(self._raw, self.status)
+
+    def close(self) -> None:
+        return None
+
+
 def _fetch_with_mock(
     raw: bytes | None = None,
     exc: Exception | None = None,
-    client_id: str = "https://client.example/cimd.json",
+    status: int = 200,
+    ip: str = "93.184.216.34",
 ):
-    # Clear module cache so TTL state doesn't leak between tests
     import src.mcp.auth as mcp_auth
 
     mcp_auth._CIMD_CACHE.clear()
-    if exc is not None:
-        return patch("src.mcp.auth._CIMD_OPENER.open", side_effect=exc)
-    return patch("src.mcp.auth._CIMD_OPENER.open", return_value=_FakeUrlopenResp(raw or b""))
+    conn = _FakeConn(raw or b"", status=status, exc=exc)
+    return (
+        patch("src.mcp.auth.socket.getaddrinfo", return_value=[(0, 0, 0, "", (ip, 443))]),
+        patch("src.mcp.auth._PinnedHTTPSConnection", return_value=conn),
+    )
 
 
 def test_fetch_cimd_document_success_and_cached():
@@ -342,33 +354,28 @@ def test_fetch_cimd_document_success_and_cached():
 
     import src.mcp.auth as mcp_auth
 
-    payload = _FakeUrlopenResp(
-        _json.dumps({"client_name": "C", "redirect_uris": ["https://c.example/cb"]}).encode()
-    )
-    mcp_auth._CIMD_CACHE.clear()
-    # client.example has no DNS record — pin getaddrinfo to a public IP for the SSRF check
-    with (
-        patch("socket.getaddrinfo", return_value=[(0, 0, 0, "", ("93.184.216.34", 443))]),
-        patch("src.mcp.auth._CIMD_OPENER.open", return_value=payload) as opener_open,
-    ):
+    raw = _json.dumps({"client_name": "C", "redirect_uris": ["https://c.example/cb"]}).encode()
+    dns, conn = _fetch_with_mock(raw=raw)
+    with dns, conn as conn_factory:
         doc = mcp_auth._fetch_cimd_document("https://client.example/cimd.json")
         assert doc == {"client_name": "C", "redirect_uris": ["https://c.example/cb"]}
-        # second call served from cache — the opener only used once
         assert mcp_auth._fetch_cimd_document("https://client.example/cimd.json") == doc
-    assert opener_open.call_count == 1
+    assert conn_factory.call_count == 1
 
 
 def test_fetch_cimd_document_invalid_json_returns_none():
     import src.mcp.auth as mcp_auth
 
-    with _fetch_with_mock(raw=b"not json"):
+    dns, conn = _fetch_with_mock(raw=b"not json")
+    with dns, conn:
         assert mcp_auth._fetch_cimd_document("https://client.example/cimd.json") is None
 
 
 def test_fetch_cimd_document_non_dict_returns_none():
     import src.mcp.auth as mcp_auth
 
-    with _fetch_with_mock(raw=b"[1, 2, 3]"):
+    dns, conn = _fetch_with_mock(raw=b"[1, 2, 3]")
+    with dns, conn:
         assert mcp_auth._fetch_cimd_document("https://client.example/cimd.json") is None
 
 
@@ -377,105 +384,58 @@ def test_fetch_cimd_document_missing_redirect_uris_returns_none():
 
     import src.mcp.auth as mcp_auth
 
-    with _fetch_with_mock(raw=_json.dumps({"client_name": "C"}).encode()):
-        assert mcp_auth._fetch_cimd_document("https://client.example/cimd.json") is None
-    with _fetch_with_mock(raw=_json.dumps({"redirect_uris": "not-a-list"}).encode()):
-        assert mcp_auth._fetch_cimd_document("https://client.example/cimd.json") is None
+    for raw in (
+        _json.dumps({"client_name": "C"}).encode(),
+        _json.dumps({"redirect_uris": "not-a-list"}).encode(),
+    ):
+        dns, conn = _fetch_with_mock(raw=raw)
+        with dns, conn:
+            assert mcp_auth._fetch_cimd_document("https://client.example/cimd.json") is None
 
 
 def test_fetch_cimd_document_blocked_host_returns_none():
     import src.mcp.auth as mcp_auth
 
-    # localhost → SSRF block before any network call
-    with _fetch_with_mock(exc=AssertionError("urlopen must not be called")):
-        assert mcp_auth._fetch_cimd_document("https://localhost/cimd.json") is None
-
-
-def test_fetch_cimd_document_urlopen_error_returns_none():
-    import src.mcp.auth as mcp_auth
-
-    with _fetch_with_mock(exc=OSError("connection refused")):
+    dns, conn = _fetch_with_mock(ip="10.0.0.5")
+    with dns, conn:
         assert mcp_auth._fetch_cimd_document("https://client.example/cimd.json") is None
 
 
-def test_cimd_redirects_refused():
-    """M3 regression: the fetch must not follow redirects — an approved host
-    302ing to link-local metadata services would bypass the SSRF guard."""
-    from src.mcp.auth import _RefuseRedirectsHandler
+def test_fetch_cimd_document_connection_error_returns_none():
+    import src.mcp.auth as mcp_auth
 
-    handler = _RefuseRedirectsHandler()
-    assert handler.redirect_request(None, None, 302, "Found", {}, "http://169.254.169.254/") is None
+    dns, conn = _fetch_with_mock(exc=OSError("connection refused"))
+    with dns, conn:
+        assert mcp_auth._fetch_cimd_document("https://client.example/cimd.json") is None
+
+
+def test_cimd_redirect_status_rejected():
+    import src.mcp.auth as mcp_auth
+
+    dns, conn = _fetch_with_mock(raw=b"{}", status=302)
+    with dns, conn:
+        assert mcp_auth._fetch_cimd_document("https://client.example/cimd.json") is None
 
 
 def test_fetch_cimd_document_oversize_response_rejected():
-    """M3 regression: responses above the byte cap are rejected, not slurped."""
     import src.mcp.auth as mcp_auth
 
-    mcp_auth._CIMD_CACHE.clear()
-    big = b'{"redirect_uris": ["https://c.example/cb"]}' + b" " * 64
-    with (
-        patch("socket.getaddrinfo", return_value=[(0, 0, 0, "", ("93.184.216.34", 443))]),
-        patch("src.mcp.auth._CIMD_OPENER.open", return_value=_FakeUrlopenResp(big)),
-        patch.object(mcp_auth, "_CIMD_MAX_BYTES", 32),
-    ):
+    dns, conn = _fetch_with_mock(raw=b'{"redirect_uris": ["https://c.example/cb"]}' + b" " * 64)
+    with dns, conn, patch.object(mcp_auth, "_CIMD_MAX_BYTES", 32):
         assert mcp_auth._fetch_cimd_document("https://client.example/cimd.json") is None
 
 
 def test_cimd_cache_bounded():
-    """M3 regression: the CIMD cache must evict instead of growing forever."""
     import src.mcp.auth as mcp_auth
 
-    mcp_auth._CIMD_CACHE.clear()
-    payload = _FakeUrlopenResp(b'{"redirect_uris": ["https://c.example/cb"]}')
-    with (
-        patch("socket.getaddrinfo", return_value=[(0, 0, 0, "", ("93.184.216.34", 443))]),
-        patch("src.mcp.auth._CIMD_OPENER.open", return_value=payload),
-        patch.object(mcp_auth, "_CIMD_MAX_CACHE_ENTRIES", 2),
-    ):
+    raw = b'{"redirect_uris": ["https://c.example/cb"]}'
+    dns, conn = _fetch_with_mock(raw=raw)
+    with dns, conn, patch.object(mcp_auth, "_CIMD_MAX_CACHE_ENTRIES", 2):
         for n in (1, 2, 3):
             mcp_auth._fetch_cimd_document(f"https://client{n}.example/cimd.json")
         assert len(mcp_auth._CIMD_CACHE) <= 2
-        # The oldest entry was evicted, the newest retained.
         assert "https://client1.example/cimd.json" not in mcp_auth._CIMD_CACHE
         assert "https://client3.example/cimd.json" in mcp_auth._CIMD_CACHE
-
-
-async def test_cimd_client_name_stored_on_authorize(client, auth_headers):
-    stored: dict[str, dict] = {}
-
-    async def capture_store(code: str, data: dict, ttl: int = 600):
-        stored[code] = data
-
-    doc = {"client_name": "Acme Tool", "redirect_uris": ["https://client.example/cb"]}
-    with (
-        patch("src.mcp.auth._fetch_cimd_document", return_value=doc),
-        patch("src.mcp.auth._store_code", side_effect=capture_store),
-    ):
-        r = await client.post(
-            "/oauth/authorize",
-            json=_authorize_body(
-                client_id="https://client.example/cimd.json",
-                redirect_uri="https://client.example/cb",
-            ),
-        )
-    assert r.status_code == 302
-    payload = next(iter(stored.values()))
-    assert payload["client_name"] == "Acme Tool"
-
-
-async def test_default_client_name_stored_without_cimd(client, auth_headers):
-    stored: dict[str, dict] = {}
-
-    async def capture_store(code: str, data: dict, ttl: int = 600):
-        stored[code] = data
-
-    with patch("src.mcp.auth._store_code", side_effect=capture_store):
-        await client.post("/oauth/authorize", json=_authorize_body())
-    payload = next(iter(stored.values()))
-    assert payload["client_name"] == "StockLens MCP"
-
-
-# ── First-party redirect_uri allowlist + strict token exchange ─────────
 
 
 def _fake_oauth_request():

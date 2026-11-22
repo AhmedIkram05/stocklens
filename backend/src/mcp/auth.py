@@ -519,7 +519,7 @@ def _resolve_public_ip(host: str) -> str | None:
         return None
     try:
         infos = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
-    except OSError:
+    except (OSError, ValueError):
         return None
     public: list[str] = []
     for info in infos:
