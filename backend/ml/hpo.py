@@ -503,14 +503,16 @@ async def run_phase2() -> dict[str, Any]:
             {
                 "threshold_mult": tmult,
                 "val_dir_acc": val_metrics["directional_accuracy"],
+                "val_n_directional": val_metrics.get("n_directional"),
                 "test_dir_acc": test_metrics["directional_accuracy"],  # reporting only
                 "test_sharpe": test_metrics.get("sharpe_long_short_0bps"),
             }
         )
         logger.info(
-            "  threshold=%.1f → val_dir=%.4f  test_dir=%.4f  sharpe=%s",
+            "  threshold=%.1f → val_dir=%.4f (n=%s)  test_dir=%.4f  sharpe=%s",
             tmult,
             val_metrics["directional_accuracy"],
+            val_metrics.get("n_directional"),
             test_metrics["directional_accuracy"],
             test_metrics.get("sharpe_long_short_0bps"),
         )
