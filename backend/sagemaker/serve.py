@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -101,6 +102,9 @@ elif CHAMPION_S3_URI:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 os.environ.setdefault("AWS_REGION", "eu-west-2")
+
+# Settings requires a non-empty signing key; SageMaker never mints or verifies JWTs.
+os.environ.setdefault("JWT_SECRET_KEY", secrets.token_urlsafe(32))
 
 from src.prediction.service import CLASS_NAMES, prediction_service  # noqa: E402
 

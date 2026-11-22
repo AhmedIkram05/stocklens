@@ -23,7 +23,6 @@ locals {
     ml_training_task_definition = "${local.family}-ml-training"
     private_subnet_ids          = join(",", var.private_subnet_ids)
     airflow_sg_id               = var.airflow_sg_id
-    database_url                = var.database_url
     mlflow_tracking_uri         = var.mlflow_tracking_uri
     app_name                    = var.app_name
     environment                 = var.environment
@@ -52,10 +51,6 @@ locals {
       {
         name  = "AIRFLOW__CORE__EXECUTOR"
         value = "LocalExecutor"
-      },
-      {
-        name  = "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"
-        value = var.airflow_sql_alchemy_conn
       },
       {
         name  = "AIRFLOW__DATABASE__SQL_ALCHEMY_SCHEMA"
@@ -137,16 +132,6 @@ locals {
         name  = "MLFLOW_TRACKING_URI"
         value = var.mlflow_tracking_uri
       },
-      # DAG's asyncpg helpers read DATABASE_URL directly; must be postgresql:// (not +psycopg2)
-      {
-        name  = "DATABASE_URL"
-        value = var.database_url
-      },
-      # BaseHook.get_connection("postgres_default") used by DAG's _check_new_ohlcv_data, _cleanup
-      {
-        name  = "AIRFLOW_CONN_POSTGRES_DEFAULT"
-        value = var.database_url
-      },
       # Airflow Variables for EcsRunTaskOperator (prefixed with AIRFLOW_VAR_)
       {
         name  = "AIRFLOW_VAR_ECS_CLUSTER_NAME"
@@ -163,10 +148,6 @@ locals {
       {
         name  = "AIRFLOW_VAR_AIRFLOW_SG_ID"
         value = local.airflow_variables.airflow_sg_id
-      },
-      {
-        name  = "AIRFLOW_VAR_DATABASE_URL"
-        value = local.airflow_variables.database_url
       },
       {
         name  = "AIRFLOW_VAR_MLFLOW_TRACKING_URI"
@@ -192,6 +173,18 @@ locals {
       {
         name      = "JWT_SECRET_KEY"
         valueFrom = var.jwt_secret_arn
+      },
+      {
+        name      = "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"
+        valueFrom = var.airflow_db_secret_arn
+      },
+      {
+        name      = "DATABASE_URL"
+        valueFrom = var.app_db_secret_arn
+      },
+      {
+        name      = "AIRFLOW_CONN_POSTGRES_DEFAULT"
+        valueFrom = var.app_db_secret_arn
       },
     ]
 
@@ -340,11 +333,14 @@ resource "aws_ecs_task_definition" "trigger_retrain" {
       entryPoint = ["sh", "-c"]
       command    = ["airflow dags trigger weekly_retraining"]
 
-      environment = [
+      secrets = [
         {
-          name  = "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"
-          value = var.airflow_sql_alchemy_conn
+          name      = "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"
+          valueFrom = var.airflow_db_secret_arn
         },
+      ]
+
+      environment = [
         {
           name  = "AIRFLOW__DATABASE__SQL_ALCHEMY_SCHEMA"
           value = "airflow"
@@ -439,11 +435,14 @@ resource "aws_ecs_task_definition" "ml_training" {
       entryPoint = ["sh", "-c"]
       command    = ["python -m ml.pipeline"]
 
-      environment = [
+      secrets = [
         {
-          name  = "DATABASE_URL"
-          value = var.database_url
+          name      = "DATABASE_URL"
+          valueFrom = var.app_db_secret_arn
         },
+      ]
+
+      environment = [
         {
           name  = "MLFLOW_TRACKING_URI"
           value = var.mlflow_tracking_uri

@@ -38,10 +38,6 @@ variable "mlflow_sg_id" {
   type        = string
 }
 
-variable "mlflow_backend_store_uri" {
-  description = "PostgreSQL URI for MLflow backend store (e.g. postgresql://host/dbname)"
-  type        = string
-}
 
 variable "mlflow_artifact_root" {
   description = "S3 URI for MLflow artifact root (e.g. s3://bucket/mlflow/)"
@@ -50,5 +46,10 @@ variable "mlflow_artifact_root" {
 
 variable "sd_namespace_id" {
   description = "ID of the Cloud Map private DNS namespace"
+  type        = string
+}
+
+variable "mlflow_db_secret_arn" {
+  description = "Secrets Manager ARN holding the MLflow PostgreSQL URL"
   type        = string
 }

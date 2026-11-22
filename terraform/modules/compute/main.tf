@@ -51,7 +51,9 @@ resource "aws_ecr_repository" "app" {
   # checkov:skip=CKV_AWS_136:dev — KMS key not provisioned yet for ECR encryption
   # tfsec:ignore:aws-ecr-enforce-immutable-repository:dev — mutable tags for fast iteration
   # tfsec:ignore:aws-ecr-repository-customer-key:dev — KMS key not provisioned yet
-  name = "${var.app_name}-${var.environment}"
+  # Stable name predates env separation; renaming it would destroy the repo's
+  # image history. Keep CI and Terraform on the same name.
+  name = "${var.app_name}-dev"
   # ponytail: dev — mutable tags for fast iteration
   image_tag_mutability = "MUTABLE"
 

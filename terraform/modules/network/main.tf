@@ -83,6 +83,16 @@ resource "aws_security_group_rule" "ecs_tasks_egress_all" {
 
 # ── RDS security group ───────────────────────────────────────────────
 
+resource "aws_security_group_rule" "ecs_tasks_ingress_efs" {
+  security_group_id        = aws_security_group.ecs_tasks.id
+  type                     = "ingress"
+  from_port                = 2998
+  to_port                  = 2999
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.airflow.id
+  description              = "EFS NFS-over-TLS from Airflow and retraining tasks"
+}
+
 resource "aws_security_group" "rds" {
   # checkov:skip=CKV2_AWS_5:dev — security group attached via variable reference; checkov can't trace
   name        = "${var.app_name}-rds-${var.environment}"

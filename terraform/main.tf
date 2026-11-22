@@ -129,6 +129,8 @@ module "iam" {
     module.secrets.redis_pass_secret_arn,
     module.secrets.langsmith_api_key_secret_arn,
     module.database.db_secret_arn,
+    module.database.app_db_secret_arn,
+    module.database.airflow_db_secret_arn,
   ]
   champion_s3_uri             = var.champion_s3_uri
   mlflow_artifacts_bucket_arn = module.s3.mlflow_artifacts_bucket_arn
@@ -176,18 +178,18 @@ module "compute" {
 # ── MLflow tracking server (R4) ─────────────────────────────────────
 
 module "mlflow" {
-  source                   = "./modules/mlflow"
-  app_name                 = var.app_name
-  environment              = var.environment
-  aws_region               = var.aws_region
-  ecs_cluster_id           = module.compute.ecs_cluster_id
-  ecs_execution_role_arn   = module.iam.ecs_execution_role_arn
-  mlflow_task_role_arn     = module.iam.mlflow_task_role_arn
-  private_subnet_ids       = local.private_subnet_ids
-  mlflow_sg_id             = module.network.mlflow_sg_id
-  mlflow_backend_store_uri = local.mlflow_db_uri
-  mlflow_artifact_root     = local.mlflow_artifact_root
-  sd_namespace_id          = module.network.sd_namespace_id
+  source                 = "./modules/mlflow"
+  app_name               = var.app_name
+  environment            = var.environment
+  aws_region             = var.aws_region
+  ecs_cluster_id         = module.compute.ecs_cluster_id
+  ecs_execution_role_arn = module.iam.ecs_execution_role_arn
+  mlflow_task_role_arn   = module.iam.mlflow_task_role_arn
+  private_subnet_ids     = local.private_subnet_ids
+  mlflow_sg_id           = module.network.mlflow_sg_id
+  mlflow_db_secret_arn   = module.database.app_db_secret_arn
+  mlflow_artifact_root   = local.mlflow_artifact_root
+  sd_namespace_id        = module.network.sd_namespace_id
 }
 
 # ── Airflow (R4) ─────────────────────────────────────────────────────
@@ -202,7 +204,8 @@ module "airflow" {
   airflow_task_role_arn     = module.iam.airflow_task_role_arn
   airflow_sg_id             = module.network.airflow_sg_id
   private_subnet_ids        = local.private_subnet_ids
-  airflow_sql_alchemy_conn  = local.airflow_db_uri
+  airflow_db_secret_arn     = module.database.airflow_db_secret_arn
+  app_db_secret_arn         = module.database.app_db_secret_arn
   mlflow_tracking_uri       = module.mlflow.mlflow_tracking_uri
   drift_alarm_name          = module.monitoring.drift_alarm_name
   ecs_cluster_arn           = module.compute.ecs_cluster_arn

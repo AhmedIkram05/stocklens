@@ -44,10 +44,6 @@ variable "airflow_image" {
   default     = "apache/airflow:2.11.0"
 }
 
-variable "airflow_sql_alchemy_conn" {
-  description = "SQLAlchemy connection string for Airflow metadata database (RDS PostgreSQL)"
-  type        = string
-}
 
 variable "airflow_extra_env" {
   description = "Extra environment variables to pass to Airflow containers"
@@ -119,4 +115,14 @@ variable "jwt_secret_arn" {
   description = "ARN of the JWT secret in Secrets Manager — needed for alembic env.py which imports src.config.Settings"
   type        = string
   default     = ""
+}
+
+variable "airflow_db_secret_arn" {
+  description = "Secrets Manager ARN holding the Airflow metadata PostgreSQL URL"
+  type        = string
+}
+
+variable "app_db_secret_arn" {
+  description = "Secrets Manager ARN holding the plain PostgreSQL URL"
+  type        = string
 }
