@@ -188,3 +188,11 @@ approached. D15–D17 are the approved buffer; if the schedule holds, D17 is ver
 3. D2 starts the next working day, in the order above.
 
 No code branch exists until this file is merged.
+
+## 8. Execution update (2026-11-22)
+
+The 55-PR ledger above was superseded by area batches. All CRITICAL findings are closed. Batches landed: auth/session, migration truth, currency, performance series, MCP/GraphQL, receipts/OCR, agent tools, frontend money/session, frontend device security, frontend polling/projections/cleanup, ML image/promotion/runtime, and infra secrets/IAM/retention.
+
+Still open: ML-H4 ensemble registration, ML-M8 atomic publish, HPO/memory items, INF-H1 (needs a state migration), INF-M15/M25, BE-L23 (CIMD rebinding), BE-M8 per-socket cap, BE-M23 OCR passes, BE-L37/L39, FE-L49/L52.
+
+Working rule from 2026-11-21: floor of 40 GitHub contributions per day, then stop at the merged PR that crosses it. PRs are area batches with atomic commits.
