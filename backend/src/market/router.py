@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
+from weakref import WeakValueDictionary
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -37,7 +38,10 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 # One lock per ticker so concurrent cold requests do not each download 20 years.
-_refresh_locks: dict[str, asyncio.Lock] = {}
+_refresh_locks: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
+
+# Mon=0 … Sun=6. Every weekend day must land the cutoff on Friday.
+_STALENESS_DAYS = {0: 3, 5: 1, 6: 2}
 
 
 async def refresh_ohlcv_if_stale(ticker: str) -> bool:
@@ -57,7 +61,7 @@ async def _refresh_ohlcv_locked(ticker: str) -> bool:
     # Cache HIT: newest data is yesterday or newer. Sat/Sun/Mon accept
     # Friday's close; other days allow one day for the provider's lag.
     today = datetime.now(timezone.utc).date()
-    staleness_days = 3 if today.weekday() in (0, 5, 6) else 1
+    staleness_days = _STALENESS_DAYS.get(today.weekday(), 1)
     cutoff = today - timedelta(days=staleness_days)
     if latest_db_date is not None and latest_db_date >= cutoff:
         return False

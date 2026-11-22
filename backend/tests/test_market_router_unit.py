@@ -36,3 +36,14 @@ async def test_concurrent_refresh_fetches_once(monkeypatch):
     )
     assert results == [True, False]
     assert state["fetches"] == 1
+
+
+def test_weekend_cutoff_lands_on_friday():
+    from datetime import date, timedelta
+
+    from src.market.router import _STALENESS_DAYS
+
+    monday = date(2026, 11, 16)
+    for weekday, days in _STALENESS_DAYS.items():
+        today = monday + timedelta(days=weekday)
+        assert (today - timedelta(days=days)).weekday() == 4  # Friday
