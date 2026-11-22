@@ -8,6 +8,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -35,18 +36,28 @@ logger = structlog.get_logger()
 
 router = APIRouter()
 
+# One lock per ticker so concurrent cold requests do not each download 20 years.
+_refresh_locks: dict[str, asyncio.Lock] = {}
+
 
 async def refresh_ohlcv_if_stale(ticker: str) -> bool:
     """Check cache freshness and fetch from yfinance if stale.
 
     Returns True if data was refreshed (or fetched for the first time).
     """
+    ticker = ticker.upper()
+    lock = _refresh_locks.setdefault(ticker, asyncio.Lock())
+    async with lock:
+        return await _refresh_ohlcv_locked(ticker)
+
+
+async def _refresh_ohlcv_locked(ticker: str) -> bool:
     latest_db_date = await get_latest_ohlcv_date(ticker)
 
-    # Cache HIT: newest data is yesterday or newer
-    # Weekend tolerance: on Monday, accept Friday's data (3-day gap)
+    # Cache HIT: newest data is yesterday or newer. Sat/Sun/Mon accept
+    # Friday's close; other days allow one day for the provider's lag.
     today = datetime.now(timezone.utc).date()
-    staleness_days = 3 if today.weekday() == 0 else 1
+    staleness_days = 3 if today.weekday() in (0, 5, 6) else 1
     cutoff = today - timedelta(days=staleness_days)
     if latest_db_date is not None and latest_db_date >= cutoff:
         return False
