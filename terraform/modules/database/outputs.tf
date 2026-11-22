@@ -27,3 +27,13 @@ output "db_username" {
   description = "RDS master username"
   value       = aws_db_instance.main.username
 }
+
+output "app_db_secret_arn" {
+  description = "ARN of the plain PostgreSQL URL secret"
+  value       = aws_secretsmanager_secret.app_db_url.arn
+}
+
+output "airflow_db_secret_arn" {
+  description = "ARN of the Airflow metadata PostgreSQL URL secret"
+  value       = aws_secretsmanager_secret.airflow_db_url.arn
+}

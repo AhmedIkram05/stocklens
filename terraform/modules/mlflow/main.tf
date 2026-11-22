@@ -45,7 +45,7 @@ resource "aws_ecs_task_definition" "mlflow" {
       name      = "mlflow"
       image     = "ghcr.io/mlflow/mlflow:v2.20.3"
       essential = true
-      command   = ["sh", "-c", "pip install -q psycopg2-binary && exec mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri ${var.mlflow_backend_store_uri} --default-artifact-root ${var.mlflow_artifact_root} --artifacts-destination ${var.mlflow_artifact_root}"]
+      command   = ["sh", "-c", "pip install -q psycopg2-binary && exec mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri \"$MLFLOW_BACKEND_STORE_URI\" --default-artifact-root ${var.mlflow_artifact_root} --artifacts-destination ${var.mlflow_artifact_root}"]
 
       portMappings = [
         {
@@ -55,11 +55,14 @@ resource "aws_ecs_task_definition" "mlflow" {
         }
       ]
 
-      environment = [
+      secrets = [
         {
-          name  = "MLFLOW_BACKEND_STORE_URI"
-          value = var.mlflow_backend_store_uri
+          name      = "MLFLOW_BACKEND_STORE_URI"
+          valueFrom = var.mlflow_db_secret_arn
         },
+      ]
+
+      environment = [
         {
           name  = "MLFLOW_DEFAULT_ARTIFACT_ROOT"
           value = var.mlflow_artifact_root
@@ -168,13 +171,16 @@ resource "aws_ecs_task_definition" "mlflow_upgrade" {
       name      = "mlflow-upgrade"
       image     = "ghcr.io/mlflow/mlflow:v2.20.3"
       essential = true
-      command   = ["sh", "-c", "pip install -q psycopg2-binary && python3 -c \"import psycopg2; c = psycopg2.connect('${var.mlflow_backend_store_uri}'); c.cursor().execute('DROP TABLE IF EXISTS alembic_version'); c.commit(); c.close()\" && exec mlflow db upgrade ${var.mlflow_backend_store_uri}"]
+      command   = ["sh", "-c", "pip install -q psycopg2-binary && exec mlflow db upgrade \"$MLFLOW_BACKEND_STORE_URI\""]
+
+      secrets = [
+        {
+          name      = "MLFLOW_BACKEND_STORE_URI"
+          valueFrom = var.mlflow_db_secret_arn
+        },
+      ]
 
       environment = [
-        {
-          name  = "MLFLOW_BACKEND_STORE_URI"
-          value = var.mlflow_backend_store_uri
-        },
         {
           name  = "AWS_REGION"
           value = var.aws_region

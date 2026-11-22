@@ -117,3 +117,31 @@ resource "aws_secretsmanager_secret_version" "database_url" {
   secret_id     = aws_secretsmanager_secret.database_url.id
   secret_string = "postgresql+asyncpg://${var.app_name}:${var.db_password}@${aws_db_instance.main.endpoint}/${var.app_name}"
 }
+
+# Plain URL for MLflow and the DAG's asyncpg helpers.
+resource "aws_secretsmanager_secret" "app_db_url" {
+  # checkov:skip=CKV_AWS_149:dev — no KMS CMK; use default encryption
+  # checkov:skip=CKV2_AWS_57:dev — secret rotation not configured; add Lambda in prod
+  name                    = "${var.app_name}-app-db-url-${var.environment}"
+  description             = "StockLens plain PostgreSQL URL for MLflow and ML tasks"
+  recovery_window_in_days = 7
+}
+
+resource "aws_secretsmanager_secret_version" "app_db_url" {
+  secret_id     = aws_secretsmanager_secret.app_db_url.id
+  secret_string = "postgresql://${var.app_name}:${var.db_password}@${aws_db_instance.main.endpoint}/${var.app_name}"
+}
+
+# Airflow metadata URL pins search_path so alembic_version stays out of public.
+resource "aws_secretsmanager_secret" "airflow_db_url" {
+  # checkov:skip=CKV_AWS_149:dev — no KMS CMK; use default encryption
+  # checkov:skip=CKV2_AWS_57:dev — secret rotation not configured; add Lambda in prod
+  name                    = "${var.app_name}-airflow-db-url-${var.environment}"
+  description             = "StockLens Airflow metadata PostgreSQL URL"
+  recovery_window_in_days = 7
+}
+
+resource "aws_secretsmanager_secret_version" "airflow_db_url" {
+  secret_id     = aws_secretsmanager_secret.airflow_db_url.id
+  secret_string = "postgresql+psycopg2://${var.app_name}:${var.db_password}@${aws_db_instance.main.endpoint}/${var.app_name}?options=-csearch_path%3Dairflow"
+}
