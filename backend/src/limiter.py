@@ -23,10 +23,25 @@ asyncio.iscoroutinefunction = inspect.iscoroutinefunction
 from slowapi import Limiter  # noqa: E402
 from slowapi.util import get_remote_address  # noqa: E402
 
+from src.auth.utils import decode_token  # noqa: E402
 from src.config import settings  # noqa: E402
 
+
+def rate_limit_key(request) -> str:
+    """Per-user bucket for authenticated calls; IP for anonymous ones."""
+    header = request.headers.get("authorization", "")
+    if header.startswith("Bearer "):
+        try:
+            payload = decode_token(header.removeprefix("Bearer ").strip())
+            if payload.sub:
+                return f"user:{payload.sub}"
+        except Exception:
+            pass
+    return get_remote_address(request)
+
+
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=rate_limit_key,
     storage_uri=settings.REDIS_URL,
     in_memory_fallback_enabled=True,
 )
