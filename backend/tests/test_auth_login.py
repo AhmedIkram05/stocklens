@@ -167,3 +167,13 @@ def test_register_full_name_is_bounded():
 def test_login_password_is_bounded():
     with pytest.raises(ValidationError):
         LoginRequest(email="user@example.com", password="x" * 129)
+
+
+def test_login_rejects_oversized_password():
+    """The public login schema bounds the body before bcrypt."""
+    from pydantic import ValidationError
+
+    from src.auth.schemas import LoginRequest
+
+    with pytest.raises(ValidationError):
+        LoginRequest(email="a@example.com", password="x" * 129)
