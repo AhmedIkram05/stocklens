@@ -429,3 +429,41 @@ class TestCascadeDecisionDB:
         assert decision.discrepancies is not None
         assert decision.field_confidences is not None
         assert decision.llm_confidence == 0.85
+
+
+# ── Transient failure predicate ─────────────────────────────────────────────
+
+
+class TestIsTransientFailure:
+    """Retries must follow Bedrock error codes, not message substrings."""
+
+    def _err(self, code: str, status: int):
+        from botocore.exceptions import ClientError
+
+        return ClientError(
+            {
+                "Error": {"Code": code, "Message": "x"},
+                "ResponseMetadata": {"HTTPStatusCode": status},
+            },
+            "Converse",
+        )
+
+    def test_throttling_retries(self):
+        from src.receipts.llm_extractor import _is_transient_failure
+
+        assert _is_transient_failure(self._err("ThrottlingException", 400)) is True
+
+    def test_validation_does_not_retry(self):
+        from src.receipts.llm_extractor import _is_transient_failure
+
+        assert _is_transient_failure(self._err("ValidationException", 400)) is False
+
+    def test_5xx_retries(self):
+        from src.receipts.llm_extractor import _is_transient_failure
+
+        assert _is_transient_failure(self._err("InternalServerException", 503)) is True
+
+    def test_timeout_retries(self):
+        from src.receipts.llm_extractor import _is_transient_failure
+
+        assert _is_transient_failure(TimeoutError("read timed out")) is True

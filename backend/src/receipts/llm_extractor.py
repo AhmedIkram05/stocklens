@@ -28,6 +28,7 @@ import json
 import re
 
 import structlog
+from botocore.exceptions import ClientError, ConnectTimeoutError, ReadTimeoutError
 from pydantic import BaseModel, Field
 from tenacity import (
     retry,
@@ -164,20 +165,25 @@ async def extract_with_vision(image_bytes: bytes) -> LLMExtractionResult | None:
 # ── Transient-failure predicate ───────────────────────────────────────────
 
 
-def _is_transient_failure(exc: BaseException) -> bool:
-    """Return ``True`` if the exception is likely transient.
+_TRANSIENT_CODES = {
+    "ThrottlingException",
+    "TooManyRequestsException",
+    "ServiceUnavailableException",
+    "ModelTimeoutException",
+    "InternalServerException",
+}
 
-    Timeouts and 5xx errors from the Bedrock API should be retried.
-    4xx errors (bad request, auth) should not.
-    """
-    msg = str(exc).lower()
-    if "timeout" in msg or "read timed out" in msg:
-        return True
-    if "5" in msg and (
-        "server error" in msg or "internal" in msg or "gateway" in msg or "503" in msg
-    ):
-        return True
-    return False
+
+def _is_transient_failure(exc: BaseException) -> bool:
+    """Return ``True`` only for retryable Bedrock/transport failures."""
+    if isinstance(exc, ClientError):
+        error = exc.response.get("Error", {})
+        status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode", 0)
+        return error.get("Code") in _TRANSIENT_CODES or status >= 500
+    return (
+        isinstance(exc, (TimeoutError, ConnectionError, ConnectTimeoutError, ReadTimeoutError))
+        or "timed out" in str(exc).lower()
+    )
 
 
 # ── Main extraction function ──────────────────────────────────────────────
