@@ -193,6 +193,6 @@ No code branch exists until this file is merged.
 
 The 55-PR ledger above was superseded by area batches. All CRITICAL findings are closed. Batches landed: auth/session, migration truth, currency, performance series, MCP/GraphQL, receipts/OCR, agent tools, frontend money/session, frontend device security, frontend polling/projections/cleanup, ML image/promotion/runtime, and infra secrets/IAM/retention.
 
-Still open: ML-H4 ensemble registration, ML-M8 atomic publish, HPO/memory items, INF-H1 (needs a state migration), INF-M15/M25, BE-L23 (CIMD rebinding), BE-M8 per-socket cap, BE-M23 OCR passes, BE-L37/L39, FE-L49/L52.
+Still open: ML-H4 ensemble registration, ML-M8 atomic publish, HPO/memory items, INF-H1 (needs a state migration), INF-M15/M25, BE-M8 per-socket cap, BE-M23 OCR passes, BE-L37/L39, FE-L49/L52.
 
 Working rule from 2026-11-21: floor of 40 GitHub contributions per day, then stop at the merged PR that crosses it. PRs are area batches with atomic commits.
