@@ -35,7 +35,7 @@ const mockScanResponse = {
 const createHook = () =>
   renderHook(() =>
     useReceiptCapture({
-      navigation: { navigate: jest.fn() },
+      navigation: { navigate: jest.fn() } as any,
       onResetCamera: jest.fn(),
     }),
   );
@@ -47,7 +47,7 @@ describe('useReceiptCapture', () => {
   });
 
   it('shows confirmation prompt and navigates when scan succeeds', async () => {
-    const navigation = { navigate: jest.fn() };
+    const navigation = { navigate: jest.fn() } as any;
     const onResetCamera = jest.fn();
     const { result } = await renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
 
@@ -102,7 +102,7 @@ describe('useReceiptCapture', () => {
   });
 
   it('resets workflow state and camera when onRescan is triggered (L164-165)', async () => {
-    const navigation = { navigate: jest.fn() };
+    const navigation = { navigate: jest.fn() } as any;
     const onResetCamera = jest.fn();
     const { result } = await renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
 
@@ -155,7 +155,7 @@ describe('useReceiptCapture', () => {
   });
 
   it('manual entry via saveAndNavigate creates receipt and navigates', async () => {
-    const navigation = { navigate: jest.fn() };
+    const navigation = { navigate: jest.fn() } as any;
     const onResetCamera = jest.fn();
     const { result } = await renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
 
@@ -179,7 +179,7 @@ describe('useReceiptCapture', () => {
   });
 
   it('shows save error alert when receiptService.create throws (L86)', async () => {
-    const navigation = { navigate: jest.fn() };
+    const navigation = { navigate: jest.fn() } as any;
     const onResetCamera = jest.fn();
     const { result } = await renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
 
@@ -198,7 +198,7 @@ describe('useReceiptCapture', () => {
       raw_text: 'TOTAL: $12.34',
     });
 
-    const navigation = { navigate: jest.fn() };
+    const navigation = { navigate: jest.fn() } as any;
     const onResetCamera = jest.fn();
     const { result } = await renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
 
@@ -222,7 +222,7 @@ describe('useReceiptCapture', () => {
       raw_text: 'TOTAL: €12.34',
     });
 
-    const navigation = { navigate: jest.fn() };
+    const navigation = { navigate: jest.fn() } as any;
     const onResetCamera = jest.fn();
     const { result } = await renderHook(() => useReceiptCapture({ navigation, onResetCamera }));
 
