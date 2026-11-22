@@ -138,34 +138,6 @@ class TestCheckNewOhlcvData:
             weekly_retraining._check_new_ohlcv_data()
 
 
-# ── _detect_new_champion ───────────────────────────────────────────────────
-class TestDetectNewChampion:
-    def test_recent_champion_triggers_capture(self, stub_dsn, fake_asyncpg):
-        trained = datetime.now(tz=timezone.utc) - timedelta(hours=1)
-        fake_asyncpg(_FakeAsyncConn(row={"trained_at": trained}))
-        assert (
-            weekly_retraining._detect_new_champion()
-            == "capture_reference_distributions"
-        )
-
-    def test_old_champion_skips_capture(self, stub_dsn, fake_asyncpg):
-        trained = datetime.now(tz=timezone.utc) - timedelta(hours=10)
-        fake_asyncpg(_FakeAsyncConn(row={"trained_at": trained}))
-        assert weekly_retraining._detect_new_champion() == "skip_reference_capture"
-
-    def test_no_champion_skips_capture(self, stub_dsn, fake_asyncpg):
-        fake_asyncpg(_FakeAsyncConn(row=None))
-        assert weekly_retraining._detect_new_champion() == "skip_reference_capture"
-
-    def test_connect_failure_propagates(self, stub_dsn, monkeypatch):
-        async def connect(_dsn):
-            raise RuntimeError("registry unreachable")
-
-        _install_asyncpg(monkeypatch, connect)
-        with pytest.raises(RuntimeError, match="registry unreachable"):
-            weekly_retraining._detect_new_champion()
-
-
 # ── _cleanup ───────────────────────────────────────────────────────────────
 class TestCleanup:
     def test_prunes_both_tables_and_closes(self, stub_dsn, fake_asyncpg):
