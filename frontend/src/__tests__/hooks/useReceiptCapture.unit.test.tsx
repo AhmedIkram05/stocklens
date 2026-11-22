@@ -20,7 +20,7 @@ const mockedEmit = jest.mocked(emit);
 const mockedShowConfirmationPrompt = jest.mocked(showConfirmationPrompt);
 
 describe('useReceiptCapture', () => {
-  const navigationMock = { navigate: jest.fn() };
+  const navigationMock = { navigate: jest.fn() } as any;
   const onResetCameraMock = jest.fn();
 
   beforeEach(() => {

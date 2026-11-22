@@ -6,6 +6,9 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
+import type { StackNavigationProp } from '@react-navigation/stack';
+import type { RootStackParamList } from '@/navigation/types';
+import type { SourceBadgeKey } from '@/components/ReceiptCard';
 import { Alert } from 'react-native';
 import { receiptService, type ScanResponse } from '@/services/receipts';
 import { emit } from '@/services/eventBus';
@@ -20,7 +23,7 @@ export type PendingReceiptState = {
 
 /** Options required by useReceiptCapture (navigation and callbacks). */
 type UseReceiptCaptureOptions = {
-  navigation: any;
+  navigation: StackNavigationProp<RootStackParamList>;
   onResetCamera?: () => void;
 };
 
@@ -86,7 +89,7 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
             emit('receipts-changed', { id: receiptId });
           } catch (e) {}
           resetWorkflowState();
-          navigation.navigate('ReceiptDetails' as any, {
+          navigation.navigate('ReceiptDetails', {
             receiptId,
             totalAmount: amount,
             date: new Date().toISOString(),
@@ -164,14 +167,14 @@ export const useReceiptCapture = ({ navigation, onResetCamera }: UseReceiptCaptu
           onConfirm: async () => {
             emit('receipts-changed', { id: result.id });
             resetWorkflowState();
-            navigation.navigate('ReceiptDetails' as any, {
+            navigation.navigate('ReceiptDetails', {
               receiptId: result.id,
               totalAmount: amount ?? 0,
               merchantName: merchant ?? undefined,
               date: extractedDate ?? new Date().toISOString(),
               lineItems: items,
               image: photoUri ?? undefined,
-              source: result.source,
+              source: result.source as SourceBadgeKey,
               confidence: result.confidence,
               processingTimeMs: result.processing_time_ms,
             });
