@@ -394,7 +394,6 @@ with DAG(
                 {
                     "name": "ml-training",
                     "environment": [
-                        {"name": "DATABASE_URL", "value": v("database_url")},
                         {
                             "name": "MLFLOW_TRACKING_URI",
                             "value": v("mlflow_tracking_uri"),

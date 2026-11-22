@@ -183,10 +183,6 @@ locals {
         valueFrom = var.app_db_secret_arn
       },
       {
-        name      = "AIRFLOW_VAR_DATABASE_URL"
-        valueFrom = var.app_db_secret_arn
-      },
-      {
         name      = "AIRFLOW_CONN_POSTGRES_DEFAULT"
         valueFrom = var.app_db_secret_arn
       },
