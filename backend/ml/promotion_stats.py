@@ -27,7 +27,11 @@ ALPHA = 0.05
 
 
 def mcnemar_exact(b: int, c: int) -> dict:
-    """Two-sided exact McNemar test on discordant pairs. Stdlib only.
+    """Two-sided McNemar test on discordant pairs. Stdlib only.
+
+    Exact enumeration below 1000 discordant pairs; continuity-corrected
+    normal approximation above (thousands of big-int combinations make the
+    exact tail O(n) and very slow at production scale).
 
     With b = count(model A wrong, model B right) and c = count(A right,
     B wrong), under H0 (equal accuracy) b ~ Binomial(b+c, 0.5). The exact
