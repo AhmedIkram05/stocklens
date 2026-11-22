@@ -32,12 +32,13 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import http.client
 import ipaddress
 import secrets
 import socket
+import ssl
 import time
 import urllib.parse
-import urllib.request
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -455,22 +456,6 @@ _CIMD_MAX_BYTES = 256 * 1024  # response size cap — hostile hosts must not OOM
 _CIMD_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
-class _RefuseRedirectsHandler(urllib.request.HTTPRedirectHandler):
-    """Refuse redirects on CIMD fetches.
-
-    The SSRF guard validates only the initial host — following a redirect
-    would let an approved public host 302 the fetch to link-local metadata
-    services or internal endpoints. Refusing turns every 3xx into an
-    HTTPError, which the fetch treats as a failed lookup.
-    """
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
-
-
-_CIMD_OPENER = urllib.request.build_opener(_RefuseRedirectsHandler())
-
-
 def _is_cimd_client_id(client_id: str) -> bool:
     """URL-formatted client_id is the CIMD registration signal."""
     return client_id.startswith("https://")
@@ -528,28 +513,17 @@ def _is_first_party_redirect(uri: str) -> bool:
     return _first_party_redirect_target(uri) is not None
 
 
-def _cimd_host_blocked(host: str) -> bool:
-    """SSRF guard — refuse to fetch documents from non-public hosts.
-
-    ponytail: resolves for a check, then fetches by name — a DNS-rebind TOCTOU
-    remains. Harden with pinned-IP http.client connect if CIMD ever serves
-    untrusted third-party clients.
-    """
+def _resolve_public_ip(host: str) -> str | None:
+    """Resolve *host* to one public IP, or None if any resolved address is unsafe."""
     if host in {"", "localhost"} or host.endswith(".local"):
-        return True
+        return None
     try:
-        ip = ipaddress.ip_address(host)  # literal IP
-    except ValueError:
-        try:
-            infos = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
-        except OSError:
-            return True  # unresolvable → treat as blocked
-        addrs = {info[4][0] for info in infos}
-    else:
-        addrs = {host}
-
-    for addr in addrs:
-        ip = ipaddress.ip_address(addr)
+        infos = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+    except OSError:
+        return None
+    public: list[str] = []
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
         if (
             ip.is_private
             or ip.is_loopback
@@ -558,8 +532,26 @@ def _cimd_host_blocked(host: str) -> bool:
             or ip.is_unspecified
             or ip.is_multicast
         ):
-            return True
-    return False
+            return None
+        public.append(str(ip))
+    return public[0] if public else None
+
+
+def _cimd_host_blocked(host: str) -> bool:
+    """SSRF guard — refuse non-public hosts."""
+    return _resolve_public_ip(host) is None
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """Connect to a pinned IP while validating the certificate for *host*."""
+
+    def __init__(self, host: str, ip: str, *, timeout: float, context: ssl.SSLContext) -> None:
+        super().__init__(host, 443, timeout=timeout, context=context)
+        self._ip = ip
+
+    def connect(self) -> None:
+        sock = socket.create_connection((self._ip, self.port), self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
 
 
 def _fetch_cimd_document(client_id: str) -> dict[str, Any] | None:
@@ -571,19 +563,29 @@ def _fetch_cimd_document(client_id: str) -> dict[str, Any] | None:
     if cached and now - cached[0] < _CIMD_TTL:
         return cached[1]
 
-    host = urllib.parse.urlsplit(client_id).hostname or ""
-    if _cimd_host_blocked(host):
+    parts = urllib.parse.urlsplit(client_id)
+    host = parts.hostname or ""
+    ip = _resolve_public_ip(host)
+    if ip is None:
         logger.warning("cimd_ssrf_blocked", client_id=client_id)
         return None
+    path = parts.path or "/"
+    if parts.query:
+        path += "?" + parts.query
+    conn = _PinnedHTTPSConnection(host, ip, timeout=5, context=ssl.create_default_context())
     try:
-        req = urllib.request.Request(
-            client_id,
+        conn.request(
+            "GET",
+            path,
             headers={"Accept": "application/json", "User-Agent": "stocklens-mcp/0.1.0"},
         )
-        with _CIMD_OPENER.open(req, timeout=5) as resp:
-            # Stream-read with a hard cap so a hostile host streaming
-            # gigabytes cannot pin the to_thread worker or exhaust memory.
-            raw = resp.read(_CIMD_MAX_BYTES + 1)
+        resp = conn.getresponse()
+        # Stream-read with a hard cap so a hostile host streaming
+        # gigabytes cannot pin the to_thread worker or exhaust memory.
+        raw = resp.read(_CIMD_MAX_BYTES + 1)
+        if not 200 <= resp.status < 300:
+            logger.warning("cimd_http_error", client_id=client_id, status=resp.status)
+            return None
         if len(raw) > _CIMD_MAX_BYTES:
             logger.warning("cimd_document_too_large", client_id=client_id)
             return None
@@ -591,6 +593,8 @@ def _fetch_cimd_document(client_id: str) -> dict[str, Any] | None:
     except Exception as exc:
         logger.warning("cimd_fetch_failed", client_id=client_id, reason=str(exc))
         return None
+    finally:
+        conn.close()
 
     if not isinstance(doc, dict) or not isinstance(doc.get("redirect_uris"), list):
         return None
