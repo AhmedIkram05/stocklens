@@ -40,6 +40,15 @@ def mcnemar_exact(b: int, c: int) -> dict:
     n = b + c
     if n == 0:
         return {"statistic_b": b, "statistic_c": c, "p_value": 1.0}
+    if n > 1000:
+        # Exact enumeration is thousands of big-int combinations at production
+        # scale; the continuity-corrected normal approximation is accurate here.
+        z = (abs(b - c) - 1) / math.sqrt(n)
+        return {
+            "statistic_b": b,
+            "statistic_c": c,
+            "p_value": min(1.0, math.erfc(z / math.sqrt(2))),
+        }
     k = min(b, c)
     tail = sum(math.comb(n, i) for i in range(k + 1)) / (2**n)
     return {"statistic_b": b, "statistic_c": c, "p_value": min(1.0, 2.0 * tail)}
