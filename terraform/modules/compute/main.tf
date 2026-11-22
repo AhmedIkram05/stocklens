@@ -614,6 +614,16 @@ resource "aws_efs_file_system" "model_artifacts" {
   }
 }
 
+resource "aws_security_group_rule" "efs_nfs_ingress" {
+  type              = "ingress"
+  description       = "EFS NFS from ECS tasks"
+  from_port         = 2049
+  to_port           = 2049
+  protocol          = "tcp"
+  security_group_id = var.ecs_tasks_sg_id
+  self              = true
+}
+
 resource "aws_efs_mount_target" "model_artifacts" {
   count = length(var.private_subnet_ids)
 
