@@ -32,7 +32,7 @@
     "expo-local-authentication": "^17.0.9",
     "expo-secure-store": "~15.0.7",
     "expo-status-bar": "~3.0.8",
-    "graphql-ws": "^6.4.2",
+    "graphql-ws": "^6.4.3",
     "node-forge": "^1.4.3",
     "react": "19.1.0",
     "react-native": "0.81.5",
