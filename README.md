@@ -311,7 +311,7 @@ Evidence after verification: `docs/mcp.md`, `docs/mcp-evidence/inspector.log`, `
 
 ```bash
 cd terraform
-terraform init && terraform plan && terraform apply
+terraform init && terraform plan -var-file=dev.tfvars.json && terraform apply
 # or: push to main → GitHub Actions OIDC → 8-job, 5-stage deploy (no AWS keys in GitHub)
 ```
 
