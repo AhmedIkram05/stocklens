@@ -9,6 +9,10 @@
 # the numpy crate loads numpy's C API capsule at runtime, so `cargo test`
 # fails with "Failed to access NumPy array API capsule" otherwise.
 FE_PYTHON ?= python3
+REPO_ROOT := $(CURDIR)
+BACKEND_DIR := $(REPO_ROOT)/backend
+ML_PYTHON ?= /tmp/ml_venv/bin/python
+DATABASE_URL ?= postgresql+asyncpg://stocklens:stocklens@localhost:5432/stocklens
 
 rust-test: ## Run the features-engine Rust test suite (needs numpy in $(FE_PYTHON))
 	@$(FE_PYTHON) -c 'import numpy' 2>/dev/null || \
@@ -49,12 +53,13 @@ backend-ml: ## Ensure postgres + mlflow are running (required for train/seed)
 	docker compose up -d postgres mlflow
 
 train: backend-ml ## Train LSTM model on macOS MPS GPU (host venv, ~19s/epoch, 55 tickers)
-	PYTHONPATH=/Users/ahmedikram/GitHub\ Repos/stocklens/backend \
-	DATABASE_URL=postgresql+asyncpg://stocklens:stocklens@localhost:5432/stocklens \
+	PYTHONPATH=$(BACKEND_DIR) \
+	DATABASE_URL=$(DATABASE_URL) \
+	TRAINING_TICKERS="$(TRAINING_TICKERS)" \
 	MLFLOW_TRACKING_URI=http://localhost:5001 \
 	MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING=true \
 	MODEL_ARTIFACT_DIR=/tmp/model_artifacts/champion \
-	/tmp/ml_venv/bin/python -m ml.pipeline
+	$(ML_PYTHON) -m ml.pipeline
 	@echo "=== Deploying model to Docker volume ==="
 	docker compose cp /tmp/model_artifacts/champion/model.pt backend:/model_artifacts/champion/model.pt
 	docker compose exec -u root backend chown appuser:appuser /model_artifacts/champion/model.pt
@@ -62,22 +67,22 @@ train: backend-ml ## Train LSTM model on macOS MPS GPU (host venv, ~19s/epoch, 5
 	@echo "=== Model trained and deployed ==="
 
 hpo: backend-ml ## Run Optuna HPO Phase 1 on macOS MPS GPU (host /tmp/ml_venv)
-	PYTHONPATH=/Users/ahmedikram/GitHub\ Repos/stocklens/backend \
-	DATABASE_URL=postgresql+asyncpg://stocklens:stocklens@localhost:5432/stocklens \
+	PYTHONPATH=$(BACKEND_DIR) \
+	DATABASE_URL=$(DATABASE_URL) \
 	MLFLOW_TRACKING_URI=http://localhost:5001 \
 	MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING=true \
-	/tmp/ml_venv/bin/python -m ml.hpo
+	$(ML_PYTHON) -m ml.hpo
 
 hpo-phase2: backend-ml ## Sweep threshold_mult using Phase 1 best HPs on macOS MPS GPU
-	PYTHONPATH=/Users/ahmedikram/GitHub\ Repos/stocklens/backend \
-	DATABASE_URL=postgresql+asyncpg://stocklens:stocklens@localhost:5432/stocklens \
+	PYTHONPATH=$(BACKEND_DIR) \
+	DATABASE_URL=$(DATABASE_URL) \
 	MLFLOW_TRACKING_URI=http://localhost:5001 \
 	MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING=true \
-	/tmp/ml_venv/bin/python -m ml.hpo --phase 2
+	$(ML_PYTHON) -m ml.hpo --phase 2
 
 train-all: backend-ml ## Train on full S&P 500 (~7min/epoch, hours total)
 	$(MAKE) train TRAINING_TICKERS="$$(python3 -c "from ml.config import _ALL_SP500; print(','.join(_ALL_SP500))")"
 
 seed: backend-ml ## Seed OHLCV data from host (raw Yahoo v8 chart API; backend/scripts/seed_ohlcv.py)
-	PYTHONPATH=/Users/ahmedikram/GitHub\ Repos/stocklens/backend \
-	/Users/ahmedikram/GitHub\ Repos/stocklens/backend/.venv/bin/python backend/scripts/seed_ohlcv.py
+	PYTHONPATH=$(BACKEND_DIR) \
+	$(BACKEND_DIR)/.venv/bin/python $(BACKEND_DIR)/scripts/seed_ohlcv.py
