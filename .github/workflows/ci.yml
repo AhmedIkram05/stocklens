@@ -314,20 +314,21 @@ jobs:
         uses: bridgecrewio/checkov-action@v12.3142.0
         with:
           directory: terraform/
-      - name: tfsec
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set +e
-          curl -sSL -o /tmp/tfsec \
-            https://github.com/aquasecurity/tfsec/releases/download/v1.28.14/tfsec-linux-amd64
-          chmod +x /tmp/tfsec
-          /tmp/tfsec terraform/ \
-            --soft-fail \
-            -e aws-elb-http-not-used,aws-ecs-no-plaintext-secrets,aws-ec2-no-public-egress-sgr,aws-ec2-no-public-ingress-sgr,aws-elb-alb-not-public,aws-iam-no-policy-wildcards,aws-ecr-enforce-immutable-repository,aws-s3-enable-bucket-encryption,aws-s3-encryption-customer-key,aws-sns-topic-encryption-use-cmk,aws-ec2-no-public-ip-subnet,aws-s3-enable-bucket-logging,aws-s3-enable-versioning,aws-rds-specify-backup-retention,aws-ec2-require-vpc-flow-logs-for-all-vpcs,aws-cloudwatch-log-group-customer-key,aws-ecr-repository-customer-key,aws-rds-enable-performance-insights,aws-ssm-secret-use-customer-key
+      - name: Trivy IaC scan
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          scan-type: config
+          scan-ref: terraform/
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          ignore-unfixed: true
       - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: '1.15'
+      - name: Terraform validate
+        run: |
+          terraform -chdir=terraform init -backend=false -input=false
+          terraform -chdir=terraform validate
       - name: Terraform fmt check
         run: |
           terraform fmt -check -diff -recursive terraform/
