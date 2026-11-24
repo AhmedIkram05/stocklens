@@ -570,46 +570,6 @@ class TestCashFlowCreate:
             CashFlowCreate(amount=Decimal("-50"))
 
 
-class TestCashFlowInDB:
-    def test_construction(self):
-        from uuid import UUID
-
-        from src.cash_flows.schemas import CashFlowInDB
-
-        now = datetime.now(timezone.utc)
-        pid = UUID(int=1)
-        cid = UUID(int=2)
-        obj = CashFlowInDB(
-            id=cid,
-            portfolio_id=pid,
-            amount=Decimal("250.00"),
-            source="manual",
-            created_at=now,
-        )
-        assert obj.amount == Decimal("250.00")
-        assert obj.source == "manual"
-        assert obj.notes is None
-
-    def test_with_all_fields(self):
-        from uuid import UUID
-
-        from src.cash_flows.schemas import CashFlowInDB
-
-        now = datetime.now(timezone.utc)
-        sid = UUID(int=3)
-        obj = CashFlowInDB(
-            id=UUID(int=1),
-            portfolio_id=UUID(int=2),
-            amount=Decimal("100.00"),
-            source="receipt",
-            source_id=sid,
-            notes="Tesco refund",
-            created_at=now,
-        )
-        assert obj.source_id == sid
-        assert obj.notes == "Tesco refund"
-
-
 # ── Performance schemas ──────────────────────────────────────────────────
 
 

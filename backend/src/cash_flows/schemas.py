@@ -34,20 +34,6 @@ class CashFlowUpdate(BaseModel):
     notes: Optional[str] = None
 
 
-class CashFlowInDB(BaseModel):
-    """Full cash flow record as stored in the database."""
-
-    model_config = {"from_attributes": True}
-
-    id: UUID
-    portfolio_id: UUID
-    amount: DecimalAsFloat
-    source: str
-    source_id: Optional[UUID] = None
-    notes: Optional[str] = None
-    created_at: datetime
-
-
 class CashFlowResponse(BaseModel):
     """API response for a single cash flow."""
 
