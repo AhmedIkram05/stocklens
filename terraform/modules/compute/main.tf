@@ -208,10 +208,6 @@ resource "aws_autoscaling_group" "ml_training_gpu" {
     propagate_at_launch = true
   }
 
-  lifecycle {
-    # Scale in only when no running tasks — handled by ECS managed scaling
-    # ponytail: start at 0 capacity, let managed scaling handle it
-  }
 }
 
 # Attach GPU capacity provider to the ECS cluster
