@@ -248,36 +248,6 @@ class TestChatRequest:
             ChatRequest(message="x" * 8001)
 
 
-class TestMessageResponse:
-    def test_minimal(self):
-        from src.agent.schemas import MessageResponse
-
-        now = datetime.now(timezone.utc)
-        obj = MessageResponse(
-            role="assistant",
-            content="Hello",
-            tools_used=None,
-            reasoning_steps=None,
-            created_at=now,
-        )
-        assert obj.tools_used is None
-        assert obj.reasoning_steps is None
-
-    def test_with_tools(self):
-        from src.agent.schemas import MessageResponse
-
-        now = datetime.now(timezone.utc)
-        obj = MessageResponse(
-            role="assistant",
-            content="Let me check",
-            tools_used={"get_stock_price": {"ticker": "AAPL"}},
-            reasoning_steps=None,
-            created_at=now,
-        )
-        assert obj.tools_used is not None
-        assert "get_stock_price" in obj.tools_used
-
-
 class TestAgentFeedbackRequest:
     def test_minimal(self):
         from src.agent.schemas import AgentFeedbackRequest

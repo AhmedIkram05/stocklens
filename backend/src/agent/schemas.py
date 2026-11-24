@@ -7,7 +7,6 @@ and conversation history CRUD.
 
 from __future__ import annotations
 
-from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -18,16 +17,6 @@ class ChatRequest(BaseModel):
 
     message: str = Field(..., min_length=1, max_length=8000)
     conversation_id: UUID | None = None  # None = new conversation
-
-
-class MessageResponse(BaseModel):
-    """A single message in a conversation."""
-
-    role: str
-    content: str
-    tools_used: dict | None
-    reasoning_steps: dict | None
-    created_at: datetime
 
 
 class AgentFeedbackRequest(BaseModel):
