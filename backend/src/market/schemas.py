@@ -46,11 +46,6 @@ class QuoteResponse(BaseModel):
     exchange: Optional[str] = None
 
 
-class BatchQuoteResponse(BaseModel):
-    quotes: list[QuoteResponse]
-    total: int
-
-
 # ── Query parameters ──
 
 
