@@ -248,15 +248,6 @@ class TestChatRequest:
             ChatRequest(message="x" * 8001)
 
 
-class TestToolCallEvent:
-    def test_construction(self):
-        from src.agent.schemas import ToolCallEvent
-
-        obj = ToolCallEvent(tool_name="get_stock_price", input={"ticker": "AAPL"})
-        assert obj.tool_name == "get_stock_price"
-        assert obj.input == {"ticker": "AAPL"}
-
-
 class TestToolResultEvent:
     def test_success(self):
         from src.agent.schemas import ToolResultEvent

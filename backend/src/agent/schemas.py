@@ -20,13 +20,6 @@ class ChatRequest(BaseModel):
     conversation_id: UUID | None = None  # None = new conversation
 
 
-class ToolCallEvent(BaseModel):
-    """Emitted when a tool starts executing."""
-
-    tool_name: str
-    input: dict
-
-
 class ToolResultEvent(BaseModel):
     """Emitted when a tool completes execution."""
 
