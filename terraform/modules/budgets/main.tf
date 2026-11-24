@@ -26,6 +26,13 @@ resource "aws_budgets_budget" "monthly" {
     notification_type         = "FORECASTED"
     subscriber_sns_topic_arns = var.budget_sns_arns
   }
+
+  lifecycle {
+    precondition {
+      condition     = var.environment != "production" || length(var.budget_sns_arns) > 0
+      error_message = "Production budgets need at least one SNS subscriber, or alerts reach nobody."
+    }
+  }
 }
 
 # ponytail: skip cost anomaly for dev — re-enable when monitoring costs matter.
