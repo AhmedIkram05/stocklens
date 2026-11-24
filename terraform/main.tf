@@ -92,7 +92,6 @@ module "s3" {
 
 module "database" {
   source             = "./modules/database"
-  vpc_id             = local.vpc_id
   private_subnet_ids = local.private_subnet_ids
   rds_sg_id          = module.network.rds_sg_id
   db_password        = module.secrets.db_password_value
@@ -107,7 +106,6 @@ module "database" {
 
 module "cache" {
   source             = "./modules/cache"
-  vpc_id             = local.vpc_id
   private_subnet_ids = local.private_subnet_ids
   redis_sg_id        = module.network.redis_sg_id
   redis_pass         = module.secrets.redis_pass_value
@@ -215,18 +213,16 @@ module "airflow" {
   ml_training_image         = var.ml_training_image
   efs_filesystem_id         = local.efs_filesystem_id
   ecs_cluster_name          = module.compute.ecs_cluster_name
-  database_url              = local.database_url
   jwt_secret_arn            = module.secrets.jwt_secret_arn
 }
 
 # ── WAF ──────────────────────────────────────────────────────────────
 
 module "waf" {
-  source            = "./modules/waf"
-  env               = var.environment
-  alb_arn           = module.compute.alb_arn
-  rate_limit        = var.environment == "production" ? 2000 : 5000
-  rate_limit_action = "block"
+  source     = "./modules/waf"
+  env        = var.environment
+  alb_arn    = module.compute.alb_arn
+  rate_limit = var.environment == "production" ? 2000 : 5000
 }
 
 # ── Monitoring ───────────────────────────────────────────────────────

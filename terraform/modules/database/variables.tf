@@ -1,8 +1,3 @@
-variable "vpc_id" {
-  description = "VPC ID (unused directly but anchors the module)"
-  type        = string
-}
-
 variable "private_subnet_ids" {
   description = "List of private subnet IDs for the DB subnet group"
   type        = list(string)

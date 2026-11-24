@@ -18,16 +18,10 @@ locals {
   champion_bucket     = try(regex("^s3://([^/]+)", var.champion_s3_uri)[0], "")
   champion_prefix     = try(regex("^s3://[^/]+/(.*)", var.champion_s3_uri)[0], "")
   champion_bucket_arn = local.champion_bucket != "" ? "arn:aws:s3:::${local.champion_bucket}" : ""
-  champion_prefix_arn = local.champion_bucket_arn != "" ? "${local.champion_bucket_arn}/${local.champion_prefix}*" : ""
 
   mlflow_artifact_root = "s3://${module.s3.mlflow_artifacts_bucket_name}/mlflow/"
 
   # EFS filesystem for model artifacts and MLflow data (created in compute module)
   efs_filesystem_id = module.compute.efs_filesystem_id
 
-  # Database URL for asyncpg (used by ML training task)
-  database_url = "postgresql://${module.database.db_username}:${module.secrets.db_password_value}@${module.database.db_address}:5432/${module.database.db_name}"
-
-  # Private subnet IDs as JSON string for Airflow variable
-  private_subnet_ids_json = jsonencode(local.private_subnet_ids)
 }
