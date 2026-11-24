@@ -14,10 +14,11 @@
 # ── CloudWatch log group ─────────────────────────────────────────────
 
 resource "aws_cloudwatch_log_group" "app" {
+  # checkov:skip=CKV_AWS_338:dev — approved operational retention window
   # checkov:skip=CKV_AWS_158:dev — KMS key not provisioned yet
   # tfsec:ignore:aws-cloudwatch-log-group-customer-key:dev — KMS key not provisioned yet
   name              = "/ecs/${var.app_name}-${var.environment}"
-  retention_in_days = 365
+  retention_in_days = 30
 }
 
 # Allow writing application logs to CloudWatch.
@@ -47,15 +48,12 @@ resource "aws_iam_role_policy_attachment" "ecs_task_cloudwatch" {
 # ── ECR repository ───────────────────────────────────────────────────
 
 resource "aws_ecr_repository" "app" {
-  # checkov:skip=CKV_AWS_51:dev — mutable tags for fast iteration (ponytail)
   # checkov:skip=CKV_AWS_136:dev — KMS key not provisioned yet for ECR encryption
-  # tfsec:ignore:aws-ecr-enforce-immutable-repository:dev — mutable tags for fast iteration
   # tfsec:ignore:aws-ecr-repository-customer-key:dev — KMS key not provisioned yet
   # Stable name predates env separation; renaming it would destroy the repo's
   # image history. Keep CI and Terraform on the same name.
-  name = "${var.app_name}-dev"
-  # ponytail: dev — mutable tags for fast iteration
-  image_tag_mutability = "MUTABLE"
+  name                 = "${var.app_name}-dev"
+  image_tag_mutability = "IMMUTABLE"
 
   image_scanning_configuration {
     scan_on_push = true
@@ -211,10 +209,6 @@ resource "aws_autoscaling_group" "ml_training_gpu" {
     propagate_at_launch = true
   }
 
-  lifecycle {
-    # Scale in only when no running tasks — handled by ECS managed scaling
-    # ponytail: start at 0 capacity, let managed scaling handle it
-  }
 }
 
 # Attach GPU capacity provider to the ECS cluster

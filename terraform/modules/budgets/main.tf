@@ -26,17 +26,11 @@ resource "aws_budgets_budget" "monthly" {
     notification_type         = "FORECASTED"
     subscriber_sns_topic_arns = var.budget_sns_arns
   }
-}
 
-# ponytail: skip cost anomaly for dev — re-enable when monitoring costs matter.
-# resource "aws_ce_anomaly_monitor" "main" {
-#   name         = "${var.environment}-stocklens-anomaly"
-#   monitor_type = "CUSTOM"
-#   monitor_specification = jsonencode({ MonitorType = "CUSTOM" })
-# }
-# resource "aws_ce_anomaly_subscription" "main" {
-#   name = "${var.environment}-stocklens-anomaly-sub"
-#   frequency = "IMMEDIATE"
-#   monitor_arn_list = [aws_ce_anomaly_monitor.main.arn]
-#   subscriber { type = "SNS" address = var.budget_sns_arn }
-# }
+  lifecycle {
+    precondition {
+      condition     = var.environment != "production" || length(var.budget_sns_arns) > 0
+      error_message = "Production budgets need at least one SNS subscriber, or alerts reach nobody."
+    }
+  }
+}

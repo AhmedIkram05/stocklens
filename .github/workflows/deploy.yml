@@ -117,7 +117,6 @@ jobs:
             wheel-source=${{ github.workspace }}/wheels
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -161,7 +160,6 @@ jobs:
             wheel-source=${{ github.workspace }}/wheels
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:airflow-${{ github.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:airflow-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -201,7 +199,6 @@ jobs:
           push: true
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:ml-training-${{ github.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:ml-training-latest
           cache-from: type=gha
           cache-to: type=gha,mode=min
 
@@ -241,7 +238,6 @@ jobs:
             BASE_IMAGE=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:sagemaker-${{ github.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:sagemaker-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -343,6 +339,7 @@ jobs:
           # group (terraform-${{ github.ref }}) prevents parallel applies.
           # Exit code 2 = changes detected (not a failure in CI context).
           terraform plan -lock=false \
+            -var-file=dev.tfvars.json \
             -var="container_image=${IMAGE_TAG}" \
             -var="airflow_image=${AIRFLOW_IMAGE_TAG}" \
             -var="ml_training_image=${ML_TRAINING_IMAGE_TAG}" \

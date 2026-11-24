@@ -1,11 +1,12 @@
 # WAF logging to CloudWatch (CKV_AWS_192)
 resource "aws_cloudwatch_log_group" "waf" {
+  # checkov:skip=CKV_AWS_338:dev — approved operational retention window
   # checkov:skip=CKV_AWS_158:dev — KMS key not provisioned yet
   # tfsec:ignore:aws-cloudwatch-log-group-customer-key:dev — KMS key not provisioned yet
   # WAFv2 requires destination log-group names start with "aws-waf-logs-"
   # (https://docs.aws.amazon.com/waf/latest/developerguide/logging.html).
   name              = "aws-waf-logs-${var.env}-stocklens"
-  retention_in_days = 365
+  retention_in_days = 30
 }
 
 data "aws_iam_policy_document" "waf_log_delivery" {

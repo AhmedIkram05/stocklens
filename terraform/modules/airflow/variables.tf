@@ -105,12 +105,6 @@ variable "ecs_cluster_name" {
   default     = ""
 }
 
-variable "database_url" {
-  description = "Database URL for ML training container"
-  type        = string
-  default     = ""
-}
-
 variable "jwt_secret_arn" {
   description = "ARN of the JWT secret in Secrets Manager — needed for alembic env.py which imports src.config.Settings"
   type        = string

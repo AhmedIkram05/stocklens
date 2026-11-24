@@ -1,6 +1,6 @@
 # Airflow container for StockLens weekly retraining DAG.
-# Uses Python 3.12 (Airflow requires <3.14) with ML deps installed directly.
-# Backend source is mounted at runtime so PythonOperator can import
+# Uses Python 3.15 with ML deps installed directly.
+# Backend source is copied into the image so PythonOperator can import
 # ml.pipeline, drift modules, etc. — no Docker-in-Docker.
 # Multi-stage: rust-builder compiles features_engine (PyO3), final installs wheel.
 

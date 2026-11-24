@@ -24,12 +24,6 @@ variable "alb_name_suffix" {
   description = "ALB name suffix for alarm dimensions (e.g. stocklens-alb-dev)"
 }
 
-variable "alb_arn_suffix" {
-  type        = string
-  description = "ALB ARN suffix for target group dimension"
-  default     = ""
-}
-
 # RDS inputs for RDS-specific alarms
 variable "rds_instance_id" {
   type        = string

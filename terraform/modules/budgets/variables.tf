@@ -14,9 +14,3 @@ variable "budget_sns_arns" {
   type        = list(string)
   default     = []
 }
-
-variable "budget_sns_arn" {
-  description = "Single SNS topic ARN for cost anomaly alerts"
-  type        = string
-  default     = ""
-}

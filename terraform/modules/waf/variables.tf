@@ -13,9 +13,3 @@ variable "rate_limit" {
   description = "Max requests per 5-minute window per IP"
   default     = 2000
 }
-
-variable "rate_limit_action" {
-  type        = string
-  description = "Action when rate limit is exceeded: 'block' or 'count'"
-  default     = "block"
-}

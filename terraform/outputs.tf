@@ -120,7 +120,7 @@ output "budget_name" {
 
 output "mlflow_artifacts_bucket_versioning" {
   description = "Versioning status on mlflow-artifacts bucket"
-  value       = "Enabled"
+  value       = module.s3.mlflow_artifacts_versioning
 }
 
 output "mlflow_service_name" {

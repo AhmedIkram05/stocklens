@@ -7,7 +7,7 @@ set -euo pipefail
 AWS_ACCOUNT="327936092014"
 AWS_REGION="eu-west-2"
 REPO_NAME="stocklens-dev"
-TAG="${1:-ml-training-latest}"
+TAG="${1:-ml-training-$(git rev-parse --short HEAD)}"
 IMAGE_URI="${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/${REPO_NAME}:${TAG}"
 
 echo "=== Logging into ECR ==="
