@@ -47,15 +47,12 @@ resource "aws_iam_role_policy_attachment" "ecs_task_cloudwatch" {
 # ── ECR repository ───────────────────────────────────────────────────
 
 resource "aws_ecr_repository" "app" {
-  # checkov:skip=CKV_AWS_51:dev — mutable tags for fast iteration (ponytail)
   # checkov:skip=CKV_AWS_136:dev — KMS key not provisioned yet for ECR encryption
-  # tfsec:ignore:aws-ecr-enforce-immutable-repository:dev — mutable tags for fast iteration
   # tfsec:ignore:aws-ecr-repository-customer-key:dev — KMS key not provisioned yet
   # Stable name predates env separation; renaming it would destroy the repo's
   # image history. Keep CI and Terraform on the same name.
-  name = "${var.app_name}-dev"
-  # ponytail: dev — mutable tags for fast iteration
-  image_tag_mutability = "MUTABLE"
+  name                 = "${var.app_name}-dev"
+  image_tag_mutability = "IMMUTABLE"
 
   image_scanning_configuration {
     scan_on_push = true
