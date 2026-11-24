@@ -36,7 +36,7 @@ resource "aws_cloudwatch_log_group" "airflow" {
   # checkov:skip=CKV_AWS_158:dev — KMS key not provisioned yet
   # tfsec:ignore:aws-cloudwatch-log-group-encrypted:dev — KMS key not provisioned yet
   name              = "/ecs/${local.family}"
-  retention_in_days = 365
+  retention_in_days = 90
 }
 
 # ── Shared container definition (webserver + scheduler) ──────────────
