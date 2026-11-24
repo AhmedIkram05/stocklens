@@ -260,7 +260,6 @@ module "budgets" {
   environment          = var.environment
   budget_monthly_limit = var.budget_monthly_limit
   budget_sns_arns      = [module.monitoring.sns_topic_arn]
-  budget_sns_arn       = module.monitoring.sns_topic_arn
 }
 
 # ── R6: SageMaker InvokeEndpoint permission ───────────────────────────
