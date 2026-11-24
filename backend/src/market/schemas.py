@@ -44,6 +44,3 @@ class QuoteResponse(BaseModel):
     # Market currency / exchange — native to the instrument (base currency is GBP).
     currency: str = "GBP"
     exchange: Optional[str] = None
-
-
-# ── Query parameters ──
