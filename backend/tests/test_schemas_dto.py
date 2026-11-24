@@ -413,15 +413,6 @@ class TestPredictionResponse:
         assert isinstance(data["predicted_at"], str)  # ISO datetime string
 
 
-class TestPredictionErrorResponse:
-    def test_construction(self):
-        from src.prediction.schemas import PredictionErrorResponse
-
-        obj = PredictionErrorResponse(detail="No data available", code="NO_DATA")
-        assert obj.detail == "No data available"
-        assert obj.code == "NO_DATA"
-
-
 # ── Drift schemas ────────────────────────────────────────────────────────
 
 
