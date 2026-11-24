@@ -20,14 +20,6 @@ class ChatRequest(BaseModel):
     conversation_id: UUID | None = None  # None = new conversation
 
 
-class ToolResultEvent(BaseModel):
-    """Emitted when a tool completes execution."""
-
-    tool_name: str
-    output_summary: str
-    success: bool
-
-
 class SSEEvent(BaseModel):
     """A single SSE event payload."""
 

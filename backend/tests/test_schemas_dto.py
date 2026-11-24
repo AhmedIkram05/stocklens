@@ -248,22 +248,6 @@ class TestChatRequest:
             ChatRequest(message="x" * 8001)
 
 
-class TestToolResultEvent:
-    def test_success(self):
-        from src.agent.schemas import ToolResultEvent
-
-        obj = ToolResultEvent(tool_name="get_stock_price", output_summary="$150.00", success=True)
-        assert obj.success is True
-
-    def test_failure(self):
-        from src.agent.schemas import ToolResultEvent
-
-        obj = ToolResultEvent(
-            tool_name="get_stock_price", output_summary="API error", success=False
-        )
-        assert obj.success is False
-
-
 class TestSSEEvent:
     def test_construction(self):
         from src.agent.schemas import SSEEvent
