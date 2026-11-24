@@ -248,40 +248,6 @@ class TestChatRequest:
             ChatRequest(message="x" * 8001)
 
 
-class TestConversationSummary:
-    def test_construction(self):
-        from uuid import UUID
-
-        from src.agent.schemas import ConversationSummary
-
-        now = datetime.now(timezone.utc)
-        cid = UUID("00000000-0000-0000-0000-000000000001")
-        obj = ConversationSummary(
-            id=cid,
-            title="My Chat",
-            message_count=5,
-            created_at=now,
-            updated_at=now,
-        )
-        assert obj.title == "My Chat"
-        assert obj.message_count == 5
-
-    def test_title_none(self):
-        from uuid import UUID
-
-        from src.agent.schemas import ConversationSummary
-
-        now = datetime.now(timezone.utc)
-        obj = ConversationSummary(
-            id=UUID(int=2),
-            title=None,
-            message_count=0,
-            created_at=now,
-            updated_at=now,
-        )
-        assert obj.title is None
-
-
 class TestMessageResponse:
     def test_minimal(self):
         from src.agent.schemas import MessageResponse

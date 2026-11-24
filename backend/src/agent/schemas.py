@@ -20,16 +20,6 @@ class ChatRequest(BaseModel):
     conversation_id: UUID | None = None  # None = new conversation
 
 
-class ConversationSummary(BaseModel):
-    """Lightweight summary for the conversation list endpoint."""
-
-    id: UUID
-    title: str | None
-    message_count: int
-    created_at: datetime
-    updated_at: datetime
-
-
 class MessageResponse(BaseModel):
     """A single message in a conversation."""
 
