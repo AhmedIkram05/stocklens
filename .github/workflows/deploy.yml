@@ -339,6 +339,7 @@ jobs:
           # group (terraform-${{ github.ref }}) prevents parallel applies.
           # Exit code 2 = changes detected (not a failure in CI context).
           terraform plan -lock=false \
+            -var-file=dev.tfvars.json \
             -var="container_image=${IMAGE_TAG}" \
             -var="airflow_image=${AIRFLOW_IMAGE_TAG}" \
             -var="ml_training_image=${ML_TRAINING_IMAGE_TAG}" \
