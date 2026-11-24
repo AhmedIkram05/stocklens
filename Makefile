@@ -53,7 +53,7 @@ backend-ml: ## Ensure postgres + mlflow are running (required for train/seed)
 	docker compose up -d postgres mlflow
 
 train: backend-ml ## Train LSTM model on macOS MPS GPU (host venv, ~19s/epoch, 55 tickers)
-	PYTHONPATH=$(BACKEND_DIR) \
+	PYTHONPATH="$(BACKEND_DIR)" \
 	DATABASE_URL=$(DATABASE_URL) \
 	TRAINING_TICKERS="$(TRAINING_TICKERS)" \
 	MLFLOW_TRACKING_URI=http://localhost:5001 \
@@ -67,22 +67,22 @@ train: backend-ml ## Train LSTM model on macOS MPS GPU (host venv, ~19s/epoch, 5
 	@echo "=== Model trained and deployed ==="
 
 hpo: backend-ml ## Run Optuna HPO Phase 1 on macOS MPS GPU (host /tmp/ml_venv)
-	PYTHONPATH=$(BACKEND_DIR) \
+	PYTHONPATH="$(BACKEND_DIR)" \
 	DATABASE_URL=$(DATABASE_URL) \
 	MLFLOW_TRACKING_URI=http://localhost:5001 \
 	MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING=true \
 	$(ML_PYTHON) -m ml.hpo
 
 hpo-phase2: backend-ml ## Sweep threshold_mult using Phase 1 best HPs on macOS MPS GPU
-	PYTHONPATH=$(BACKEND_DIR) \
+	PYTHONPATH="$(BACKEND_DIR)" \
 	DATABASE_URL=$(DATABASE_URL) \
 	MLFLOW_TRACKING_URI=http://localhost:5001 \
 	MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING=true \
 	$(ML_PYTHON) -m ml.hpo --phase 2
 
 train-all: backend-ml ## Train on full S&P 500 (~7min/epoch, hours total)
-	$(MAKE) train TRAINING_TICKERS="$$(python3 -c "from ml.config import _ALL_SP500; print(','.join(_ALL_SP500))")"
+	$(MAKE) train TRAINING_TICKERS=ALL
 
 seed: backend-ml ## Seed OHLCV data from host (raw Yahoo v8 chart API; backend/scripts/seed_ohlcv.py)
-	PYTHONPATH=$(BACKEND_DIR) \
-	$(BACKEND_DIR)/.venv/bin/python $(BACKEND_DIR)/scripts/seed_ohlcv.py
+	PYTHONPATH="$(BACKEND_DIR)" \
+	"$(BACKEND_DIR)/.venv/bin/python" "$(BACKEND_DIR)/scripts/seed_ohlcv.py"
