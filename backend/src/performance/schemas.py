@@ -105,14 +105,6 @@ class BenchmarkComparisonResponse(BaseModel):
     )
 
 
-class PerformanceParams(BaseModel):
-    """Query parameters for performance endpoint."""
-
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
-    benchmark: Optional[str] = Field(None, description="Benchmark ticker (default: SPY)")
-
-
 class BenchmarkParams(BaseModel):
     """Query parameters for benchmark comparison."""
 
