@@ -248,15 +248,6 @@ class TestChatRequest:
             ChatRequest(message="x" * 8001)
 
 
-class TestSSEEvent:
-    def test_construction(self):
-        from src.agent.schemas import SSEEvent
-
-        obj = SSEEvent(event="token", data='{"content":"Hello"}')
-        assert obj.event == "token"
-        assert obj.data == '{"content":"Hello"}'
-
-
 class TestConversationSummary:
     def test_construction(self):
         from uuid import UUID

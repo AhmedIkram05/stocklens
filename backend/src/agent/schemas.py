@@ -20,13 +20,6 @@ class ChatRequest(BaseModel):
     conversation_id: UUID | None = None  # None = new conversation
 
 
-class SSEEvent(BaseModel):
-    """A single SSE event payload."""
-
-    event: str  # "token" | "tool_start" | "tool_end" | "done" | "error"
-    data: str  # JSON-encoded payload
-
-
 class ConversationSummary(BaseModel):
     """Lightweight summary for the conversation list endpoint."""
 
