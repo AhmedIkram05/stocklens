@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from src.type_aliases import DecimalAsFloat
 
@@ -47,13 +47,3 @@ class QuoteResponse(BaseModel):
 
 
 # ── Query parameters ──
-
-
-class OHLCVParams(BaseModel):
-    """Query params for OHLCV endpoint."""
-
-    start_date: Optional[date] = Field(
-        None, description="Start date (inclusive). Defaults to 1 year ago."
-    )
-    end_date: Optional[date] = Field(None, description="End date (inclusive). Defaults to today.")
-    # ponytail: no max_days limit for Phase 2 — add if abuse becomes an issue
