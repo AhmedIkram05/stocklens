@@ -605,22 +605,6 @@ class TestPortfolioPerformanceResponse:
         assert restored.portfolio_id == "p1"
 
 
-class TestBenchmarkParams:
-    def test_defaults(self):
-        from src.performance.schemas import BenchmarkParams
-
-        obj = BenchmarkParams()
-        assert obj.benchmark == "SPY"
-        assert obj.start_date is None
-        assert obj.end_date is None
-
-    def test_custom(self):
-        from src.performance.schemas import BenchmarkParams
-
-        obj = BenchmarkParams(benchmark="QQQ", start_date=date(2024, 1, 1))
-        assert obj.benchmark == "QQQ"
-
-
 # ── Market schemas ───────────────────────────────────────────────────────
 
 

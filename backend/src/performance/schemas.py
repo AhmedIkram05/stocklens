@@ -103,11 +103,3 @@ class BenchmarkComparisonResponse(BaseModel):
         default_factory=list,
         description="Daily cumulative returns [{date, value}] for charting",
     )
-
-
-class BenchmarkParams(BaseModel):
-    """Query parameters for benchmark comparison."""
-
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
-    benchmark: Optional[str] = Field("SPY", description="Benchmark ticker (SPY or QQQ)")
