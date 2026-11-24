@@ -18,6 +18,7 @@ locals {
 
 # ── CloudWatch log group ─────────────────────────────────────────────
 
+# checkov:skip=CKV_AWS_338:dev — 90-day retention is the cost-approved operational window
 resource "aws_cloudwatch_log_group" "mlflow" {
   # checkov:skip=CKV_AWS_158:dev — KMS key not provisioned yet
   # tfsec:ignore:aws-cloudwatch-log-group-encrypted:dev — KMS key not provisioned yet
