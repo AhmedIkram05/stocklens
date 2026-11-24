@@ -381,56 +381,6 @@ class TestCacheConcurrency:
 
 
 # ── CascadeDecisionDB model ────────────────────────────────────────────────
-
-
-class TestCascadeDecisionDB:
-    """Tests for the database ORM model."""
-
-    def test_minimal_construction(self):
-        from datetime import datetime
-
-        from src.receipts.models import CascadeDecisionDB
-
-        decision = CascadeDecisionDB(
-            id="test-id",
-            receipt_id="1",
-            raw_text_hash="abc123",
-            regex_confidence=0.95,
-            chosen_source="regex",
-            processing_time_ms=150,
-            created_at=datetime(2026, 6, 25),
-        )
-        assert decision.receipt_id == "1"
-        assert decision.chosen_source == "regex"
-        assert decision.regex_confidence == 0.95
-
-    def test_full_construction(self):
-        from datetime import datetime
-
-        from src.receipts.models import CascadeDecisionDB
-
-        decision = CascadeDecisionDB(
-            id="test-id-2",
-            receipt_id="2",
-            raw_text_hash="def456",
-            regex_confidence=0.3,
-            llm_confidence=0.85,
-            chosen_source="cascade",
-            discrepancies=[
-                {"field": "merchant", "regex": "Old Store", "llm": "New Store"},
-            ],
-            field_confidences={
-                "merchant": {"value": "New Store", "confidence": 0.9, "source": "llm"},
-                "total": {"value": 47.99, "confidence": 0.95, "source": "regex"},
-            },
-            processing_time_ms=250,
-            created_at=datetime(2026, 6, 25),
-        )
-        assert decision.discrepancies is not None
-        assert decision.field_confidences is not None
-        assert decision.llm_confidence == 0.85
-
-
 # ── Transient failure predicate ─────────────────────────────────────────────
 
 

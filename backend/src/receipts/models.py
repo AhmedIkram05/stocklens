@@ -169,20 +169,3 @@ class EnrichStatusResponse(BaseModel):
     receipt_id: str
     status: Literal["completed", "failed", "pending", "not_needed", "unknown"]
     source: str | None = None
-
-
-class CascadeDecisionDB(BaseModel):
-    """Per-receipt cascade outcome as stored in cascade_decisions table."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    receipt_id: str
-    raw_text_hash: str
-    regex_confidence: float
-    llm_confidence: float | None = None
-    chosen_source: str
-    field_confidences: dict | None = None
-    discrepancies: list[dict] | None = None
-    processing_time_ms: int
-    created_at: _dt.datetime
