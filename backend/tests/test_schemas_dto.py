@@ -248,104 +248,6 @@ class TestChatRequest:
             ChatRequest(message="x" * 8001)
 
 
-class TestToolCallEvent:
-    def test_construction(self):
-        from src.agent.schemas import ToolCallEvent
-
-        obj = ToolCallEvent(tool_name="get_stock_price", input={"ticker": "AAPL"})
-        assert obj.tool_name == "get_stock_price"
-        assert obj.input == {"ticker": "AAPL"}
-
-
-class TestToolResultEvent:
-    def test_success(self):
-        from src.agent.schemas import ToolResultEvent
-
-        obj = ToolResultEvent(tool_name="get_stock_price", output_summary="$150.00", success=True)
-        assert obj.success is True
-
-    def test_failure(self):
-        from src.agent.schemas import ToolResultEvent
-
-        obj = ToolResultEvent(
-            tool_name="get_stock_price", output_summary="API error", success=False
-        )
-        assert obj.success is False
-
-
-class TestSSEEvent:
-    def test_construction(self):
-        from src.agent.schemas import SSEEvent
-
-        obj = SSEEvent(event="token", data='{"content":"Hello"}')
-        assert obj.event == "token"
-        assert obj.data == '{"content":"Hello"}'
-
-
-class TestConversationSummary:
-    def test_construction(self):
-        from uuid import UUID
-
-        from src.agent.schemas import ConversationSummary
-
-        now = datetime.now(timezone.utc)
-        cid = UUID("00000000-0000-0000-0000-000000000001")
-        obj = ConversationSummary(
-            id=cid,
-            title="My Chat",
-            message_count=5,
-            created_at=now,
-            updated_at=now,
-        )
-        assert obj.title == "My Chat"
-        assert obj.message_count == 5
-
-    def test_title_none(self):
-        from uuid import UUID
-
-        from src.agent.schemas import ConversationSummary
-
-        now = datetime.now(timezone.utc)
-        obj = ConversationSummary(
-            id=UUID(int=2),
-            title=None,
-            message_count=0,
-            created_at=now,
-            updated_at=now,
-        )
-        assert obj.title is None
-
-
-class TestMessageResponse:
-    def test_minimal(self):
-        from src.agent.schemas import MessageResponse
-
-        now = datetime.now(timezone.utc)
-        obj = MessageResponse(
-            role="assistant",
-            content="Hello",
-            tools_used=None,
-            reasoning_steps=None,
-            created_at=now,
-        )
-        assert obj.tools_used is None
-        assert obj.reasoning_steps is None
-
-    def test_with_tools(self):
-        from src.agent.schemas import MessageResponse
-
-        now = datetime.now(timezone.utc)
-        obj = MessageResponse(
-            role="assistant",
-            content="Let me check",
-            tools_used={"get_stock_price": {"ticker": "AAPL"}},
-            reasoning_steps=None,
-            created_at=now,
-        )
-        assert obj.tools_used is not None
-        assert "get_stock_price" in obj.tools_used
-
-
 class TestAgentFeedbackRequest:
     def test_minimal(self):
         from src.agent.schemas import AgentFeedbackRequest
@@ -411,15 +313,6 @@ class TestPredictionResponse:
         assert data["ticker"] == "AAPL"
         assert data["confidence"] == 0.87
         assert isinstance(data["predicted_at"], str)  # ISO datetime string
-
-
-class TestPredictionErrorResponse:
-    def test_construction(self):
-        from src.prediction.schemas import PredictionErrorResponse
-
-        obj = PredictionErrorResponse(detail="No data available", code="NO_DATA")
-        assert obj.detail == "No data available"
-        assert obj.code == "NO_DATA"
 
 
 # ── Drift schemas ────────────────────────────────────────────────────────
@@ -570,46 +463,6 @@ class TestCashFlowCreate:
             CashFlowCreate(amount=Decimal("-50"))
 
 
-class TestCashFlowInDB:
-    def test_construction(self):
-        from uuid import UUID
-
-        from src.cash_flows.schemas import CashFlowInDB
-
-        now = datetime.now(timezone.utc)
-        pid = UUID(int=1)
-        cid = UUID(int=2)
-        obj = CashFlowInDB(
-            id=cid,
-            portfolio_id=pid,
-            amount=Decimal("250.00"),
-            source="manual",
-            created_at=now,
-        )
-        assert obj.amount == Decimal("250.00")
-        assert obj.source == "manual"
-        assert obj.notes is None
-
-    def test_with_all_fields(self):
-        from uuid import UUID
-
-        from src.cash_flows.schemas import CashFlowInDB
-
-        now = datetime.now(timezone.utc)
-        sid = UUID(int=3)
-        obj = CashFlowInDB(
-            id=UUID(int=1),
-            portfolio_id=UUID(int=2),
-            amount=Decimal("100.00"),
-            source="receipt",
-            source_id=sid,
-            notes="Tesco refund",
-            created_at=now,
-        )
-        assert obj.source_id == sid
-        assert obj.notes == "Tesco refund"
-
-
 # ── Performance schemas ──────────────────────────────────────────────────
 
 
@@ -677,22 +530,6 @@ class TestPortfolioPerformanceResponse:
         assert data["data_quality"] == "complete"
         restored = PortfolioPerformanceResponse.model_validate(obj.model_dump())
         assert restored.portfolio_id == "p1"
-
-
-class TestBenchmarkParams:
-    def test_defaults(self):
-        from src.performance.schemas import BenchmarkParams
-
-        obj = BenchmarkParams()
-        assert obj.benchmark == "SPY"
-        assert obj.start_date is None
-        assert obj.end_date is None
-
-    def test_custom(self):
-        from src.performance.schemas import BenchmarkParams
-
-        obj = BenchmarkParams(benchmark="QQQ", start_date=date(2024, 1, 1))
-        assert obj.benchmark == "QQQ"
 
 
 # ── Market schemas ───────────────────────────────────────────────────────

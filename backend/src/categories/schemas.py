@@ -22,12 +22,6 @@ class CategoryBase(BaseModel):
     associated_tickers: list[str] = []
 
 
-class CategoryCreate(CategoryBase):
-    """Schema for creating a new category (admin use)."""
-
-    pass
-
-
 class CategoryInDB(CategoryBase):
     """Category record as stored in the database."""
 

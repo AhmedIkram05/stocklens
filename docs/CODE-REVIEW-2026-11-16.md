@@ -4,8 +4,7 @@ Review of `HEAD 481d94d` (clean working tree). Five independent read-only review
 backend core (API/db/auth/graphql/mcp), backend domain services, ML + Airflow, frontend
 (Expo/RN), and infrastructure/CI/dependencies.
 
-**Nothing in this document has been fixed.** It is a findings register, ordered so the
-first section can be worked top-down.
+**Status:** most findings are fixed; see `docs/REMEDIATION-LOG.md` for the batch-by-batch record and the deliberately deferred items. This file remains the findings register.
 
 How to read a finding:
 
