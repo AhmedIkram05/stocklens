@@ -37,3 +37,8 @@ output "s3_kms_key_id" {
   description = "Key ID of the KMS key for S3 SSE-KMS encryption"
   value       = aws_kms_key.s3.key_id
 }
+
+output "mlflow_artifacts_versioning" {
+  description = "Versioning status of the MLflow artifacts bucket"
+  value       = aws_s3_bucket_versioning.mlflow_artifacts.versioning_configuration[0].status
+}
