@@ -2,7 +2,6 @@
 Technical indicator computation — Rust-native backend.
 
 All public functions accept/return pandas objects for seamless API compatibility.
-``standardise_features`` is kept in Python (numpy-broadcast O(n), no Rust gain).
 """
 
 from __future__ import annotations
@@ -202,28 +201,3 @@ def compute_cross_sectional_features(
     excess = ticker_features[ret_cols] - aligned[ret_cols]
     excess.columns = excess_cols
     return excess
-
-
-def standardise_features(
-    df: pd.DataFrame,
-    means: pd.Series | None = None,
-    stds: pd.Series | None = None,
-) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
-    """Z-score standardise all feature columns.
-
-    For training: pass means=None, stds=None to compute from data.
-    For inference: pass the training means and stds.
-
-    Returns:
-        (standardised_df, means, stds) tuple.
-    """
-    feature_cols = [c for c in df.columns if not c.startswith("label") and c != "ticker"]
-    if means is None or stds is None:
-        computed_means = df[feature_cols].mean()
-        computed_stds = df[feature_cols].std().replace(0, 1.0)
-        means = means if means is not None else computed_means
-        stds = stds if stds is not None else computed_stds
-
-    result = df.copy()
-    result[feature_cols] = (df[feature_cols] - means) / stds
-    return result, means, stds
