@@ -41,24 +41,6 @@ describe('portfolioService (API)', () => {
     );
   });
 
-  it('getPortfolio returns a single portfolio', async () => {
-    const portfolio = {
-      id: '42',
-      name: 'Test',
-      created_at: '2024-01-01T00:00:00Z',
-      updated_at: '2024-01-01T00:00:00Z',
-    };
-    fetchMock.mockResponseOnce(JSON.stringify(portfolio), { status: 200 });
-
-    const result = await portfolioService.getPortfolio('42');
-
-    expect(result).toMatchObject(portfolio);
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringMatching(/\/portfolios\/42$/),
-      expect.any(Object),
-    );
-  });
-
   it('createPortfolio sends POST and returns created portfolio', async () => {
     const created = {
       id: '1',

@@ -245,10 +245,6 @@ export const portfolioService = {
     return res.portfolios;
   },
 
-  async getPortfolio(id: string): Promise<Portfolio> {
-    return apiService.get<Portfolio>(`/portfolios/${id}`);
-  },
-
   async createPortfolio(data: CreatePortfolio): Promise<Portfolio> {
     const created = await apiService.post<Portfolio>('/portfolios', data);
     emit('historical-updated', { action: 'create' });
