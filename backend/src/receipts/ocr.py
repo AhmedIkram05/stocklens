@@ -155,8 +155,8 @@ def extract_text(
 ) -> str:
     """Extract text from a preprocessed receipt image via Tesseract OCR.
 
-    Uses the LSTM neural-net engine (``--oem 3``) and assumes the image
-    contains a single uniform block of text (``--psm 6``).
+    Uses the LSTM neural-net engine (``--oem 3``) and scores the PSM 6/4/11
+    ensemble, returning the layout with the most receipt evidence.
 
     Parameters
     ----------
@@ -640,7 +640,7 @@ def process_receipt(image_bytes: bytes) -> dict:
     return {
         "total_amount": parsed["total"],
         "merchant_name": parsed["merchant"],
-        "line_items": parsed["items"],
+        "line_items": [dict(item) for item in parsed["items"]],
         "date": parsed["date"],
         "ocr_confidence": confidence,
         "ocr_raw_text": raw_text,
