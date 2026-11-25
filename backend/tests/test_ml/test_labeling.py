@@ -43,25 +43,3 @@ class TestAdaptiveLabels:
         close = pd.Series([100.0])
         labels = compute_adaptive_labels(close)
         assert labels.isna().all()
-
-    def test_random_walk_distribution(self) -> None:
-        from ml.labeling import compute_adaptive_labels, compute_label_distribution
-
-        np.random.seed(42)
-        returns = np.random.normal(0, 0.01, 1000)
-        close = pd.Series(100 * np.exp(np.cumsum(returns)))
-        labels = compute_adaptive_labels(close)
-        dist = compute_label_distribution(labels)
-        assert 0.2 < dist["FLAT"] < 0.6
-        assert 0.2 < dist["UP"] < 0.6
-        assert 0.2 < dist["DOWN"] < 0.6
-
-    def test_highly_volatile_has_fewer_flat(self) -> None:
-        from ml.labeling import compute_adaptive_labels, compute_label_distribution
-
-        np.random.seed(42)
-        returns = np.random.normal(0, 0.05, 1000)
-        close = pd.Series(100 * np.exp(np.cumsum(returns)))
-        labels = compute_adaptive_labels(close, threshold_mult=0.5)
-        dist = compute_label_distribution(labels)
-        assert dist["FLAT"] < 0.4

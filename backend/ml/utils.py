@@ -49,16 +49,3 @@ def build_ticker_vocabulary(
         if ticker not in vocab:
             vocab[ticker] = len(vocab)
     return vocab, len(vocab)
-
-
-def get_ticker_idx(ticker: str, vocab: dict[str, int]) -> int:
-    """Get embedding index for a ticker, falling back to UNK.
-
-    Args:
-        ticker: Ticker symbol.
-        vocab: Ticker-to-index vocabulary.
-
-    Returns:
-        Embedding index (UNK_IDX if ticker not in vocab).
-    """
-    return vocab.get(ticker.upper(), UNK_IDX)

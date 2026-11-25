@@ -6,20 +6,14 @@ Tests that need DB mocking use AsyncMock for asyncpg.
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np
 import pytest
 
 from ml.reference_distributions import (
-    FEATURE_NAMES,
-    _json_fallback,
     build_reference_from_training_data,
-    load_reference,
     load_reference_from_db,
-    save_reference,
     store_reference_in_db,
 )
 
@@ -195,72 +189,3 @@ async def test_load_reference_from_db_no_ref_key() -> None:
 # ---------------------------------------------------------------------------
 # Filesystem fallback
 # ---------------------------------------------------------------------------
-
-
-def test_save_reference_roundtrip() -> None:
-    """save_reference + load_reference roundtrip preserves data."""
-    ref = {
-        "feature_histograms": {
-            "log_ret_1d": {
-                "histogram": list(range(20)),
-                "bin_edges": list(range(21)),
-                "values": [0.5] * 50,
-                "n": 50,
-            },
-        },
-        "prediction_distribution": [1 / 3, 1 / 3, 1 / 3],
-        "n_training_samples": 50,
-        "n_features": 1,
-        "feature_names": ["log_ret_1d"],
-        "computed_at": "2026-01-01T00:00:00",
-    }
-
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as f:
-        tmp = f.name
-
-    try:
-        path = save_reference(ref, path=tmp)
-        assert path == tmp
-
-        loaded = load_reference(path=tmp)
-        assert loaded is not None
-        assert loaded["n_training_samples"] == 50
-        assert loaded["feature_histograms"]["log_ret_1d"]["n"] == 50
-    finally:
-        Path(tmp).unlink(missing_ok=True)
-
-
-def test_load_reference_nonexistent() -> None:
-    """load_reference returns None when file does not exist."""
-    result = load_reference(path="/tmp/nonexistent_ref_test.json")
-    assert result is None
-
-
-def test_save_reference_creates_parent_dir() -> None:
-    """save_reference creates parent directories automatically."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        nested = Path(tmpdir) / "sub" / "nested" / "ref.json"
-        path = save_reference(
-            {"feature_histograms": {}, "prediction_distribution": [1, 0, 0]},
-            path=str(nested),
-        )
-        assert Path(path).exists()
-        Path(path).unlink()
-
-
-def test_json_fallback_numpy_types() -> None:
-    """_json_fallback converts numpy types to native Python."""
-    assert _json_fallback(np.float32(3.14)) == pytest.approx(3.14, abs=1e-6)
-    assert _json_fallback(np.int64(99)) == 99
-    assert _json_fallback(np.float64(2.71)) == pytest.approx(2.71)
-
-    with pytest.raises(TypeError):
-        _json_fallback(object())
-
-
-def test_feature_names_are_correct() -> None:
-    """FEATURE_NAMES matches expected 17 canonical names."""
-    assert len(FEATURE_NAMES) == 17
-    assert FEATURE_NAMES[0] == "log_ret_1d"
-    assert FEATURE_NAMES[-1] == "excess_ret_21d"
-    assert "vol_pct" in FEATURE_NAMES

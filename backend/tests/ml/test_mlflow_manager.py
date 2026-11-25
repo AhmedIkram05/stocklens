@@ -259,36 +259,6 @@ def test_cleanup_stale_runs_kills_running() -> None:
     mock_client.set_terminated.assert_called_once_with("stale_run_1", status="KILLED")
 
 
-def test_tag_best_run_flags_current() -> None:
-    """tag_best_run returns True and tags when current run is best."""
-    from ml.mlflow_manager import MLflowManager
-
-    mgr = MLflowManager()
-    import mlflow
-
-    class FakeRunInfo:
-        run_id = "best_run_id"
-
-    class FakeRun:
-        info = FakeRunInfo()
-
-    mlflow.start_run.return_value = FakeRun()
-    mgr.start_run("test")
-
-    mock_client = MagicMock()
-    mock_client.get_experiment_by_name.return_value = MagicMock(experiment_id="exp_1")
-    import pandas as pd
-
-    df = pd.DataFrame([{"run_id": "best_run_id", "metrics.accuracy": 0.95}])
-    mlflow.search_runs.return_value = df
-
-    mlflow.tracking.MlflowClient.return_value = mock_client
-
-    result = mgr.tag_best_run(metric="accuracy")
-    assert result is True
-    mock_client.set_tag.assert_called()
-
-
 @patch("ml.mlflow_manager.boto3")
 def test_save_champion_to_disk_creates_file(mock_boto3: MagicMock) -> None:
     """save_champion_to_disk writes a model file and returns its path."""

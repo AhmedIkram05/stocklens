@@ -307,82 +307,11 @@ class MLflowManager:
                 client.set_experiment_tag(experiment.experiment_id, key, value)
         logger.info("Experiment tags set", extra={"tags": tags})
 
-    def tag_best_run(self, metric: str = "test_accuracy") -> bool:
-        """Find the best run in this experiment by *metric* and tag it.
-
-        Sets ``best_run=true``, ``best_metric=<metric>``, and
-        ``best_value=<value>`` tags on the top run.
-
-        Args:
-            metric: Metric name to rank by (descending).
-
-        Returns:
-            True if the current run IS the best run, False otherwise.
-        """
-        client = mlflow.tracking.MlflowClient()
-        experiment = client.get_experiment_by_name(self.experiment_name)
-        if not experiment:
-            logger.warning("Experiment %s not found — skipping best-run tag", self.experiment_name)
-            return False
-
-        runs = mlflow.search_runs(
-            experiment_ids=[experiment.experiment_id],
-            order_by=[f"metrics.{metric} DESC"],
-            max_results=1,
-        )
-        if runs.empty:
-            logger.warning("No runs found — skipping best-run tag")
-            return False
-
-        best_run = runs.iloc[0]
-        best_run_id = best_run.get("run_id")
-
-        if not best_run_id or not isinstance(best_run_id, str):
-            logger.warning("Invalid run_id in search results — skipping best-run tag")
-            return False
-
-        best_value = best_run.get(f"metrics.{metric}", "unknown")
-
-        client.set_tag(best_run_id, "best_run", "true")
-        client.set_tag(best_run_id, "best_metric", metric)
-        client.set_tag(best_run_id, "best_value", str(best_value))
-
-        # Also tag the current run as comparison
-        if self.active_run:
-            current_id = self.active_run.info.run_id
-            if current_id == best_run_id:
-                client.set_tag(current_id, "run_quality", "best")
-                return True
-            else:
-                client.set_tag(current_id, "run_quality", "challenger")
-                client.set_tag(
-                    current_id,
-                    "delta_from_best",
-                    str(best_value),
-                )
-                return False
-
-        logger.info(
-            "Best-run tag set",
-            extra={"run_id": best_run_id, "metric": metric, "value": best_value},
-        )
-
-        return False
-
-    # ------------------------------------------------------------------
-    # Champion metrics
-    # ------------------------------------------------------------------
-
     async def read_champion_metrics(self) -> dict[str, Any] | None:
         """Read champion metrics from the model_registry DB table.
 
-        Reads the ``metrics`` JSONB column from the ``model_registry`` table
-        where ``alias = 'champion'``.  Returns the raw ``test_metrics`` dict
-        (with key ``directional_accuracy``), or ``None`` if no champion exists.
-
-        Returns:
-            Dict of metric name → value (e.g. ``{"directional_accuracy": 0.52}``),
-            or ``None`` if there is no champion.
+        Returns the raw ``test_metrics`` dict (with ``directional_accuracy``),
+        or ``None`` if no champion exists.
         """
         import asyncpg
 
@@ -408,10 +337,6 @@ class MLflowManager:
             return None
         finally:
             await conn.close()
-
-    # ------------------------------------------------------------------
-    # Disk persistence
-    # ------------------------------------------------------------------
 
     def _resolve_save_dir(self) -> Path:
         """Directory the champion checkpoint is written to (or read from).

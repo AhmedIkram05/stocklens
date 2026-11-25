@@ -10,10 +10,8 @@ import numpy as np
 import torch
 
 from ml.utils import (
-    UNK_IDX,
     build_ticker_vocabulary,
     get_device,
-    get_ticker_idx,
     set_seed,
 )
 
@@ -75,27 +73,3 @@ def test_build_vocabulary_empty() -> None:
     vocab, size = build_ticker_vocabulary([])
     assert vocab == {"<UNK>": 0}
     assert size == 1
-
-
-def test_get_ticker_idx_known() -> None:
-    """get_ticker_idx returns correct index for known ticker."""
-    vocab = {"<UNK>": 0, "AAPL": 1, "MSFT": 2}
-    assert get_ticker_idx("AAPL", vocab) == 1
-
-
-def test_get_ticker_idx_unknown() -> None:
-    """get_ticker_idx returns UNK_IDX for unknown ticker."""
-    vocab = {"<UNK>": 0, "AAPL": 1}
-    assert get_ticker_idx("INVALID", vocab) == UNK_IDX
-
-
-def test_get_ticker_idx_case_insensitive() -> None:
-    """get_ticker_idx uppercases input before lookup."""
-    vocab = {"<UNK>": 0, "AAPL": 1}
-    assert get_ticker_idx("aapl", vocab) == 1
-    assert get_ticker_idx("Aapl", vocab) == 1
-
-
-def test_get_ticker_idx_empty_vocab() -> None:
-    """get_ticker_idx returns UNK_IDX when vocabulary is empty."""
-    assert get_ticker_idx("AAPL", {}) == UNK_IDX

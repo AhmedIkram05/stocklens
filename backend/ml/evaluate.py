@@ -202,7 +202,7 @@ def _real_sharpe_metrics(
                     preds, fwd_rets, dates, ticker_idxs, mode=mode, cost_bps=cost
                 )
             except Exception as e:  # noqa: BLE001 - eval must not crash training
-                logger.warning("Sharpe computation failed (%s): %s", key, e)
+                logger.warning("Sharpe computation failed (%s): %s", key, e, exc_info=True)
                 out[key] = None
     return out
 

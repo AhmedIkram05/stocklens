@@ -6,14 +6,10 @@ normalising across tickers with different base volatility levels.
 
 The threshold is: rolling_vol * threshold_mult * sqrt(forecast_horizon)
 
-With threshold_mult=0.3 and forecast_horizon=5 (ML_CONFIG defaults):
-    FLAT  if |log_return| < 0.67 * sigma_30d  (~28% of samples)
-    UP    if log_return >= 0.67 * sigma_30d     (~36% of samples)
-    DOWN  if log_return <= -0.67 * sigma_30d    (~36% of samples)
-
-The narrow FLAT band maximizes directional training examples, giving the
-model more signal to learn from. Model never predicts FLAT (F1=0 anyway),
-so wider bands just increase wrong predictions without benefit.
+The multiplier is configurable (``ML_THRESHOLD_MULT``, default 2.0) and
+scales with ``sqrt(forecast_horizon)``. At the production setting most
+samples fall in the FLAT band by design, so directional accuracy — not
+three-class accuracy — is the headline metric.
 """
 
 from __future__ import annotations
@@ -67,21 +63,3 @@ def compute_adaptive_labels(
     labels[forward_ret.isna() | threshold.isna()] = np.nan
 
     return labels
-
-
-def compute_label_distribution(labels: pd.Series) -> dict[str, float]:
-    """Compute class distribution of labels.
-
-    Returns:
-        Dict mapping class name to proportion (0-1).
-    """
-    valid = labels.dropna()
-    if len(valid) == 0:
-        return {"DOWN": 0.0, "FLAT": 0.0, "UP": 0.0}
-
-    total = len(valid)
-    return {
-        "DOWN": float((valid == 0).sum() / total),
-        "FLAT": float((valid == 1).sum() / total),
-        "UP": float((valid == 2).sum() / total),
-    }
