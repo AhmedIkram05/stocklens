@@ -47,11 +47,7 @@ export default function ConversationHistoryScreen({
   const fetchConversations = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await agentService.listConversations();
-      // The API returns { conversations, total }
-      const list = Array.isArray(res)
-        ? (res as unknown as ConversationSummary[])
-        : (res as any).conversations;
+      const list = await agentService.listConversations();
       setConversations(list ?? []);
     } catch {
       setConversations([]);
