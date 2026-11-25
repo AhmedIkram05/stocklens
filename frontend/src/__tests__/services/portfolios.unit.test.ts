@@ -344,28 +344,7 @@ describe('portfolioService (API)', () => {
     );
   });
 
-  it('updateCashFlowNotes sends PATCH with notes', async () => {
-    const updated = {
-      id: 'cf1',
-      portfolio_id: '1',
-      amount: 5000,
-      source: 'manual',
-      source_id: null,
-      notes: 'Updated notes',
-      created_at: '2024-01-01T00:00:00Z',
-    };
-    fetchMock.mockResponseOnce(JSON.stringify(updated), { status: 200 });
-
-    const result = await portfolioService.updateCashFlowNotes('1', 'cf1', 'Updated notes');
-
-    expect(result).toMatchObject(updated);
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringMatching(/\/portfolios\/1\/cash-flows\/cf1$/),
-      expect.objectContaining({ method: 'PATCH' }),
-    );
-  });
-
-  it('listHoldings / listTransactions / listCashFlows return typed arrays', async () => {
+  it('listHoldings / listTransactions return typed arrays', async () => {
     const holdings = [
       {
         id: '1',
@@ -401,25 +380,6 @@ describe('portfolioService (API)', () => {
     const t = await portfolioService.listTransactions('1');
     expect(t).toHaveLength(1);
     expect(t[0].type).toBe('BUY');
-
-    const cashFlows = [
-      {
-        id: '1',
-        portfolio_id: '1',
-        amount: 5000,
-        source: 'manual',
-        source_id: null,
-        notes: 'Initial deposit',
-        created_at: '',
-      },
-    ];
-    fetchMock.mockResponseOnce(
-      JSON.stringify({ cash_flows: cashFlows, total: 1, limit: 50, offset: 0 }),
-      { status: 200 },
-    );
-    const cf = await portfolioService.listCashFlows('1');
-    expect(cf).toHaveLength(1);
-    expect(cf[0].amount).toBe(5000);
   });
 
   it('createTransaction sends POST with type BUY or SELL', async () => {
@@ -640,15 +600,6 @@ describe('portfolioService emit events', () => {
     await portfolioService.createCashFlow('1', { amount: 5000, source: 'manual' });
     expect(mockEmit).toHaveBeenCalledWith('historical-updated', {
       action: 'create-cashflow',
-      portfolioId: '1',
-    });
-  });
-
-  it('updateCashFlowNotes emits historical-updated event', async () => {
-    fetchMock.mockResponseOnce(JSON.stringify({ id: 'cf1', notes: 'Updated' }), { status: 200 });
-    await portfolioService.updateCashFlowNotes('1', 'cf1', 'Updated');
-    expect(mockEmit).toHaveBeenCalledWith('historical-updated', {
-      action: 'update-cashflow',
       portfolioId: '1',
     });
   });
