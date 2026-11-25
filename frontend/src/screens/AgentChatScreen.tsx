@@ -15,7 +15,7 @@
  * - Feedback comment modal with optional textarea
  */
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -65,10 +65,15 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
   // Stateful thinking-tag stripper for streaming tokens.
   // Holds back text that could be the start of a <thinking> tag
   // so we never emit partial tags during streaming.
+  const abortRef = useRef<AbortController | null>(null);
   const thinkingStripperRef = useRef<{
     buffer: string;
     inTag: boolean;
   }>({ buffer: '', inTag: false });
+
+  useEffect(() => {
+    if (!visible) abortRef.current?.abort();
+  }, [visible]);
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
@@ -80,6 +85,8 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
     setInput('');
     setIsLoading(true);
     thinkingStripperRef.current = { buffer: '', inTag: false };
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     // Add user message immediately
     const userMessage: AgentMessage = {
@@ -231,6 +238,7 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
             return updated;
           });
         },
+        controller.signal,
       );
 
       setConversationId(result.conversationId);
@@ -267,6 +275,9 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
         }
       }
     } catch (err) {
+      if ((err as { name?: string } | null)?.name === 'AbortError') {
+        return;
+      }
       console.error('Agent stream error:', err instanceof Error ? err.message : String(err));
       // Mark the assistant message with an error
       setMessages((prev) => {
@@ -281,6 +292,9 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
         return updated;
       });
     } finally {
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
       setIsLoading(false);
       setCurrentTool(null);
     }
@@ -348,6 +362,7 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
   );
 
   const handleNewChat = useCallback(() => {
+    abortRef.current?.abort();
     if (isLoading) return;
     setMessages([]);
     setConversationId(undefined);
@@ -422,7 +437,10 @@ export default function AgentChatScreen({ visible, onClose }: AgentChatScreenPro
                       <Ionicons name="add-circle-outline" size={24} color={theme.primary} />
                     </TouchableOpacity>
                     <TouchableOpacity
-                      onPress={onClose}
+                      onPress={() => {
+                        abortRef.current?.abort();
+                        onClose();
+                      }}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       accessibilityLabel="Close"
                       accessibilityRole="button"

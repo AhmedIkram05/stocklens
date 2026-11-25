@@ -52,6 +52,7 @@ export const agentService = {
     onToolStart?: (toolName: string) => void,
     onToolEnd?: (toolName: string, result?: any) => void,
     onReasoning?: (reasoning: string) => void,
+    signal?: AbortSignal,
   ): Promise<{ conversationId: string; fullResponse: string; traceId: string }> {
     const token = await apiService.ensureValidAccessToken();
     if (!token) {
@@ -64,6 +65,7 @@ export const agentService = {
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ message, conversation_id: conversationId || null }),
+      signal,
     });
 
     if (!response.ok) {

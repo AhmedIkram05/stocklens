@@ -6,7 +6,7 @@
  * `apiService.ensureValidAccessToken()` (token pre-freshened, no retry needed).
  */
 
-import { API_BASE_URL, ApiError, apiService } from '../services/api';
+import { API_BASE_URL, ApiError, apiService, fetchWithTimeout } from '../services/api';
 import type { PortfolioDetailQuery } from './generated';
 import type { PortfolioPerformance } from '../services/portfolios';
 import type { PortfolioValuationPayload } from './subscriptionClient';
@@ -16,7 +16,7 @@ export async function graphqlRequest<TData, TVars = Record<string, unknown>>(
   variables?: TVars,
 ): Promise<TData> {
   const token = await apiService.ensureValidAccessToken();
-  const res = await fetch(`${API_BASE_URL}/graphql`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/graphql`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
