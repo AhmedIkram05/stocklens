@@ -405,6 +405,18 @@ class TestDeskew:
         assert result.shape == img.shape
 
 
+def _ocr_data(text: str, conf: float = 90.0) -> dict:
+    """Minimal pytesseract image_to_data payload for one line of text."""
+    words = text.split()
+    return {
+        "text": words,
+        "conf": [conf] * len(words),
+        "block_num": [1] * len(words),
+        "par_num": [1] * len(words),
+        "line_num": [1] * len(words),
+    }
+
+
 class TestExtractText:
     """Tests for extract_text with mocked Tesseract."""
 
@@ -417,7 +429,7 @@ class TestExtractText:
         monkeypatch.setattr("src.config.settings.OCR_TESSERACT_CMD", "/custom/tesseract")
 
         with patch("src.receipts.ocr.pytesseract") as mock_ts:
-            mock_ts.image_to_string.return_value = "Extracted text"
+            mock_ts.image_to_data.return_value = _ocr_data("Extracted text")
             img = np.zeros((100, 100), dtype=np.uint8)
             result = extract_text(img)
             assert result == "Extracted text"
@@ -430,16 +442,15 @@ class TestExtractText:
         from src.receipts.ocr import extract_text
 
         with patch("src.receipts.ocr.pytesseract") as mock_ts:
-            # Third config has the highest score (has total keyword)
-            mock_ts.image_to_string.side_effect = [
-                "Some text",
-                "More text",
-                "Total £10.00",  # Best - has total
+            mock_ts.image_to_data.side_effect = [
+                _ocr_data("Some text"),
+                _ocr_data("More text"),
+                _ocr_data("Total £10.00"),  # Best - has total
             ]
             img = np.zeros((100, 100), dtype=np.uint8)
             result = extract_text(img)
             assert result == "Total £10.00"
-            assert mock_ts.image_to_string.call_count == 3
+            assert mock_ts.image_to_data.call_count == 3
 
     def test_exception_during_ocr_continues(self):
         """If a config raises, the next config is tried."""
@@ -448,46 +459,50 @@ class TestExtractText:
         from src.receipts.ocr import extract_text
 
         with patch("src.receipts.ocr.pytesseract") as mock_ts:
-            mock_ts.image_to_string.side_effect = [
+            mock_ts.image_to_data.side_effect = [
                 RuntimeError("Tesseract crashed"),
-                "Fallback text extracted here",
+                _ocr_data("Fallback text extracted here"),
+                _ocr_data(""),
             ]
             img = np.zeros((100, 100), dtype=np.uint8)
             result = extract_text(img)
             assert result == "Fallback text extracted here"
 
+    def test_confidence_comes_from_the_winning_pass(self):
+        """The winner's mean word confidence is returned without a fourth pass."""
+        import numpy as np
 
-class TestComputeOcrConfidence:
-    """Tests for _compute_ocr_confidence."""
+        from src.receipts.ocr import extract_text_with_confidence
+
+        with patch("src.receipts.ocr.pytesseract") as mock_ts:
+            mock_ts.image_to_data.side_effect = [
+                _ocr_data("Some text", conf=50),
+                _ocr_data("Total £10.00", conf=90),
+                _ocr_data("Other", conf=40),
+            ]
+            img = np.zeros((100, 100), dtype=np.uint8)
+            text, confidence = extract_text_with_confidence(img)
+            assert text == "Total £10.00"
+            assert confidence == 0.9
+            assert mock_ts.image_to_data.call_count == 3
+
+
+class TestOcrConfidence:
+    """Tests for the image_to_data confidence projection."""
 
     def test_returns_zero_for_no_confident_text(self):
-        import numpy as np
+        from src.receipts.ocr import _text_and_confidence_from_data
 
-        from src.receipts.ocr import _compute_ocr_confidence
-
-        with patch("src.receipts.ocr.pytesseract") as mock_ts:
-            mock_ts.image_to_data.return_value = {
-                "conf": [-1, -1, -1],
-                "text": ["", " ", "  "],
-            }
-            img = np.zeros((100, 100), dtype=np.uint8)
-            confidence = _compute_ocr_confidence(img)
-            assert confidence == 0.0
+        data = {"conf": [-1, -1, -1], "text": ["", " ", "  "]}
+        assert _text_and_confidence_from_data(data) == ("", 0.0)
 
     def test_computes_average_confidence(self):
-        import numpy as np
+        from src.receipts.ocr import _text_and_confidence_from_data
 
-        from src.receipts.ocr import _compute_ocr_confidence
-
-        with patch("src.receipts.ocr.pytesseract") as mock_ts:
-            mock_ts.image_to_data.return_value = {
-                "conf": [80, 90, -1, 70],
-                "text": ["Hello", "World", "", "Test"],
-            }
-            img = np.zeros((100, 100), dtype=np.uint8)
-            confidence = _compute_ocr_confidence(img)
-            # Average of 80, 90, 70 (excludes -1) = 80 → 0.8
-            assert confidence == 0.8
+        data = {"conf": [80, 90, -1, 70], "text": ["Hello", "World", "", "Test"]}
+        text, confidence = _text_and_confidence_from_data(data)
+        assert text == "Hello World Test"
+        assert confidence == 0.8
 
 
 class TestProcessReceipt:
@@ -499,10 +514,10 @@ class TestProcessReceipt:
 
         with (
             patch("src.receipts.ocr.preprocess_image") as mock_pre,
-            patch("src.receipts.ocr.extract_text") as mock_extract,
+            patch("src.receipts.ocr.extract_text_with_confidence") as mock_extract,
         ):
             mock_pre.return_value = None
-            mock_extract.return_value = ""
+            mock_extract.return_value = ("", 0.0)
             result = process_receipt(b"fake-image-bytes")
 
         assert result["total_amount"] is None
@@ -518,16 +533,15 @@ class TestProcessReceipt:
 
         with (
             patch("src.receipts.ocr.preprocess_image") as mock_pre,
-            patch("src.receipts.ocr.extract_text") as mock_extract,
-            patch("src.receipts.ocr._compute_ocr_confidence") as mock_conf,
+            patch("src.receipts.ocr.extract_text_with_confidence") as mock_extract,
         ):
             import numpy as np
 
             mock_pre.return_value = np.zeros((100, 100), dtype=np.uint8)
             mock_extract.return_value = (
-                "TESCO STORES LTD\n12/04/2026\nMilk 1.65\nBread 1.20\nTotal 2.85"
+                "TESCO STORES LTD\n12/04/2026\nMilk 1.65\nBread 1.20\nTotal 2.85",
+                0.85,
             )
-            mock_conf.return_value = 0.85
             result = process_receipt(b"fake-image-bytes")
 
         assert result["total_amount"] == Decimal("2.85")

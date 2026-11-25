@@ -88,7 +88,7 @@ async function refreshTokens(epoch: number): Promise<boolean> {
     const refreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
     if (!refreshToken) return false;
 
-    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken }),
@@ -128,6 +128,39 @@ export class ApiError extends Error {
   ) {
     super(message);
     this.name = 'ApiError';
+  }
+}
+
+export class ApiRequestTimeoutError extends ApiError {
+  constructor() {
+    super(0, 'Request timed out');
+    this.name = 'ApiRequestTimeoutError';
+  }
+}
+
+/**
+ * fetch with an abort deadline. Callers can still supply their own signal
+ * (streaming/cancellation); the timeout only applies when they do not.
+ */
+export async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs = 30_000,
+): Promise<Response> {
+  if (init.signal) {
+    return fetch(input, init);
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new ApiRequestTimeoutError();
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -217,7 +250,7 @@ export async function api<T = unknown>(endpoint: string, options: ApiOptions = {
   }
 
   // ── Initial request ──
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const response = await fetchWithTimeout(`${API_BASE_URL}${endpoint}`, {
     method,
     headers: requestHeaders,
     body: body ? JSON.stringify(body) : undefined,
@@ -231,7 +264,7 @@ export async function api<T = unknown>(endpoint: string, options: ApiOptions = {
       const newToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
       requestHeaders['Authorization'] = `Bearer ${newToken}`;
 
-      const retryResponse = await fetch(`${API_BASE_URL}${endpoint}`, {
+      const retryResponse = await fetchWithTimeout(`${API_BASE_URL}${endpoint}`, {
         method,
         headers: requestHeaders,
         body: body ? JSON.stringify(body) : undefined,
@@ -307,7 +340,7 @@ export const apiService = {
       }
     }
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}${endpoint}`, {
       method: 'POST',
       headers,
       body: formData,
@@ -321,7 +354,7 @@ export const apiService = {
         const newToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
         headers['Authorization'] = `Bearer ${newToken}`;
 
-        const retryResponse = await fetch(`${API_BASE_URL}${endpoint}`, {
+        const retryResponse = await fetchWithTimeout(`${API_BASE_URL}${endpoint}`, {
           method: 'POST',
           headers,
           body: formData,
