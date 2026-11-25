@@ -10,6 +10,7 @@ import decimal
 import re
 from datetime import date
 from decimal import Decimal
+from functools import lru_cache
 
 import cv2
 import numpy as np
@@ -179,28 +180,73 @@ def extract_text(
     # Receipts are neither consistently a block nor consistently sparse.
     # Score a small OCR ensemble by receipt evidence; accepting the first
     # mode with a few characters is extremely layout-sensitive.
-    best = ""
+    # image_to_data yields text + mean confidence in one pass, so the winner
+    # needs no follow-up pass for confidence.
+    text, _ = extract_text_with_confidence(image, tesseract_cmd=cmd)
+    return text
+
+
+def _text_and_confidence_from_data(data: dict) -> tuple[str, float]:
+    """Reconstruct line-ordered text and mean word confidence from OCR data."""
+    lines: dict[tuple[int, int, int], list[str]] = {}
+    confs: list[float] = []
+    texts = data.get("text", [])
+    blocks = data.get("block_num") or [0] * len(texts)
+    pars = data.get("par_num") or [0] * len(texts)
+    line_nums = data.get("line_num") or [0] * len(texts)
+    for i, raw in enumerate(texts):
+        word = (raw or "").strip()
+        if not word:
+            continue
+        key = (blocks[i], pars[i], line_nums[i])
+        lines.setdefault(key, []).append(word)
+        try:
+            conf = float(data["conf"][i])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if conf > 0:
+            confs.append(conf)
+    text = "\n".join(" ".join(words) for _, words in sorted(lines.items()))
+    confidence = round(sum(confs) / len(confs) / 100.0, 4) if confs else 0.0
+    return text, confidence
+
+
+def extract_text_with_confidence(
+    image: np.ndarray,
+    tesseract_cmd: str | None = None,
+) -> tuple[str, float]:
+    """Run the PSM ensemble and return the best text plus its mean confidence."""
+    cmd = tesseract_cmd or settings.OCR_TESSERACT_CMD
+    if cmd:
+        pytesseract.tesseract_cmd = cmd
+
+    best_text = ""
+    best_conf = 0.0
     best_score = float("-inf")
     for config in ("--oem 3 --psm 6", "--oem 3 --psm 4", "--oem 3 --psm 11"):
         try:
-            text = pytesseract.image_to_string(image, config=config)
+            data = pytesseract.image_to_data(
+                image, config=config, output_type=pytesseract.Output.DICT
+            )
         except Exception:
             continue
+        text, confidence = _text_and_confidence_from_data(data)
         score = _score_ocr_candidate(text)
         if score > best_score:
-            best = text
+            best_text = text
+            best_conf = confidence
             best_score = score
 
-    cleaned = best.strip()
+    cleaned = best_text.strip()
     if not cleaned:
         logger.warning("ocr_all_psm_modes_empty", attempted_modes="6,4,11")
     else:
         logger.debug(
             "ocr_extracted",
             char_count=len(cleaned),
-            line_count=cleaned.count("\n") + 1 if cleaned else 0,
+            line_count=cleaned.count("\n") + 1,
         )
-    return cleaned
+    return cleaned, best_conf
 
 
 # ── Regex Parsing ─────────────────────────────────────────────────────────────
@@ -495,20 +541,32 @@ def parse_line_items(text: str) -> list[dict]:
     return items
 
 
+@lru_cache(maxsize=8)
+def _parse_receipt_text(text: str) -> dict:
+    """Parse one OCR candidate once; scoring and the final result share it."""
+    return {
+        "total": parse_total(text),
+        "merchant": parse_merchant(text),
+        "items": parse_line_items(text),
+        "date": parse_date(text),
+    }
+
+
 def _score_ocr_candidate(text: str) -> float:
     """Rank OCR variants by receipt structure rather than raw text length."""
     cleaned = text.strip()
     if not cleaned:
         return float("-inf")
 
+    parsed = _parse_receipt_text(cleaned)
     printable = sum(ch.isprintable() for ch in cleaned) / len(cleaned)
     lines = [line for line in cleaned.splitlines() if line.strip()]
     score = min(len(cleaned), 400) / 100 + min(len(lines), 20) / 10
     score += printable * 2
-    score += 4 if parse_total(cleaned) is not None else 0
-    score += 2 if parse_date(cleaned) is not None else 0
-    score += 1 if parse_merchant(cleaned) is not None else 0
-    score += min(len(parse_line_items(cleaned)), 5) * 0.75
+    score += 4 if parsed["total"] is not None else 0
+    score += 2 if parsed["date"] is not None else 0
+    score += 1 if parsed["merchant"] is not None else 0
+    score += min(len(parsed["items"]), 5) * 0.75
     return score
 
 
@@ -563,19 +621,9 @@ def parse_date(text: str) -> date | None:
     return None
 
 
-def _compute_ocr_confidence(image: np.ndarray) -> float:
-    data = pytesseract.image_to_data(
-        image,
-        config="--oem 3 --psm 6",
-        output_type=pytesseract.Output.DICT,
-    )
-    confs = [c for i, c in enumerate(data["conf"]) if c > 0 and data["text"][i].strip()]
-    return round(sum(confs) / len(confs) / 100.0, 4) if confs else 0.0
-
-
 def process_receipt(image_bytes: bytes) -> dict:
     processed = preprocess_image(image_bytes)
-    raw_text = extract_text(processed)
+    raw_text, confidence = extract_text_with_confidence(processed)
 
     if not raw_text.strip():
         return {
@@ -587,17 +635,13 @@ def process_receipt(image_bytes: bytes) -> dict:
             "ocr_raw_text": "",
         }
 
-    total = parse_total(raw_text)
-    merchant = parse_merchant(raw_text)
-    items = parse_line_items(raw_text)
-    parsed_date = parse_date(raw_text)
-    confidence = _compute_ocr_confidence(processed)
+    parsed = _parse_receipt_text(raw_text)
 
     return {
-        "total_amount": total,
-        "merchant_name": merchant,
-        "line_items": items,
-        "date": parsed_date,
+        "total_amount": parsed["total"],
+        "merchant_name": parsed["merchant"],
+        "line_items": parsed["items"],
+        "date": parsed["date"],
         "ocr_confidence": confidence,
         "ocr_raw_text": raw_text,
     }
