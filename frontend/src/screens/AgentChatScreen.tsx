@@ -677,9 +677,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     flex: 1,
   },
-  headerTitleGroup: {
-    flex: 1,
-  },
+
   subtitleRow: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
