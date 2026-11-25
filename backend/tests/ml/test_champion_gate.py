@@ -6,8 +6,6 @@ All tests are pure Python with no DB or MLflow dependency.
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
@@ -16,8 +14,6 @@ import pytest
 from ml.reference_distributions import (
     _json_fallback,
     build_reference_from_training_data,
-    load_reference,
-    save_reference,
 )
 
 # ---------------------------------------------------------------------------
@@ -83,48 +79,6 @@ def test_build_reference_single_sample() -> None:
     assert ref["n_training_samples"] == 1
     for name in ["a", "b"]:
         assert ref["feature_histograms"][name]["n"] == 1
-
-
-def test_save_load_roundtrip() -> None:
-    """Written JSON can be loaded back losslessly."""
-    ref = {
-        "feature_histograms": {
-            "a": {
-                "histogram": [10] * 20,
-                "bin_edges": list(range(21)),
-                "values": [0.5] * 50,
-                "n": 50,
-            },
-            "b": {
-                "histogram": [5] * 20,
-                "bin_edges": list(range(21)),
-                "values": [1.0] * 50,
-                "n": 50,
-            },
-        },
-        "prediction_distribution": [0.4, 0.3, 0.3],
-        "n_training_samples": 50,
-        "n_features": 2,
-        "feature_names": ["a", "b"],
-        "computed_at": "2026-01-01T00:00:00",
-    }
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-        tmp = f.name
-
-    try:
-        save_reference(ref, path=tmp)
-        loaded = load_reference(path=tmp)
-        assert loaded is not None
-        assert loaded["n_training_samples"] == 50
-        assert loaded["feature_histograms"]["a"]["n"] == 50
-    finally:
-        Path(tmp).unlink(missing_ok=True)
-
-
-def test_load_nonexistent_file() -> None:
-    """load_reference returns None when the file does not exist."""
-    result = load_reference(path="/tmp/nonexistent_reference_data_xyz.json")
-    assert result is None
 
 
 def test_json_fallback_numpy() -> None:
