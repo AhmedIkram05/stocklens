@@ -321,6 +321,14 @@ def prepare_global_dataset(
 
     global_sequences = np.concatenate(all_sequences, axis=0)
     global_labels = np.concatenate(all_labels_list, axis=0)
+    label_counts = np.bincount(global_labels.astype(int), minlength=3)
+    logger.info(
+        "Label distribution: DOWN=%d FLAT=%d UP=%d total=%d",
+        int(label_counts[0]),
+        int(label_counts[1]),
+        int(label_counts[2]),
+        int(label_counts.sum()),
+    )
     global_ticker_idxs = np.concatenate(all_ticker_idxs, axis=0)
     global_dates = np.concatenate(all_dates_list, axis=0)
     global_fwd_rets = np.concatenate(all_fwd_rets_list, axis=0)
