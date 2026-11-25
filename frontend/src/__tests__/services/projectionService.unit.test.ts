@@ -123,31 +123,6 @@ describe('projectionService.getHistoricalCAGRFromToday', () => {
   });
 });
 
-describe('projectionService.getLSTMPrediction', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('returns prediction when available', async () => {
-    (mockedPredictionService.getPrediction as jest.Mock).mockResolvedValue({
-      direction: 'UP',
-      confidence: 0.85,
-      model_version: 'champion',
-    });
-
-    const result = await projectionService.getLSTMPrediction('AAPL');
-
-    expect(result).not.toBeNull();
-    expect(result!.direction).toBe('UP');
-    expect(result!.confidence).toBe(0.85);
-  });
-
-  it('returns null when prediction fails', async () => {
-    (mockedPredictionService.getPrediction as jest.Mock).mockRejectedValue(new Error('fail'));
-    expect(await projectionService.getLSTMPrediction('AAPL')).toBeNull();
-  });
-});
-
 describe('projectionService.getCombinedProjection', () => {
   beforeEach(() => {
     jest.clearAllMocks();

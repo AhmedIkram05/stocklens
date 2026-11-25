@@ -7,7 +7,7 @@
  */
 
 import { marketService, OHLCVData } from './market';
-import { predictionService, PredictionResponse } from './prediction';
+import { predictionService } from './prediction';
 import { periodToStartDate } from '../constants/periods';
 
 const CAGR_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -121,14 +121,6 @@ export async function getHistoricalCAGRForPeriod(
  * @param years - Number of years to project
  * @returns Object with CAGR rate and future value
  */
-export async function getLSTMPrediction(ticker: string): Promise<PredictionResponse | null> {
-  try {
-    return await predictionService.getPrediction(ticker);
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Get combined projection: LSTM direction + CAGR rate.
  * Uses LSTM as primary signal, CAGR as fallback growth rate.
