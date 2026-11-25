@@ -109,9 +109,6 @@ ENV AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL=30
 
 WORKDIR ${AIRFLOW_HOME}
 
-# Backend source code is mounted at runtime via docker-compose volumes
-# (not copied into the image) so DAGs can import backend modules directly.
-
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8080/api/v2/monitor/health || exit 1
 
