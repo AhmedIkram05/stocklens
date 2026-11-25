@@ -14,24 +14,22 @@ resource "aws_elasticache_subnet_group" "main" {
 }
 
 resource "aws_elasticache_replication_group" "main" {
-  # checkov:skip=CKV2_AWS_50:dev — Multi-AZ failover not needed for dev
+  # checkov:skip=CKV2_AWS_50:dev — single node in dev; production runs 2
   replication_group_id = "${var.app_name}-${var.environment}"
   description          = "StockLens Redis ${var.environment}"
 
-  engine               = "redis"
-  engine_version       = "7.1"
-  node_type            = var.redis_node_type
-  num_cache_clusters   = 1
-  parameter_group_name = "default.redis7"
-  port                 = 6379
+  engine             = "redis"
+  engine_version     = "8.0"
+  node_type          = var.redis_node_type
+  num_cache_clusters = var.environment == "production" ? 2 : 1
+  port               = 6379
 
   # Network
   subnet_group_name  = aws_elasticache_subnet_group.main.name
   security_group_ids = [var.redis_sg_id]
 
-  # Single-node dev — Multi-AZ enabled when num_cache_clusters >= 2
-  multi_az_enabled           = false
-  automatic_failover_enabled = false
+  multi_az_enabled           = var.environment == "production"
+  automatic_failover_enabled = var.environment == "production"
 
   # Maintenance
   maintenance_window         = "sun:05:00-sun:06:00"

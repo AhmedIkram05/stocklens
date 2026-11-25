@@ -51,6 +51,26 @@ resource "aws_secretsmanager_secret_version" "jwt_secret" {
   secret_string = var.jwt_secret_key != "" ? var.jwt_secret_key : random_password.jwt.result
 }
 
+# ── MCP RS256 private key ────────────────────────────────────────────
+
+resource "tls_private_key" "jwt" {
+  algorithm = "RSA"
+  rsa_bits  = 2048
+}
+
+resource "aws_secretsmanager_secret" "jwt_private_key" {
+  # checkov:skip=CKV_AWS_149:dev — no KMS CMK; use default encryption
+  # checkov:skip=CKV2_AWS_57:dev — fixed signing key, not a rotatable credential
+  name                    = "${var.app_name}-jwt-private-key-${var.environment}"
+  description             = "StockLens MCP RS256 signing key"
+  recovery_window_in_days = 7
+}
+
+resource "aws_secretsmanager_secret_version" "jwt_private_key" {
+  secret_id     = aws_secretsmanager_secret.jwt_private_key.id
+  secret_string = var.jwt_private_key != "" ? var.jwt_private_key : tls_private_key.jwt.private_key_pem
+}
+
 # ── Redis AUTH password ──────────────────────────────────────────────
 
 resource "random_password" "redis" {

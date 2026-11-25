@@ -26,6 +26,11 @@ output "jwt_secret_arn" {
   value       = aws_secretsmanager_secret.jwt_secret.arn
 }
 
+output "jwt_private_key_secret_arn" {
+  description = "ARN of the Secrets Manager secret for the MCP RS256 private key"
+  value       = aws_secretsmanager_secret.jwt_private_key.arn
+}
+
 output "redis_pass_secret_arn" {
   description = "ARN of the Secrets Manager secret for Redis AUTH token"
   value       = aws_secretsmanager_secret.redis_pass.arn

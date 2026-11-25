@@ -118,4 +118,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 # Make init script executable
 RUN chmod +x /opt/airflow/scripts/init_airflow_variables.sh
 
+# The base image ships an airflow user; be explicit so a future base change
+# cannot silently run DAGs as root.
+USER airflow
+
 CMD ["airflow", "api-server", "--port", "8080"]

@@ -23,6 +23,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 
   # ── Remote state ──
@@ -76,6 +80,7 @@ module "secrets" {
   environment       = var.environment
   db_password       = var.db_password
   jwt_secret_key    = var.jwt_secret_key
+  jwt_private_key   = var.jwt_private_key
   redis_pass        = var.redis_pass
   langsmith_api_key = var.langsmith_api_key
 }
@@ -124,6 +129,7 @@ module "iam" {
   secret_arns = [
     module.secrets.db_password_secret_arn,
     module.secrets.jwt_secret_arn,
+    module.secrets.jwt_private_key_secret_arn,
     module.secrets.redis_pass_secret_arn,
     module.secrets.langsmith_api_key_secret_arn,
     module.database.db_secret_arn,
@@ -162,6 +168,7 @@ module "compute" {
   redis_port                   = module.cache.redis_port
   database_url_secret_arn      = module.database.db_secret_arn
   jwt_secret_arn               = module.secrets.jwt_secret_arn
+  jwt_private_key_secret_arn   = module.secrets.jwt_private_key_secret_arn
   redis_pass_secret_arn        = module.secrets.redis_pass_secret_arn
   langsmith_api_key_secret_arn = module.secrets.langsmith_api_key_secret_arn
   champion_s3_uri              = var.champion_s3_uri
