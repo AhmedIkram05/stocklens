@@ -10,9 +10,15 @@ jest.mock('@/services/market', () => ({
   },
 }));
 
+jest.mock('@/services/prediction', () => ({
+  predictionService: {
+    getPrediction: jest.fn(),
+  },
+}));
+
 import { marketService } from '@/services/market';
 import * as projectionService from '@/services/projectionService';
-import { PRESET_RATES } from '@/services/stockPresets';
+import { predictionService as mockedPredictionService } from '@/services/prediction';
 
 const mockedMarketService = marketService as jest.Mocked<typeof marketService>;
 
@@ -78,50 +84,6 @@ describe('projectionService.getCAGR', () => {
     expect(await projectionService.getCAGR('AAPL')).toBeNull();
   });
 });
-
-describe('projectionService.projectUsingHistoricalCAGR', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('uses fetched CAGR when stock history is available', async () => {
-    mockedMarketService.getOHLCV.mockResolvedValue([
-      { date: '2020-01-01', adjusted_close: 100 },
-      { date: '2021-01-01', adjusted_close: 113 },
-    ] as any);
-
-    const result = await projectionService.projectUsingHistoricalCAGR(1000, 'NVDA', 5);
-
-    expect(result.rate).toBeGreaterThan(0);
-    expect(result.futureValue).toBeGreaterThan(1000);
-  });
-
-  it('falls back to preset rates when historical data fails', async () => {
-    mockedMarketService.getOHLCV.mockRejectedValue(new Error('fail'));
-
-    const result = await projectionService.projectUsingHistoricalCAGR(500, 'aapl', 3);
-
-    const presetRate = PRESET_RATES.AAPL;
-    expect(result.rate).toBe(presetRate);
-    expect(result.futureValue).toBeCloseTo(500 * Math.pow(1 + presetRate, 3), 5);
-  });
-
-  it('uses 0.1 default fallback when no history and no preset', async () => {
-    mockedMarketService.getOHLCV.mockRejectedValue(new Error('fail'));
-
-    const result = await projectionService.projectUsingHistoricalCAGR(1000, 'UNKNOWN', 2);
-
-    expect(result.rate).toBe(0.1);
-  });
-});
-
-jest.mock('@/services/prediction', () => ({
-  predictionService: {
-    getPrediction: jest.fn(),
-  },
-}));
-
-import { predictionService as mockedPredictionService } from '@/services/prediction';
 
 describe('projectionService.getHistoricalCAGRForPeriod', () => {
   beforeEach(() => {

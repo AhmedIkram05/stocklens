@@ -7,7 +7,6 @@
  */
 
 import { marketService, OHLCVData } from './market';
-import { PRESET_RATES } from './stockPresets';
 import { predictionService, PredictionResponse } from './prediction';
 import { periodToStartDate } from '../constants/periods';
 
@@ -121,23 +120,6 @@ export async function getHistoricalCAGRForPeriod(
  * @param symbol - Stock ticker
  * @param years - Number of years to project
  * @returns Object with CAGR rate and future value
- */
-export async function projectUsingHistoricalCAGR(
-  amount: number,
-  symbol: string,
-  years: number,
-): Promise<{ rate: number; futureValue: number }> {
-  const cagr = await getCAGR(symbol);
-  const rate = cagr ?? PRESET_RATES[symbol.toUpperCase()] ?? 0.1;
-  const futureValue = amount * Math.pow(1 + rate, years);
-  return { rate, futureValue };
-}
-
-/**
- * Get LSTM-based directional prediction for a ticker.
- *
- * @param ticker - Stock ticker symbol
- * @returns PredictionResponse or null if unavailable
  */
 export async function getLSTMPrediction(ticker: string): Promise<PredictionResponse | null> {
   try {
