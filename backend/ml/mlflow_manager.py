@@ -14,6 +14,7 @@ Handles:
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import tempfile
@@ -305,6 +306,37 @@ class MLflowManager:
             for key, value in tags.items():
                 client.set_experiment_tag(experiment.experiment_id, key, value)
         logger.info("Experiment tags set", extra={"tags": tags})
+
+    async def read_champion_metrics(self) -> dict[str, Any] | None:
+        """Read champion metrics from the model_registry DB table.
+
+        Returns the raw ``test_metrics`` dict (with ``directional_accuracy``),
+        or ``None`` if no champion exists.
+        """
+        import asyncpg
+
+        dsn = ML_CONFIG.SYNC_DATABASE_URL
+        conn = await asyncpg.connect(dsn)
+        try:
+            await conn.set_type_codec(
+                "jsonb",
+                encoder=json.dumps,
+                decoder=json.loads,
+                schema="pg_catalog",
+            )
+            row = await conn.fetchrow(
+                "SELECT metrics FROM model_registry WHERE alias = 'champion'",
+            )
+            if row and row["metrics"]:
+                logger.info(
+                    "Champion metrics read from DB",
+                    extra={"directional_accuracy": row["metrics"].get("directional_accuracy")},
+                )
+                return row["metrics"]
+            logger.info("No champion row found in model_registry")
+            return None
+        finally:
+            await conn.close()
 
     def _resolve_save_dir(self) -> Path:
         """Directory the champion checkpoint is written to (or read from).
