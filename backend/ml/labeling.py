@@ -67,21 +67,3 @@ def compute_adaptive_labels(
     labels[forward_ret.isna() | threshold.isna()] = np.nan
 
     return labels
-
-
-def compute_label_distribution(labels: pd.Series) -> dict[str, float]:
-    """Compute class distribution of labels.
-
-    Returns:
-        Dict mapping class name to proportion (0-1).
-    """
-    valid = labels.dropna()
-    if len(valid) == 0:
-        return {"DOWN": 0.0, "FLAT": 0.0, "UP": 0.0}
-
-    total = len(valid)
-    return {
-        "DOWN": float((valid == 0).sum() / total),
-        "FLAT": float((valid == 1).sum() / total),
-        "UP": float((valid == 2).sum() / total),
-    }
