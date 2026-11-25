@@ -106,6 +106,13 @@ variable "redis_node_type" {
   default     = "cache.r6g.micro"
 }
 
+variable "jwt_private_key" {
+  description = "RSA PEM for MCP RS256 tokens (sensitive, optional — auto-generated if empty)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "redis_pass" {
   description = "ElastiCache Redis AUTH token (sensitive)"
   type        = string

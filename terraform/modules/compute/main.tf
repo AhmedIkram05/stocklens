@@ -397,6 +397,10 @@ resource "aws_ecs_task_definition" "app" {
           valueFrom = var.jwt_secret_arn
         },
         {
+          name      = "JWT_PRIVATE_KEY"
+          valueFrom = var.jwt_private_key_secret_arn
+        },
+        {
           name      = "REDIS_PASSWORD"
           valueFrom = var.redis_pass_secret_arn
         },

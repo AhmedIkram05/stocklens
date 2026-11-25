@@ -22,6 +22,13 @@ variable "jwt_secret_key" {
   default     = ""
 }
 
+variable "jwt_private_key" {
+  description = "RSA PEM for MCP RS256 tokens (sensitive, optional — auto-generated if empty)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "redis_pass" {
   description = "ElastiCache Redis AUTH token (sensitive, optional — auto-generated if empty)"
   type        = string
