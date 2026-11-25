@@ -13,7 +13,7 @@ import PageHeader from '../components/PageHeader';
 import { brandColors, useTheme } from '../contexts/ThemeContext';
 import { radii, spacing, typography } from '../styles/theme';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { ScrollView, RefreshControl } from 'react-native';
 import { subscribe } from '../services/eventBus';
 import useReceipts, { ReceiptShape } from '../hooks/useReceipts';
@@ -53,7 +53,6 @@ export default function SummaryScreen() {
   const [spendingAnalysis, setSpendingAnalysis] = useState<SpendingAnalysisData | null>(null);
   const [, setPortfolioLoading] = useState(true);
   const [, setPortfolioError] = useState<string | null>(null);
-  const portfolioLoadedRef = useRef(false);
 
   const { receipts, loading: receiptsLoading, error: receiptsError, refetch } = useReceipts();
   const [refreshing, setRefreshing] = useState(false);
@@ -139,7 +138,6 @@ export default function SummaryScreen() {
         categories: spendingCategories,
         month_over_month: monthOverMonth,
       });
-      portfolioLoadedRef.current = true;
     } catch (err) {
       setPortfolioError('Failed to analyse spending');
     } finally {
@@ -200,7 +198,6 @@ export default function SummaryScreen() {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    portfolioLoadedRef.current = false;
     await Promise.allSettled([refetch(), loadSpendingAnalysis(), loadReceiptTotals()]);
     setRefreshing(false);
   }, [refetch, loadSpendingAnalysis, loadReceiptTotals]);
