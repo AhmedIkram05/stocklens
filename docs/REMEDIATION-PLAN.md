@@ -12,12 +12,11 @@
 
 - **Work unit:** one atomic PR per root cause. A PR may close several finding IDs when they share
   one behavioural intent; the PR body lists every ID it closes.
-- **History:** one commit per PR where possible. A second commit is allowed only when CI forces a
-  fix; it is budgeted as +1 event.
-- **Contribution ceiling:** **42 GitHub contribution events per calendar day**, counting commits
-  that land on `main`, PR opens, merge commits, issues, and reviews. Plan to **≤ 21/day**; the
-  ceiling is a guardrail, not a target.
-- **Merge authority:** the agent pushes the branch and opens the PR; **Ahmed merges**. The agent
+- **History:** atomic commits, one concern each. A PR may contain several commits when it closes
+  several independent concerns.
+- **Contribution floor:** **40 GitHub contribution events per calendar day**, then stop at the PR
+  that crosses the floor. Counts include commits that land on `main`, PR opens, and merge commits.
+- **Merge authority:** the agent pushes, opens, and merges once CI is green. The agent
   does not hand back a PR until every CI check is green.
 - **Review gate:** before a PR is opened, a `code-reviewer` subagent performs a **thorough**
   review of the branch diff against `main` and the acceptance test. **All review findings are
