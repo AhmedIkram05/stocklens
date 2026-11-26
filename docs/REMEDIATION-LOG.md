@@ -46,6 +46,11 @@ The review itself is the findings register; this is what actually shipped.
 | Frontend dead code                 | #416 | FE-L48 (partial)                                                                   |
 | Final backend/frontend cleanup     | #417 | BE-L37, ML-L30                                                                     |
 | CI pins / eval runtime             | #418 | CI LOW: action pinning, eval PG18, uv frozen, matrix key, eval timeout             |
+| Docs close-out                     | #419 | Remaining/deferred ledger, plan contract                                           |
+| Repo hygiene                       | #420 | compose pins, stale mocks, receipt source, uuid type                               |
+| WS subscription cap                | #421 | BE-M8 (per-socket cap), INF-H1 runbook, FE-L49 note                                |
+| ML array fill                      | #422 | ML-M10 (first step)                                                                |
+| CI runner bounds                   | #423 | deploy timeouts, eval Python 3.13, compose password                                |
 
 ## Deliberately deferred
 

@@ -1,6 +1,6 @@
 # Remediation Plan — 17 Nov → 9 Dec 2026
 
-> **Execution note:** the day-by-day ledger below is historical. Batches were merged area-by-area; see `docs/REMEDIATION-LOG.md` for what shipped.
+> **Execution note:** the day-by-day ledger below is historical. Batches were merged area-by-area; see `docs/REMEDIATION-LOG.md` for what shipped and `docs/REMEDIATION-STATUS.md` for the live remainder.
 
 **Source:** `docs/CODE-REVIEW-2026-11-16.md`
 **Baseline:** `main` at `d32c052` (PR #367 merged)
