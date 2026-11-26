@@ -16,7 +16,6 @@ jest.mock('@/services/auth', () => ({
     signUp: jest.fn(),
     signOut: jest.fn(),
     getProfile: jest.fn(),
-    isAuthenticated: jest.fn(),
   },
 }));
 

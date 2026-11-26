@@ -112,6 +112,7 @@ class ReceiptInDB(BaseModel):
             transaction_date=row.get("transaction_date"),
             scanned_at=row["scanned_at"],
             created_at=row["created_at"],
+            source=row.get("source"),
         )
 
 
