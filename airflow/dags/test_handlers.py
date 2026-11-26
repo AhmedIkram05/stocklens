@@ -6,8 +6,8 @@ connection, drift detector, DB session) stubbed — including a failure path per
 handler, so a silent MLOps failure cannot ship unnoticed.
 
 Runs in CI's dedicated Airflow job: apache-airflow is not in the backend venv,
-and the CI airflow job installs only ``airflow/requirements.txt`` (which carries
-no ``asyncpg``), so the asyncpg module is injected as a fake rather than assumed.
+and the CI airflow job installs only ``airflow/requirements.txt``, so the module is
+injected as a fake rather than assumed.
 """
 
 from __future__ import annotations

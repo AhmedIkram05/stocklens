@@ -252,35 +252,40 @@ async def get_holding(
     return _row_to_response(row)
 
 
-@router.put("/holdings/{holding_id}", response_model=HoldingResponse)
-@limiter.limit(settings.RATE_LIMIT_DEFAULT)
-async def update_holding(
-    request: Request,
+async def _load_holding_for_write(
+    holding_id: UUID, user_id: str, portfolio_id: UUID | None = None
+) -> dict:
+    """Return the holding scoped to the user (and portfolio when given)."""
+    if portfolio_id is None:
+        row = await _fetch_holding_by_id(holding_id, user_id)
+    else:
+        row = await _verify_holding_in_portfolio(portfolio_id, holding_id, user_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Holding not found",
+        )
+    return row
+
+
+async def _apply_holding_update(
     holding_id: UUID,
+    portfolio_id: UUID | None,
     body: HoldingUpdate,
-    current_user: UserInDB = Depends(get_current_user),
-) -> HoldingResponse:
-    """Update a holding's shares and/or average_cost_basis."""
+    user_id: str,
+) -> dict:
+    """Update shares/cost basis with the shared FX and invariant guards."""
     if body.shares is None and body.average_cost_basis is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="At least one field must be provided for update",
         )
 
-    # Editing the native cost of a manually-created holding (transaction-backed
-    # holdings are refused below) must re-rate it at today's FX, not at the
-    # rate frozen when the row was created.
+    existing = await _load_holding_for_write(holding_id, user_id, portfolio_id)
+
     current_fx: Decimal | None = None
     resolved_currency: str | None = None
     if body.average_cost_basis is not None:
-        existing = await _fetch_holding_by_id(holding_id, current_user.id)
-        if existing is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Holding not found",
-            )
-        # Advisory pre-check: reject transaction-backed holdings before the
-        # provider round-trip. The authoritative guard still runs under lock.
         async with connection_ctx() as conn:
             await _assert_no_linked_transactions(
                 conn, str(existing["portfolio_id"]), existing["ticker"]
@@ -294,68 +299,49 @@ async def update_holding(
                 detail="Currency data unavailable; retry shortly",
             ) from exc
 
-    set_clauses = []
+    set_clauses: list[str] = []
     params: list = []
     idx = 1
-
     if body.shares is not None:
         set_clauses.append(f"shares = ${idx}::numeric")
         params.append(body.shares)
         idx += 1
-
     if body.average_cost_basis is not None:
         if current_fx is None or resolved_currency is None:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Currency data unavailable; retry shortly",
             )
-        acb_idx = idx
-        set_clauses.append(f"average_cost_basis = ${acb_idx}::numeric")
+        set_clauses.append(f"average_cost_basis = ${idx}::numeric")
         params.append(body.average_cost_basis)
         idx += 1
-        gbp_idx = idx
-        set_clauses.append(f"average_cost_basis_gbp = ${gbp_idx}::numeric")
+        set_clauses.append(f"average_cost_basis_gbp = ${idx}::numeric")
         params.append(body.average_cost_basis * current_fx)
         idx += 1
-        rate_idx = idx
-        set_clauses.append(f"fx_rate_to_gbp = ${rate_idx}::numeric")
+        set_clauses.append(f"fx_rate_to_gbp = ${idx}::numeric")
         params.append(current_fx)
         idx += 1
-        curr_idx = idx
-        set_clauses.append(f"currency = ${curr_idx}")
+        set_clauses.append(f"currency = ${idx}")
         params.append(resolved_currency)
         idx += 1
-
     set_clauses.append("updated_at = now()")
     params.append(holding_id)
 
     query = (
         "UPDATE holdings SET "
         + ", ".join(set_clauses)
-        + f" WHERE id = ${idx}::uuid"
-        + " RETURNING id, portfolio_id, ticker, shares, average_cost_basis, currency,"
-        + " fx_rate_to_gbp, average_cost_basis_gbp, created_at, updated_at"
+        + f" WHERE id = ${idx}::uuid "
+        + "RETURNING id, portfolio_id, ticker, shares, average_cost_basis, "
+        + "currency, fx_rate_to_gbp, average_cost_basis_gbp, "
+        + "created_at, updated_at"
     )
 
     async with connection_ctx() as conn:
-        # Serialize against concurrent transactions for this portfolio (the
-        # same xact-scoped advisory lock the transactions write path takes),
-        # so the no-linked-transactions guard cannot be raced by a BUY.
         async with portfolio_write(conn):
-            row = await conn.fetchrow(
-                "SELECT h.id, h.portfolio_id, h.ticker FROM holdings h "
-                "JOIN portfolios p ON p.id = h.portfolio_id "
-                "WHERE h.id = $1::uuid AND p.user_id = $2::uuid",
-                holding_id,
-                current_user.id,
+            await lock_portfolio(conn, existing["portfolio_id"])
+            await _assert_no_linked_transactions(
+                conn, str(existing["portfolio_id"]), existing["ticker"]
             )
-            if row is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Holding not found",
-                )
-            await lock_portfolio(conn, row["portfolio_id"])
-            await _assert_no_linked_transactions(conn, str(row["portfolio_id"]), row["ticker"])
             row = await conn.fetchrow(query, *params)
 
     if row is None:
@@ -363,13 +349,32 @@ async def update_holding(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Holding not found",
         )
+    return dict(row)
 
-    logger.info(
-        "holding_updated",
-        user_id=current_user.id,
-        holding_id=holding_id,
-    )
-    return _row_to_response(dict(row))
+
+async def _delete_holding(holding_id: UUID, user_id: str, portfolio_id: UUID | None = None) -> None:
+    existing = await _load_holding_for_write(holding_id, user_id, portfolio_id)
+    async with connection_ctx() as conn:
+        async with portfolio_write(conn):
+            await lock_portfolio(conn, existing["portfolio_id"])
+            await _assert_no_linked_transactions(
+                conn, str(existing["portfolio_id"]), existing["ticker"]
+            )
+            await conn.execute("DELETE FROM holdings WHERE id = $1::uuid", holding_id)
+
+
+@router.put("/holdings/{holding_id}", response_model=HoldingResponse)
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
+async def update_holding(
+    request: Request,
+    holding_id: UUID,
+    body: HoldingUpdate,
+    current_user: UserInDB = Depends(get_current_user),
+) -> HoldingResponse:
+    """Update a holding's shares and/or average_cost_basis."""
+    row = await _apply_holding_update(holding_id, None, body, current_user.id)
+    logger.info("holding_updated", user_id=current_user.id, holding_id=holding_id)
+    return _row_to_response(row)
 
 
 @router.delete("/holdings/{holding_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -380,33 +385,8 @@ async def delete_holding(
     current_user: UserInDB = Depends(get_current_user),
 ) -> None:
     """Delete a holding (verified through portfolio ownership)."""
-    async with connection_ctx() as conn:
-        # Serialize against concurrent transactions for this portfolio, then
-        # refuse transaction-backed holdings — deleting one would leave its
-        # purchase's cash outflow invested nowhere (cost basis £0, market
-        # value £0, free cash still debited).
-        async with portfolio_write(conn):
-            row = await conn.fetchrow(
-                "SELECT h.id, h.portfolio_id, h.ticker FROM holdings h "
-                "JOIN portfolios p ON p.id = h.portfolio_id "
-                "WHERE h.id = $1::uuid AND p.user_id = $2::uuid",
-                holding_id,
-                current_user.id,
-            )
-            if row is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Holding not found",
-                )
-            await lock_portfolio(conn, row["portfolio_id"])
-            await _assert_no_linked_transactions(conn, str(row["portfolio_id"]), row["ticker"])
-            await conn.execute("DELETE FROM holdings WHERE id = $1::uuid", holding_id)
-
-    logger.info(
-        "holding_deleted",
-        user_id=current_user.id,
-        holding_id=holding_id,
-    )
+    await _delete_holding(holding_id, current_user.id)
+    logger.info("holding_deleted", user_id=current_user.id, holding_id=holding_id)
 
 
 # ── Nested endpoints (spec-compliant paths) ─────────────────────────────
@@ -446,99 +426,9 @@ async def update_portfolio_holding(
     current_user: UserInDB = Depends(get_current_user),
 ) -> HoldingResponse:
     """Update a holding nested under a portfolio (spec-compliant path)."""
-    existing = await _verify_holding_in_portfolio(portfolio_id, holding_id, current_user.id)
-    if existing is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Holding not found",
-        )
-
-    if body.shares is None and body.average_cost_basis is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one field must be provided for update",
-        )
-
-    current_fx: Decimal | None = None
-    resolved_currency: str | None = None
-    if body.average_cost_basis is not None:
-        async with connection_ctx() as conn:
-            await _assert_no_linked_transactions(
-                conn, str(existing["portfolio_id"]), existing["ticker"]
-            )
-        try:
-            resolved_currency, _ = await resolve_instrument(existing["ticker"])
-            current_fx = await get_fx_rate_to_gbp(resolved_currency)
-        except (InstrumentResolutionError, FxRateUnavailableError) as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Currency data unavailable; retry shortly",
-            ) from exc
-
-    set_clauses = []
-    params: list = []
-    idx = 1
-
-    if body.shares is not None:
-        set_clauses.append(f"shares = ${idx}::numeric")
-        params.append(body.shares)
-        idx += 1
-
-    if body.average_cost_basis is not None:
-        if current_fx is None or resolved_currency is None:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Currency data unavailable; retry shortly",
-            )
-        acb_idx = idx
-        set_clauses.append(f"average_cost_basis = ${acb_idx}::numeric")
-        params.append(body.average_cost_basis)
-        idx += 1
-        gbp_idx = idx
-        set_clauses.append(f"average_cost_basis_gbp = ${gbp_idx}::numeric")
-        params.append(body.average_cost_basis * current_fx)
-        idx += 1
-        rate_idx = idx
-        set_clauses.append(f"fx_rate_to_gbp = ${rate_idx}::numeric")
-        params.append(current_fx)
-        idx += 1
-        curr_idx = idx
-        set_clauses.append(f"currency = ${curr_idx}")
-        params.append(resolved_currency)
-        idx += 1
-
-    set_clauses.append("updated_at = now()")
-    params.append(holding_id)
-
-    query = (
-        "UPDATE holdings SET "
-        + ", ".join(set_clauses)
-        + f" WHERE id = ${idx}::uuid "
-        + "RETURNING id, portfolio_id, ticker, shares, average_cost_basis, "
-        + "currency, fx_rate_to_gbp, average_cost_basis_gbp, "
-        + "created_at, updated_at"
-    )
-
-    async with connection_ctx() as conn:
-        # Same invariant guard as the top-level PUT: serialize against
-        # concurrent transactions, then refuse transaction-backed holdings.
-        async with portfolio_write(conn):
-            await lock_portfolio(conn, portfolio_id)
-            await _assert_no_linked_transactions(conn, str(portfolio_id), existing["ticker"])
-            row = await conn.fetchrow(query, *params)
-
-    if row is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Holding not found",
-        )
-
-    logger.info(
-        "holding_updated",
-        user_id=current_user.id,
-        holding_id=holding_id,
-    )
-    return _row_to_response(dict(row))
+    row = await _apply_holding_update(holding_id, portfolio_id, body, current_user.id)
+    logger.info("holding_updated", user_id=current_user.id, holding_id=holding_id)
+    return _row_to_response(row)
 
 
 @router.delete(
@@ -553,22 +443,5 @@ async def delete_portfolio_holding(
     current_user: UserInDB = Depends(get_current_user),
 ) -> None:
     """Delete a holding nested under a portfolio (spec-compliant path)."""
-    existing = await _verify_holding_in_portfolio(portfolio_id, holding_id, current_user.id)
-    if existing is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Holding not found",
-        )
-
-    async with connection_ctx() as conn:
-        # Same invariant guard as the top-level DELETE.
-        async with portfolio_write(conn):
-            await lock_portfolio(conn, portfolio_id)
-            await _assert_no_linked_transactions(conn, str(portfolio_id), existing["ticker"])
-            await conn.execute("DELETE FROM holdings WHERE id = $1::uuid", holding_id)
-
-    logger.info(
-        "holding_deleted",
-        user_id=current_user.id,
-        holding_id=holding_id,
-    )
+    await _delete_holding(holding_id, current_user.id, portfolio_id)
+    logger.info("holding_deleted", user_id=current_user.id, holding_id=holding_id)
