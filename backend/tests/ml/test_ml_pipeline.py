@@ -486,3 +486,21 @@ async def test_gate_promotes_significant_gain() -> None:
     # The whole ensemble is persisted, not just the seed-0 reference model.
     assert len(mgr.save_champion_to_disk.call_args.kwargs["ensemble_models"]) == 2
     rec_challenger.assert_not_called()
+
+
+def test_records_to_array_matches_numpy_build() -> None:
+    from ml.pipeline import _records_to_array
+
+    rows = [_make_ohlcv_row("AAPL", i) for i in range(3)]
+    dtype = [
+        ("date", "datetime64[D]"),
+        ("open", "f8"),
+        ("high", "f8"),
+        ("low", "f8"),
+        ("close", "f8"),
+        ("adjusted_close", "f8"),
+        ("volume", "i8"),
+    ]
+    arr = _records_to_array(rows, dtype)
+    assert arr.shape == (3,)
+    assert arr["volume"][0] == 1_000_000

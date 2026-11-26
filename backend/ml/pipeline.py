@@ -63,6 +63,27 @@ logging.basicConfig(
 )
 
 
+def _to_float(v):
+    """Convert a DB Decimal or None to float, using NaN for NULL."""
+    return float(v) if v is not None else float("nan")
+
+
+def _records_to_array(rows, dtype) -> np.ndarray:
+    """Fill a structured array directly, avoiding an intermediate tuple list."""
+    arr = np.empty(len(rows), dtype=dtype)
+    for i, r in enumerate(rows):
+        arr[i] = (
+            r["date"],
+            _to_float(r["open"]),
+            _to_float(r["high"]),
+            _to_float(r["low"]),
+            _to_float(r["close"]),
+            _to_float(r["adjusted_close"]),
+            int(r["volume"] or 0),
+        )
+    return arr
+
+
 async def fetch_ohlcv_for_tickers(tickers: list[str]) -> dict[str, np.ndarray]:
     """Fetch OHLCV data from PostgreSQL for all training tickers.
 
@@ -79,10 +100,6 @@ async def fetch_ohlcv_for_tickers(tickers: list[str]) -> dict[str, np.ndarray]:
 
     dsn = ML_CONFIG.SYNC_DATABASE_URL
     start_date = date.today() - timedelta(days=int(ML_CONFIG.OHLCV_YEARS * 365.25))
-
-    def _to_float(v):
-        """Convert DB Decimal or None to float, using NaN for NULL."""
-        return float(v) if v is not None else float("nan")
 
     conn = await asyncpg.connect(dsn)
     try:
@@ -117,22 +134,7 @@ async def fetch_ohlcv_for_tickers(tickers: list[str]) -> dict[str, np.ndarray]:
             if len(ticker_rows) < ML_CONFIG.MIN_OHLCV_DAYS:
                 logger.warning("Skipping %s: only %d days of data", ticker, len(ticker_rows))
                 continue
-            arr = np.array(
-                [
-                    (
-                        r["date"],
-                        _to_float(r["open"]),
-                        _to_float(r["high"]),
-                        _to_float(r["low"]),
-                        _to_float(r["close"]),
-                        _to_float(r["adjusted_close"]),
-                        int(r["volume"] or 0),
-                    )
-                    for r in ticker_rows
-                ],
-                dtype=dtype,
-            )
-            result[ticker] = arr
+            result[ticker] = _records_to_array(ticker_rows, dtype)
 
     finally:
         await conn.close()
