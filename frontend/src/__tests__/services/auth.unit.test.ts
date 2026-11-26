@@ -2,7 +2,7 @@
  * Tests for `auth.ts` — authentication service.
  *
  * All HTTP is mocked via jest-fetch-mock. SecureStore is mocked in jest.setup.ts.
- * Covers signUp, signIn, signOut, getProfile, isAuthenticated, forgotPassword.
+ * Covers signUp, signIn, signOut, getProfile, forgotPassword.
  */
 
 import { authService } from '@/services/auth';
