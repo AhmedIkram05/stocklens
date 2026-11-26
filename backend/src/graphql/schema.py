@@ -522,6 +522,21 @@ async def _validate_ws_token(token: str) -> str:
     return str(payload.sub)
 
 
+_MAX_SUBSCRIPTIONS_PER_SOCKET = 5
+
+
+def _track_subscription(info: strawberry.Info, key: str) -> None:
+    """Bound concurrent subscriptions on one WebSocket connection."""
+    subs = info.context.setdefault("subscriptions", set())
+    if key in subs:
+        return
+    if len(subs) >= _MAX_SUBSCRIPTIONS_PER_SOCKET:
+        raise GraphQLError(
+            f"Too many subscriptions on this connection (max {_MAX_SUBSCRIPTIONS_PER_SOCKET})"
+        )
+    subs.add(key)
+
+
 @strawberry.type
 class Subscription:
     @strawberry.subscription
@@ -534,6 +549,7 @@ class Subscription:
         params = info.context.get("connection_params") or {}
         token = (params.get("authToken") or "").removeprefix("Bearer ").strip()
         await _validate_ws_token(token)
+        _track_subscription(info, f"quote:{ticker}")
 
         subscribe_symbol(ticker)
         channel = f"quote:stream:{ticker}"
@@ -560,6 +576,7 @@ class Subscription:
                     await pubsub.aclose()
             except Exception:
                 logger.warning("ws_pubsub_close_failed", symbol=ticker)
+            info.context.get("subscriptions", set()).discard(f"quote:{ticker}")
             unsubscribe_symbol(ticker)
 
     @strawberry.subscription
@@ -575,6 +592,7 @@ class Subscription:
         if row is None:
             raise GraphQLError("Forbidden")
         pid = str(row["id"])  # canonical casing, so the registry key is stable
+        _track_subscription(info, f"valuation:{pid}")
 
         subscribe_portfolio(pid, user_id)
         channel = portfolio_channel(pid, user_id)
@@ -615,6 +633,7 @@ class Subscription:
             except Exception:
                 logger.warning("ws_pubsub_close_failed", portfolio_id=pid)
             finally:
+                info.context.get("subscriptions", set()).discard(f"valuation:{pid}")
                 unsubscribe_portfolio(pid, user_id)
 
 
