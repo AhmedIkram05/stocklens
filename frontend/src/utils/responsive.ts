@@ -7,7 +7,11 @@
 import { Dimensions } from 'react-native';
 
 /**
- * Current screen dimensions
+ * Current screen dimensions.
+ *
+ * Captured at module load: theme tokens derived from `scale()` do not rescale
+ * on rotation. Layout code that must react to a resize should read
+ * `useWindowDimensions()` directly (FE-L49).
  */
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
