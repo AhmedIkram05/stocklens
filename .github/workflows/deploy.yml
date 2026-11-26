@@ -33,6 +33,7 @@ jobs:
   # the pipeline stays off until the role works again; set
   # AWS_DEPLOY_ENABLED=true to restore deploys.
   deploy-switch:
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     outputs:
       enabled: ${{ steps.eval.outputs.enabled }}
@@ -42,6 +43,7 @@ jobs:
 
   # ─── Build features-engine Rust wheel (shared across images) ──────
   build-features-engine:
+    timeout-minutes: 60
     needs: deploy-switch
     if: needs.deploy-switch.outputs.enabled == 'true'
     runs-on: ubuntu-latest
@@ -78,6 +80,7 @@ jobs:
 
   # ─── Build & Push ARM64 Backend Image (for ECS) ───────────────────
   build-push-backend:
+    timeout-minutes: 60
     needs: [build-features-engine]
     runs-on: ubuntu-latest
     steps:
@@ -165,6 +168,7 @@ jobs:
 
   # ─── Build & Push ML Training Image (x86_64 GPU) ──────────────────
   build-push-ml-training:
+    timeout-minutes: 60
     needs: deploy-switch
     if: needs.deploy-switch.outputs.enabled == 'true'
     runs-on: ubuntu-latest
@@ -204,6 +208,7 @@ jobs:
 
   # ─── Build & Push SageMaker ARM64 Image (for SageMaker endpoint) ────
   build-push-sagemaker:
+    timeout-minutes: 60
     needs: [build-push-backend]
     runs-on: ubuntu-latest
     steps:
@@ -243,6 +248,7 @@ jobs:
 
   # ─── Container Image Security Scan (matrix: backend / airflow / ml-training / sagemaker) ─
   container-scan:
+    timeout-minutes: 30
     needs: [build-push-backend, build-push-airflow, build-push-ml-training, build-push-sagemaker]
     strategy:
       matrix:
@@ -299,6 +305,7 @@ jobs:
   # text to job summary. User reviews plan in GH UI before approving
   # the apply job below.
   terraform-plan:
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     needs: [container-scan]
     steps:
@@ -368,6 +375,7 @@ jobs:
   # Applies the saved plan from the plan job. Runs only after manual
   # approval via the production environment gate.
   terraform-apply:
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     needs: [terraform-plan]
     environment: production # requires manual approval gate
