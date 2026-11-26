@@ -7,8 +7,7 @@
  */
 
 import { marketService, OHLCVData } from './market';
-import { PRESET_RATES } from './stockPresets';
-import { predictionService, PredictionResponse } from './prediction';
+import { predictionService } from './prediction';
 import { periodToStartDate } from '../constants/periods';
 
 const CAGR_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -122,31 +121,6 @@ export async function getHistoricalCAGRForPeriod(
  * @param years - Number of years to project
  * @returns Object with CAGR rate and future value
  */
-export async function projectUsingHistoricalCAGR(
-  amount: number,
-  symbol: string,
-  years: number,
-): Promise<{ rate: number; futureValue: number }> {
-  const cagr = await getCAGR(symbol);
-  const rate = cagr ?? PRESET_RATES[symbol.toUpperCase()] ?? 0.1;
-  const futureValue = amount * Math.pow(1 + rate, years);
-  return { rate, futureValue };
-}
-
-/**
- * Get LSTM-based directional prediction for a ticker.
- *
- * @param ticker - Stock ticker symbol
- * @returns PredictionResponse or null if unavailable
- */
-export async function getLSTMPrediction(ticker: string): Promise<PredictionResponse | null> {
-  try {
-    return await predictionService.getPrediction(ticker);
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Get combined projection: LSTM direction + CAGR rate.
  * Uses LSTM as primary signal, CAGR as fallback growth rate.

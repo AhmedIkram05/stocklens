@@ -235,7 +235,6 @@ export default function ReceiptDetailsScreen() {
                 time={new Date(date).toLocaleString()}
                 onPress={() => {}}
                 source={source}
-                confidence={confidence}
               />
             </View>
 

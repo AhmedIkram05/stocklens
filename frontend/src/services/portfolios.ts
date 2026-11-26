@@ -1,4 +1,4 @@
-import { apiService, api } from './api';
+import { apiService } from './api';
 import { emit } from './eventBus';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -166,13 +166,6 @@ interface WrappedTransactionList {
   page_size: number;
 }
 
-interface WrappedCashFlowList {
-  cash_flows: CashFlow[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
 // ── Agent analysis types ───────────────────────────────────────────────────────
 
 export interface SectorExposureSector {
@@ -245,10 +238,6 @@ export const portfolioService = {
     return res.portfolios;
   },
 
-  async getPortfolio(id: string): Promise<Portfolio> {
-    return apiService.get<Portfolio>(`/portfolios/${id}`);
-  },
-
   async createPortfolio(data: CreatePortfolio): Promise<Portfolio> {
     const created = await apiService.post<Portfolio>('/portfolios', data);
     emit('historical-updated', { action: 'create' });
@@ -308,26 +297,10 @@ export const portfolioService = {
     return created;
   },
 
-  async listCashFlows(portfolioId: string, limit = 50, offset = 0): Promise<CashFlow[]> {
-    const res = await apiService.get<WrappedCashFlowList>(
-      `/portfolios/${portfolioId}/cash-flows?limit=${limit}&offset=${offset}`,
-    );
-    return res.cash_flows;
-  },
-
   async createCashFlow(portfolioId: string, data: CreateCashFlow): Promise<CashFlow> {
     const created = await apiService.post<CashFlow>(`/portfolios/${portfolioId}/cash-flows`, data);
     emit('historical-updated', { action: 'create-cashflow', portfolioId });
     return created;
-  },
-
-  async updateCashFlowNotes(portfolioId: string, cfId: string, notes: string): Promise<CashFlow> {
-    const updated = await api<CashFlow>(`/portfolios/${portfolioId}/cash-flows/${cfId}`, {
-      method: 'PATCH',
-      body: { notes },
-    });
-    emit('historical-updated', { action: 'update-cashflow', portfolioId });
-    return updated;
   },
 
   async getPerformance(portfolioId: string): Promise<PortfolioPerformance> {

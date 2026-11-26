@@ -29,8 +29,6 @@ type Props = {
   style?: StyleProp<ViewStyle>;
   /* * OCR extraction source: "regex" | "cascade" | "degraded" | "failed" */
   source?: SourceBadgeKey;
-  /** OCR extraction confidence 0-100 */
-  confidence?: number;
   /** Spending category name (displayed as a chip) */
   category?: string | null;
   /** Optional explicit category color; otherwise derived from the name */

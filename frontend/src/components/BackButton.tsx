@@ -53,13 +53,6 @@ export default function BackButton({
     else navigation.goBack();
   };
 
-  if (__DEV__ && !accessibilityLabel) {
-    // Ensure icon/text back controls are reachable by screen readers during development
-    console.warn(
-      'BackButton missing accessibilityLabel — add accessibilityLabel for screen readers',
-    );
-  }
-
   if (variant === 'text') {
     return (
       <TouchableOpacity

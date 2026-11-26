@@ -17,8 +17,6 @@ type Props = {
   subtitle?: React.ReactNode;
   /** Optional custom styling for the header container */
   style?: ViewStyle;
-  /** Optional content displayed on the right side (e.g., buttons, icons) */
-  headerRight?: React.ReactNode;
 };
 
 export default function PageHeader({ children, subtitle, style }: Props) {

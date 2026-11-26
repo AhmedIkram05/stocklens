@@ -19,8 +19,6 @@ type Props = {
   subtitle?: string;
   /** Color variant for the card background. Default: 'white' */
   variant?: 'green' | 'blue' | 'white';
-  /** Text alignment within the card. Default: 'center' */
-  align?: 'center' | 'left';
   /** Optional custom styling for the card container */
   style?: StyleProp<ViewStyle>;
 };

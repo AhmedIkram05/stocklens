@@ -342,7 +342,6 @@ export default function HomeScreen() {
                               label={scan.label}
                               time={scan.time}
                               source={scan.source as SourceBadgeKey | undefined}
-                              confidence={scan.confidence}
                               category={cat?.name ?? null}
                               onPress={() =>
                                 navigation.navigate('ReceiptDetails', {
