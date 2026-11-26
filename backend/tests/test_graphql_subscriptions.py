@@ -687,3 +687,15 @@ async def test_get_portfolio_valuation_uses_canonical_id() -> None:
         resp = await performance_queries.get_portfolio_valuation(PID, "user-1")
     get_holdings.assert_awaited_once_with(canonical)
     assert resp.portfolio_id == canonical
+
+
+def test_subscription_cap() -> None:
+    """A single socket may hold at most five concurrent subscriptions."""
+    from src.graphql.schema import _MAX_SUBSCRIPTIONS_PER_SOCKET, _track_subscription
+
+    info = SimpleNamespace(context={})
+    for i in range(_MAX_SUBSCRIPTIONS_PER_SOCKET):
+        _track_subscription(info, f"k{i}")
+    _track_subscription(info, "k0")  # duplicate does not consume a slot
+    with pytest.raises(GraphQLError, match="Too many subscriptions"):
+        _track_subscription(info, "overflow")
