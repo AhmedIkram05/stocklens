@@ -43,12 +43,13 @@ jobs:
   evaluate:
     name: Run LangSmith Agent Evaluation
     needs: eval-switch
+    timeout-minutes: 30
     if: needs.eval-switch.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     # Postgres service container for agent tool queries (portfolio, OHLCV, etc.)
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_DB: stocklens
           POSTGRES_USER: stocklens
@@ -77,22 +78,22 @@ jobs:
       AWS_REGION: eu-west-2
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Configure AWS credentials (OIDC)
         # The experiment calls Bedrock, so this job requires AWS credentials.
         # It only runs when eval-switch enables it (AWS_DEPLOY_ENABLED=true).
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@45666896f5d8e0f10ae255413f3a4cdd03bdc8f5 # v6
         with:
           role-to-assume: ${{ secrets.ECS_DEPLOY_ROLE_ARN }}
           aws-region: eu-west-2
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.14'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
 
@@ -100,14 +101,14 @@ jobs:
         working-directory: backend
         run: |
           set -euo pipefail
-          uv sync --package stocklens-backend --all-extras --index-strategy unsafe-best-match
+          uv sync --frozen --package stocklens-backend --all-extras --index-strategy unsafe-best-match
 
       # features-engine is a Rust native module that never changes — cache the
       # compiled wheel so we build once and skip on all subsequent runs (~4min
       # saved per run).
       - name: Restore features-engine wheel
         id: cache-wheel
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/features_engine_wheel
           key: features-engine-cp314-v1
