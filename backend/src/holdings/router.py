@@ -307,7 +307,11 @@ async def _apply_holding_update(
         params.append(body.shares)
         idx += 1
     if body.average_cost_basis is not None:
-        assert current_fx is not None and resolved_currency is not None
+        if current_fx is None or resolved_currency is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Currency data unavailable; retry shortly",
+            )
         set_clauses.append(f"average_cost_basis = ${idx}::numeric")
         params.append(body.average_cost_basis)
         idx += 1
