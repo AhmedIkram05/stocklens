@@ -5,7 +5,7 @@ services:
       - '127.0.0.1:5432:5432'
     environment:
       POSTGRES_USER: stocklens
-      POSTGRES_PASSWORD: stocklens
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stocklens}
       POSTGRES_DB: stocklens
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U stocklens']
@@ -23,7 +23,7 @@ services:
       - '127.0.0.1:5433:5432'
     environment:
       POSTGRES_USER: stocklens
-      POSTGRES_PASSWORD: stocklens
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stocklens}
       POSTGRES_DB: stocklens_test
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U stocklens -d stocklens_test']
