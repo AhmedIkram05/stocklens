@@ -24,6 +24,11 @@ variable "private_subnet_ids" {
   description = "Private subnets that host the interface endpoints."
   type        = list(string)
   default     = []
+
+  validation {
+    condition     = !var.enable_vpc_endpoints || length(var.private_subnet_ids) > 0
+    error_message = "private_subnet_ids is required when enable_vpc_endpoints is true."
+  }
 }
 
 variable "enable_vpc_endpoints" {

@@ -242,6 +242,9 @@ locals {
     "secretsmanager",
     "logs",
     "sts",
+    # EC2-launch GPU retraining: agent registration + awsvpc ENI
+    "ecs",
+    "ec2",
   ])
 }
 
