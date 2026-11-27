@@ -346,3 +346,28 @@ def test_save_champion_to_disk_publishes_full_ensemble(mock_boto3, monkeypatch) 
 
     for artifact in save_dir.glob("model*.pt"):
         os.unlink(artifact)
+
+
+@patch("ml.mlflow_manager.boto3")
+def test_publish_points_last_and_prunes_old_versions(mock_boto3, monkeypatch) -> None:
+    """The pointer is the final write and the previous version is removed."""
+    from ml.mlflow_manager import MLflowManager
+
+    monkeypatch.setenv("CHAMPION_S3_URI", "s3://my-bucket/champion/")
+    s3 = MagicMock()
+    mock_boto3.client.return_value = s3
+
+    mgr = MLflowManager()
+    mgr.save_champion_to_disk(_make_model())
+    first = mgr._resolve_save_dir()
+    mgr.save_champion_to_disk(_make_model(), ensemble_models=[_make_model()])
+    second = mgr._resolve_save_dir()
+
+    assert first != second
+    assert not first.exists()
+    writes = [
+        call[0]
+        for call in s3.mock_calls
+        if call[0] in {"upload_file", "upload_fileobj", "put_object"}
+    ]
+    assert writes[-1] == "put_object"
