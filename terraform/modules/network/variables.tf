@@ -12,3 +12,22 @@ variable "environment" {
   description = "Deployment environment (production, staging, etc.)"
   type        = string
 }
+
+
+variable "aws_region" {
+  description = "AWS region for VPC endpoint service names."
+  type        = string
+  default     = "eu-west-2"
+}
+
+variable "private_subnet_ids" {
+  description = "Private subnets that host the interface endpoints."
+  type        = list(string)
+  default     = []
+}
+
+variable "enable_vpc_endpoints" {
+  description = "Create interface endpoints so private tasks reach ECR, S3, Secrets Manager, logs and STS without NAT."
+  type        = bool
+  default     = false
+}
