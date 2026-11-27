@@ -169,6 +169,7 @@ def prepare_global_dataset(
     ohlcv_data: dict[str, np.ndarray],
     vocab: dict[str, int],
     spy_features_df: pd.DataFrame | None = None,
+    threshold_mult: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Prepare unnormalized global dataset from per-ticker OHLCV data.
 
@@ -223,6 +224,7 @@ def prepare_global_dataset(
         )
         ohlcv_data = kept
 
+    label_threshold = ML_CONFIG.THRESHOLD_MULT if threshold_mult is None else threshold_mult
     all_sequences: list[np.ndarray] = []
     all_labels_list: list[np.ndarray] = []
     all_ticker_idxs: list[np.ndarray] = []
@@ -274,7 +276,7 @@ def prepare_global_dataset(
         labels = compute_adaptive_labels(
             close_series,
             vol_lookback=ML_CONFIG.VOL_LOOKBACK,
-            threshold_mult=ML_CONFIG.THRESHOLD_MULT,
+            threshold_mult=label_threshold,
             forecast_horizon=ML_CONFIG.FORECAST_HORIZON,
         )
         label_values = labels.values.astype(np.float64)
