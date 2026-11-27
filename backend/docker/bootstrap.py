@@ -36,22 +36,49 @@ def main() -> None:
 
     s3 = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "eu-west-2"))
     try:
-        # Copy the whole champion prefix — model.pt plus every model_seed{i}.pt
-        # ensemble member. Downloading only model.pt would serve a different
-        # model than the promotion gate scored.
-        members = [
-            obj["Key"]
-            for obj in s3.list_objects_v2(Bucket=bucket, Prefix=prefix).get("Contents", [])
-            if obj["Key"].endswith(".pt")
-        ]
-        if not members:
-            raise FileNotFoundError(f"no champion checkpoints under s3://{bucket}/{prefix}")
-        for key in members:
-            s3.download_file(bucket, key, str(dest_dir / Path(key).name))
-        print(
-            f"[bootstrap] champion ensemble downloaded "
-            f"({len(members)} files) from s3://{bucket}/{prefix}"
-        )
+        # Follow the pointer when present, so a reader never mixes members from
+        # two publishes. Legacy layouts without a pointer stay supported.
+        try:
+            version = (
+                s3.get_object(Bucket=bucket, Key=f"{prefix}current")["Body"].read().decode().strip()
+            )
+        except Exception:
+            version = ""
+
+        if version:
+            version_prefix = f"{prefix}versions/{version}/"
+            members = [
+                obj["Key"]
+                for obj in s3.list_objects_v2(Bucket=bucket, Prefix=version_prefix).get(
+                    "Contents", []
+                )
+                if obj["Key"].endswith(".pt")
+            ]
+            if not members:
+                raise FileNotFoundError(f"no checkpoints under s3://{bucket}/{version_prefix}")
+            target = dest_dir / "versions" / version
+            target.mkdir(parents=True, exist_ok=True)
+            for key in members:
+                s3.download_file(bucket, key, str(target / Path(key).name))
+            (dest_dir / "current").write_text(version)
+            print(
+                f"[bootstrap] champion version {version} downloaded "
+                f"({len(members)} files) from s3://{bucket}/{version_prefix}"
+            )
+        else:
+            members = [
+                obj["Key"]
+                for obj in s3.list_objects_v2(Bucket=bucket, Prefix=prefix).get("Contents", [])
+                if obj["Key"].endswith(".pt")
+            ]
+            if not members:
+                raise FileNotFoundError(f"no champion checkpoints under s3://{bucket}/{prefix}")
+            for key in members:
+                s3.download_file(bucket, key, str(dest_dir / Path(key).name))
+            print(
+                f"[bootstrap] champion ensemble downloaded "
+                f"({len(members)} files) from s3://{bucket}/{prefix}"
+            )
     except Exception as exc:
         print(f"[bootstrap] WARNING: champion download failed ({exc})", file=sys.stderr)
         if environment == "production":
