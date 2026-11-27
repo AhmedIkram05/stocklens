@@ -722,8 +722,12 @@ async def _run_lstm_pipeline(
         mlflow_mgr.log_artifact(loss_path, artifact_path="training")
 
         # --- Register model in MLflow Model Registry ---
-        lstm_version = mlflow_mgr.log_model(
-            model,
+        lstm_version = mlflow_mgr.log_ensemble_model(
+            seed_models=[r["model"] for r in seed_results],
+            vocab=vocab,
+            feature_means=global_means,
+            feature_stds=global_stds,
+            margin=ens_margin,
             registered_model_name="GlobalLSTM",
         )[1]
 

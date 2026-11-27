@@ -244,17 +244,61 @@ class MLflowManager:
             signature=signature,
         )
 
-        # Prefer the version the registration call returned; a max(version)
-        # query is a race when another run registers concurrently.
+        version = self._registered_version(info, registered_model_name)
+        run_id = self.active_run.info.run_id if self.active_run else "unknown"
+        return run_id, version
+
+    @staticmethod
+    def _registered_version(info: Any, registered_model_name: str) -> str:
+        """Prefer the version the registration call returned; max(version) is racy."""
         version = getattr(info, "registered_model_version", None)
         if version is None:
             client = mlflow.tracking.MlflowClient()
-            versions = client.search_model_versions(
-                f"name='{registered_model_name}'",
-            )
+            versions = client.search_model_versions(f"name='{registered_model_name}'")
             version = str(max(int(v.version) for v in versions)) if versions else "1"
-        version = str(version)
+        return str(version)
 
+    def log_ensemble_model(
+        self,
+        seed_models: list[GlobalLSTM],
+        vocab: dict[str, int],
+        feature_means: np.ndarray,
+        feature_stds: np.ndarray,
+        margin: float,
+        registered_model_name: str = "GlobalLSTM",
+        artifact_path: str = "ensemble",
+    ) -> tuple[str, str]:
+        """Register every seed member as one PyFunc version.
+
+        Serving averages the five seeds; registering only the seed-0 reference
+        made the registry champion a different model. The PyFunc loads all
+        members from its artifacts and averages their softmax output.
+        """
+        from ml.ensemble_model import GlobalLSTMEnsemble
+
+        if not seed_models:
+            raise ValueError("log_ensemble_model requires at least one seed model")
+        with tempfile.TemporaryDirectory() as tmp:
+            members_dir = Path(tmp) / "members"
+            members_dir.mkdir()
+            for i, member in enumerate(seed_models):
+                member.save(
+                    str(members_dir / f"model_seed{i}.pt"),
+                    vocab=vocab,
+                    feature_means=feature_means,
+                    feature_stds=feature_stds,
+                    margin=margin,
+                    ensemble_size=len(seed_models),
+                )
+            code_dir = Path(__file__).resolve().parent
+            info = mlflow.pyfunc.log_model(
+                name=artifact_path,
+                python_model=GlobalLSTMEnsemble(member_count=len(seed_models)),
+                artifacts={"members": str(members_dir)},
+                registered_model_name=registered_model_name,
+                code_paths=[str(code_dir)],
+            )
+        version = self._registered_version(info, registered_model_name)
         run_id = self.active_run.info.run_id if self.active_run else "unknown"
         return run_id, version
 
