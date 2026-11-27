@@ -529,7 +529,7 @@ resource "aws_ecs_service" "main" {
     security_groups = [var.ecs_tasks_sg_id]
     # ponytail: dev — public IPs needed since subnets have no NAT gateway.
     # Switch to false + NAT GW or VPC endpoint for Secrets Manager in prod.
-    assign_public_ip = true
+    assign_public_ip = !var.enable_private_networking
   }
 
   enable_ecs_managed_tags = true
