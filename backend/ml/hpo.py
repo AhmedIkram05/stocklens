@@ -529,14 +529,19 @@ async def run_phase2() -> dict[str, Any]:
     }
     logger.info("Using model HPs: %s", best_hps)
 
-    candidates = [round(x * 0.1, 1) for x in range(3, 11)]  # 0.3 … 1.0
+    candidates = sorted(
+        {*(round(x * 0.1, 1) for x in range(3, 11)), ML_CONFIG.THRESHOLD_MULT}
+    )  # 0.3 … 1.0 plus the production default
     results: list[dict] = []
+
+    # Fetch and featurise once; each candidate only recomputes labels.
+    base = (await _prepare_data())["base"]
 
     for tmult in candidates:
         logger.info("=" * 50)
         logger.info("Sweeping threshold_mult = %.1f", tmult)
 
-        data = await _prepare_data(threshold_mult=tmult)
+        data = await _prepare_data(threshold_mult=tmult, base=base)
         device = data["device"]
 
         model = GlobalLSTM(
