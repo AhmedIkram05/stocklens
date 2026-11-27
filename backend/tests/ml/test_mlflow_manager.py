@@ -288,13 +288,15 @@ def test_save_champion_to_disk_prunes_stale_seeds(mock_boto3: MagicMock) -> None
     from ml.mlflow_manager import MLflowManager
 
     mgr = MLflowManager()
-    save_dir = mgr._resolve_save_dir()
-    stale = save_dir / "model_seed9.pt"
+    base_dir = mgr._base_save_dir()
+    stale = base_dir / "model_seed9.pt"
     stale.write_bytes(b"stale")
 
     members = [_make_model(), _make_model()]
     path = mgr.save_champion_to_disk(_make_model(), ensemble_models=members)
+    save_dir = mgr._resolve_save_dir()
 
+    assert save_dir != base_dir
     assert (save_dir / "model_seed0.pt").exists()
     assert (save_dir / "model_seed1.pt").exists()
     assert not stale.exists()
@@ -324,13 +326,16 @@ def test_save_champion_to_disk_publishes_full_ensemble(mock_boto3, monkeypatch) 
     mock_boto3.client.return_value = s3
 
     mgr = MLflowManager()
-    save_dir = mgr._resolve_save_dir()
     members = [_make_model(), _make_model(), _make_model()]
     mgr.save_champion_to_disk(_make_model(), ensemble_models=members)
+    save_dir = mgr._resolve_save_dir()
+    version = save_dir.name
 
     expected_names = {"model.pt", "model_seed0.pt", "model_seed1.pt", "model_seed2.pt"}
     uploaded_keys = {call.args[2] for call in s3.upload_file.call_args_list}
-    assert uploaded_keys == {f"champion/{name}" for name in expected_names}
+    assert uploaded_keys == {f"champion/versions/{version}/{name}" for name in expected_names}
+    assert s3.put_object.call_args.kwargs["Key"] == "champion/current"
+    assert s3.put_object.call_args.kwargs["Body"] == version.encode()
 
     tar_call = s3.upload_fileobj.call_args
     assert tar_call.args[2] == "champion/model.tar.gz"
@@ -341,3 +346,28 @@ def test_save_champion_to_disk_publishes_full_ensemble(mock_boto3, monkeypatch) 
 
     for artifact in save_dir.glob("model*.pt"):
         os.unlink(artifact)
+
+
+@patch("ml.mlflow_manager.boto3")
+def test_publish_points_last_and_prunes_old_versions(mock_boto3, monkeypatch) -> None:
+    """The pointer is the final write and the previous version is removed."""
+    from ml.mlflow_manager import MLflowManager
+
+    monkeypatch.setenv("CHAMPION_S3_URI", "s3://my-bucket/champion/")
+    s3 = MagicMock()
+    mock_boto3.client.return_value = s3
+
+    mgr = MLflowManager()
+    mgr.save_champion_to_disk(_make_model())
+    first = mgr._resolve_save_dir()
+    mgr.save_champion_to_disk(_make_model(), ensemble_models=[_make_model()])
+    second = mgr._resolve_save_dir()
+
+    assert first != second
+    assert not first.exists()
+    writes = [
+        call[0]
+        for call in s3.mock_calls
+        if call[0] in {"upload_file", "upload_fileobj", "put_object"}
+    ]
+    assert writes[-1] == "put_object"

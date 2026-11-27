@@ -117,15 +117,50 @@ def _make_ohlcv_row(ticker: str, days: int, start_val: float = 100.0):
     return row
 
 
+class _FakeCursor:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def __aiter__(self):
+        self._it = iter(self._rows)
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._it)
+        except StopIteration as exc:
+            raise StopAsyncIteration from exc
+
+
+class _FakeTransaction:
+    async def __aenter__(self):
+        return None
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+class _FakeConn:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def transaction(self):
+        return _FakeTransaction()
+
+    def cursor(self, *args, **kwargs):
+        return _FakeCursor(self._rows)
+
+    async def close(self):
+        return None
+
+
 @pytest.mark.asyncio
 async def test_fetch_ohlcv_for_tickers_returns_data() -> None:
     """fetch_ohlcv_for_tickers returns dict of ticker -> ndarray."""
     from ml.pipeline import fetch_ohlcv_for_tickers
 
     rows = [_make_ohlcv_row("AAPL", i) for i in range(100)]
-    fake_conn = AsyncMock()
-    fake_conn.fetch = AsyncMock(return_value=rows)
-    fake_conn.close = AsyncMock()
+    fake_conn = _FakeConn(rows)
 
     with patch("asyncpg.connect", AsyncMock(return_value=fake_conn)):
         result = await fetch_ohlcv_for_tickers(["AAPL"])
@@ -143,9 +178,7 @@ async def test_fetch_ohlcv_skips_tickers_with_few_days() -> None:
     from ml.pipeline import fetch_ohlcv_for_tickers
 
     few_rows = [_make_ohlcv_row("AAPL", 0)]
-    fake_conn = AsyncMock()
-    fake_conn.fetch = AsyncMock(return_value=few_rows)
-    fake_conn.close = AsyncMock()
+    fake_conn = _FakeConn(few_rows)
 
     with patch("asyncpg.connect", AsyncMock(return_value=fake_conn)):
         result = await fetch_ohlcv_for_tickers(["AAPL"])
@@ -158,9 +191,7 @@ async def test_fetch_ohlcv_returns_empty_dict_when_no_data() -> None:
     """Empty DB result returns an empty dict."""
     from ml.pipeline import fetch_ohlcv_for_tickers
 
-    fake_conn = AsyncMock()
-    fake_conn.fetch = AsyncMock(return_value=[])
-    fake_conn.close = AsyncMock()
+    fake_conn = _FakeConn([])
 
     with patch("asyncpg.connect", AsyncMock(return_value=fake_conn)):
         result = await fetch_ohlcv_for_tickers(["AAPL", "MSFT"])
@@ -348,9 +379,7 @@ async def test_run_pipeline_no_data_returns_error() -> None:
     """run_pipeline returns error dict when no OHLCV data fetched."""
     from ml.pipeline import run_pipeline
 
-    fake_conn = AsyncMock()
-    fake_conn.fetch = AsyncMock(return_value=[])
-    fake_conn.close = AsyncMock()
+    fake_conn = _FakeConn([])
 
     with (
         patch("asyncpg.connect", AsyncMock(return_value=fake_conn)),
@@ -499,21 +528,3 @@ async def test_gate_promotes_significant_gain() -> None:
     # The whole ensemble is persisted, not just the seed-0 reference model.
     assert len(mgr.save_champion_to_disk.call_args.kwargs["ensemble_models"]) == 2
     rec_challenger.assert_not_called()
-
-
-def test_records_to_array_matches_numpy_build() -> None:
-    from ml.pipeline import _records_to_array
-
-    rows = [_make_ohlcv_row("AAPL", i) for i in range(3)]
-    dtype = [
-        ("date", "datetime64[D]"),
-        ("open", "f8"),
-        ("high", "f8"),
-        ("low", "f8"),
-        ("close", "f8"),
-        ("adjusted_close", "f8"),
-        ("volume", "i8"),
-    ]
-    arr = _records_to_array(rows, dtype)
-    assert arr.shape == (3,)
-    assert arr["volume"][0] == 1_000_000
