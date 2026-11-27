@@ -68,19 +68,26 @@ def _to_float(v):
     return float(v) if v is not None else float("nan")
 
 
-def _records_to_array(rows, dtype) -> np.ndarray:
-    """Fill a structured array directly, avoiding an intermediate tuple list."""
-    arr = np.empty(len(rows), dtype=dtype)
-    for i, r in enumerate(rows):
-        arr[i] = (
-            r["date"],
-            _to_float(r["open"]),
-            _to_float(r["high"]),
-            _to_float(r["low"]),
-            _to_float(r["close"]),
-            _to_float(r["adjusted_close"]),
-            int(r["volume"] or 0),
-        )
+def dtype_names(dtype: list[tuple[str, str]]) -> tuple[str, ...]:
+    """Return the field names of a numpy structured dtype description."""
+    return tuple(name for name, _ in dtype)
+
+
+def _flush_ticker_buffer(
+    ticker: str,
+    buffers: dict[str, list],
+    dtype: list[tuple[str, str]],
+) -> np.ndarray | None:
+    """Convert one ticker's column buffers into a structured array."""
+    count = len(buffers["date"])
+    if count < ML_CONFIG.MIN_OHLCV_DAYS:
+        logger.warning("Skipping %s: only %d days of data", ticker, count)
+        return None
+    arr = np.empty(count, dtype=dtype)
+    arr["date"] = np.asarray(buffers["date"], dtype="datetime64[D]")
+    for name in dtype_names(dtype):
+        if name != "date":
+            arr[name] = np.asarray(buffers[name], dtype=arr.dtype[name])
     return arr
 
 
@@ -110,17 +117,6 @@ async def fetch_ohlcv_for_tickers(tickers: list[str]) -> dict[str, np.ndarray]:
             WHERE ticker = ANY($1) AND date >= $2
             ORDER BY ticker, date ASC
         """
-        rows = await conn.fetch(query, tickers, start_date)
-        logger.info("Fetched %d rows for %d tickers", len(rows), len(tickers))
-
-        # Group by ticker
-        from collections import defaultdict
-
-        by_ticker = defaultdict(list)
-        for r in rows:
-            by_ticker[r["ticker"]].append(r)
-
-        result: dict[str, np.ndarray] = {}
         dtype = [
             ("date", "datetime64[D]"),
             ("open", "f8"),
@@ -130,11 +126,36 @@ async def fetch_ohlcv_for_tickers(tickers: list[str]) -> dict[str, np.ndarray]:
             ("adjusted_close", "f8"),
             ("volume", "i8"),
         ]
-        for ticker, ticker_rows in by_ticker.items():
-            if len(ticker_rows) < ML_CONFIG.MIN_OHLCV_DAYS:
-                logger.warning("Skipping %s: only %d days of data", ticker, len(ticker_rows))
-                continue
-            result[ticker] = _records_to_array(ticker_rows, dtype)
+        result: dict[str, np.ndarray] = {}
+        current: str | None = None
+        buffers: dict[str, list] = {}
+        rows_seen = 0
+
+        async with conn.transaction():
+            # Server-side cursor: avoid materialising every asyncpg Record and
+            # every per-ticker Record list before the arrays are built.
+            async for r in conn.cursor(query, tickers, start_date, prefetch=10_000):
+                ticker = r["ticker"]
+                if ticker != current:
+                    if current is not None:
+                        arr = _flush_ticker_buffer(current, buffers, dtype)
+                        if arr is not None:
+                            result[current] = arr
+                    current = ticker
+                    buffers = {name: [] for name in dtype_names(dtype)}
+                buffers["date"].append(r["date"])
+                buffers["open"].append(_to_float(r["open"]))
+                buffers["high"].append(_to_float(r["high"]))
+                buffers["low"].append(_to_float(r["low"]))
+                buffers["close"].append(_to_float(r["close"]))
+                buffers["adjusted_close"].append(_to_float(r["adjusted_close"]))
+                buffers["volume"].append(int(r["volume"] or 0))
+                rows_seen += 1
+        if current is not None:
+            arr = _flush_ticker_buffer(current, buffers, dtype)
+            if arr is not None:
+                result[current] = arr
+        logger.info("Fetched %d rows for %d tickers", rows_seen, len(tickers))
 
     finally:
         await conn.close()
