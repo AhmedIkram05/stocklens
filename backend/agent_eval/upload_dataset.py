@@ -1,7 +1,8 @@
 """Upload the StockLens golden evaluation dataset to LangSmith.
 
 Run manually (or via CI) to populate/update the `stocklens-golden` dataset.
-Idempotent: re-running deletes existing examples and recreates them.
+Idempotent: re-running adds only questions that are not already present, so
+prior experiments and feedback keep their example links.
 """
 
 from __future__ import annotations
@@ -27,19 +28,27 @@ def load_questions() -> list[dict]:
 
 
 def upload_dataset(client: Client | None = None) -> None:
-    """Create (or reset) the golden dataset in LangSmith."""
+    """Create the dataset, adding only questions not already present."""
     client = client or Client()
     questions = load_questions()
     if client.has_dataset(dataset_name=DATASET_NAME):
-        client.delete_dataset(dataset_name=DATASET_NAME)
-    dataset = client.create_dataset(
-        dataset_name=DATASET_NAME,
-        description="StockLens agent golden evaluation questions",
-    )
-    client.create_examples(
-        inputs=[{"question": q["question"]} for q in questions],
-        dataset_id=dataset.id,
-    )
+        dataset = client.read_dataset(dataset_name=DATASET_NAME)
+        existing = {
+            (example.inputs or {}).get("question")
+            for example in client.list_examples(dataset_id=dataset.id)
+        }
+    else:
+        dataset = client.create_dataset(
+            dataset_name=DATASET_NAME,
+            description="StockLens agent golden evaluation questions",
+        )
+        existing = set()
+    new_questions = [q for q in questions if q["question"] not in existing]
+    if new_questions:
+        client.create_examples(
+            inputs=[{"question": q["question"]} for q in new_questions],
+            dataset_id=dataset.id,
+        )
 
 
 if __name__ == "__main__":

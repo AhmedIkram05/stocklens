@@ -134,7 +134,7 @@ resource "aws_ecs_service" "mlflow" {
     subnets         = var.private_subnet_ids
     security_groups = [var.mlflow_sg_id]
     # ponytail: dev — no NAT gateway, use public IPs
-    assign_public_ip = true
+    assign_public_ip = !var.enable_private_networking
   }
 
   service_registries {

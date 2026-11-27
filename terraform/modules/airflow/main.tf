@@ -270,7 +270,7 @@ resource "aws_ecs_service" "webserver" {
     subnets         = var.private_subnet_ids
     security_groups = [var.airflow_sg_id]
     # ponytail: dev — no NAT gateway
-    assign_public_ip = true
+    assign_public_ip = !var.enable_private_networking
   }
 
   enable_ecs_managed_tags = true
@@ -298,7 +298,7 @@ resource "aws_ecs_service" "scheduler" {
     subnets         = var.private_subnet_ids
     security_groups = [var.airflow_sg_id]
     # ponytail: dev — no NAT gateway
-    assign_public_ip = true
+    assign_public_ip = !var.enable_private_networking
   }
 
   enable_ecs_managed_tags = true
@@ -401,7 +401,7 @@ resource "aws_cloudwatch_event_target" "drift_retrain" {
     launch_type         = "FARGATE"
     network_configuration {
       # ponytail: dev — no NAT gateway
-      assign_public_ip = true
+      assign_public_ip = !var.enable_private_networking
       subnets          = var.private_subnet_ids
       security_groups  = [var.airflow_sg_id]
     }

@@ -23,18 +23,19 @@ from src.agent.service import agent_service
 
 
 def test_upload_dataset_idempotent():
-    """Re-running upload deletes the dataset then recreates it."""
+    """Re-running upload keeps the dataset and adds missing questions only."""
     fake_client = MagicMock()
     fake_dataset = MagicMock()
     fake_dataset.id = "ds-123"
     fake_client.has_dataset.return_value = True
-    fake_client.create_dataset.return_value = fake_dataset
+    fake_client.read_dataset.return_value = fake_dataset
+    fake_client.list_examples.return_value = []
 
     upload_dataset(client=fake_client)
 
     fake_client.has_dataset.assert_called_once()
-    fake_client.delete_dataset.assert_called_once_with(dataset_name="stocklens-golden")
-    fake_client.create_dataset.assert_called_once()
+    fake_client.delete_dataset.assert_not_called()
+    fake_client.create_dataset.assert_not_called()
     # 22 questions in golden_dataset.json -> 22 create_examples inputs
     inputs = fake_client.create_examples.call_args.kwargs["inputs"]
     assert len(inputs) == 41

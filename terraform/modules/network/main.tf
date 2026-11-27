@@ -223,3 +223,70 @@ resource "aws_service_discovery_private_dns_namespace" "stocklens" {
   description = "Private DNS namespace for StockLens service discovery"
   vpc         = var.vpc_id
 }
+
+
+# ── VPC interface endpoints (private networking) ─────────────────────
+# Gated: dev keeps public IPs; production enables this together with
+# enable_private_networking. No NAT gateway is created.
+
+data "aws_vpc" "this" {
+  count = var.enable_vpc_endpoints ? 1 : 0
+  id    = var.vpc_id
+}
+
+locals {
+  interface_endpoints = toset([
+    "ecr.api",
+    "ecr.dkr",
+    "s3",
+    "secretsmanager",
+    "logs",
+    "sts",
+    # EC2-launch GPU retraining: agent registration + awsvpc ENI
+    "ecs",
+    "ec2",
+  ])
+}
+
+resource "aws_security_group" "vpc_endpoints" {
+  count       = var.enable_vpc_endpoints ? 1 : 0
+  name        = "${var.app_name}-vpc-endpoints-${var.environment}"
+  description = "HTTPS to the VPC interface endpoints"
+  vpc_id      = var.vpc_id
+}
+
+resource "aws_security_group_rule" "vpc_endpoints_ingress" {
+  count             = var.enable_vpc_endpoints ? 1 : 0
+  security_group_id = aws_security_group.vpc_endpoints[0].id
+  type              = "ingress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = [data.aws_vpc.this[0].cidr_block]
+  description       = "HTTPS from the VPC"
+}
+
+resource "aws_security_group_rule" "vpc_endpoints_egress" {
+  count             = var.enable_vpc_endpoints ? 1 : 0
+  security_group_id = aws_security_group.vpc_endpoints[0].id
+  type              = "egress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = [data.aws_vpc.this[0].cidr_block]
+  description       = "HTTPS responses to VPC clients"
+}
+
+resource "aws_vpc_endpoint" "interface" {
+  for_each            = var.enable_vpc_endpoints ? local.interface_endpoints : toset([])
+  vpc_id              = var.vpc_id
+  service_name        = "com.amazonaws.${var.aws_region}.${each.key}"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = var.private_subnet_ids
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
+  private_dns_enabled = true
+
+  tags = {
+    Name = "${var.app_name}-${each.key}-${var.environment}"
+  }
+}
