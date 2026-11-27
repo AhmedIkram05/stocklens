@@ -51,25 +51,22 @@ The review itself is the findings register; this is what actually shipped.
 | WS subscription cap                | #421 | BE-M8 (per-socket cap), INF-H1 runbook, FE-L49 note                                |
 | ML array fill                      | #422 | ML-M10 (first step)                                                                |
 | CI runner bounds                   | #423 | deploy timeouts, eval Python 3.13, compose password                                |
+| ML HPO reuse                       | #425 | ML-M1                                                                              |
+| ML publish/stream                  | #426 | ML-M8, ML-M10                                                                      |
+| ML ensemble registry               | #427 | ML-H4                                                                              |
+| Private networking                 | #428 | INF-M25 (gated code)                                                               |
+| LOW tail                           | #429 | endpoint egress, LangSmith upsert, docstrings                                      |
 
 ## Deliberately deferred
 
-| Finding               | Why                                                                                                                                                                      |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| INF-H1                | The production state already contains `environment=dev` resources, including RDS. A name flip replaces the database; it needs a state migration in a maintenance window. |
-| INF-H3                | No domain/ACM certificate. The `enable_https` path is gated until one exists.                                                                                            |
-| ML-H4 (ensemble half) | The registry version is still the seed-0 reference; serving blends five. Registering the whole ensemble as one artifact is a design change.                              |
-| ML-M8                 | S3 publish is still per-object; making it atomic needs a pointer/tar-only cutover.                                                                                       |
+| Finding | Why                                                                                                                                                                      |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| INF-H1  | The production state already contains `environment=dev` resources, including RDS. A name flip replaces the database; it needs a state migration in a maintenance window. |
+| INF-H3  | No domain/ACM certificate. The `enable_https` path is gated until one exists.                                                                                            |
 
 ## What remains
 
-| Item                      | State                                                                                                |
-| ------------------------- | ---------------------------------------------------------------------------------------------------- |
-| ML-H4 (ensemble half)     | Deferred design change: registry version is the seed-0 reference; serving blends five.               |
-| ML-M8                     | Deferred: per-object publish is correct but not atomic; needs a pointer/tar-only cutover.            |
-| ML-M1 / ML-M10            | HPO rebuilds the dataset per threshold candidate; fetch materialises every row before conversion.    |
-| INF-H1                    | Deferred to a maintenance window: production state holds `environment=dev` resources, including RDS. |
-| INF-M25                   | Production tasks still use public subnets; needs private subnets + VPC endpoints.                    |
-| BE-M8                     | Per-client WS metering exists; no per-socket subscription cap.                                       |
-| FE-L49                    | Theme tokens are computed at module load and do not rescale on rotation.                             |
-| 12 unnumbered LOW bullets | Mostly environment/CI hygiene; see the review's LOW sections.                                        |
+| Item     | State                                                                                                |
+| -------- | ---------------------------------------------------------------------------------------------------- |
+| INF-H1   | Deferred to a maintenance window: production state holds `environment=dev` resources, including RDS. |
+| LOW tail | Remaining codegen major versions and minor hygiene; see the review's LOW sections.                   |
