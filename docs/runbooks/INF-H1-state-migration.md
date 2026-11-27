@@ -17,3 +17,5 @@ not a code change.
 6. Keep `before.txt` and the plan output with the change record.
 
 Do not flip the CI `-var environment` until step 4 is clean.
+
+See `docs/REMEDIATION-STATUS.md` for the live remainder after this move.
