@@ -184,7 +184,9 @@ def _relabel_from_base(base: dict[str, Any], threshold_mult: float) -> np.ndarra
 
     idx_to_ticker = {v: k for k, v in base["vocab"].items()}
     per_ticker: dict[str, tuple[dict[np.datetime64, int], np.ndarray]] = {}
-    for ticker, arr in base["ohlcv_data"].items():
+    used_tickers = {idx_to_ticker[int(i)] for i in base["ticker_idxs"]}
+    for ticker in used_tickers:
+        arr = base["ohlcv_data"][ticker]
         close = pd.Series(arr["adjusted_close"])
         values = compute_adaptive_labels(
             close,
@@ -511,8 +513,9 @@ async def run_phase1() -> dict[str, Any]:
 async def run_phase2() -> dict[str, Any]:
     """Phase 2: sweep threshold_mult using the model HPs from Phase 1.
 
-    For each threshold_mult value (0.3 → 1.0 in 0.1 steps) a dataset is
-    prepared, a model trained, and VALIDATION directional accuracy recorded.
+    For each threshold_mult value (0.3 → 1.0 in 0.1 steps, plus the production
+    default) a dataset is prepared, a model trained, and VALIDATION directional
+    accuracy recorded.
     Selection uses val only — test metrics are logged alongside for
     reporting but play no part in the choice.
     """
