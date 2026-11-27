@@ -212,6 +212,19 @@ def test_prepare_global_dataset_basic() -> None:
     assert seqs.shape[2] == 14  # 13 V1 + vol_pct (no cross-sectional)
 
 
+def test_prepare_global_dataset_threshold_changes_labels() -> None:
+    """A wider FLAT band must produce more FLAT labels for the same windows."""
+    from ml.pipeline import prepare_global_dataset
+
+    data = {"AAPL": _make_ohlcv_array("AAPL")}
+    vocab = {"<UNK>": 0, "AAPL": 1}
+
+    seqs_tight, labels_tight, _, _, _ = prepare_global_dataset(data, vocab, threshold_mult=0.1)
+    seqs_wide, labels_wide, _, _, _ = prepare_global_dataset(data, vocab, threshold_mult=5.0)
+    assert len(seqs_tight) == len(seqs_wide)
+    assert (labels_wide == 1).sum() > (labels_tight == 1).sum()
+
+
 def test_prepare_global_dataset_with_spy() -> None:
     """With SPY features, n_features becomes 17."""
     from ml.pipeline import prepare_global_dataset
