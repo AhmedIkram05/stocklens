@@ -66,6 +66,11 @@ class PredictionService:
             True if model loaded successfully, False otherwise.
         """
         path = Path(model_path)
+        pointer = path.parent / "current"
+        if pointer.is_file():
+            candidate = path.parent / "versions" / pointer.read_text().strip() / "model.pt"
+            if candidate.is_file():
+                path = candidate
         seed_paths = sorted(path.parent.glob("model_seed*.pt")) if path.parent.exists() else []
         if not path.exists() and not seed_paths:
             logger.warning("no_champion_model_found", path=model_path)

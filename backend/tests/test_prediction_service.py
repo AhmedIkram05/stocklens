@@ -152,6 +152,26 @@ class TestLoadModelEnsemble:
         assert result is False
         assert svc.model is None
 
+    def test_follows_current_pointer(self, tmp_path):
+        """A current pointer wins over legacy root checkpoints."""
+        version = tmp_path / "versions" / "v1"
+        version.mkdir(parents=True)
+        (version / "model.pt").write_bytes(b"x")
+        for i in range(5):
+            (version / f"model_seed{i}.pt").write_bytes(b"x")
+        (tmp_path / "current").write_text("v1")
+        (tmp_path / "model.pt").write_bytes(b"legacy")
+
+        svc = PredictionService()
+        with patch("src.prediction.service.GlobalLSTM") as mock_cls:
+            mock_cls.load.return_value = self._fake_model(5)
+            result = svc.load_model(str(tmp_path / "model.pt"))
+
+        assert result is True
+        assert len(svc.ensemble) == 5
+        loaded = [call.args[0] for call in mock_cls.load.call_args_list]
+        assert all(str(version) in path for path in loaded)
+
     def test_refuses_seeds_without_reference(self, tmp_path):
         """Seed siblings with no model.pt are an incomplete prefix → refuse."""
         for i in range(5):
