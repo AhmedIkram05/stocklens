@@ -28,13 +28,13 @@ def load_questions() -> list[dict]:
 
 
 def upload_dataset(client: Client | None = None) -> None:
-    """Create (or reset) the golden dataset in LangSmith."""
+    """Create the dataset, adding only questions not already present."""
     client = client or Client()
     questions = load_questions()
     if client.has_dataset(dataset_name=DATASET_NAME):
         dataset = client.read_dataset(dataset_name=DATASET_NAME)
         existing = {
-            example.inputs.get("question")
+            (example.inputs or {}).get("question")
             for example in client.list_examples(dataset_id=dataset.id)
         }
     else:

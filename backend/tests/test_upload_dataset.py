@@ -8,12 +8,18 @@ from agent_eval import upload_dataset as upload
 
 
 class _FakeClient:
-    def __init__(self, existing: list[str]) -> None:
+    def __init__(self, existing: list[str], has_dataset: bool = True) -> None:
         self._existing = existing
+        self._has_dataset = has_dataset
         self.created: list[dict] = []
+        self.created_dataset = False
 
     def has_dataset(self, dataset_name: str) -> bool:
-        return True
+        return self._has_dataset
+
+    def create_dataset(self, dataset_name: str, description: str):
+        self.created_dataset = True
+        return SimpleNamespace(id="dataset-1")
 
     def read_dataset(self, dataset_name: str):
         return SimpleNamespace(id="dataset-1")
@@ -48,3 +54,13 @@ def test_no_write_when_all_present(monkeypatch):
     upload.upload_dataset(client)
 
     assert client.created == []
+
+
+def test_creates_dataset_when_missing(monkeypatch):
+    monkeypatch.setattr(upload, "load_questions", lambda: [{"question": "Q1"}])
+    client = _FakeClient(existing=[], has_dataset=False)
+
+    upload.upload_dataset(client)
+
+    assert client.created_dataset is True
+    assert client.created == [{"question": "Q1"}]
