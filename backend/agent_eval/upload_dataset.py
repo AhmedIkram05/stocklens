@@ -1,7 +1,8 @@
 """Upload the StockLens golden evaluation dataset to LangSmith.
 
 Run manually (or via CI) to populate/update the `stocklens-golden` dataset.
-Idempotent: re-running deletes existing examples and recreates them.
+Idempotent: re-running adds only questions that are not already present, so
+prior experiments and feedback keep their example links.
 """
 
 from __future__ import annotations
