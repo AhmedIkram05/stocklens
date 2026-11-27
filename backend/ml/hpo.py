@@ -31,6 +31,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import optuna
 import pandas as pd
 import torch
@@ -155,18 +156,62 @@ class LSTMObjective:
 # ── Data preparation ──────────────────────────────────────────────────────
 
 
-async def _prepare_data(threshold_mult: float | None = None) -> dict[str, Any]:
+async def _prepare_data(
+    threshold_mult: float | None = None,
+    base: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Prepare splits, reusing fetched features when *base* is supplied."""
+    if base is None:
+        return await _prepare_data_uncached(threshold_mult)
+    label_threshold = ML_CONFIG.THRESHOLD_MULT if threshold_mult is None else threshold_mult
+    labels = _relabel_from_base(base, label_threshold)
+    return _build_splits(
+        base["sequences"],
+        labels,
+        base["ticker_idxs"],
+        base["dates"],
+        base["fwd_rets"],
+        base["device"],
+        base["vocab"],
+        base["vocab_size"],
+        base["tickers_with_data"],
+    )
+
+
+def _relabel_from_base(base: dict[str, Any], threshold_mult: float) -> np.ndarray:
+    """Recompute only the adaptive labels for an already-built feature base."""
+    from ml.labeling import compute_adaptive_labels
+
+    idx_to_ticker = {v: k for k, v in base["vocab"].items()}
+    per_ticker: dict[str, tuple[dict[np.datetime64, int], np.ndarray]] = {}
+    for ticker, arr in base["ohlcv_data"].items():
+        close = pd.Series(arr["adjusted_close"])
+        values = compute_adaptive_labels(
+            close,
+            vol_lookback=ML_CONFIG.VOL_LOOKBACK,
+            threshold_mult=threshold_mult,
+            forecast_horizon=ML_CONFIG.FORECAST_HORIZON,
+        ).to_numpy()
+        per_ticker[ticker] = ({d: i for i, d in enumerate(arr["date"])}, values)
+
+    labels = np.empty(len(base["dates"]), dtype=np.float64)
+    for i, (ticker_idx, day) in enumerate(zip(base["ticker_idxs"], base["dates"])):
+        ticker = idx_to_ticker[int(ticker_idx)]
+        positions, values = per_ticker[ticker]
+        position = positions.get(day)
+        if position is None:
+            raise RuntimeError(f"Window date {day} not found for {ticker}")
+        labels[i] = values[position]
+    return labels
+
+
+async def _prepare_data_uncached(threshold_mult: float | None = None) -> dict[str, Any]:
     """Fetch data, prepare dataset, split with embargo, normalise.
 
     Returns raw split tuples, loaders, vocab and metadata so callers can run
     multiple training passes (one per trial) without refetching.
     """
     device = get_device()
-
-    # Override threshold if provided (for Phase 2)
-    if threshold_mult is not None:
-        object.__setattr__(ML_CONFIG, "THRESHOLD_MULT", threshold_mult)
-        logger.info("Overriding threshold_mult to %.2f", threshold_mult)
 
     ohlcv_data = await fetch_ohlcv_for_tickers(ML_CONFIG.TRAINING_TICKERS)
     if not ohlcv_data:
@@ -199,9 +244,47 @@ async def _prepare_data(threshold_mult: float | None = None) -> dict[str, Any]:
         ohlcv_data,
         vocab,
         spy_features_df=spy_features_df,
+        threshold_mult=threshold_mult,
     )
     logger.info("Dataset: %d samples", len(sequences))
 
+    base = {
+        "ohlcv_data": ohlcv_data,
+        "vocab": vocab,
+        "vocab_size": vocab_size,
+        "tickers_with_data": tickers_with_data,
+        "sequences": sequences,
+        "ticker_idxs": ticker_idxs,
+        "dates": dates,
+        "fwd_rets": fwd_rets,
+        "device": device,
+    }
+    result = _build_splits(
+        sequences,
+        labels,
+        ticker_idxs,
+        dates,
+        fwd_rets,
+        device,
+        vocab,
+        vocab_size,
+        tickers_with_data,
+    )
+    result["base"] = base
+    return result
+
+
+def _build_splits(
+    sequences: np.ndarray,
+    labels: np.ndarray,
+    ticker_idxs: np.ndarray,
+    dates: np.ndarray,
+    fwd_rets: np.ndarray,
+    device: Any,
+    vocab: dict[str, int],
+    vocab_size: int,
+    tickers_with_data: list[str],
+) -> dict[str, Any]:
     if len(sequences) < 100:
         raise RuntimeError(f"Too few samples ({len(sequences)})")
 
