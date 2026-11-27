@@ -24,3 +24,12 @@ All CRITICAL findings from `docs/CODE-REVIEW-2026-11-16.md` are closed.
 CI runs the backend, frontend, Rust, Docker, Airflow, IaC, secret, and CodeQL checks on every PR; each batch above merged only on 15/15 green.
 
 INF-M25 is code-ready behind `enable_private_networking` (default false). Enabling it in production is a deploy-time decision; Bedrock, Yahoo Finance and LangSmith still need NAT/egress or per-service endpoints.
+
+## Reproduce the checks locally
+
+```bash
+cd backend && uv run pytest -q          # DB-backed; needs Postgres/Redis
+cd backend && uv run pytest tests/ml -q --noconftest
+cd frontend && npx tsc --noEmit && npm test -- --runInBand
+terraform -chdir=terraform fmt -check -recursive
+```
