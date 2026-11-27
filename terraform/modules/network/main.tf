@@ -266,6 +266,17 @@ resource "aws_security_group_rule" "vpc_endpoints_ingress" {
   description       = "HTTPS from the VPC"
 }
 
+resource "aws_security_group_rule" "vpc_endpoints_egress" {
+  count             = var.enable_vpc_endpoints ? 1 : 0
+  security_group_id = aws_security_group.vpc_endpoints[0].id
+  type              = "egress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = [data.aws_vpc.this[0].cidr_block]
+  description       = "HTTPS responses to VPC clients"
+}
+
 resource "aws_vpc_endpoint" "interface" {
   for_each            = var.enable_vpc_endpoints ? local.interface_endpoints : toset([])
   vpc_id              = var.vpc_id
