@@ -17,9 +17,11 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any, Optional
+from uuid import uuid4
 
 import boto3
 import mlflow
@@ -338,14 +340,11 @@ class MLflowManager:
         finally:
             await conn.close()
 
-    def _resolve_save_dir(self) -> Path:
-        """Directory the champion checkpoint is written to (or read from).
+    def _base_save_dir(self) -> Path:
+        """Writable root for champion artifacts (``/model_artifacts/champion``).
 
-        Falls back to a local temp dir when the configured path
-        (``/model_artifacts/champion``) is not writable — e.g. native macOS
-        runs outside Docker. Both ``save_champion_to_disk`` and the paired
-        promotion gate must use this same resolution, or the gate silently
-        looks in a different directory than the save writes to.
+        Falls back to a local temp dir when the configured path is not
+        writable — e.g. native macOS runs outside Docker.
         """
         save_dir = Path(ML_CONFIG.MODEL_ARTIFACT_DIR)
         try:
@@ -363,6 +362,16 @@ class MLflowManager:
             save_dir = fallback
             save_dir.mkdir(parents=True, exist_ok=True)
         return save_dir
+
+    def _resolve_save_dir(self) -> Path:
+        """Read the champion version currently referenced by the ``current`` file."""
+        base = self._base_save_dir()
+        pointer = base / "current"
+        if pointer.is_file():
+            candidate = base / "versions" / pointer.read_text().strip()
+            if candidate.is_dir():
+                return candidate
+        return base
 
     def _atomic_save_model(
         self,
@@ -419,11 +428,11 @@ class MLflowManager:
 
         The promoted champion is an N-seed probability ensemble: ``model.pt``
         is the seed-0 reference member (carries the metadata) and every seed is
-        written as a ``model_seed{i}.pt`` sibling. The expected member count is
-        stamped on ``model.pt`` so serving can refuse a truncated ensemble.
-        Seed siblings not written by this call are pruned, so a run that
-        produces fewer seeds cannot leave stale ``model_seed{i}.pt`` files
-        behind for serving or the paired promotion gate to blend in.
+        written as a ``model_seed{i}.pt`` sibling in a new version directory.
+        The expected member count is stamped on ``model.pt`` so serving can
+        refuse a truncated ensemble. The ``current`` pointer is flipped only
+        after every member is written, so readers never observe a mixed set;
+        older versions are pruned after the flip.
 
         Args:
             model: Trained GlobalLSTM instance — the seed-0 reference member.
@@ -438,7 +447,10 @@ class MLflowManager:
         Returns:
             Path to the saved model file.
         """
-        save_dir = self._resolve_save_dir()
+        base_dir = self._base_save_dir()
+        version = f"v{uuid4().hex}"
+        save_dir = base_dir / "versions" / version
+        save_dir.mkdir(parents=True, exist_ok=True)
         save_path = str(save_dir / "model.pt")
 
         members = ensemble_models or []
@@ -451,56 +463,49 @@ class MLflowManager:
             margin=margin,
             ensemble_size=len(members),
         )
-        logger.info("Champion model saved to disk (atomic)", extra={"path": save_path})
-
-        written: set[str] = set()
         for i, member in enumerate(members):
-            seed_path = save_dir / f"model_seed{i}.pt"
             self._atomic_save_model(
                 member,
-                seed_path,
+                save_dir / f"model_seed{i}.pt",
                 vocab=vocab,
                 feature_means=feature_means,
                 feature_stds=feature_stds,
                 margin=margin,
                 ensemble_size=len(members),
             )
-            written.add(seed_path.name)
-        if members:
-            logger.info("Champion seed checkpoints saved (ensemble)", extra={"count": len(members)})
+        logger.info(
+            "Champion version written",
+            extra={"path": str(save_dir), "members": len(members) + 1},
+        )
 
-        # Prune seed siblings this run did not write: a previous run with more
-        # seeds would otherwise leave stale checkpoints that serving and the
-        # paired gate blend into the promoted ensemble's predictions.
-        for stale in save_dir.glob("model_seed*.pt"):
-            if stale.name not in written:
-                stale.unlink()
-                logger.info("Pruned stale seed checkpoint", extra={"path": str(stale)})
+        # Flip the pointer only after every member is written; readers resolve
+        # the version through this file, so they never see a mixed ensemble.
+        pointer_tmp = base_dir / ".current.tmp"
+        pointer_tmp.write_text(version)
+        os.replace(pointer_tmp, base_dir / "current")
+        for old in (base_dir / "versions").iterdir():
+            if old.is_dir() and old.name != version:
+                shutil.rmtree(old, ignore_errors=True)
+        for legacy in base_dir.glob("model*.pt"):
+            legacy.unlink()
 
-        # -- Publish to champion S3 bucket if configured --
         champion_s3_uri = os.environ.get("CHAMPION_S3_URI", "")
         if champion_s3_uri:
             s3 = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "eu-west-2"))
-            # s3://bucket/prefix/ → bucket, prefix
             parts = champion_s3_uri.removeprefix("s3://").rstrip("/").split("/", 1)
             bucket = parts[0]
             key_prefix = f"{parts[1]}/" if len(parts) > 1 else ""
-
-            # Publish the WHOLE champion prefix, not just model.pt: the
-            # ensemble members are what serving averages, so an incomplete
-            # prefix would ship a different model than the gate scored.
+            version_prefix = f"{key_prefix}versions/{version}/"
             champion_files = [Path(save_path), *sorted(save_dir.glob("model_seed*.pt"))]
             for path in champion_files:
-                s3_key = f"{key_prefix}{path.name}"
+                s3_key = f"{version_prefix}{path.name}"
                 s3.upload_file(str(path), bucket, s3_key)
                 logger.info(
                     "Champion artifact published to S3",
                     extra={"bucket": bucket, "key": s3_key},
                 )
 
-            # Also publish model.tar.gz (consumed by SageMaker model_data_url),
-            # bundling the whole ensemble so extraction yields every member.
-            import io  # noqa: E402  # stdlib, no new dep
+            import io  # noqa: E402
             import tarfile
 
             tar_buffer = io.BytesIO()
@@ -508,10 +513,12 @@ class MLflowManager:
                 for path in champion_files:
                     tar.add(str(path), arcname=path.name)
             tar_buffer.seek(0)
-            tar_key = f"{key_prefix}model.tar.gz"
-            s3.upload_fileobj(tar_buffer, bucket, tar_key)
+            s3.upload_fileobj(tar_buffer, bucket, f"{key_prefix}model.tar.gz")
+            # Pointer last: a reader that follows it sees the complete version.
+            s3.put_object(Bucket=bucket, Key=f"{key_prefix}current", Body=version.encode())
             logger.info(
-                "Champion model tar.gz published to S3", extra={"bucket": bucket, "key": tar_key}
+                "Champion version published and pointed",
+                extra={"bucket": bucket, "prefix": version_prefix},
             )
 
         return save_path
