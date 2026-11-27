@@ -166,3 +166,10 @@ variable "key_name" {
   type        = string
   default     = ""
 }
+
+
+variable "enable_private_networking" {
+  description = "Disable public IPs on tasks (requires VPC endpoints)."
+  type        = bool
+  default     = false
+}

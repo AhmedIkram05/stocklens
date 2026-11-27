@@ -66,10 +66,13 @@ module "vpc" {
 # ── Network (security groups) ────────────────────────────────────────
 
 module "network" {
-  source      = "./modules/network"
-  vpc_id      = local.vpc_id
-  app_name    = var.app_name
-  environment = var.environment
+  source               = "./modules/network"
+  vpc_id               = local.vpc_id
+  app_name             = var.app_name
+  environment          = var.environment
+  aws_region           = var.aws_region
+  private_subnet_ids   = local.private_subnet_ids
+  enable_vpc_endpoints = var.enable_private_networking
 }
 
 # ── Secrets ──────────────────────────────────────────────────────────
@@ -148,6 +151,7 @@ module "iam" {
 module "compute" {
   source                       = "./modules/compute"
   app_name                     = var.app_name
+  enable_private_networking    = var.enable_private_networking
   environment                  = var.environment
   aws_region                   = var.aws_region
   vpc_id                       = local.vpc_id
@@ -183,18 +187,19 @@ module "compute" {
 # ── MLflow tracking server (R4) ─────────────────────────────────────
 
 module "mlflow" {
-  source                 = "./modules/mlflow"
-  app_name               = var.app_name
-  environment            = var.environment
-  aws_region             = var.aws_region
-  ecs_cluster_id         = module.compute.ecs_cluster_id
-  ecs_execution_role_arn = module.iam.ecs_execution_role_arn
-  mlflow_task_role_arn   = module.iam.mlflow_task_role_arn
-  private_subnet_ids     = local.private_subnet_ids
-  mlflow_sg_id           = module.network.mlflow_sg_id
-  mlflow_db_secret_arn   = module.database.app_db_secret_arn
-  mlflow_artifact_root   = local.mlflow_artifact_root
-  sd_namespace_id        = module.network.sd_namespace_id
+  source                    = "./modules/mlflow"
+  app_name                  = var.app_name
+  enable_private_networking = var.enable_private_networking
+  environment               = var.environment
+  aws_region                = var.aws_region
+  ecs_cluster_id            = module.compute.ecs_cluster_id
+  ecs_execution_role_arn    = module.iam.ecs_execution_role_arn
+  mlflow_task_role_arn      = module.iam.mlflow_task_role_arn
+  private_subnet_ids        = local.private_subnet_ids
+  mlflow_sg_id              = module.network.mlflow_sg_id
+  mlflow_db_secret_arn      = module.database.app_db_secret_arn
+  mlflow_artifact_root      = local.mlflow_artifact_root
+  sd_namespace_id           = module.network.sd_namespace_id
 }
 
 # ── Airflow (R4) ─────────────────────────────────────────────────────
@@ -202,6 +207,7 @@ module "mlflow" {
 module "airflow" {
   source                    = "./modules/airflow"
   app_name                  = var.app_name
+  enable_private_networking = var.enable_private_networking
   environment               = var.environment
   aws_region                = var.aws_region
   ecs_cluster_id            = module.compute.ecs_cluster_id

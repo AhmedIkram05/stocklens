@@ -255,3 +255,10 @@ variable "sagemaker_container_startup_timeout" {
   type        = number
   default     = 600
 }
+
+
+variable "enable_private_networking" {
+  description = "Use private subnets, no public IPs, and VPC interface endpoints (production)."
+  type        = bool
+  default     = false
+}
