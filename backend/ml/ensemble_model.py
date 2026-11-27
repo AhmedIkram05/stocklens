@@ -41,6 +41,11 @@ class GlobalLSTMEnsemble(mlflow.pyfunc.PythonModel):
             model.eval()
 
     def predict(self, context: Any, model_input: Any) -> np.ndarray:
+        """Average member probabilities.
+
+        ``features`` must already be standardised exactly as serving does
+        (the checkpoints carry means/stds for traceability, not re-scaling).
+        """
         import pandas as pd
 
         if not self.models:

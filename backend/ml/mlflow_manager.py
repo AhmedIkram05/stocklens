@@ -296,7 +296,7 @@ class MLflowManager:
                 python_model=GlobalLSTMEnsemble(member_count=len(seed_models)),
                 artifacts={"members": str(members_dir)},
                 registered_model_name=registered_model_name,
-                code_paths=[str(code_dir / "ensemble_model.py"), str(code_dir / "model.py")],
+                code_paths=[str(code_dir)],
             )
         version = self._registered_version(info, registered_model_name)
         run_id = self.active_run.info.run_id if self.active_run else "unknown"

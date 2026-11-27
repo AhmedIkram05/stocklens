@@ -35,19 +35,30 @@ def _save_member(path, seed: int) -> GlobalLSTM:
 
 
 def test_loads_every_member_and_averages(tmp_path):
-    _save_member(tmp_path, 0)
-    _save_member(tmp_path, 1)
+    members = [_save_member(tmp_path, 0), _save_member(tmp_path, 1)]
     ensemble = GlobalLSTMEnsemble(member_count=2)
     ensemble.load_context(SimpleNamespace(artifacts={"members": str(tmp_path)}))
 
-    frame = pd.DataFrame(
-        {
-            "features": [np.zeros((30, 17), dtype=np.float32)],
-            "ticker_idx": [1],
-        }
-    )
+    features = np.random.default_rng(0).normal(size=(1, 30, 17)).astype(np.float32)
+    frame = pd.DataFrame({"features": [features[0]], "ticker_idx": [1]})
     probs = ensemble.predict(None, frame)
+
+    import torch
+
+    expected = np.mean(
+        [
+            member.predict_proba(
+                torch.as_tensor(features, dtype=torch.float32),
+                torch.as_tensor([1], dtype=torch.long),
+            )
+            .detach()
+            .numpy()
+            for member in members
+        ],
+        axis=0,
+    )
     assert probs.shape == (1, 3)
+    np.testing.assert_allclose(probs, expected, rtol=1e-6)
     np.testing.assert_allclose(probs.sum(axis=1), 1.0, rtol=1e-5)
 
 
